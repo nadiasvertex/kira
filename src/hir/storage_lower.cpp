@@ -351,6 +351,29 @@ private:
     out_.ops.push_back(std::move(op));
   }
 
+  /// Takes the temporaries made since `first` out of the statement's list:
+  /// they last until the enclosing loop's scope ends, or until the function
+  /// returns outside every loop, as a named local does.
+  auto keep_for_scope(std::size_t first) -> void {
+    const auto kept = std::ranges::subrange(
+        pending_.begin() + static_cast<std::ptrdiff_t>(
+                               std::min(first, pending_.size())),
+        pending_.end());
+    if (kept.empty() || std::ranges::any_of(kept, [&](const pending_temp &t) {
+          return env_.needs_drop(out_.slots[t.slot].type);
+        })) {
+      return;
+    }
+    for (auto it = pending_.begin() + static_cast<std::ptrdiff_t>(first);
+         it != pending_.end(); ++it) {
+      if (!scopes_.empty()) {
+        scopes_.back().push_back(it->slot);
+      }
+    }
+    pending_.erase(pending_.begin() + static_cast<std::ptrdiff_t>(first),
+                   pending_.end());
+  }
+
   /// Ends the statement's temporaries, newest first. A temporary that still
   /// holds a value needing a drop is refused: HIR schedules the drops of the
   /// values it knows about as explicit calls, and translating those to places
@@ -452,11 +475,65 @@ private:
   /// and dereferences down to a subject `match`, `while let` or `let ...
   /// else` named in place.
   [[nodiscard]] auto rooted_at_subject(const hir_expr &expr) const -> bool {
+    const auto root = root_symbol(expr);
+    return root.has_value() && subjects_.contains(*root);
+  }
+
+  /// Whether `expr` is `&e` or `&mut e`.
+  [[nodiscard]] static auto is_address_of(const hir_expr &expr) -> bool {
+    return expr.kind == hir_node_kind::hir_unary &&
+           (as<hir_unary>(expr).op == ast::unary_op::addr_of ||
+            as<hir_unary>(expr).op == ast::unary_op::addr_of_mut) &&
+           as<hir_unary>(expr).operand != nullptr;
+  }
+
+  [[nodiscard]] auto is_reference_type(type_id type) const -> bool {
+    return types().entry(types().strip_refinement(type)).kind ==
+           semantic::type_kind::ref_kind;
+  }
+
+  /// Whether the projection path of `expr` goes through a reference on the
+  /// way down to its root: an explicit `*`, a field or payload read from a
+  /// reference-typed value, or a pattern subject that was itself reached
+  /// through one. The place it names may have lost that step (`*&x` folds to
+  /// `x`), but a binding read this way is still reached through a reference.
+  [[nodiscard]] auto reached_through_reference(const hir_expr &expr) const
+      -> bool {
+    const auto *at = &expr;
+    while (at != nullptr) {
+      if (at != &expr && is_reference_type(at->type)) {
+        return true;
+      }
+      switch (at->kind) {
+      case hir_node_kind::hir_local_ref:
+        return borrowed_subjects_.contains(as<hir_local_ref>(*at).symbol);
+      case hir_node_kind::hir_field:
+        at = as<hir_field>(*at).object.get();
+        break;
+      case hir_node_kind::hir_tuple_index:
+        at = as<hir_tuple_index>(*at).object.get();
+        break;
+      case hir_node_kind::hir_variant_payload:
+        at = as<hir_variant_payload>(*at).object.get();
+        break;
+      case hir_node_kind::hir_unary:
+        return as<hir_unary>(*at).op == ast::unary_op::deref;
+      default:
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /// The local that `expr` projects: fields, elements, payloads and
+  /// dereferences down to a named local.
+  [[nodiscard]] static auto root_symbol(const hir_expr &expr)
+      -> std::optional<symbol_id> {
     const auto *at = &expr;
     while (true) {
       switch (at->kind) {
       case hir_node_kind::hir_local_ref:
-        return subjects_.contains(as<hir_local_ref>(*at).symbol);
+        return as<hir_local_ref>(*at).symbol;
       case hir_node_kind::hir_field:
         at = as<hir_field>(*at).object.get();
         break;
@@ -468,15 +545,15 @@ private:
         break;
       case hir_node_kind::hir_unary:
         if (as<hir_unary>(*at).op != ast::unary_op::deref) {
-          return false;
+          return std::nullopt;
         }
         at = as<hir_unary>(*at).operand.get();
         break;
       default:
-        return false;
+        return std::nullopt;
       }
       if (at == nullptr) {
-        return false;
+        return std::nullopt;
       }
     }
   }
@@ -596,6 +673,51 @@ private:
       const auto &unary = as<hir_unary>(expr);
       if (unary.op != ast::unary_op::deref) {
         return std::optional<place>{};
+      }
+      // `*&x` is `x` itself. A field read off a computed value (`mk().left`)
+      // is `*{ let <borrowed> = mk(); &<borrowed> }.left`: the temporary is
+      // borrowed only to reach the field, and a move out of it is a move out
+      // of the temporary, which owns it.
+      const auto *operand = unary.operand.get();
+      if (operand->kind == hir_node_kind::hir_block) {
+        const auto &stmts = as<hir_block>(*operand).stmts;
+        const auto lets_then_value =
+            !stmts.empty() &&
+            stmts.back()->kind == hir_node_kind::hir_expr_stmt &&
+            std::all_of(stmts.begin(), stmts.end() - 1, [](const auto &stmt) {
+              return stmt->kind == hir_node_kind::hir_let;
+            });
+        const auto *value =
+            lets_then_value ? as<hir_expr_stmt>(*stmts.back()).expr.get()
+                            : nullptr;
+        if (value != nullptr && is_address_of(*value) &&
+            as<hir_unary>(*value).operand->kind ==
+                hir_node_kind::hir_local_ref) {
+          // The lets end their own temporaries; those of the enclosing
+          // expression outlive them, as for any value block.
+          if (auto ok = in_region(operand->span,
+                                  [&]() -> result {
+                                    for (size_t i = 0; i + 1 < stmts.size();
+                                         ++i) {
+                                      if (auto let = lower_let(
+                                              as<hir_let>(*stmts[i]));
+                                          !let.has_value()) {
+                                        return let;
+                                      }
+                                    }
+                                    return {};
+                                  });
+              !ok.has_value()) {
+            return std::unexpected(ok.error());
+          }
+          operand = value;
+        }
+      }
+      if (is_address_of(*operand)) {
+        auto inner = lower_place(*as<hir_unary>(*operand).operand);
+        if (!inner.has_value() || inner->has_value()) {
+          return inner;
+        }
       }
       if (const auto owned = owned_receiver_slot(*unary.operand)) {
         return std::optional<place>{whole(*owned)};
@@ -2474,9 +2596,11 @@ private:
         !(fallible && env_.needs_drop(entry.args[1]))) {
       return {};
     }
-    if (fallible) {
-      return refuse(span, "the drop of a fallible task whose result needs a drop");
-    }
+    // A fallible task holds `result[value, error]`, as it hands it over.
+    const auto item_type =
+        fallible ? env_.checked.types.builtin_generic(
+                       "result", {value, entry.args[1]})
+                 : value;
     auto finished = classify_signature(env_.layouts,
                                        std::vector<type_id>{task.type},
                                        types().bool_type());
@@ -2505,8 +2629,9 @@ private:
                      span);
               },
               [&]() -> result {
-                const auto item = new_slot(storage_class::frame_local, value, "",
-                                           k_invalid_symbol_id, span, false);
+                const auto item =
+                    new_slot(storage_class::frame_local, item_type, "",
+                             k_invalid_symbol_id, span, false);
                 emit(storage_op{.kind = op_kind::generator_take,
                                 .dest = whole(item),
                                 .source = task},
@@ -2595,16 +2720,22 @@ private:
       if (!layout.has_value()) {
         return std::unexpected(layout.error());
       }
+      // A tuple's plan names its members by position.
+      const auto is_tuple =
+          (*layout)->kind == runtime::value_layout_kind::tuple;
       for (const auto &[name, type] : plan->droppable_fields) {
         const auto &members = (*layout)->members;
         auto found = false;
         for (size_t i = 0; i < members.size() && !found; ++i) {
-          if (members[i].name != name) {
+          if (is_tuple ? semantic::tuple_index_of(name) != i
+                       : members[i].name != name) {
             continue;
           }
           found = true;
           if (auto ok = lower_value_drop(
-                  project(where, member_step(i, name), members[i].type), span);
+                  project(where, member_step(i, is_tuple ? "" : name),
+                          members[i].type),
+                  span);
               !ok.has_value()) {
             return ok;
           }
@@ -2748,7 +2879,8 @@ private:
   [[nodiscard]] auto lower_call(const hir_call &call, const place &dest)
       -> result {
     if (call.callee->kind == hir_node_kind::hir_local_ref &&
-        !locals_.contains(as<hir_local_ref>(*call.callee).symbol)) {
+        !locals_.contains(as<hir_local_ref>(*call.callee).symbol) &&
+        !subjects_.contains(as<hir_local_ref>(*call.callee).symbol)) {
       const auto &name = as<hir_local_ref>(*call.callee).name;
       if (name == "rt_crew_task") {
         if (auto ok = check_crew_task_read(call, dest); !ok.has_value()) {
@@ -2817,7 +2949,8 @@ private:
     // `t.spawn()` leaves `t` there to be awaited.
     auto borrows_handles = false;
     if (call.callee->kind == hir_node_kind::hir_local_ref &&
-        !locals_.contains(as<hir_local_ref>(*call.callee).symbol)) {
+        !locals_.contains(as<hir_local_ref>(*call.callee).symbol) &&
+        !subjects_.contains(as<hir_local_ref>(*call.callee).symbol)) {
       const auto &callee = as<hir_local_ref>(*call.callee);
       target.name = callee.name;
       target.owner_module = callee.owner_module;
@@ -2964,6 +3097,8 @@ private:
     switch (node.kind) {
     case hir_node_kind::hir_let:
       return lower_let(as<hir_let>(node));
+    case hir_node_kind::hir_contract_check:
+      return lower_contract_check(as<hir_contract_check>(node));
     case hir_node_kind::hir_assign:
       return lower_assign(as<hir_assign>(node));
     case hir_node_kind::hir_expr_stmt:
@@ -2991,22 +3126,52 @@ private:
     }
   }
 
+  /// A contract the checker could not discharge: the condition, then a
+  /// `check` that panics when it is false.
+  [[nodiscard]] auto lower_contract_check(const hir_contract_check &node)
+      -> result {
+    auto test = lower_condition(*node.condition);
+    if (!test.has_value()) {
+      return std::unexpected(test.error());
+    }
+    auto op = storage_op{.kind = op_kind::check};
+    op.condition = test->value;
+    op.contract = node.kind == contract_kind::precondition
+                      ? check_kind::precondition
+                  : node.kind == contract_kind::postcondition
+                      ? check_kind::postcondition
+                      : check_kind::invariant;
+    emit(std::move(op), node.span);
+    if (test->hold != k_invalid_storage) {
+      kill(test->hold, node.span);
+    }
+    return {};
+  }
+
   [[nodiscard]] auto lower_let(const hir_let &let) -> result {
     if (let.name == "<let subject>" && let.initializer != nullptr) {
       // A destructuring `let` reads its parts from the subject, which HIR
       // never drops: a place is named in place, as a `match` subject is, so
       // binding `copy` parts of `*r` does not move out of the reference
       // (ch. 14, Matching).
+      const auto first_temp = pending_.size();
       auto named = lower_place(*let.initializer);
       if (!named.has_value()) {
         return std::unexpected(named.error());
       }
       if (named->has_value()) {
+        if (reached_through_reference(*let.initializer)) {
+          borrowed_subjects_.insert(let.symbol);
+        }
         if ((*named)->steps.empty()) {
           locals_[let.symbol] = (*named)->base;
         } else {
           subjects_[let.symbol] = **named;
         }
+        // The bindings read through the temporaries that reach the place
+        // (`runs[i]` is `*at_ref(...)`), so those last as long as a named
+        // local would rather than to the end of this statement.
+        keep_for_scope(first_temp);
         return flush_pending(let.span);
       }
     }
@@ -3019,10 +3184,12 @@ private:
         return std::unexpected(named.error());
       }
       if (named->has_value() &&
-          std::ranges::any_of((*named)->steps, [](const projection &step) {
-            return step.kind == projection_kind::deref;
-          })) {
+          (reached_through_reference(*let.initializer) ||
+           std::ranges::any_of((*named)->steps, [](const projection &step) {
+             return step.kind == projection_kind::deref;
+           }))) {
         subjects_[let.symbol] = **named;
+        borrowed_subjects_.insert(let.symbol);
         return flush_pending(let.span);
       }
     }
@@ -3338,16 +3505,21 @@ private:
   };
 
   /// Whether a sum that owes drops can be tested with `pattern`: variant tests
-  /// (nested ones too), literals on scalars, and the structure around them. The
-  /// verifier learns which variant a sum holds only from an `if` directly on
-  /// the tag test, so every alternative of an or-pattern would have to agree on
-  /// it; those are refused.
+  /// (nested ones too), literals on scalars, the structure around them, and
+  /// or-patterns of those. The verifier learns which variant a sum holds only
+  /// from an `if` directly on the tag test; each alternative of an or-pattern
+  /// gets its own copy of the arm (`emit_alternatives`), so each copy knows the
+  /// variant its alternative tested.
   [[nodiscard]] auto tests_supported_on_droppable(
       const hir_pattern &pattern) const -> bool {
     switch (pattern.kind) {
     case hir_node_kind::hir_wildcard_pattern:
     case hir_node_kind::hir_literal_pattern:
       return true;
+    case hir_node_kind::hir_or_pattern:
+      return std::ranges::all_of(
+          as<hir_or_pattern>(pattern).alternatives,
+          [&](const auto &alt) { return tests_supported_on_droppable(*alt); });
     case hir_node_kind::hir_constructor_pattern:
       return std::ranges::all_of(
           as<hir_constructor_pattern>(pattern).args,
@@ -3402,6 +3574,10 @@ private:
     if (!named.has_value()) {
       return std::unexpected(named.error());
     }
+    if (named->has_value() && symbol != k_invalid_symbol_id &&
+        (is_reference_type(subject.type) || reached_through_reference(subject))) {
+      borrowed_subjects_.insert(symbol);
+    }
     if (named->has_value()) {
       if (!(*named)->steps.empty()) {
         // The subject is a part of a value, as in the match HIR writes to drop
@@ -3454,6 +3630,60 @@ private:
     }
     emit(storage_op{.kind = op_kind::if_end}, span);
     return {};
+  }
+
+  /// A string literal pattern on a `str`: the subject and the literal are
+  /// compared by `rt_str_eq`, as `==` on two `str`s is, with the literal's
+  /// bytes as static data.
+  [[nodiscard]] auto emit_str_literal_test(const hir_literal_pattern &literal,
+                                           const obligation &next,
+                                           std::vector<obligation> todo,
+                                           const continuation &success,
+                                           const continuation &failure,
+                                           const source_span &span) -> result {
+    auto text = decode_string_literal(literal.value);
+    if (!text.has_value()) {
+      return malformed(span, "a string literal that does not decode");
+    }
+    const auto text_type = next.where.type;
+    auto signature =
+        classify_signature(env_.layouts, std::vector<type_id>{text_type, text_type},
+                           types().bool_type());
+    if (!signature.has_value()) {
+      return layout_failure(span, signature.error());
+    }
+    return branch_on(
+        span,
+        [&](const place &flag) {
+          const auto subject = new_slot(storage_class::outgoing_argument,
+                                        text_type, "", k_invalid_symbol_id,
+                                        span, false);
+          const auto expected = new_slot(storage_class::outgoing_argument,
+                                         text_type, "", k_invalid_symbol_id,
+                                         span, false);
+          auto copy = storage_op{.kind = op_kind::copy_into};
+          copy.dest = whole(subject);
+          copy.source = next.where;
+          emit(std::move(copy), span);
+          auto bytes = storage_op{.kind = op_kind::string_literal};
+          bytes.dest = whole(expected);
+          bytes.text = std::move(*text);
+          emit(std::move(bytes), span);
+          auto call = storage_op{.kind = op_kind::call_into};
+          call.callee.name = "rt_str_eq";
+          const auto slots = std::array{subject, expected};
+          for (size_t i = 0; i < slots.size(); ++i) {
+            call.args.push_back(call_argument{.source_index = i,
+                                              .cls = signature->params[i].cls,
+                                              .slot = whole(slots[i])});
+          }
+          call.signature = std::move(*signature);
+          call.dest = flag;
+          emit(std::move(call), span);
+          kill(subject, span);
+          kill(expected, span);
+        },
+        [&] { return emit_tests(std::move(todo), success, failure); }, failure);
   }
 
   /// Emits the tests of `todo` in order, each nested in the one before so a
@@ -3514,6 +3744,12 @@ private:
       const auto cls = class_of(next.where.type, span);
       if (!cls.has_value()) {
         return std::unexpected(cls.error());
+      }
+      if (literal.lit_kind == token_kind::string_lit &&
+          types().entry(types().strip_refinement(next.where.type)).name ==
+              "str") {
+        return emit_str_literal_test(literal, next, todo, success, failure,
+                                     span);
       }
       if (*cls != pass_class::scalar ||
           literal.lit_kind == token_kind::string_lit) {
@@ -3780,6 +4016,30 @@ private:
     return {};
   }
 
+  /// The local a synthesized drop statement drops (part of), if `stmt` is one.
+  [[nodiscard]] static auto guard_temporary_drop(const hir_node &stmt)
+      -> std::optional<symbol_id> {
+    if (stmt.kind != hir_node_kind::hir_expr_stmt) {
+      return std::nullopt;
+    }
+    const auto *expr = as<hir_expr_stmt>(stmt).expr.get();
+    if (expr == nullptr || expr->kind != hir_node_kind::hir_call) {
+      return std::nullopt;
+    }
+    const auto &call = as<hir_call>(*expr);
+    if (!call.is_drop || call.args.size() != 1 || call.args[0] == nullptr) {
+      return std::nullopt;
+    }
+    const auto *target = call.args[0].get();
+    if (target->kind == hir_node_kind::hir_unary &&
+        (as<hir_unary>(*target).op == ast::unary_op::addr_of ||
+         as<hir_unary>(*target).op == ast::unary_op::addr_of_mut) &&
+        as<hir_unary>(*target).operand != nullptr) {
+      target = as<hir_unary>(*target).operand.get();
+    }
+    return root_symbol(*target);
+  }
+
   /// An arm with a guard. The pattern is tested, then the bindings HIR placed
   /// ahead of the guard run and the guard is evaluated; the body runs when it
   /// holds. A pattern that does not hold, and a guard that does not, both go on
@@ -3803,19 +4063,48 @@ private:
         return malformed(arm.guard->span, "a `match` arm guard with no value");
       }
       condition_expr = as<hir_expr_stmt>(*tail).expr.get();
+      // A failed guard must leave the subject whole, so nothing before the
+      // guard's value may drop the subject or a pattern binding taken from
+      // it. The guard's own temporaries (`mk(14)` in `2 if mk(14).get() ==
+      // 14`) are another matter: the block drops them before its value.
+      auto from_subject = std::vector<symbol_id>{node.subject_symbol};
+      if (node.subject != nullptr) {
+        if (const auto root = root_symbol(*node.subject); root.has_value()) {
+          from_subject.push_back(*root);
+        }
+      }
+      const auto dropped_here = [&](symbol_id symbol) -> bool {
+        return std::ranges::any_of(stmts, [&](const auto &stmt) {
+          return guard_temporary_drop(*stmt) == symbol;
+        });
+      };
       for (size_t i = 0; i + 1 < stmts.size(); ++i) {
-        if (stmts[i]->kind != hir_node_kind::hir_let) {
+        if (stmts[i]->kind == hir_node_kind::hir_let) {
+          const auto &let = as<hir_let>(*stmts[i]);
+          const auto root = let.initializer != nullptr
+                                ? root_symbol(*let.initializer)
+                                : std::nullopt;
+          const auto binds = root.has_value() &&
+                             std::ranges::contains(from_subject, *root);
+          if (binds) {
+            from_subject.push_back(let.symbol);
+          }
+          if (env_.needs_drop(let.type()) &&
+              (binds || !dropped_here(let.symbol))) {
+            return refuse(stmts[i]->span,
+                          "a `match` arm guard on a pattern that binds `" +
+                              let.name + "`, a value that needs a drop");
+          }
+          continue;
+        }
+        const auto dropped = guard_temporary_drop(*stmts[i]);
+        if (!dropped.has_value() ||
+            std::ranges::contains(from_subject, *dropped)) {
           // Something HIR runs before the guard, such as the drop of a payload
           // the pattern does not name; a failed guard would find it done.
           return refuse(stmts[i]->span,
                         "a `match` arm guard on a pattern that drops part of "
                         "the value before the guard is tested");
-        }
-        if (env_.needs_drop(as<hir_let>(*stmts[i]).type())) {
-          return refuse(stmts[i]->span,
-                        "a `match` arm guard on a pattern that binds `" +
-                            as<hir_let>(*stmts[i]).name +
-                            "`, a value that needs a drop");
         }
       }
     }
@@ -4448,6 +4737,10 @@ private:
   std::optional<receiver> owned_receiver_;
   /// A pattern subject that is a part of a value: the place it names.
   std::unordered_map<symbol_id, place> subjects_;
+  /// The pattern subjects reached through a reference (`match &s.hook`,
+  /// `match *r`, or a binding inside one of those): bindings read from them
+  /// name places and never own what they name (ch. 3).
+  std::unordered_set<symbol_id> borrowed_subjects_;
   std::unordered_map<std::string, storage_id> globals_;
   std::vector<pending_temp> pending_;
   /// Temporaries of enclosing expressions, set aside while a nested region

@@ -847,6 +847,22 @@ private:
   [[nodiscard]] auto emit_crew_exits(jump_exit kind, source_span span,
                                      ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
+  /// The result type of a call to `decl`, which `drop` and `push` calls the
+  /// lowering makes itself need: a function declared without a return type
+  /// returns what the checker inferred from its body (`unit` for a `drop`).
+  [[nodiscard]] auto declared_result_type(const ast::func_decl &decl) const
+      -> type_id {
+    if (decl.return_type == nullptr) {
+      const auto inferred = checked_.inferred_return_types.find(&decl);
+      return inferred != checked_.inferred_return_types.end() &&
+                     inferred->second != k_unknown_type
+                 ? inferred->second
+                 : interning_types().builtin("unit");
+    }
+    const auto found = checked_.node_types.find(decl.return_type.get());
+    return found != checked_.node_types.end() ? found->second : k_unknown_type;
+  }
+
   /// The check a task makes after each suspension: when it was cancelled,
   /// drop what it owns and return. `awaited`, if given, are the tasks it was
   /// waiting for, which have stopped by then and are dropped first; `drops`
@@ -3254,16 +3270,6 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
          found->second != k_unknown_type;
 }
 
-[[nodiscard]] auto drop_call_result_type(const checked_types &checked,
-                                         const ast::func_decl &decl)
-    -> type_id {
-  if (decl.return_type == nullptr) {
-    return k_unknown_type;
-  }
-  const auto found = checked.node_types.find(decl.return_type.get());
-  return found != checked.node_types.end() ? found->second : k_unknown_type;
-}
-
 auto lowerer::lower_index(const ast::index_expr &index)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   auto type = checked_type_of(index);
@@ -3304,7 +3310,7 @@ auto lowerer::lower_index(const ast::index_expr &index)
   if (const auto by_ref = checked_.lowering.index_ref_dispatches.find(&index);
       by_ref != checked_.lowering.index_ref_dispatches.end() &&
       !checked_.is_copy(*type)) {
-    const auto cell = drop_call_result_type(checked_, *by_ref->second.decl);
+    const auto cell = declared_result_type(*by_ref->second.decl);
     if (checked_.types.is_unknown(cell)) {
       return fail(lowering_error_kind::unsupported_construct, index.span,
                   "internal error: the `at_ref` that reads this element in "
@@ -3464,7 +3470,7 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
         span, k_unknown_type, symbol, local_name, resolved.owner_module));
     auto args = ptr_vec<hir_expr>{};
     args.push_back(make_receiver());
-    const auto result_type = drop_call_result_type(checked_, *resolved.decl);
+    const auto result_type = declared_result_type(*resolved.decl);
     auto own_drop = direct_call(span, result_type, std::move(callee),
                                 std::move(args), resolved.decl);
     own_drop->is_drop = true;
@@ -3497,8 +3503,17 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
     if (moved_whole) {
       continue;
     }
-    const place_fn field_place = [make_receiver, field_name,
-                                  field_type]() -> ptr<hir_expr> {
+    // A tuple's members are named by position.
+    const auto position =
+        checked_.types.entry(type).kind == semantic::type_kind::tuple_kind
+            ? semantic::tuple_index_of(field_name)
+            : std::nullopt;
+    const place_fn field_place = [make_receiver, field_name, field_type,
+                                  position]() -> ptr<hir_expr> {
+      if (position.has_value()) {
+        return {make<hir_tuple_index>(source_span::dummy(), field_type,
+                                      make_receiver(), *position)};
+      }
       return {make<hir_field>(source_span::dummy(), field_type, make_receiver(),
                               field_name)};
     };
@@ -3909,7 +3924,7 @@ auto lowerer::lower_runtime_fill(
   auto body_stmts = ptr_vec<hir_node>{};
   body_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
       span, call_from_resolved(
-                drop_call_result_type(checked_, *dispatch.push_callee.decl),
+                declared_result_type(*dispatch.push_callee.decl),
                 dispatch.push_callee, std::move(push_args)))));
   auto body = make<hir_block>(span, k_unknown_type, std::move(body_stmts));
 
@@ -5178,7 +5193,7 @@ auto lowerer::lower_crew_errors(const ast::call_expr &call,
   auto err_stmts = ptr_vec<hir_node>{};
   err_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
       span, call_from_resolved(
-                drop_call_result_type(checked_, *dispatch.push_callee.decl),
+                declared_result_type(*dispatch.push_callee.decl),
                 dispatch.push_callee, std::move(push_args)))));
   auto err_pattern_args = ptr_vec<hir_pattern>{};
   err_pattern_args.push_back(
@@ -6654,18 +6669,21 @@ auto lowerer::lower_stmt(const ast::node &node)
     // `self` names the mutated object. Binding it with a `let` re-reads the
     // object rather than reusing the assignment's own target expression
     // (which is now owned by the `hir_assign`), so the check sees the value
-    // the write just produced.
+    // the write just produced. It is a shared borrow, as a method's `self`
+    // is (chapter 3): the object stays where it is.
     auto self_value = clone_place(*object);
     if (!self_value.has_value()) {
       return std::unexpected(self_value.error());
     }
-    const auto object_type = object->type;
+    const auto self_type = interning_types().ref_to(object->type, false);
     const auto self_symbol = mint_symbol();
-    stmts.push_back(ptr<hir_node>(make<hir_let>(assign.span, self_symbol,
-                                                std::string("self"),
-                                                std::move(*self_value))));
+    stmts.push_back(ptr<hir_node>(make<hir_let>(
+        assign.span, self_symbol, std::string("self"),
+        ptr<hir_expr>(hir::make<hir_unary>(assign.span, self_type,
+                                      ast::unary_op::addr_of,
+                                      std::move(*self_value))))));
     auto check =
-        check_invariant_of(*invariant, object_type, self_symbol, assign.span);
+        check_invariant_of(*invariant, self_type, self_symbol, assign.span);
     if (!check.has_value()) {
       return std::unexpected(check.error());
     }
@@ -7881,7 +7899,7 @@ auto lowerer::lower_static_for_inline(const ast::static_decl &decl)
                         ptr_vec<hir_expr>{}),
       /*mut=*/true)));
   const auto push_result =
-      drop_call_result_type(checked_, *dispatch->second.push_callee.decl);
+      declared_result_type(*dispatch->second.push_callee.decl);
   // Each element: a literal computed while checking, or this iteration's
   // copy of the yield, behind a `let` for each loop binding.
   auto values = ptr_vec<hir_expr>{};
@@ -8049,7 +8067,7 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
         span,
         call_from_resolved(
             span,
-            drop_call_result_type(checked_, *dispatch->second.push_callee.decl),
+            declared_result_type(*dispatch->second.push_callee.decl),
             dispatch->second.push_callee, std::move(push_args))));
 
     auto result = ptr_vec<hir_node>{};

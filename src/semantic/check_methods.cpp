@@ -2090,7 +2090,7 @@ auto checker::infer_module_path(const ast::module_path_expr &path) -> type_id {
     if (const auto it = owner->functions.find(path.segments.back());
         it != owner->functions.end()) {
       record_fn_value_reference(path, *it->second.decl, owner->module_name);
-      return fn_type_of(*it->second.decl, owner);
+      return fn_value_type(*it->second.decl, owner);
     }
   }
   return infer_module_static_projection(path);

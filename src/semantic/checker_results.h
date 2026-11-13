@@ -175,7 +175,8 @@ struct reified_value {
 /// What it takes to drop one value of a struct/sum type — see
 /// `checker::resolve_drop_plans` (`check.cpp`). `own_drop` is this type's own
 /// `impl drop`, if it has one; `droppable_fields` are the struct fields (in
-/// declaration order) that are themselves droppable, whether or not this
+/// declaration order), or a tuple's members (named "0", "1", ...), that are
+/// themselves droppable, whether or not this
 /// type has an `own_drop` of its own — the spec's implicit field-wise rule
 /// applies regardless. A sum type instead lists `variant_drops`: for each
 /// variant with a droppable payload slot, that variant's arity and the

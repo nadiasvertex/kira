@@ -27,7 +27,7 @@ Arguments and results cross the boundary through `src/comptime_vm/values.cpp`. E
 
 - **No effects.** A compile-time run uses the VM's hosted mode with effects disallowed. It cannot perform I/O or reach anything outside the VM.
 - **Step budget.** A run stops with a diagnostic when it exceeds a fixed step budget. The diagnostic says this usually means a loop or recursion that never ends.
-- **Host calls for syntax.** Building quoted syntax and calling the `expr.*` builders are host calls (`op_host_call`) from the VM back into the compiler. `src/comptime/fragments.cpp` builds the nodes, and `src/comptime/hygiene.cpp` renames bindings introduced inside a quote so a splice cannot capture names at the splice site.
+- **Host calls for syntax.** Building quoted syntax and calling the `expr.*` builders are host calls (`op_host_call`) from the VM back into the compiler. `src/comptime/fragments.cpp` builds the nodes, and `src/comptime/hygiene.cpp` renames bindings introduced inside a quote so a splice cannot capture names at the splice site. A `~` splice inside a quote is resolved when the quote is evaluated, while the values it reads still exist; this works inside binary and unary operators, calls, `return`, function and impl bodies, and reference types, and a quote whose splices sit anywhere else is refused by name.
 - **Unsupported conversions fail closed.** A value whose type has no conversion yet (closures, slices, types as values) produces an error naming the type.
 
 ## Consistency with the final program

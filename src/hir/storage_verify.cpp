@@ -884,9 +884,13 @@ private:
       if (!layout.has_value()) {
         return here;
       }
+      // A tuple's plan names its members by position.
+      const auto is_tuple =
+          (*layout)->kind == runtime::value_layout_kind::tuple;
       for (const auto &[name, field_type] : plan->droppable_fields) {
         for (size_t i = 0; i < (*layout)->members.size(); ++i) {
-          if ((*layout)->members[i].name != name) {
+          if (is_tuple ? semantic::tuple_index_of(name) != i
+                       : (*layout)->members[i].name != name) {
             continue;
           }
           if (auto owed = first_owed(child_of(member_key(i)), field_type, slot,
@@ -1114,6 +1118,8 @@ private:
       return {};
     case op_kind::if_begin:
       return do_if_begin(op);
+    case op_kind::check:
+      return check_operand(op.condition);
     case op_kind::else_begin:
       return do_else();
     case op_kind::if_end:
@@ -2585,21 +2591,39 @@ private:
 
   /// Whether the next operations write a new value over `target`: after the
   /// drop calls of its other parts and the ends of temporaries, the first
-  /// other operation writes all of `target`.
+  /// other operation writes all of `target`, or a value `target` is part of.
+  /// The drops of a sum's payload sit in the `if` that tested its variant
+  /// (`self.cur = @none` over `@some(inner)`), so the scan leaves enclosing
+  /// `if`s, skipping each `else` branch the path does not take.
   [[nodiscard]] auto replaced_next(const place &target) const -> bool {
-    const auto under_target = [&](const place &where) -> bool {
-      return where.base == target.base &&
-             where.steps.size() >= target.steps.size() &&
-             std::equal(target.steps.begin(), target.steps.end(),
-                        where.steps.begin());
+    const auto prefix_of = [](const place &outer, const place &inner) -> bool {
+      return outer.base == inner.base &&
+             inner.steps.size() >= outer.steps.size() &&
+             std::equal(outer.steps.begin(), outer.steps.end(),
+                        inner.steps.begin());
     };
     for (auto j = op_index_ + 1; j < fn_.ops.size(); ++j) {
       const auto &next = fn_.ops[j];
-      if (next.kind == op_kind::storage_dead) {
+      if (next.kind == op_kind::storage_dead || next.kind == op_kind::if_end) {
+        continue;
+      }
+      if (next.kind == op_kind::else_begin) {
+        // The `then` side ends here: go on after this `if`'s end.
+        auto depth = std::size_t{0};
+        for (++j; j < fn_.ops.size(); ++j) {
+          if (fn_.ops[j].kind == op_kind::if_begin) {
+            ++depth;
+          } else if (fn_.ops[j].kind == op_kind::if_end) {
+            if (depth == 0) {
+              break;
+            }
+            --depth;
+          }
+        }
         continue;
       }
       if (next.kind == op_kind::call_into && next.is_drop &&
-          next.args.size() == 1 && under_target(next.args[0].value.where)) {
+          next.args.size() == 1 && prefix_of(target, next.args[0].value.where)) {
         continue;
       }
       switch (next.kind) {
@@ -2608,7 +2632,8 @@ private:
       case op_kind::compute:
       case op_kind::call_into:
       case op_kind::init_empty:
-        return next.dest == target;
+        return prefix_of(next.dest, target) &&
+               next.dest.steps.size() <= target.steps.size();
       default:
         return false;
       }

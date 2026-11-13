@@ -10,8 +10,10 @@
 namespace cinder::driver {
 
 auto storage_form_enabled() -> bool {
+  // The storage form is the default; `CINDER_STORAGE_FORM=0` selects the
+  // legacy pointer form while it remains.
   const auto *flag = std::getenv("CINDER_STORAGE_FORM");
-  return flag != nullptr && *flag != '\0' && std::string_view{flag} != "0";
+  return flag == nullptr || std::string_view{flag} != "0";
 }
 
 auto prepare_storage_program(std::span<const hir::hir_module *const> modules,

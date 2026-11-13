@@ -1,0 +1,48 @@
+module codegen_stress.replace_payload_through_reference
+
+# expect: 1375
+# storage-max-live-blocks: 0
+
+# Writing a sum through a `&mut` drops the old payload where it stands, inside
+# the test of its variant, and then writes the new value over it:
+# `self.cur = @none` in a method, and `*o = @some(...)` through a parameter.
+# An empty array of droppable elements owns nothing and drops nothing. Every
+# pass builds fresh lists, so a payload that is never dropped leaves blocks
+# behind each time.
+
+type holder = {
+    cur: option[list[int64]],
+}
+
+def one(n: int64) -> list[int64]:
+    var out = list[int64].new()
+    out.push(n)
+    return out
+
+extend holder:
+    def reset(mut self) -> int64:
+        var seen: int64 = 0
+        if let @some(xs) = &self.cur:
+            seen = xs[0]
+        self.cur = @none
+        return seen
+
+def refill(o: &mut option[list[int64]], n: int64) -> unit:
+    *o = @some(one(n))
+
+def pass(i: int64) -> int64:
+    var h = holder{cur: @some(one(i))}
+    let first = h.reset()
+    refill(&mut h.cur, 2)
+    refill(&mut h.cur, 3)
+    let empty: array[list[int64], 0] = []
+    let second = h.reset()
+    return first + second + empty.len() as int64
+
+def main() -> int64:
+    var out: int64 = 0
+    var i: int64 = 0
+    while i < 50:
+        out = out + pass(i)
+        i = i + 1
+    return out

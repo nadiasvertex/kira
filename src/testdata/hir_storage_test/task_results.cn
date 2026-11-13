@@ -41,7 +41,7 @@ def unread_both(n: int64) -> int64:
     let t = make_both(n)
     return n
 
-# A fallible task hands over a `result`, whose drop is not modeled yet.
+# A fallible task holds a `result`, dropped through the variant it holds.
 async def fallible_noisy(n: int64) -> result[noisy, int64]:
     return @ok(noisy { id: n })
 

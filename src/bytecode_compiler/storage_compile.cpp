@@ -804,6 +804,8 @@ private:
       // The call before it does not return; a panic here is the backstop.
       emit_op(opcode::op_panic);
       return {};
+    case op_kind::check:
+      return emit_check(op);
     case op_kind::string_literal:
       return emit_string_literal(op);
     case op_kind::if_begin:
@@ -940,6 +942,37 @@ private:
     emit_register(index);
     writer_.emit_u8(static_cast<uint8_t>(scale));
     return {};
+  }
+
+  /// A contract the checker could not discharge: `op_panic_if` panics when
+  /// its register is true, so the condition is negated first, and the panic
+  /// names which promise broke.
+  [[nodiscard]] auto emit_check(const hir::storage_op &op) -> checked<void> {
+    const auto condition = operand_value(op.condition);
+    if (!condition.has_value()) {
+      return std::unexpected(condition.error());
+    }
+    const auto violated = alloc_register();
+    emit_op(opcode::op_not_bool);
+    emit_register(violated);
+    emit_register(*condition);
+    emit_op(opcode::op_panic_if);
+    emit_register(violated);
+    writer_.emit_u8(static_cast<uint8_t>(contract_panic_reason(op.contract)));
+    return {};
+  }
+
+  [[nodiscard]] static auto contract_panic_reason(hir::check_kind kind) noexcept
+      -> bytecode::panic_reason {
+    switch (kind) {
+    case hir::check_kind::precondition:
+      return bytecode::panic_reason::precondition_violated;
+    case hir::check_kind::postcondition:
+      return bytecode::panic_reason::postcondition_violated;
+    case hir::check_kind::invariant:
+      return bytecode::panic_reason::invariant_violated;
+    }
+    return bytecode::panic_reason::explicit_panic;
   }
 
   /// `checked_index` panics when the value is at or past the limit,

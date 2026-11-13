@@ -75,6 +75,7 @@ auto for_each_place(Op &op, Visit &&visit) -> void {
     }
     return {};
   case op_kind::if_begin:
+  case op_kind::check:
     return address_taken(op.condition) ? "its address is taken" : "";
   case op_kind::call_into:
     if (op.callee.callable.has_value() && op.callee.callable->base == local) {

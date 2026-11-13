@@ -110,6 +110,8 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "return";
   case op_kind::unreachable:
     return "unreachable";
+  case op_kind::check:
+    return "check";
   case op_kind::string_literal:
     return "string";
   case op_kind::if_begin:
@@ -200,8 +202,15 @@ auto storage_env::needs_drop(semantic::type_id type) -> bool {
       }
     }
     return false;
-  case runtime::value_layout_kind::array:
+  case runtime::value_layout_kind::array: {
+    // An empty array holds no element, so it owns nothing (the checker gives
+    // it no drop plan either).
+    const auto &array = checked.types.entry(stripped);
+    if (array.array_size.has_value() && *array.array_size == 0) {
+      return false;
+    }
     return needs_drop(found.element);
+  }
   default:
     return false;
   }
@@ -456,6 +465,12 @@ namespace {
                                 : std::string{"return"};
   case op_kind::unreachable:
     return "unreachable";
+  case op_kind::check: {
+    const auto *what = op.contract == check_kind::precondition    ? "pre"
+                       : op.contract == check_kind::postcondition ? "post"
+                                                                  : "invariant";
+    return std::string{"check "} + what + " " + render_operand(op.condition);
+  }
   case op_kind::string_literal:
     return "string " + render_place(op.dest) + " = " +
            encode_string_literal(op.text);

@@ -1,0 +1,34 @@
+module codegen_stress.str_literal_patterns
+
+# expect: 2009
+
+# A string literal pattern compares the subject's bytes with the literal's:
+# equal length and equal bytes, so a prefix, an empty string, an escape, and
+# a multibyte scalar are each told apart. A literal nested in a tuple pattern
+# is tested only after the tuple's other parts.
+
+def score(word: str) -> int64:
+    match word:
+        "" => 1
+        "/" => 2
+        "\\" => 3
+        "ab" => 4
+        "abc" => 5
+        "é" => 6
+        _ => 7
+
+def pair_score(p: (int64, str)) -> int64:
+    match p:
+        (1, "x") => 100
+        (2, "x") => 200
+        (_, "y") => 300
+        _ => 400
+
+def main() -> int64:
+    let words = ["", "/", "\\", "ab", "abc", "é", "a", "abcd", "e"]
+    var total: int64 = 0
+    var i: usize = 0
+    while i < 9:
+        total = total * 2 + score(words[i])
+        i = i + 1
+    return total + pair_score((1, "x")) + pair_score((2, "x")) + pair_score((5, "y")) + pair_score((1, "z"))

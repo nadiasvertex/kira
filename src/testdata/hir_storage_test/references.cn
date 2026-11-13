@@ -43,3 +43,8 @@ def while_let_break() -> int32:
             break
         total = total + v
     return total
+
+# `*o = @none` drops the old payload inside the `if` that tested its variant,
+# and then writes the whole sum over it.
+def clear(o: &mut option[list[int32]]) -> unit:
+    *o = @none

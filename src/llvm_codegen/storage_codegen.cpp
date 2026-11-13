@@ -744,6 +744,23 @@ private:
       builder_.CreateUnreachable();
       start_dead_block();
       return {};
+    case op_kind::check: {
+      // A contract the checker could not discharge: panic, naming which
+      // promise broke, when the condition is false.
+      const auto condition = operand_value(op.condition);
+      if (!condition.has_value()) {
+        return std::unexpected(condition.error());
+      }
+      const auto reason =
+          op.contract == hir::check_kind::precondition
+              ? bytecode::panic_reason::precondition_violated
+          : op.contract == hir::check_kind::postcondition
+              ? bytecode::panic_reason::postcondition_violated
+              : bytecode::panic_reason::invariant_violated;
+      scalars_.guard_panic(builder_.CreateNot(*condition, "contract.violated"),
+                           reason);
+      return {};
+    }
     case op_kind::string_literal:
       return emit_string_literal(op);
     case op_kind::if_begin:

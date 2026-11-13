@@ -1,7 +1,7 @@
 # inference snapshot
-# 2724 interned types
+# 2726 interned types
 
-## node_types (33841)
+## node_types (33849)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -6678,364 +6678,368 @@ std/deriving.cn:116:23 [literal] bool
 std/deriving.cn:117:16 [binding_pat] field_info
 std/deriving.cn:117:21 [call] list[field_info]
 std/deriving.cn:118:13 [binding_pat] expr
-std/deriving.cn:118:31 [call] expr
-std/deriving.cn:119:13 [call] expr
-std/deriving.cn:119:24 [literal] str
-std/deriving.cn:120:13 [call] expr
-std/deriving.cn:120:24 [call] expr
-std/deriving.cn:120:35 [literal] str
-std/deriving.cn:120:44 [module_path] str
-std/deriving.cn:121:13 [call] expr
-std/deriving.cn:121:24 [call] expr
-std/deriving.cn:121:35 [literal] str
-std/deriving.cn:121:45 [module_path] str
-std/deriving.cn:122:12 [ident] bool
-std/deriving.cn:123:13 [ident] expr
-std/deriving.cn:123:20 [ident] expr
-std/deriving.cn:124:13 [ident] bool
-std/deriving.cn:124:21 [literal] bool
-std/deriving.cn:126:13 [ident] expr
-std/deriving.cn:126:20 [call] expr
-std/deriving.cn:126:30 [call] expr
-std/deriving.cn:126:41 [literal] str
-std/deriving.cn:126:54 [ident] expr
-std/deriving.cn:126:60 [ident] expr
-std/deriving.cn:127:12 [quote] def_expr
-std/deriving.cn:127:29 [call] expr
-std/deriving.cn:127:40 [call] str
-std/deriving.cn:129:21 [ident] expr
-std/deriving.cn:153:36 [quote_type] def_expr
-std/deriving.cn:154:5 [var_stmt] expr
-std/deriving.cn:154:22 [call] expr
-std/deriving.cn:154:36 [call] expr
-std/deriving.cn:154:47 [literal] str
-std/deriving.cn:155:16 [binding_pat] variant_info
-std/deriving.cn:155:21 [call] list[variant_info]
-std/deriving.cn:156:9 [var_stmt] expr
-std/deriving.cn:156:30 [call] expr
-std/deriving.cn:156:39 [module_path] str
-std/deriving.cn:157:12 [module_path] int32
-std/deriving.cn:157:12 [binary] bool
-std/deriving.cn:157:30 [literal] int32
-std/deriving.cn:158:13 [ident] expr
-std/deriving.cn:158:24 [call] expr
-std/deriving.cn:158:43 [ident] expr
-std/deriving.cn:158:53 [call] expr
-std/deriving.cn:158:62 [literal] str
-std/deriving.cn:159:24 [binding_pat] int32
-std/deriving.cn:159:29 [literal] int32
-std/deriving.cn:159:29 [binary] range[int32]
-std/deriving.cn:159:32 [module_path] int32
-std/deriving.cn:160:20 [ident] int32
-std/deriving.cn:160:20 [binary] bool
-std/deriving.cn:160:24 [literal] int32
-std/deriving.cn:161:21 [ident] expr
-std/deriving.cn:161:32 [call] expr
-std/deriving.cn:161:51 [ident] expr
-std/deriving.cn:161:61 [call] expr
-std/deriving.cn:161:70 [literal] str
-std/deriving.cn:162:17 [ident] expr
-std/deriving.cn:162:28 [call] expr
-std/deriving.cn:162:47 [ident] expr
-std/deriving.cn:162:57 [call] expr
-std/deriving.cn:162:68 [interp_string] str
-std/deriving.cn:162:71 [ident] int32
-std/deriving.cn:163:13 [ident] expr
-std/deriving.cn:163:24 [call] expr
-std/deriving.cn:163:43 [ident] expr
-std/deriving.cn:163:53 [call] expr
-std/deriving.cn:163:62 [literal] str
-std/deriving.cn:164:9 [ident] expr
-std/deriving.cn:164:16 [call] expr
-std/deriving.cn:165:13 [ident] expr
-std/deriving.cn:165:19 [call] expr
-std/deriving.cn:165:37 [module_path] str
-std/deriving.cn:165:45 [module_path] int32
-std/deriving.cn:165:62 [literal] str
-std/deriving.cn:165:68 [ident] expr
-std/deriving.cn:166:12 [quote] def_expr
-std/deriving.cn:166:30 [call] expr
-std/deriving.cn:166:41 [call] str
-std/deriving.cn:168:21 [ident] expr
-std/deriving.cn:177:37 [quote_type] def_expr
-std/deriving.cn:178:5 [var_stmt] expr
-std/deriving.cn:178:22 [call] expr
-std/deriving.cn:178:36 [call] expr
-std/deriving.cn:178:47 [literal] str
-std/deriving.cn:179:16 [binding_pat] variant_info
-std/deriving.cn:179:21 [call] list[variant_info]
-std/deriving.cn:180:9 [var_stmt] expr
-std/deriving.cn:180:30 [call] expr
-std/deriving.cn:180:39 [module_path] str
-std/deriving.cn:181:12 [module_path] int32
-std/deriving.cn:181:12 [binary] bool
-std/deriving.cn:181:30 [literal] int32
-std/deriving.cn:182:13 [ident] expr
-std/deriving.cn:182:24 [call] expr
-std/deriving.cn:182:43 [ident] expr
-std/deriving.cn:182:53 [call] expr
-std/deriving.cn:182:62 [literal] str
-std/deriving.cn:183:24 [binding_pat] int32
-std/deriving.cn:183:29 [literal] int32
-std/deriving.cn:183:29 [binary] range[int32]
-std/deriving.cn:183:32 [module_path] int32
-std/deriving.cn:184:20 [ident] int32
-std/deriving.cn:184:20 [binary] bool
-std/deriving.cn:184:24 [literal] int32
-std/deriving.cn:185:21 [ident] expr
-std/deriving.cn:185:32 [call] expr
-std/deriving.cn:185:51 [ident] expr
-std/deriving.cn:185:61 [call] expr
-std/deriving.cn:185:70 [literal] str
-std/deriving.cn:186:17 [ident] expr
-std/deriving.cn:186:28 [call] expr
-std/deriving.cn:187:21 [ident] expr
-std/deriving.cn:187:31 [call] expr
-std/deriving.cn:187:42 [call] expr
-std/deriving.cn:187:53 [interp_string] str
-std/deriving.cn:187:56 [ident] int32
-std/deriving.cn:188:13 [ident] expr
-std/deriving.cn:188:24 [call] expr
-std/deriving.cn:188:43 [ident] expr
-std/deriving.cn:188:53 [call] expr
-std/deriving.cn:188:62 [literal] str
-std/deriving.cn:189:9 [ident] expr
-std/deriving.cn:189:16 [call] expr
-std/deriving.cn:190:13 [ident] expr
-std/deriving.cn:190:19 [call] expr
-std/deriving.cn:190:37 [module_path] str
-std/deriving.cn:190:45 [module_path] int32
-std/deriving.cn:190:62 [literal] str
-std/deriving.cn:190:68 [ident] expr
-std/deriving.cn:191:12 [quote] def_expr
-std/deriving.cn:191:31 [call] expr
-std/deriving.cn:191:42 [call] str
-std/deriving.cn:193:21 [ident] expr
-std/deriving.cn:207:34 [quote_type] def_expr
-std/deriving.cn:208:5 [var_stmt] expr
-std/deriving.cn:208:22 [call] expr
-std/deriving.cn:208:36 [call] expr
-std/deriving.cn:208:47 [literal] str
-std/deriving.cn:209:16 [binding_pat] variant_info
-std/deriving.cn:209:21 [call] list[variant_info]
-std/deriving.cn:210:9 [var_stmt] expr
-std/deriving.cn:210:27 [call] expr
-std/deriving.cn:210:41 [call] expr
-std/deriving.cn:210:52 [literal] str
-std/deriving.cn:211:20 [binding_pat] variant_info
-std/deriving.cn:211:25 [call] list[variant_info]
-std/deriving.cn:212:13 [var_stmt] expr
-std/deriving.cn:212:34 [call] expr
-std/deriving.cn:212:43 [literal] bool
-std/deriving.cn:213:16 [module_path] str
-std/deriving.cn:213:16 [binary] bool
-std/deriving.cn:213:26 [module_path] str
-std/deriving.cn:214:17 [ident] expr
-std/deriving.cn:214:28 [call] expr
-std/deriving.cn:214:37 [literal] bool
-std/deriving.cn:215:28 [binding_pat] int32
-std/deriving.cn:215:33 [literal] int32
-std/deriving.cn:215:33 [binary] range[int32]
-std/deriving.cn:215:36 [module_path] int32
-std/deriving.cn:216:25 [binding_pat] expr
-std/deriving.cn:216:42 [call] expr
-std/deriving.cn:217:25 [literal] str
-std/deriving.cn:217:31 [call] expr
-std/deriving.cn:217:42 [interp_string] str
-std/deriving.cn:217:45 [ident] int32
-std/deriving.cn:217:51 [call] expr
-std/deriving.cn:217:62 [interp_string] str
-std/deriving.cn:217:65 [ident] int32
-std/deriving.cn:218:24 [ident] int32
-std/deriving.cn:218:24 [binary] bool
-std/deriving.cn:218:29 [literal] int32
-std/deriving.cn:219:25 [ident] expr
-std/deriving.cn:219:36 [ident] expr
-std/deriving.cn:221:25 [ident] expr
-std/deriving.cn:221:36 [call] expr
-std/deriving.cn:221:48 [literal] str
-std/deriving.cn:221:55 [ident] expr
-std/deriving.cn:221:65 [ident] expr
-std/deriving.cn:222:13 [ident] expr
-std/deriving.cn:222:21 [call] expr
+std/deriving.cn:118:26 [call] expr
+std/deriving.cn:118:37 [call] expr
+std/deriving.cn:118:48 [literal] str
+std/deriving.cn:118:57 [module_path] str
+std/deriving.cn:119:13 [binding_pat] expr
+std/deriving.cn:119:28 [call] expr
+std/deriving.cn:119:39 [call] expr
+std/deriving.cn:119:50 [literal] str
+std/deriving.cn:119:60 [module_path] str
+std/deriving.cn:120:13 [binding_pat] expr
+std/deriving.cn:120:31 [quote] expr
+std/deriving.cn:120:43 [ident] expr
+std/deriving.cn:120:51 [ident] expr
+std/deriving.cn:121:12 [ident] bool
+std/deriving.cn:122:13 [ident] expr
+std/deriving.cn:122:20 [ident] expr
+std/deriving.cn:123:13 [ident] bool
+std/deriving.cn:123:21 [literal] bool
+std/deriving.cn:125:13 [ident] expr
+std/deriving.cn:125:20 [call] expr
+std/deriving.cn:125:30 [call] expr
+std/deriving.cn:125:41 [literal] str
+std/deriving.cn:125:54 [ident] expr
+std/deriving.cn:125:60 [ident] expr
+std/deriving.cn:126:12 [quote] def_expr
+std/deriving.cn:126:29 [call] expr
+std/deriving.cn:126:40 [call] str
+std/deriving.cn:128:21 [ident] expr
+std/deriving.cn:152:36 [quote_type] def_expr
+std/deriving.cn:153:5 [var_stmt] expr
+std/deriving.cn:153:22 [call] expr
+std/deriving.cn:153:36 [call] expr
+std/deriving.cn:153:47 [literal] str
+std/deriving.cn:154:16 [binding_pat] variant_info
+std/deriving.cn:154:21 [call] list[variant_info]
+std/deriving.cn:155:9 [var_stmt] expr
+std/deriving.cn:155:30 [call] expr
+std/deriving.cn:155:39 [module_path] str
+std/deriving.cn:156:12 [module_path] int32
+std/deriving.cn:156:12 [binary] bool
+std/deriving.cn:156:30 [literal] int32
+std/deriving.cn:157:13 [ident] expr
+std/deriving.cn:157:24 [call] expr
+std/deriving.cn:157:43 [ident] expr
+std/deriving.cn:157:53 [call] expr
+std/deriving.cn:157:62 [literal] str
+std/deriving.cn:158:24 [binding_pat] int32
+std/deriving.cn:158:29 [literal] int32
+std/deriving.cn:158:29 [binary] range[int32]
+std/deriving.cn:158:32 [module_path] int32
+std/deriving.cn:159:20 [ident] int32
+std/deriving.cn:159:20 [binary] bool
+std/deriving.cn:159:24 [literal] int32
+std/deriving.cn:160:21 [ident] expr
+std/deriving.cn:160:32 [call] expr
+std/deriving.cn:160:51 [ident] expr
+std/deriving.cn:160:61 [call] expr
+std/deriving.cn:160:70 [literal] str
+std/deriving.cn:161:17 [ident] expr
+std/deriving.cn:161:28 [call] expr
+std/deriving.cn:161:47 [ident] expr
+std/deriving.cn:161:57 [call] expr
+std/deriving.cn:161:68 [interp_string] str
+std/deriving.cn:161:71 [ident] int32
+std/deriving.cn:162:13 [ident] expr
+std/deriving.cn:162:24 [call] expr
+std/deriving.cn:162:43 [ident] expr
+std/deriving.cn:162:53 [call] expr
+std/deriving.cn:162:62 [literal] str
+std/deriving.cn:163:9 [ident] expr
+std/deriving.cn:163:16 [call] expr
+std/deriving.cn:164:13 [ident] expr
+std/deriving.cn:164:19 [call] expr
+std/deriving.cn:164:37 [module_path] str
+std/deriving.cn:164:45 [module_path] int32
+std/deriving.cn:164:62 [literal] str
+std/deriving.cn:164:68 [ident] expr
+std/deriving.cn:165:12 [quote] def_expr
+std/deriving.cn:165:30 [call] expr
+std/deriving.cn:165:41 [call] str
+std/deriving.cn:167:21 [ident] expr
+std/deriving.cn:176:37 [quote_type] def_expr
+std/deriving.cn:177:5 [var_stmt] expr
+std/deriving.cn:177:22 [call] expr
+std/deriving.cn:177:36 [call] expr
+std/deriving.cn:177:47 [literal] str
+std/deriving.cn:178:16 [binding_pat] variant_info
+std/deriving.cn:178:21 [call] list[variant_info]
+std/deriving.cn:179:9 [var_stmt] expr
+std/deriving.cn:179:30 [call] expr
+std/deriving.cn:179:39 [module_path] str
+std/deriving.cn:180:12 [module_path] int32
+std/deriving.cn:180:12 [binary] bool
+std/deriving.cn:180:30 [literal] int32
+std/deriving.cn:181:13 [ident] expr
+std/deriving.cn:181:24 [call] expr
+std/deriving.cn:181:43 [ident] expr
+std/deriving.cn:181:53 [call] expr
+std/deriving.cn:181:62 [literal] str
+std/deriving.cn:182:24 [binding_pat] int32
+std/deriving.cn:182:29 [literal] int32
+std/deriving.cn:182:29 [binary] range[int32]
+std/deriving.cn:182:32 [module_path] int32
+std/deriving.cn:183:20 [ident] int32
+std/deriving.cn:183:20 [binary] bool
+std/deriving.cn:183:24 [literal] int32
+std/deriving.cn:184:21 [ident] expr
+std/deriving.cn:184:32 [call] expr
+std/deriving.cn:184:51 [ident] expr
+std/deriving.cn:184:61 [call] expr
+std/deriving.cn:184:70 [literal] str
+std/deriving.cn:185:17 [ident] expr
+std/deriving.cn:185:28 [call] expr
+std/deriving.cn:186:21 [ident] expr
+std/deriving.cn:186:31 [call] expr
+std/deriving.cn:186:42 [call] expr
+std/deriving.cn:186:53 [interp_string] str
+std/deriving.cn:186:56 [ident] int32
+std/deriving.cn:187:13 [ident] expr
+std/deriving.cn:187:24 [call] expr
+std/deriving.cn:187:43 [ident] expr
+std/deriving.cn:187:53 [call] expr
+std/deriving.cn:187:62 [literal] str
+std/deriving.cn:188:9 [ident] expr
+std/deriving.cn:188:16 [call] expr
+std/deriving.cn:189:13 [ident] expr
+std/deriving.cn:189:19 [call] expr
+std/deriving.cn:189:37 [module_path] str
+std/deriving.cn:189:45 [module_path] int32
+std/deriving.cn:189:62 [literal] str
+std/deriving.cn:189:68 [ident] expr
+std/deriving.cn:190:12 [quote] def_expr
+std/deriving.cn:190:31 [call] expr
+std/deriving.cn:190:42 [call] str
+std/deriving.cn:192:21 [ident] expr
+std/deriving.cn:206:34 [quote_type] def_expr
+std/deriving.cn:207:5 [var_stmt] expr
+std/deriving.cn:207:22 [call] expr
+std/deriving.cn:207:36 [call] expr
+std/deriving.cn:207:47 [literal] str
+std/deriving.cn:208:16 [binding_pat] variant_info
+std/deriving.cn:208:21 [call] list[variant_info]
+std/deriving.cn:209:9 [var_stmt] expr
+std/deriving.cn:209:27 [call] expr
+std/deriving.cn:209:41 [call] expr
+std/deriving.cn:209:52 [literal] str
+std/deriving.cn:210:20 [binding_pat] variant_info
+std/deriving.cn:210:25 [call] list[variant_info]
+std/deriving.cn:211:13 [var_stmt] expr
+std/deriving.cn:211:34 [call] expr
+std/deriving.cn:211:43 [literal] bool
+std/deriving.cn:212:16 [module_path] str
+std/deriving.cn:212:16 [binary] bool
+std/deriving.cn:212:26 [module_path] str
+std/deriving.cn:213:17 [ident] expr
+std/deriving.cn:213:28 [call] expr
+std/deriving.cn:213:37 [literal] bool
+std/deriving.cn:214:28 [binding_pat] int32
+std/deriving.cn:214:33 [literal] int32
+std/deriving.cn:214:33 [binary] range[int32]
+std/deriving.cn:214:36 [module_path] int32
+std/deriving.cn:215:25 [binding_pat] expr
+std/deriving.cn:215:42 [call] expr
+std/deriving.cn:216:25 [literal] str
+std/deriving.cn:216:31 [call] expr
+std/deriving.cn:216:42 [interp_string] str
+std/deriving.cn:216:45 [ident] int32
+std/deriving.cn:216:51 [call] expr
+std/deriving.cn:216:62 [interp_string] str
+std/deriving.cn:216:65 [ident] int32
+std/deriving.cn:217:24 [ident] int32
+std/deriving.cn:217:24 [binary] bool
+std/deriving.cn:217:29 [literal] int32
+std/deriving.cn:218:25 [ident] expr
+std/deriving.cn:218:36 [ident] expr
+std/deriving.cn:220:25 [ident] expr
+std/deriving.cn:220:36 [call] expr
+std/deriving.cn:220:48 [literal] str
+std/deriving.cn:220:55 [ident] expr
+std/deriving.cn:220:65 [ident] expr
+std/deriving.cn:221:13 [ident] expr
+std/deriving.cn:221:21 [call] expr
+std/deriving.cn:222:17 [ident] expr
+std/deriving.cn:222:24 [call] expr
+std/deriving.cn:222:42 [module_path] str
+std/deriving.cn:222:50 [module_path] int32
+std/deriving.cn:222:67 [literal] str
 std/deriving.cn:223:17 [ident] expr
-std/deriving.cn:223:24 [call] expr
-std/deriving.cn:223:42 [module_path] str
-std/deriving.cn:223:50 [module_path] int32
-std/deriving.cn:223:67 [literal] str
-std/deriving.cn:224:17 [ident] expr
-std/deriving.cn:225:9 [ident] expr
-std/deriving.cn:225:16 [call] expr
-std/deriving.cn:226:13 [ident] expr
-std/deriving.cn:226:19 [call] expr
-std/deriving.cn:226:37 [module_path] str
-std/deriving.cn:226:45 [module_path] int32
-std/deriving.cn:226:62 [literal] str
-std/deriving.cn:226:68 [ident] expr
-std/deriving.cn:227:12 [quote] def_expr
-std/deriving.cn:227:28 [call] expr
-std/deriving.cn:227:39 [call] str
-std/deriving.cn:229:21 [ident] expr
-std/deriving.cn:245:35 [quote_type] def_expr
-std/deriving.cn:246:5 [var_stmt] expr
-std/deriving.cn:246:22 [call] expr
-std/deriving.cn:246:36 [call] expr
-std/deriving.cn:246:47 [literal] str
-std/deriving.cn:247:5 [var_stmt] int32
-std/deriving.cn:247:29 [literal] int32
-std/deriving.cn:248:16 [binding_pat] variant_info
-std/deriving.cn:248:21 [call] list[variant_info]
-std/deriving.cn:249:9 [var_stmt] expr
-std/deriving.cn:249:27 [call] expr
-std/deriving.cn:249:41 [call] expr
-std/deriving.cn:249:52 [literal] str
-std/deriving.cn:250:9 [var_stmt] int32
-std/deriving.cn:250:34 [literal] int32
-std/deriving.cn:251:20 [binding_pat] variant_info
-std/deriving.cn:251:25 [call] list[variant_info]
-std/deriving.cn:252:13 [var_stmt] expr
-std/deriving.cn:252:34 [call] expr
-std/deriving.cn:252:43 [literal] bool
-std/deriving.cn:253:16 [module_path] str
-std/deriving.cn:253:16 [binary] bool
-std/deriving.cn:253:26 [module_path] str
-std/deriving.cn:254:17 [ident] expr
-std/deriving.cn:254:28 [call] expr
-std/deriving.cn:254:38 [call] expr
-std/deriving.cn:254:49 [literal] str
-std/deriving.cn:255:28 [binding_pat] int32
-std/deriving.cn:255:33 [literal] int32
-std/deriving.cn:255:33 [binary] range[int32]
-std/deriving.cn:255:36 [module_path] int32
+std/deriving.cn:224:9 [ident] expr
+std/deriving.cn:224:16 [call] expr
+std/deriving.cn:225:13 [ident] expr
+std/deriving.cn:225:19 [call] expr
+std/deriving.cn:225:37 [module_path] str
+std/deriving.cn:225:45 [module_path] int32
+std/deriving.cn:225:62 [literal] str
+std/deriving.cn:225:68 [ident] expr
+std/deriving.cn:226:12 [quote] def_expr
+std/deriving.cn:226:28 [call] expr
+std/deriving.cn:226:39 [call] str
+std/deriving.cn:228:21 [ident] expr
+std/deriving.cn:244:35 [quote_type] def_expr
+std/deriving.cn:245:5 [var_stmt] expr
+std/deriving.cn:245:22 [call] expr
+std/deriving.cn:245:36 [call] expr
+std/deriving.cn:245:47 [literal] str
+std/deriving.cn:246:5 [var_stmt] int32
+std/deriving.cn:246:29 [literal] int32
+std/deriving.cn:247:16 [binding_pat] variant_info
+std/deriving.cn:247:21 [call] list[variant_info]
+std/deriving.cn:248:9 [var_stmt] expr
+std/deriving.cn:248:27 [call] expr
+std/deriving.cn:248:41 [call] expr
+std/deriving.cn:248:52 [literal] str
+std/deriving.cn:249:9 [var_stmt] int32
+std/deriving.cn:249:34 [literal] int32
+std/deriving.cn:250:20 [binding_pat] variant_info
+std/deriving.cn:250:25 [call] list[variant_info]
+std/deriving.cn:251:13 [var_stmt] expr
+std/deriving.cn:251:34 [call] expr
+std/deriving.cn:251:43 [literal] bool
+std/deriving.cn:252:16 [module_path] str
+std/deriving.cn:252:16 [binary] bool
+std/deriving.cn:252:26 [module_path] str
+std/deriving.cn:253:17 [ident] expr
+std/deriving.cn:253:28 [call] expr
+std/deriving.cn:253:38 [call] expr
+std/deriving.cn:253:49 [literal] str
+std/deriving.cn:254:28 [binding_pat] int32
+std/deriving.cn:254:33 [literal] int32
+std/deriving.cn:254:33 [binary] range[int32]
+std/deriving.cn:254:36 [module_path] int32
+std/deriving.cn:255:25 [binding_pat] expr
+std/deriving.cn:255:38 [call] expr
+std/deriving.cn:255:49 [interp_string] str
+std/deriving.cn:255:52 [ident] int32
 std/deriving.cn:256:25 [binding_pat] expr
-std/deriving.cn:256:43 [call] expr
-std/deriving.cn:257:25 [call] expr
-std/deriving.cn:257:36 [literal] str
-std/deriving.cn:257:48 [call] expr
-std/deriving.cn:257:59 [interp_string] str
-std/deriving.cn:257:62 [ident] int32
-std/deriving.cn:258:25 [call] expr
-std/deriving.cn:258:36 [interp_string] str
-std/deriving.cn:258:39 [ident] int32
-std/deriving.cn:259:24 [ident] int32
-std/deriving.cn:259:24 [binary] bool
-std/deriving.cn:259:29 [literal] int32
-std/deriving.cn:260:25 [ident] expr
-std/deriving.cn:260:36 [ident] expr
-std/deriving.cn:262:25 [ident] expr
-std/deriving.cn:262:36 [call] expr
-std/deriving.cn:263:29 [call] expr
-std/deriving.cn:263:40 [literal] str
-std/deriving.cn:263:53 [ident] expr
-std/deriving.cn:263:63 [ident] expr
-std/deriving.cn:265:20 [ident] int32
-std/deriving.cn:265:20 [binary] bool
-std/deriving.cn:265:33 [ident] int32
-std/deriving.cn:266:21 [ident] expr
-std/deriving.cn:266:32 [call] expr
-std/deriving.cn:266:42 [call] expr
-std/deriving.cn:266:53 [literal] str
-std/deriving.cn:268:21 [ident] expr
-std/deriving.cn:268:32 [call] expr
-std/deriving.cn:268:42 [call] expr
-std/deriving.cn:268:53 [literal] str
-std/deriving.cn:269:13 [ident] expr
-std/deriving.cn:269:21 [call] expr
+std/deriving.cn:256:40 [call] expr
+std/deriving.cn:256:51 [interp_string] str
+std/deriving.cn:256:54 [ident] int32
+std/deriving.cn:257:25 [binding_pat] expr
+std/deriving.cn:257:43 [quote] expr
+std/deriving.cn:257:55 [ident] expr
+std/deriving.cn:257:63 [ident] expr
+std/deriving.cn:258:24 [ident] int32
+std/deriving.cn:258:24 [binary] bool
+std/deriving.cn:258:29 [literal] int32
+std/deriving.cn:259:25 [ident] expr
+std/deriving.cn:259:36 [ident] expr
+std/deriving.cn:261:25 [ident] expr
+std/deriving.cn:261:36 [call] expr
+std/deriving.cn:262:29 [call] expr
+std/deriving.cn:262:40 [literal] str
+std/deriving.cn:262:53 [ident] expr
+std/deriving.cn:262:63 [ident] expr
+std/deriving.cn:264:20 [ident] int32
+std/deriving.cn:264:20 [binary] bool
+std/deriving.cn:264:33 [ident] int32
+std/deriving.cn:265:21 [ident] expr
+std/deriving.cn:265:32 [call] expr
+std/deriving.cn:265:42 [call] expr
+std/deriving.cn:265:53 [literal] str
+std/deriving.cn:267:21 [ident] expr
+std/deriving.cn:267:32 [call] expr
+std/deriving.cn:267:42 [call] expr
+std/deriving.cn:267:53 [literal] str
+std/deriving.cn:268:13 [ident] expr
+std/deriving.cn:268:21 [call] expr
+std/deriving.cn:269:17 [ident] expr
+std/deriving.cn:269:24 [call] expr
+std/deriving.cn:269:42 [module_path] str
+std/deriving.cn:269:50 [module_path] int32
+std/deriving.cn:269:67 [literal] str
 std/deriving.cn:270:17 [ident] expr
-std/deriving.cn:270:24 [call] expr
-std/deriving.cn:270:42 [module_path] str
-std/deriving.cn:270:50 [module_path] int32
-std/deriving.cn:270:67 [literal] str
-std/deriving.cn:271:17 [ident] expr
-std/deriving.cn:272:13 [ident] int32
-std/deriving.cn:272:27 [ident] int32
-std/deriving.cn:272:27 [binary] int32
-std/deriving.cn:272:41 [literal] int32
-std/deriving.cn:273:9 [ident] expr
-std/deriving.cn:273:16 [call] expr
-std/deriving.cn:274:13 [ident] expr
-std/deriving.cn:274:19 [call] expr
-std/deriving.cn:274:37 [module_path] str
-std/deriving.cn:274:45 [module_path] int32
-std/deriving.cn:274:62 [literal] str
-std/deriving.cn:274:68 [ident] expr
-std/deriving.cn:275:9 [ident] int32
-std/deriving.cn:275:22 [ident] int32
-std/deriving.cn:275:22 [binary] int32
-std/deriving.cn:275:35 [literal] int32
-std/deriving.cn:276:12 [quote] def_expr
-std/deriving.cn:276:29 [call] expr
-std/deriving.cn:276:40 [call] str
-std/deriving.cn:278:21 [ident] expr
-std/deriving.cn:295:32 [quote_type] def_expr
-std/deriving.cn:296:5 [var_stmt] expr
-std/deriving.cn:296:22 [call] expr
-std/deriving.cn:296:32 [call] expr
-std/deriving.cn:296:43 [literal] str
-std/deriving.cn:297:16 [binding_pat] field_info
-std/deriving.cn:297:21 [call] list[field_info]
+std/deriving.cn:271:13 [ident] int32
+std/deriving.cn:271:27 [ident] int32
+std/deriving.cn:271:27 [binary] int32
+std/deriving.cn:271:41 [literal] int32
+std/deriving.cn:272:9 [ident] expr
+std/deriving.cn:272:16 [call] expr
+std/deriving.cn:273:13 [ident] expr
+std/deriving.cn:273:19 [call] expr
+std/deriving.cn:273:37 [module_path] str
+std/deriving.cn:273:45 [module_path] int32
+std/deriving.cn:273:62 [literal] str
+std/deriving.cn:273:68 [ident] expr
+std/deriving.cn:274:9 [ident] int32
+std/deriving.cn:274:22 [ident] int32
+std/deriving.cn:274:22 [binary] int32
+std/deriving.cn:274:35 [literal] int32
+std/deriving.cn:275:12 [quote] def_expr
+std/deriving.cn:275:29 [call] expr
+std/deriving.cn:275:40 [call] str
+std/deriving.cn:277:21 [ident] expr
+std/deriving.cn:294:32 [quote_type] def_expr
+std/deriving.cn:295:5 [var_stmt] expr
+std/deriving.cn:295:22 [call] expr
+std/deriving.cn:295:32 [call] expr
+std/deriving.cn:295:43 [literal] str
+std/deriving.cn:296:16 [binding_pat] field_info
+std/deriving.cn:296:21 [call] list[field_info]
+std/deriving.cn:297:13 [binding_pat] expr
+std/deriving.cn:297:27 [call] expr
+std/deriving.cn:297:38 [call] expr
+std/deriving.cn:297:49 [literal] str
+std/deriving.cn:297:58 [module_path] str
 std/deriving.cn:298:9 [ident] expr
 std/deriving.cn:298:16 [call] expr
 std/deriving.cn:299:13 [call] expr
 std/deriving.cn:299:24 [literal] str
 std/deriving.cn:299:41 [ident] expr
-std/deriving.cn:300:13 [call] expr
-std/deriving.cn:301:17 [call] expr
-std/deriving.cn:301:28 [literal] str
-std/deriving.cn:302:17 [call] expr
-std/deriving.cn:302:28 [call] expr
-std/deriving.cn:302:39 [literal] str
-std/deriving.cn:302:48 [module_path] str
-std/deriving.cn:303:12 [quote] def_expr
-std/deriving.cn:303:30 [call] expr
-std/deriving.cn:303:41 [call] str
-std/deriving.cn:305:21 [ident] expr
-std/deriving.cn:318:36 [quote_type] def_expr
-std/deriving.cn:319:5 [var_stmt] expr
-std/deriving.cn:319:22 [call] expr
-std/deriving.cn:319:36 [call] expr
-std/deriving.cn:319:47 [literal] str
-std/deriving.cn:320:5 [var_stmt] int32
-std/deriving.cn:320:24 [literal] int32
-std/deriving.cn:321:16 [binding_pat] variant_info
-std/deriving.cn:321:21 [call] list[variant_info]
-std/deriving.cn:322:9 [var_stmt] expr
-std/deriving.cn:322:30 [call] expr
-std/deriving.cn:323:13 [call] expr
-std/deriving.cn:323:24 [literal] str
-std/deriving.cn:323:37 [call] expr
-std/deriving.cn:323:46 [ident] int32
-std/deriving.cn:324:20 [binding_pat] int32
-std/deriving.cn:324:25 [literal] int32
-std/deriving.cn:324:25 [binary] range[int32]
-std/deriving.cn:324:28 [module_path] int32
-std/deriving.cn:325:13 [ident] expr
-std/deriving.cn:325:24 [call] expr
-std/deriving.cn:326:17 [call] expr
-std/deriving.cn:326:28 [literal] str
-std/deriving.cn:326:45 [ident] expr
-std/deriving.cn:327:17 [call] expr
-std/deriving.cn:327:27 [call] expr
-std/deriving.cn:327:38 [literal] str
-std/deriving.cn:327:53 [call] expr
-std/deriving.cn:327:64 [interp_string] str
-std/deriving.cn:327:67 [ident] int32
-std/deriving.cn:328:9 [ident] expr
-std/deriving.cn:328:16 [call] expr
-std/deriving.cn:329:13 [ident] expr
-std/deriving.cn:329:19 [call] expr
-std/deriving.cn:329:37 [module_path] str
-std/deriving.cn:329:45 [module_path] int32
-std/deriving.cn:329:62 [literal] str
-std/deriving.cn:329:68 [ident] expr
-std/deriving.cn:330:9 [ident] int32
-std/deriving.cn:330:17 [ident] int32
-std/deriving.cn:330:17 [binary] int32
-std/deriving.cn:330:25 [literal] int32
-std/deriving.cn:331:12 [quote] def_expr
-std/deriving.cn:331:30 [call] expr
-std/deriving.cn:331:41 [call] str
-std/deriving.cn:333:21 [ident] expr
+std/deriving.cn:299:47 [quote] expr
+std/deriving.cn:299:62 [ident] expr
+std/deriving.cn:300:12 [quote] def_expr
+std/deriving.cn:300:30 [call] expr
+std/deriving.cn:300:41 [call] str
+std/deriving.cn:302:21 [ident] expr
+std/deriving.cn:315:36 [quote_type] def_expr
+std/deriving.cn:316:5 [var_stmt] expr
+std/deriving.cn:316:22 [call] expr
+std/deriving.cn:316:36 [call] expr
+std/deriving.cn:316:47 [literal] str
+std/deriving.cn:317:5 [var_stmt] int32
+std/deriving.cn:317:24 [literal] int32
+std/deriving.cn:318:16 [binding_pat] variant_info
+std/deriving.cn:318:21 [call] list[variant_info]
+std/deriving.cn:319:9 [var_stmt] expr
+std/deriving.cn:319:30 [call] expr
+std/deriving.cn:320:13 [call] expr
+std/deriving.cn:320:24 [literal] str
+std/deriving.cn:320:37 [call] expr
+std/deriving.cn:320:46 [ident] int32
+std/deriving.cn:321:20 [binding_pat] int32
+std/deriving.cn:321:25 [literal] int32
+std/deriving.cn:321:25 [binary] range[int32]
+std/deriving.cn:321:28 [module_path] int32
+std/deriving.cn:322:17 [binding_pat] expr
+std/deriving.cn:322:33 [call] expr
+std/deriving.cn:322:44 [interp_string] str
+std/deriving.cn:322:47 [ident] int32
+std/deriving.cn:323:13 [ident] expr
+std/deriving.cn:323:24 [call] expr
+std/deriving.cn:324:17 [call] expr
+std/deriving.cn:324:28 [literal] str
+std/deriving.cn:324:45 [ident] expr
+std/deriving.cn:325:17 [quote] expr
+std/deriving.cn:325:32 [ident] expr
+std/deriving.cn:326:9 [ident] expr
+std/deriving.cn:326:16 [call] expr
+std/deriving.cn:327:13 [ident] expr
+std/deriving.cn:327:19 [call] expr
+std/deriving.cn:327:37 [module_path] str
+std/deriving.cn:327:45 [module_path] int32
+std/deriving.cn:327:62 [literal] str
+std/deriving.cn:327:68 [ident] expr
+std/deriving.cn:328:9 [ident] int32
+std/deriving.cn:328:17 [ident] int32
+std/deriving.cn:328:17 [binary] int32
+std/deriving.cn:328:25 [literal] int32
+std/deriving.cn:329:12 [quote] def_expr
+std/deriving.cn:329:30 [call] expr
+std/deriving.cn:329:41 [call] str
+std/deriving.cn:331:21 [ident] expr
 std/fmt.cn:31:16 [binding_pat] str
 std/fmt.cn:31:27 [named_type] usize
 std/fmt.cn:32:12 [ident] fn(str) -> usize
@@ -14660,223 +14664,223 @@ std/traits.hash.cn:54:13 [ident] uint64
 std/traits.hash.cn:54:13 [binary] uint64
 std/traits.hash.cn:54:19 [ident] uint64
 std/traits.hash.cn:54:28 [literal] uint64
-std/traits.hash.cn:65:23 [binding_pat] T
-std/traits.hash.cn:65:32 [named_type] uint64
-std/traits.hash.cn:66:12 [ident] T
-std/traits.hash.cn:66:12 [field] fn() -> uint64
-std/traits.hash.cn:66:12 [call] uint64
-std/traits.hash.cn:78:18 [binding_pat] uint64
-std/traits.hash.cn:78:32 [named_type] uint64
-std/traits.hash.cn:79:12 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:79:12 [call] uint64
-std/traits.hash.cn:79:25 [ident] fn() -> uint64
-std/traits.hash.cn:79:25 [call] uint64
-std/traits.hash.cn:79:38 [ident] uint64
-std/traits.hash.cn:104:24 [binding_pat] float64
-std/traits.hash.cn:104:39 [named_type] uint64
-std/traits.hash.cn:105:8 [ident] float64
-std/traits.hash.cn:105:8 [binary] bool
-std/traits.hash.cn:105:13 [literal] float64
-std/traits.hash.cn:106:16 [literal] uint64
+std/traits.hash.cn:67:23 [binding_pat] &T
+std/traits.hash.cn:67:33 [named_type] uint64
+std/traits.hash.cn:68:12 [ident] &T
+std/traits.hash.cn:68:12 [field] fn() -> uint64
+std/traits.hash.cn:68:12 [call] uint64
+std/traits.hash.cn:80:18 [binding_pat] uint64
+std/traits.hash.cn:80:32 [named_type] uint64
+std/traits.hash.cn:81:12 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:81:12 [call] uint64
+std/traits.hash.cn:81:25 [ident] fn() -> uint64
+std/traits.hash.cn:81:25 [call] uint64
+std/traits.hash.cn:81:38 [ident] uint64
+std/traits.hash.cn:106:24 [binding_pat] float64
+std/traits.hash.cn:106:39 [named_type] uint64
 std/traits.hash.cn:107:8 [ident] float64
 std/traits.hash.cn:107:8 [binary] bool
-std/traits.hash.cn:107:13 [ident] float64
+std/traits.hash.cn:107:13 [literal] float64
 std/traits.hash.cn:108:16 [literal] uint64
-std/traits.hash.cn:109:12 [ident] fn(float64) -> uint64
-std/traits.hash.cn:109:12 [call] uint64
-std/traits.hash.cn:109:34 [ident] float64
-std/traits.hash.cn:116:24 [binding_pat] float32
-std/traits.hash.cn:116:39 [named_type] uint32
-std/traits.hash.cn:117:8 [ident] float32
-std/traits.hash.cn:117:8 [binary] bool
-std/traits.hash.cn:117:13 [literal] float32
-std/traits.hash.cn:118:16 [literal] uint32
+std/traits.hash.cn:109:8 [ident] float64
+std/traits.hash.cn:109:8 [binary] bool
+std/traits.hash.cn:109:13 [ident] float64
+std/traits.hash.cn:110:16 [literal] uint64
+std/traits.hash.cn:111:12 [ident] fn(float64) -> uint64
+std/traits.hash.cn:111:12 [call] uint64
+std/traits.hash.cn:111:34 [ident] float64
+std/traits.hash.cn:118:24 [binding_pat] float32
+std/traits.hash.cn:118:39 [named_type] uint32
 std/traits.hash.cn:119:8 [ident] float32
 std/traits.hash.cn:119:8 [binary] bool
-std/traits.hash.cn:119:13 [ident] float32
+std/traits.hash.cn:119:13 [literal] float32
 std/traits.hash.cn:120:16 [literal] uint32
-std/traits.hash.cn:121:12 [ident] fn(float32) -> uint32
-std/traits.hash.cn:121:12 [call] uint32
-std/traits.hash.cn:121:34 [ident] float32
-std/traits.hash.cn:124:14 [binding_pat] bool
-std/traits.hash.cn:124:23 [named_type] uint64
-std/traits.hash.cn:125:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:125:16 [call] uint64
-std/traits.hash.cn:125:29 [ident] fn() -> uint64
-std/traits.hash.cn:125:29 [call] uint64
-std/traits.hash.cn:125:42 [ident] bool
-std/traits.hash.cn:125:42 [cast] uint64
-std/traits.hash.cn:128:14 [binding_pat] char
-std/traits.hash.cn:128:23 [named_type] uint64
-std/traits.hash.cn:129:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:129:16 [call] uint64
-std/traits.hash.cn:129:29 [ident] fn() -> uint64
-std/traits.hash.cn:129:29 [call] uint64
-std/traits.hash.cn:129:42 [ident] char
-std/traits.hash.cn:129:42 [cast] uint64
-std/traits.hash.cn:132:14 [binding_pat] byte
-std/traits.hash.cn:132:23 [named_type] uint64
-std/traits.hash.cn:133:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:133:16 [call] uint64
-std/traits.hash.cn:133:29 [ident] fn() -> uint64
-std/traits.hash.cn:133:29 [call] uint64
-std/traits.hash.cn:133:42 [ident] byte
-std/traits.hash.cn:133:42 [cast] uint64
-std/traits.hash.cn:136:14 [binding_pat] int8
-std/traits.hash.cn:136:23 [named_type] uint64
-std/traits.hash.cn:137:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:137:16 [call] uint64
-std/traits.hash.cn:137:29 [ident] fn() -> uint64
-std/traits.hash.cn:137:29 [call] uint64
-std/traits.hash.cn:137:42 [ident] int8
-std/traits.hash.cn:137:42 [cast] uint64
-std/traits.hash.cn:140:14 [binding_pat] int16
-std/traits.hash.cn:140:23 [named_type] uint64
-std/traits.hash.cn:141:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:141:16 [call] uint64
-std/traits.hash.cn:141:29 [ident] fn() -> uint64
-std/traits.hash.cn:141:29 [call] uint64
-std/traits.hash.cn:141:42 [ident] int16
-std/traits.hash.cn:141:42 [cast] uint64
-std/traits.hash.cn:144:14 [binding_pat] int32
-std/traits.hash.cn:144:23 [named_type] uint64
-std/traits.hash.cn:145:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:145:16 [call] uint64
-std/traits.hash.cn:145:29 [ident] fn() -> uint64
-std/traits.hash.cn:145:29 [call] uint64
-std/traits.hash.cn:145:42 [ident] int32
-std/traits.hash.cn:145:42 [cast] uint64
-std/traits.hash.cn:148:14 [binding_pat] int64
-std/traits.hash.cn:148:23 [named_type] uint64
-std/traits.hash.cn:149:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:149:16 [call] uint64
-std/traits.hash.cn:149:29 [ident] fn() -> uint64
-std/traits.hash.cn:149:29 [call] uint64
-std/traits.hash.cn:149:42 [ident] int64
-std/traits.hash.cn:149:42 [cast] uint64
-std/traits.hash.cn:152:14 [binding_pat] int128
-std/traits.hash.cn:152:23 [named_type] uint64
-std/traits.hash.cn:153:13 [binding_pat] uint128
-std/traits.hash.cn:153:20 [ident] int128
-std/traits.hash.cn:153:20 [cast] uint128
-std/traits.hash.cn:154:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:154:16 [call] uint64
-std/traits.hash.cn:154:29 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:154:29 [call] uint64
-std/traits.hash.cn:154:42 [ident] fn() -> uint64
-std/traits.hash.cn:154:42 [call] uint64
-std/traits.hash.cn:154:55 [ident] uint128
-std/traits.hash.cn:154:55 [cast] uint64
-std/traits.hash.cn:154:72 [group] uint128
-std/traits.hash.cn:154:72 [cast] uint64
-std/traits.hash.cn:154:73 [ident] uint128
-std/traits.hash.cn:154:73 [binary] uint128
-std/traits.hash.cn:154:81 [literal] uint128
-std/traits.hash.cn:157:14 [binding_pat] uint128
-std/traits.hash.cn:157:23 [named_type] uint64
-std/traits.hash.cn:158:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:158:16 [call] uint64
-std/traits.hash.cn:158:29 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:158:29 [call] uint64
-std/traits.hash.cn:158:42 [ident] fn() -> uint64
-std/traits.hash.cn:158:42 [call] uint64
-std/traits.hash.cn:158:55 [ident] uint128
-std/traits.hash.cn:158:55 [cast] uint64
-std/traits.hash.cn:158:72 [group] uint128
-std/traits.hash.cn:158:72 [cast] uint64
-std/traits.hash.cn:158:73 [ident] uint128
-std/traits.hash.cn:158:73 [binary] uint128
-std/traits.hash.cn:158:81 [literal] uint128
-std/traits.hash.cn:161:14 [binding_pat] isize
-std/traits.hash.cn:161:23 [named_type] uint64
-std/traits.hash.cn:162:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:162:16 [call] uint64
-std/traits.hash.cn:162:29 [ident] fn() -> uint64
-std/traits.hash.cn:162:29 [call] uint64
-std/traits.hash.cn:162:42 [ident] isize
-std/traits.hash.cn:162:42 [cast] uint64
-std/traits.hash.cn:165:14 [binding_pat] uint8
-std/traits.hash.cn:165:23 [named_type] uint64
-std/traits.hash.cn:166:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:166:16 [call] uint64
-std/traits.hash.cn:166:29 [ident] fn() -> uint64
-std/traits.hash.cn:166:29 [call] uint64
-std/traits.hash.cn:166:42 [ident] uint8
-std/traits.hash.cn:166:42 [cast] uint64
-std/traits.hash.cn:169:14 [binding_pat] uint16
-std/traits.hash.cn:169:23 [named_type] uint64
-std/traits.hash.cn:170:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:170:16 [call] uint64
-std/traits.hash.cn:170:29 [ident] fn() -> uint64
-std/traits.hash.cn:170:29 [call] uint64
-std/traits.hash.cn:170:42 [ident] uint16
-std/traits.hash.cn:170:42 [cast] uint64
-std/traits.hash.cn:173:14 [binding_pat] uint32
-std/traits.hash.cn:173:23 [named_type] uint64
-std/traits.hash.cn:174:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:174:16 [call] uint64
-std/traits.hash.cn:174:29 [ident] fn() -> uint64
-std/traits.hash.cn:174:29 [call] uint64
-std/traits.hash.cn:174:42 [ident] uint32
-std/traits.hash.cn:174:42 [cast] uint64
-std/traits.hash.cn:177:14 [binding_pat] uint64
-std/traits.hash.cn:177:23 [named_type] uint64
-std/traits.hash.cn:178:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:178:16 [call] uint64
-std/traits.hash.cn:178:29 [ident] fn() -> uint64
-std/traits.hash.cn:178:29 [call] uint64
-std/traits.hash.cn:178:42 [ident] uint64
-std/traits.hash.cn:181:14 [binding_pat] usize
-std/traits.hash.cn:181:23 [named_type] uint64
-std/traits.hash.cn:182:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:182:16 [call] uint64
-std/traits.hash.cn:182:29 [ident] fn() -> uint64
-std/traits.hash.cn:182:29 [call] uint64
-std/traits.hash.cn:182:42 [ident] usize
-std/traits.hash.cn:182:42 [cast] uint64
-std/traits.hash.cn:185:14 [binding_pat] float64
-std/traits.hash.cn:185:23 [named_type] uint64
-std/traits.hash.cn:186:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:186:16 [call] uint64
-std/traits.hash.cn:186:29 [ident] fn() -> uint64
-std/traits.hash.cn:186:29 [call] uint64
-std/traits.hash.cn:186:42 [ident] fn(float64) -> uint64
-std/traits.hash.cn:186:42 [call] uint64
-std/traits.hash.cn:186:61 [ident] float64
-std/traits.hash.cn:189:14 [binding_pat] float32
-std/traits.hash.cn:189:23 [named_type] uint64
-std/traits.hash.cn:190:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:190:16 [call] uint64
-std/traits.hash.cn:190:29 [ident] fn() -> uint64
-std/traits.hash.cn:190:29 [call] uint64
-std/traits.hash.cn:190:42 [ident] fn(float32) -> uint32
-std/traits.hash.cn:190:42 [call] uint32
-std/traits.hash.cn:190:42 [cast] uint64
-std/traits.hash.cn:190:61 [ident] float32
-std/traits.hash.cn:197:14 [binding_pat] &str
-std/traits.hash.cn:197:23 [named_type] uint64
-std/traits.hash.cn:198:9 [var_stmt] uint64
-std/traits.hash.cn:198:25 [ident] fn() -> uint64
-std/traits.hash.cn:198:25 [call] uint64
-std/traits.hash.cn:199:9 [var_stmt] usize
-std/traits.hash.cn:199:24 [literal] usize
-std/traits.hash.cn:200:15 [ident] usize
-std/traits.hash.cn:200:15 [binary] bool
-std/traits.hash.cn:200:19 [ident] &str
-std/traits.hash.cn:200:19 [call] usize
-std/traits.hash.cn:201:13 [ident] uint64
-std/traits.hash.cn:201:17 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:201:17 [call] uint64
-std/traits.hash.cn:201:30 [ident] uint64
-std/traits.hash.cn:201:33 [ident] &str
-std/traits.hash.cn:201:33 [index] byte
-std/traits.hash.cn:201:33 [cast] uint64
-std/traits.hash.cn:201:38 [ident] usize
-std/traits.hash.cn:202:13 [ident] usize
-std/traits.hash.cn:202:17 [ident] usize
-std/traits.hash.cn:202:17 [binary] usize
-std/traits.hash.cn:202:21 [literal] usize
-std/traits.hash.cn:203:16 [ident] uint64
+std/traits.hash.cn:121:8 [ident] float32
+std/traits.hash.cn:121:8 [binary] bool
+std/traits.hash.cn:121:13 [ident] float32
+std/traits.hash.cn:122:16 [literal] uint32
+std/traits.hash.cn:123:12 [ident] fn(float32) -> uint32
+std/traits.hash.cn:123:12 [call] uint32
+std/traits.hash.cn:123:34 [ident] float32
+std/traits.hash.cn:126:14 [binding_pat] bool
+std/traits.hash.cn:126:23 [named_type] uint64
+std/traits.hash.cn:127:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:127:16 [call] uint64
+std/traits.hash.cn:127:29 [ident] fn() -> uint64
+std/traits.hash.cn:127:29 [call] uint64
+std/traits.hash.cn:127:42 [ident] bool
+std/traits.hash.cn:127:42 [cast] uint64
+std/traits.hash.cn:130:14 [binding_pat] char
+std/traits.hash.cn:130:23 [named_type] uint64
+std/traits.hash.cn:131:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:131:16 [call] uint64
+std/traits.hash.cn:131:29 [ident] fn() -> uint64
+std/traits.hash.cn:131:29 [call] uint64
+std/traits.hash.cn:131:42 [ident] char
+std/traits.hash.cn:131:42 [cast] uint64
+std/traits.hash.cn:134:14 [binding_pat] byte
+std/traits.hash.cn:134:23 [named_type] uint64
+std/traits.hash.cn:135:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:135:16 [call] uint64
+std/traits.hash.cn:135:29 [ident] fn() -> uint64
+std/traits.hash.cn:135:29 [call] uint64
+std/traits.hash.cn:135:42 [ident] byte
+std/traits.hash.cn:135:42 [cast] uint64
+std/traits.hash.cn:138:14 [binding_pat] int8
+std/traits.hash.cn:138:23 [named_type] uint64
+std/traits.hash.cn:139:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:139:16 [call] uint64
+std/traits.hash.cn:139:29 [ident] fn() -> uint64
+std/traits.hash.cn:139:29 [call] uint64
+std/traits.hash.cn:139:42 [ident] int8
+std/traits.hash.cn:139:42 [cast] uint64
+std/traits.hash.cn:142:14 [binding_pat] int16
+std/traits.hash.cn:142:23 [named_type] uint64
+std/traits.hash.cn:143:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:143:16 [call] uint64
+std/traits.hash.cn:143:29 [ident] fn() -> uint64
+std/traits.hash.cn:143:29 [call] uint64
+std/traits.hash.cn:143:42 [ident] int16
+std/traits.hash.cn:143:42 [cast] uint64
+std/traits.hash.cn:146:14 [binding_pat] int32
+std/traits.hash.cn:146:23 [named_type] uint64
+std/traits.hash.cn:147:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:147:16 [call] uint64
+std/traits.hash.cn:147:29 [ident] fn() -> uint64
+std/traits.hash.cn:147:29 [call] uint64
+std/traits.hash.cn:147:42 [ident] int32
+std/traits.hash.cn:147:42 [cast] uint64
+std/traits.hash.cn:150:14 [binding_pat] int64
+std/traits.hash.cn:150:23 [named_type] uint64
+std/traits.hash.cn:151:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:151:16 [call] uint64
+std/traits.hash.cn:151:29 [ident] fn() -> uint64
+std/traits.hash.cn:151:29 [call] uint64
+std/traits.hash.cn:151:42 [ident] int64
+std/traits.hash.cn:151:42 [cast] uint64
+std/traits.hash.cn:154:14 [binding_pat] int128
+std/traits.hash.cn:154:23 [named_type] uint64
+std/traits.hash.cn:155:13 [binding_pat] uint128
+std/traits.hash.cn:155:20 [ident] int128
+std/traits.hash.cn:155:20 [cast] uint128
+std/traits.hash.cn:156:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:156:16 [call] uint64
+std/traits.hash.cn:156:29 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:156:29 [call] uint64
+std/traits.hash.cn:156:42 [ident] fn() -> uint64
+std/traits.hash.cn:156:42 [call] uint64
+std/traits.hash.cn:156:55 [ident] uint128
+std/traits.hash.cn:156:55 [cast] uint64
+std/traits.hash.cn:156:72 [group] uint128
+std/traits.hash.cn:156:72 [cast] uint64
+std/traits.hash.cn:156:73 [ident] uint128
+std/traits.hash.cn:156:73 [binary] uint128
+std/traits.hash.cn:156:81 [literal] uint128
+std/traits.hash.cn:159:14 [binding_pat] uint128
+std/traits.hash.cn:159:23 [named_type] uint64
+std/traits.hash.cn:160:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:160:16 [call] uint64
+std/traits.hash.cn:160:29 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:160:29 [call] uint64
+std/traits.hash.cn:160:42 [ident] fn() -> uint64
+std/traits.hash.cn:160:42 [call] uint64
+std/traits.hash.cn:160:55 [ident] uint128
+std/traits.hash.cn:160:55 [cast] uint64
+std/traits.hash.cn:160:72 [group] uint128
+std/traits.hash.cn:160:72 [cast] uint64
+std/traits.hash.cn:160:73 [ident] uint128
+std/traits.hash.cn:160:73 [binary] uint128
+std/traits.hash.cn:160:81 [literal] uint128
+std/traits.hash.cn:163:14 [binding_pat] isize
+std/traits.hash.cn:163:23 [named_type] uint64
+std/traits.hash.cn:164:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:164:16 [call] uint64
+std/traits.hash.cn:164:29 [ident] fn() -> uint64
+std/traits.hash.cn:164:29 [call] uint64
+std/traits.hash.cn:164:42 [ident] isize
+std/traits.hash.cn:164:42 [cast] uint64
+std/traits.hash.cn:167:14 [binding_pat] uint8
+std/traits.hash.cn:167:23 [named_type] uint64
+std/traits.hash.cn:168:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:168:16 [call] uint64
+std/traits.hash.cn:168:29 [ident] fn() -> uint64
+std/traits.hash.cn:168:29 [call] uint64
+std/traits.hash.cn:168:42 [ident] uint8
+std/traits.hash.cn:168:42 [cast] uint64
+std/traits.hash.cn:171:14 [binding_pat] uint16
+std/traits.hash.cn:171:23 [named_type] uint64
+std/traits.hash.cn:172:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:172:16 [call] uint64
+std/traits.hash.cn:172:29 [ident] fn() -> uint64
+std/traits.hash.cn:172:29 [call] uint64
+std/traits.hash.cn:172:42 [ident] uint16
+std/traits.hash.cn:172:42 [cast] uint64
+std/traits.hash.cn:175:14 [binding_pat] uint32
+std/traits.hash.cn:175:23 [named_type] uint64
+std/traits.hash.cn:176:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:176:16 [call] uint64
+std/traits.hash.cn:176:29 [ident] fn() -> uint64
+std/traits.hash.cn:176:29 [call] uint64
+std/traits.hash.cn:176:42 [ident] uint32
+std/traits.hash.cn:176:42 [cast] uint64
+std/traits.hash.cn:179:14 [binding_pat] uint64
+std/traits.hash.cn:179:23 [named_type] uint64
+std/traits.hash.cn:180:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:180:16 [call] uint64
+std/traits.hash.cn:180:29 [ident] fn() -> uint64
+std/traits.hash.cn:180:29 [call] uint64
+std/traits.hash.cn:180:42 [ident] uint64
+std/traits.hash.cn:183:14 [binding_pat] usize
+std/traits.hash.cn:183:23 [named_type] uint64
+std/traits.hash.cn:184:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:184:16 [call] uint64
+std/traits.hash.cn:184:29 [ident] fn() -> uint64
+std/traits.hash.cn:184:29 [call] uint64
+std/traits.hash.cn:184:42 [ident] usize
+std/traits.hash.cn:184:42 [cast] uint64
+std/traits.hash.cn:187:14 [binding_pat] float64
+std/traits.hash.cn:187:23 [named_type] uint64
+std/traits.hash.cn:188:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:188:16 [call] uint64
+std/traits.hash.cn:188:29 [ident] fn() -> uint64
+std/traits.hash.cn:188:29 [call] uint64
+std/traits.hash.cn:188:42 [ident] fn(float64) -> uint64
+std/traits.hash.cn:188:42 [call] uint64
+std/traits.hash.cn:188:61 [ident] float64
+std/traits.hash.cn:191:14 [binding_pat] float32
+std/traits.hash.cn:191:23 [named_type] uint64
+std/traits.hash.cn:192:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:192:16 [call] uint64
+std/traits.hash.cn:192:29 [ident] fn() -> uint64
+std/traits.hash.cn:192:29 [call] uint64
+std/traits.hash.cn:192:42 [ident] fn(float32) -> uint32
+std/traits.hash.cn:192:42 [call] uint32
+std/traits.hash.cn:192:42 [cast] uint64
+std/traits.hash.cn:192:61 [ident] float32
+std/traits.hash.cn:199:14 [binding_pat] &str
+std/traits.hash.cn:199:23 [named_type] uint64
+std/traits.hash.cn:200:9 [var_stmt] uint64
+std/traits.hash.cn:200:25 [ident] fn() -> uint64
+std/traits.hash.cn:200:25 [call] uint64
+std/traits.hash.cn:201:9 [var_stmt] usize
+std/traits.hash.cn:201:24 [literal] usize
+std/traits.hash.cn:202:15 [ident] usize
+std/traits.hash.cn:202:15 [binary] bool
+std/traits.hash.cn:202:19 [ident] &str
+std/traits.hash.cn:202:19 [call] usize
+std/traits.hash.cn:203:13 [ident] uint64
+std/traits.hash.cn:203:17 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:203:17 [call] uint64
+std/traits.hash.cn:203:30 [ident] uint64
+std/traits.hash.cn:203:33 [ident] &str
+std/traits.hash.cn:203:33 [index] byte
+std/traits.hash.cn:203:33 [cast] uint64
+std/traits.hash.cn:203:38 [ident] usize
+std/traits.hash.cn:204:13 [ident] usize
+std/traits.hash.cn:204:17 [ident] usize
+std/traits.hash.cn:204:17 [binary] usize
+std/traits.hash.cn:204:21 [literal] usize
+std/traits.hash.cn:205:16 [ident] uint64
 std/traits.index.cn:54:12 [binding_pat] self
 std/traits.index.cn:54:18 [binding_pat] I
 std/traits.index.cn:54:27 [named_type] _
@@ -14973,34 +14977,38 @@ std/traits.ord.cn:11:35 [named_type] bool
 std/traits.ord.cn:30:13 [binding_pat] self
 std/traits.ord.cn:30:19 [binding_pat] &self
 std/traits.ord.cn:30:36 [named_type] ordering
-std/traits.ord.cn:56:20 [binding_pat] T
-std/traits.ord.cn:56:26 [binding_pat] T
-std/traits.ord.cn:56:35 [named_type] ordering
-std/traits.ord.cn:57:8 [ident] T
-std/traits.ord.cn:57:8 [binary] bool
-std/traits.ord.cn:57:12 [ident] T
-std/traits.ord.cn:58:16 [ident] ordering
-std/traits.ord.cn:59:8 [ident] T
+std/traits.ord.cn:58:20 [binding_pat] &T
+std/traits.ord.cn:58:27 [binding_pat] &T
+std/traits.ord.cn:58:37 [named_type] ordering
+std/traits.ord.cn:59:8 [unary] T
 std/traits.ord.cn:59:8 [binary] bool
-std/traits.ord.cn:59:12 [ident] T
+std/traits.ord.cn:59:9 [ident] &T
+std/traits.ord.cn:59:13 [unary] T
+std/traits.ord.cn:59:14 [ident] &T
 std/traits.ord.cn:60:16 [ident] ordering
-std/traits.ord.cn:61:12 [ident] ordering
-std/traits.ord.cn:73:18 [binding_pat] ordering
-std/traits.ord.cn:73:35 [binding_pat] ordering
-std/traits.ord.cn:73:54 [named_type] ordering
-std/traits.ord.cn:74:11 [ident] ordering
-std/traits.ord.cn:75:9 [ctor_pat] ordering
-std/traits.ord.cn:75:26 [ident] ordering
-std/traits.ord.cn:76:9 [ctor_pat] ordering
-std/traits.ord.cn:76:25 [ident] ordering
+std/traits.ord.cn:61:8 [unary] T
+std/traits.ord.cn:61:8 [binary] bool
+std/traits.ord.cn:61:9 [ident] &T
+std/traits.ord.cn:61:13 [unary] T
+std/traits.ord.cn:61:14 [ident] &T
+std/traits.ord.cn:62:16 [ident] ordering
+std/traits.ord.cn:63:12 [ident] ordering
+std/traits.ord.cn:75:18 [binding_pat] ordering
+std/traits.ord.cn:75:35 [binding_pat] ordering
+std/traits.ord.cn:75:54 [named_type] ordering
+std/traits.ord.cn:76:11 [ident] ordering
 std/traits.ord.cn:77:9 [ctor_pat] ordering
-std/traits.ord.cn:77:28 [ident] ordering
-std/traits.ord.cn:85:24 [named_type] ordering
-std/traits.ord.cn:86:12 [ident] ordering
-std/traits.ord.cn:94:23 [named_type] ordering
-std/traits.ord.cn:95:12 [ident] ordering
-std/traits.ord.cn:103:26 [named_type] ordering
-std/traits.ord.cn:104:12 [ident] ordering
+std/traits.ord.cn:77:26 [ident] ordering
+std/traits.ord.cn:78:9 [ctor_pat] ordering
+std/traits.ord.cn:78:25 [ident] ordering
+std/traits.ord.cn:79:9 [ctor_pat] ordering
+std/traits.ord.cn:79:28 [ident] ordering
+std/traits.ord.cn:87:24 [named_type] ordering
+std/traits.ord.cn:88:12 [ident] ordering
+std/traits.ord.cn:96:23 [named_type] ordering
+std/traits.ord.cn:97:12 [ident] ordering
+std/traits.ord.cn:105:26 [named_type] ordering
+std/traits.ord.cn:106:12 [ident] ordering
 std/traits.scalar.cn:8:12 [binding_pat] bool
 std/traits.scalar.cn:8:18 [binding_pat] &bool
 std/traits.scalar.cn:8:35 [named_type] bool
@@ -35085,51 +35093,51 @@ std/traits.category.cn:219:12 [call] ()
 std/traits.cn:64:5 [call] ()
 std/traits.cn:64:23 [call] ()
 std/traits.cn:64:38 [call] ()
-std/traits.hash.cn:66:12 [call] ()
-std/traits.hash.cn:79:12 [call] (acc=arg, next=arg)
-std/traits.hash.cn:79:25 [call] ()
-std/traits.hash.cn:109:12 [call] (v=arg)
-std/traits.hash.cn:121:12 [call] (v=arg)
-std/traits.hash.cn:125:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:125:29 [call] ()
-std/traits.hash.cn:129:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:129:29 [call] ()
-std/traits.hash.cn:133:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:133:29 [call] ()
-std/traits.hash.cn:137:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:137:29 [call] ()
-std/traits.hash.cn:141:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:141:29 [call] ()
-std/traits.hash.cn:145:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:145:29 [call] ()
-std/traits.hash.cn:149:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:149:29 [call] ()
-std/traits.hash.cn:154:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:154:29 [call] (acc=arg, next=arg)
-std/traits.hash.cn:154:42 [call] ()
-std/traits.hash.cn:158:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:158:29 [call] (acc=arg, next=arg)
-std/traits.hash.cn:158:42 [call] ()
-std/traits.hash.cn:162:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:162:29 [call] ()
-std/traits.hash.cn:166:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:166:29 [call] ()
-std/traits.hash.cn:170:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:170:29 [call] ()
-std/traits.hash.cn:174:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:174:29 [call] ()
-std/traits.hash.cn:178:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:178:29 [call] ()
-std/traits.hash.cn:182:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:182:29 [call] ()
-std/traits.hash.cn:186:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:186:29 [call] ()
-std/traits.hash.cn:186:42 [call] (v=arg)
-std/traits.hash.cn:190:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:190:29 [call] ()
-std/traits.hash.cn:190:42 [call] (v=arg)
-std/traits.hash.cn:198:25 [call] ()
-std/traits.hash.cn:201:17 [call] (acc=arg, next=arg)
+std/traits.hash.cn:68:12 [call] ()
+std/traits.hash.cn:81:12 [call] (acc=arg, next=arg)
+std/traits.hash.cn:81:25 [call] ()
+std/traits.hash.cn:111:12 [call] (v=arg)
+std/traits.hash.cn:123:12 [call] (v=arg)
+std/traits.hash.cn:127:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:127:29 [call] ()
+std/traits.hash.cn:131:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:131:29 [call] ()
+std/traits.hash.cn:135:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:135:29 [call] ()
+std/traits.hash.cn:139:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:139:29 [call] ()
+std/traits.hash.cn:143:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:143:29 [call] ()
+std/traits.hash.cn:147:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:147:29 [call] ()
+std/traits.hash.cn:151:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:151:29 [call] ()
+std/traits.hash.cn:156:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:156:29 [call] (acc=arg, next=arg)
+std/traits.hash.cn:156:42 [call] ()
+std/traits.hash.cn:160:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:160:29 [call] (acc=arg, next=arg)
+std/traits.hash.cn:160:42 [call] ()
+std/traits.hash.cn:164:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:164:29 [call] ()
+std/traits.hash.cn:168:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:168:29 [call] ()
+std/traits.hash.cn:172:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:172:29 [call] ()
+std/traits.hash.cn:176:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:176:29 [call] ()
+std/traits.hash.cn:180:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:180:29 [call] ()
+std/traits.hash.cn:184:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:184:29 [call] ()
+std/traits.hash.cn:188:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:188:29 [call] ()
+std/traits.hash.cn:188:42 [call] (v=arg)
+std/traits.hash.cn:192:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:192:29 [call] ()
+std/traits.hash.cn:192:42 [call] (v=arg)
+std/traits.hash.cn:200:25 [call] ()
+std/traits.hash.cn:203:17 [call] (acc=arg, next=arg)
 std/unicode.cn:48:12 [call] (cp=arg)
 std/unicode.cn:63:13 [call] (value=arg)
 std/unicode.cn:67:13 [call] (value=arg)
@@ -35752,8 +35760,8 @@ std/time.cn:63:23 [call] std.intrinsics::rt_monotonic_now
 std/time.cn:75:11 [call] std.intrinsics::rt_sleep_until
 std/time.cn:75:26 [call] std.intrinsics::rt_monotonic_now
 std/time.cn:80:11 [call] std.intrinsics::rt_sleep_until
-std/traits.hash.cn:109:12 [call] std.intrinsics::rt_bitcast_f64_to_u64
-std/traits.hash.cn:121:12 [call] std.intrinsics::rt_bitcast_f32_to_u32
+std/traits.hash.cn:111:12 [call] std.intrinsics::rt_bitcast_f64_to_u64
+std/traits.hash.cn:123:12 [call] std.intrinsics::rt_bitcast_f32_to_u32
 std/unicode.cn:63:13 [call] std.list::list::push$list_uint32_ recv
 std/unicode.cn:67:13 [call] std.list::list::push$list_uint32_ recv
 std/unicode.cn:72:13 [call] std.list::list::push$list_uint32_ recv
@@ -35783,8 +35791,8 @@ std/unicode.cn:277:13 [call] std.list::list::len$list_uint32_ recv
 110_instances_by_substitution.cn:100:15 [binary] std.string::str::eq recv
 110_instances_by_substitution.cn:100:15 [binary] std.string::str::eq recv
 110_instances_by_substitution.cn:100:15 [binary] std.string::str::eq recv
-std/deriving.cn:213:16 [binary] std.string::str::eq recv
-std/deriving.cn:253:16 [binary] std.string::str::eq recv
+std/deriving.cn:212:16 [binary] std.string::str::eq recv
+std/deriving.cn:252:16 [binary] std.string::str::eq recv
 std/limits.cn:38:15 [binary] std.string::str::eq recv
 std/limits.cn:40:15 [binary] std.string::str::eq recv
 std/limits.cn:42:15 [binary] std.string::str::eq recv
@@ -36094,13 +36102,13 @@ std/unicode.cn:58:29 [array] std.list::list::from_array$0$list_uint32_ from arra
 110_instances_by_substitution.cn:112:15 [ident] show spec=' ' value=int64
 110_instances_by_substitution.cn:112:15 [ident] trait_method spec=' ' value=T
 110_instances_by_substitution.cn:112:15 [ident] trait_method spec=' ' value=money -> codegen_stress.instances_by_substitution::money::show
-std/deriving.cn:162:71 [ident] show spec=' ' value=int32
-std/deriving.cn:187:56 [ident] show spec=' ' value=int32
-std/deriving.cn:217:45 [ident] show spec=' ' value=int32
-std/deriving.cn:217:65 [ident] show spec=' ' value=int32
-std/deriving.cn:257:62 [ident] show spec=' ' value=int32
-std/deriving.cn:258:39 [ident] show spec=' ' value=int32
-std/deriving.cn:327:67 [ident] show spec=' ' value=int32
+std/deriving.cn:161:71 [ident] show spec=' ' value=int32
+std/deriving.cn:186:56 [ident] show spec=' ' value=int32
+std/deriving.cn:216:45 [ident] show spec=' ' value=int32
+std/deriving.cn:216:65 [ident] show spec=' ' value=int32
+std/deriving.cn:255:52 [ident] show spec=' ' value=int32
+std/deriving.cn:256:54 [ident] show spec=' ' value=int32
+std/deriving.cn:322:47 [ident] show spec=' ' value=int32
 std/test.cn:29:29 [ident] trait_method spec=' ' value=T
 std/test.cn:29:43 [ident] trait_method spec=' ' value=T
 std/test.cn:36:29 [ident] trait_method spec=' ' value=T
@@ -36548,7 +36556,10 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (832)
+## drop_plans (835)
+(list[T], list[T]) own=- fields=[0: list[T], 1: list[T]]
+(sender[T], receiver[T]) own=- fields=[0: sender[T], 1: receiver[T]]
+(watch_writer[T], watch_reader[T]) own=- fields=[0: watch_writer[T], 1: watch_reader[T]]
 array[test_suite, 1] own=- fields=[]
 async_file own=std.io::async_file::drop fields=[]
 async_pipe_ends own=- fields=[reader: async_file, writer: async_file]
@@ -37382,8 +37393,10 @@ write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (2052)
+## borrow_bearing_types (2054)
 &K
+&T
+&T
 &T
 &T
 &T

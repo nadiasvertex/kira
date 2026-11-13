@@ -224,6 +224,10 @@ struct closure_capture {
   size_t offset = 0;   ///< Bytes into the environment block.
 };
 
+/// The promise a `check` operation tests: a `pre`, `post`, or `invariant`
+/// contract the checker could not discharge.
+enum class check_kind : uint8_t { precondition, postcondition, invariant };
+
 enum class op_kind : uint8_t {
   compute,         ///< `dest` <- a scalar computed from operands.
   init_empty,      ///< `dest` <- a zero-sized value.
@@ -284,6 +288,8 @@ enum class op_kind : uint8_t {
   return_value,    ///< Leaves the function; see `value`.
   unreachable,     ///< Never runs: the operation before it (a call that
                    ///< returns `never`) does not return. Ends the path.
+  check,           ///< Panics, naming `contract`, unless `condition` (a
+                   ///< `bool`) is true.
   // Structured control flow. The markers nest like brackets in the flat
   // operation list; the verifier joins the initialization state where
   // branches meet.
@@ -347,8 +353,10 @@ struct storage_op {
   bool shallow = false;
   abi_signature signature{};
   std::vector<call_argument> args{};
-  // if_begin
+  // if_begin, check
   operand condition{};
+  // check
+  check_kind contract = check_kind::precondition;
   // exit
   size_t depth = 0;
   // coroutine_await, task_block_on_group

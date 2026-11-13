@@ -569,6 +569,26 @@ auto checker::resolve_drop_plan(type_id id,
                      .element_pointer = session_.types_.ptr_to(element, true),
                      .length = length};
   }
+  if (entry.kind == type_kind::tuple_kind) {
+    // A tuple owns its members, so it needs a drop exactly when one of them
+    // does. Members are named by position ("0", "1", ...), as `t.0` names
+    // them in a moved path.
+    if (!visiting.insert(id).second) {
+      return std::nullopt;
+    }
+    auto plan = drop_plan{};
+    const auto members = entry.args; // copy: resolving may intern
+    for (std::size_t i = 0; i < members.size(); ++i) {
+      if (resolve_drop_plan(members[i], visiting).has_value()) {
+        plan.droppable_fields.emplace_back(std::to_string(i), members[i]);
+      }
+    }
+    visiting.erase(id);
+    if (plan.droppable_fields.empty()) {
+      return std::nullopt;
+    }
+    return plan;
+  }
   const auto is_prelude_sum =
       entry.kind == type_kind::builtin_generic_kind &&
       ((entry.name == "option" && entry.args.size() == 1) ||

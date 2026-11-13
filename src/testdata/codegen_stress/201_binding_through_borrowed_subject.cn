@@ -1,0 +1,38 @@
+module codegen_stress.binding_through_borrowed_subject
+
+# expect: 3860
+# storage-max-live-blocks: 0
+
+# `match &h.hook` on an owned `h` borrows the field, so the binding `f` names
+# the closure in place (ch. 3) and never owns it. Each closure owns a list it
+# captured by move, and `h` drops it once at the end of its iteration. A
+# binding that moved the closure out would drop it in the arm as well, or
+# leave `h` owing a drop on only one path.
+
+type holder = { pub name: int64, pub hook: option[fn() -> int64] }
+
+def make(n: int64) -> fn() -> int64:
+    var xs = list[int64].new()
+    xs.push(n)
+    xs.push(n * 2)
+    return move () => xs[0] + xs[1]
+
+def build() -> list[holder]:
+    var hs = list[holder].new()
+    hs.push(holder { name: 1, hook: @some(make(10)) })
+    hs.push(holder { name: 2, hook: @none })
+    hs.push(holder { name: 3, hook: @some(make(100)) })
+    return hs
+
+def run(hs: list[holder]) -> int64:
+    var total: int64 = 0
+    for h in hs:
+        match &h.hook:
+            @some(f) =>:
+                total = total + f() * h.name
+            @none =>:
+                total = total + 1000
+    return total
+
+def main() -> int64:
+    return run(build()) + run(build())

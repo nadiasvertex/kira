@@ -25,11 +25,10 @@ struct storage_program {
   std::vector<const hir::storage_module *> modules;
 };
 
-/// Whether the driver runs and builds programs through the storage form
-/// (`CINDER_STORAGE_FORM=1`) rather than the pointer-per-aggregate form. A
-/// whole program takes one form or the other (spec/value-semantics.md,
-/// decision 6). The storage form becomes the only one once the driver's
-/// suites pass through it.
+/// Whether the driver runs and builds programs through the storage form, the
+/// default, rather than the pointer-per-aggregate form (`CINDER_STORAGE_FORM=0`).
+/// A whole program takes one form or the other (spec/value-semantics.md,
+/// decision 6). The pointer form is removed by T-14.
 [[nodiscard]] auto storage_form_enabled() -> bool;
 
 /// Lowers `modules` (the entry module first, then every module it reaches)

@@ -192,3 +192,13 @@
 wed_element_needs_a_load.cn
 190_bindings_through_references.cn
 191_variant_payload_from_sibling_argument.cn
+192_tuple_member_drops.cn
+193_destructure_indexed_element.cn
+194_replace_payload_through_reference.cn
+195_str_literal_patterns.cn
+196_or_pattern_on_droppable.cn
+197_field_of_call_and_guard_temporary.cn
+198_unread_fallible_task_drops_result.cn
+199_unannotated_drop_across_await.cn
+200_unproven_contracts_hold.cn
+201_binding_through_borrowed_subject.cn

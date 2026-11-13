@@ -1393,11 +1393,10 @@ auto test_patterns_on_droppable_sums_test_only_the_variant() -> void {
   expect(tuple != nullptr &&
              tuple->message.find("which needs a drop") != std::string::npos,
          "expected a pattern on a tuple that needs a drop to be refused");
-  const auto *either = f->refusal("either");
-  expect(either != nullptr &&
-             either->message.find("or-pattern or a range") !=
-                 std::string::npos,
-         "expected an or-pattern on a droppable sum to be refused by name");
+  expect(f->refusal("either") == nullptr,
+         "expected an or-pattern of supported tests on a droppable sum to "
+         "lower");
+  expect_verifies(*f, f->function("either"), "either");
 }
 
 auto test_places_reached_through_references() -> void {
@@ -1446,6 +1445,23 @@ auto test_places_reached_through_references() -> void {
   // The `break` drops the subject's temporary, the failed pattern leaves it
   // held, and its live flag tells the two exits apart.
   expect_verifies(*f, f->function("while_let_break"), "while_let_break");
+
+  // `*o = @none` over a payload that needs a drop: the payload's drops sit in
+  // the `if` on its variant, and the write over the whole sum follows it.
+  expect_verifies(*f, f->function("clear"), "clear");
+  auto unwritten = f->function("clear");
+  auto last_move = unwritten.ops.size();
+  for (std::size_t i = 0; i < unwritten.ops.size(); ++i) {
+    if (unwritten.ops[i].kind == hir::op_kind::move_into) {
+      last_move = i;
+    }
+  }
+  expect(last_move < unwritten.ops.size(),
+         "expected `*o = @none` to move the new value in");
+  unwritten.ops.erase(unwritten.ops.begin() +
+                      static_cast<std::ptrdiff_t>(last_move));
+  expect_rejects(*f, unwritten, hir::verify_error_kind::move_from_reference,
+                 "a payload dropped through a reference that nothing replaces");
 }
 
 auto test_verifier_follows_the_variant_a_droppable_sum_holds() -> void {
@@ -3486,8 +3502,19 @@ auto test_a_crew_waits_for_its_tasks() -> void {
 
 auto test_dropping_a_task_drops_its_unread_result() -> void {
   auto f = build(read_program("task_results.cn"));
-  expect(f->lowering.refused.size() == 2,
-         "expected only the fallible and nested-sum handles to be refused");
+  expect(f->lowering.refused.size() == 1,
+         "expected only the nested-sum handle to be refused");
+  // A fallible task holds `result[T, E]`; its unread item is dropped through
+  // the variant it holds, as a sum result is.
+  expect_ops(*f, "unread_fallible",
+             {"call s1 = fallible_noisy(s0)", "compute s2 = copy s0",
+              "call s3 = rt_task_is_finished(s1)", "if s3", "dead s3",
+              "has_item s4 = s1", "if s4", "dead s4", "take s5 <- s1",
+              "test s6 = s5 is @ok", "if s6", "dead s6",
+              "call.drop s7 = noisy::drop(&s5.@ok.0)", "dead s7", "else",
+              "dead s6", "end_if", "dead s5", "else", "dead s4", "end_if",
+              "else", "dead s3", "end_if", "drop s1", "return s2"});
+  expect_verifies(*f, f->function("unread_fallible"), "unread_fallible");
   const auto *nested = f->refusal("unread_nested");
   expect(nested != nullptr &&
              nested->message.find("inside another value") != std::string::npos,
@@ -3545,12 +3572,6 @@ auto test_dropping_a_task_drops_its_unread_result() -> void {
     tests += op.kind == hir::op_kind::test_variant ? 1U : 0U;
   }
   expect(tests == 2, "expected one tag test per variant that owns drops");
-
-  // A result whose drop is not modeled is refused by name, never leaked.
-  const auto *fallible = f->refusal("unread_fallible");
-  expect(fallible != nullptr &&
-             fallible->message.find("needs a drop") != std::string::npos,
-         "expected the drop of a fallible task result to be refused");
 
   // The result is taken out of the task, so it owes its own drop.
   auto leaked = f->function("unread_noisy");

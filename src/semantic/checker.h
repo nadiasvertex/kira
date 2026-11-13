@@ -2840,6 +2840,12 @@ private:
                                  const ast::func_decl &decl,
                                  std::string_view owner_module) -> void;
 
+  /// The `fn` type of a module-level function named as a value, read under
+  /// the file that declares it, so its signature sees that file's imports
+  /// rather than the referring file's.
+  auto fn_value_type(const ast::func_decl &decl, const module_members *owner)
+      -> type_id;
+
   auto record_static_const_reference(const ast::expr &reference,
                                      const ast::static_decl &decl, type_id type,
                                      std::string_view owner_module) -> void;

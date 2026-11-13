@@ -158,6 +158,7 @@ def tuple_subject(n: int32) -> int32:
         (_, 0) => 1
         (_, k) => k
 
+# An or-pattern whose alternatives are each a supported test.
 def either(n: int32) -> int32:
     let d = make_duo(n)
     return match d:

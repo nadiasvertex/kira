@@ -1,0 +1,39 @@
+module codegen_stress.or_pattern_on_droppable
+
+# expect: 1775
+# storage-max-live-blocks: 0
+
+# An or-pattern on a sum whose payloads need a drop: each alternative tests
+# its own variant, and whichever matched, the value is dropped once after the
+# arm. Every pass builds fresh lists, so a payload that is never dropped (or
+# one dropped as the wrong variant) shows up in the block count or the value.
+
+type shape = @line(list[int64]) | @ring(list[int64]) | @dot(int64) | @none_yet
+
+def one(n: int64) -> list[int64]:
+    var out = list[int64].new()
+    out.push(n)
+    return out
+
+def make(k: int64) -> shape:
+    if k % 4 == 0:
+        return @line(one(k))
+    if k % 4 == 1:
+        return @ring(one(k))
+    if k % 4 == 2:
+        return @dot(k)
+    return @none_yet
+
+def classify(k: int64) -> int64:
+    match make(k):
+        @line(_) | @ring(_) => 10
+        @dot(n) => n
+        @none_yet => 1
+
+def main() -> int64:
+    var out: int64 = 0
+    var k: int64 = 0
+    while k < 100:
+        out = out + classify(k)
+        k = k + 1
+    return out
