@@ -28,6 +28,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <print>
 #include <set>
 #include <span>
 #include <sstream>
@@ -466,6 +467,14 @@ auto survey(const fs::path &path) -> verdict {
     const auto checked =
         hir::verify(*module, *p->env, hir::verify_options{.program = program_span});
     if (!checked.has_value()) {
+      // `CINDER_STORAGE_DUMP=1` prints the function the verifier rejected.
+      if (std::getenv("CINDER_STORAGE_DUMP") != nullptr) {
+        for (const auto &function : module->functions) {
+          if (function.name == checked.error().function) {
+            std::println(stderr, "{}", hir::dump(function, p->checked.types));
+          }
+        }
+      }
       return {.status = std::format("unverified {}: {}", checked.error().function,
                                     checked.error().message)};
     }

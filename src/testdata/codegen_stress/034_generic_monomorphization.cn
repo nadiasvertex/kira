@@ -20,10 +20,11 @@ def zeros[n: usize]() -> array[int32, n]:
 #  Mixed value + type generics
 # --------------------------------------------------------------------------
 
-def filled[n: usize, T](v: T) -> array[T, n]:
+# An array fill repeats `v`, so `T` must be `copy`.
+def filled[n: usize, T: copy](v: T) -> array[T, n]:
     [v; n]
 
-def first[n: usize, T](v: array[T, n], i: index[n]) -> T:
+def first[n: usize, T: copy](v: &array[T, n], i: index[n]) -> T:
     v[i]
 
 # --------------------------------------------------------------------------
@@ -34,7 +35,7 @@ type holder = { base: int32 }
 
 extend holder:
     # Const-generic method: `n` is pinned by the argument's type.
-    def at[n: usize](self, v: array[int32, n], i: index[n]) -> int32:
+    def at[n: usize](self, v: &array[int32, n], i: index[n]) -> int32:
         v[i] + self.base
 
     # Type-generic method that is not higher-kinded.
@@ -42,9 +43,10 @@ extend holder:
         x
 
     # Both kinds at once, on a method.
-    def pick[n: usize, T](self, v: array[T, n], i: index[n]) -> T:
+    def pick[n: usize, T: copy](self, v: &array[T, n], i: index[n]) -> T:
         v[i]
 
+# expect: 22
 def main() -> int32:
     let h = holder { base: 1 }
 
@@ -55,10 +57,10 @@ def main() -> int32:
     # `filled$4$int32` — one constant and one type in the same instance name.
     let c = filled[4, int32](7) # [7, 7, 7, 7]
 
-    let via_free = first(c, 2)  # 7
-    let via_method = h.at(b, 1) # 5 + 1 = 6
-    let via_echo = h.echo(2)    # 2
-    let via_mixed = h.pick(c, 0) # 7
+    let via_free = first(&c, 2)  # 7
+    let via_method = h.at(&b, 1) # 5 + 1 = 6
+    let via_echo = h.echo(2)     # 2
+    let via_mixed = h.pick(&c, 0) # 7
 
     # 0 + 7 + 6 + 2 + 7 = 22
     return a[0] + via_free + via_method + via_echo + via_mixed

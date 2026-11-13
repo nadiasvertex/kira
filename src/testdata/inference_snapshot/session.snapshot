@@ -1,7 +1,7 @@
 # inference snapshot
-# 2702 interned types
+# 2721 interned types
 
-## node_types (33811)
+## node_types (33818)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -280,33 +280,33 @@
 033_const_generic_monomorphization.cn:3:43 [ident] usize
 033_const_generic_monomorphization.cn:3:43 [literal] usize
 033_const_generic_monomorphization.cn:3:43 [literal] usize
-033_const_generic_monomorphization.cn:9:19 [binding_pat] array[int32, 3]
-033_const_generic_monomorphization.cn:9:19 [binding_pat] array[int32, 5]
-033_const_generic_monomorphization.cn:9:19 [binding_pat] array[int32, n]
-033_const_generic_monomorphization.cn:9:39 [binding_pat] usize
-033_const_generic_monomorphization.cn:9:39 [binding_pat] usize
-033_const_generic_monomorphization.cn:9:39 [binding_pat] usize
-033_const_generic_monomorphization.cn:9:55 [named_type] int32
-033_const_generic_monomorphization.cn:9:55 [named_type] int32
-033_const_generic_monomorphization.cn:9:55 [named_type] int32
-033_const_generic_monomorphization.cn:10:12 [ident] array[int32, 3]
-033_const_generic_monomorphization.cn:10:12 [ident] array[int32, 5]
-033_const_generic_monomorphization.cn:10:12 [ident] array[int32, n]
+033_const_generic_monomorphization.cn:9:19 [binding_pat] &array[int32, 3]
+033_const_generic_monomorphization.cn:9:19 [binding_pat] &array[int32, 5]
+033_const_generic_monomorphization.cn:9:19 [binding_pat] &array[int32, n]
+033_const_generic_monomorphization.cn:9:40 [binding_pat] usize
+033_const_generic_monomorphization.cn:9:40 [binding_pat] usize
+033_const_generic_monomorphization.cn:9:40 [binding_pat] usize
+033_const_generic_monomorphization.cn:9:56 [named_type] int32
+033_const_generic_monomorphization.cn:9:56 [named_type] int32
+033_const_generic_monomorphization.cn:9:56 [named_type] int32
+033_const_generic_monomorphization.cn:10:12 [ident] &array[int32, 3]
+033_const_generic_monomorphization.cn:10:12 [ident] &array[int32, 5]
+033_const_generic_monomorphization.cn:10:12 [ident] &array[int32, n]
 033_const_generic_monomorphization.cn:10:12 [index] int32
 033_const_generic_monomorphization.cn:10:12 [index] int32
 033_const_generic_monomorphization.cn:10:12 [index] int32
 033_const_generic_monomorphization.cn:10:14 [ident] usize
 033_const_generic_monomorphization.cn:10:14 [ident] usize
 033_const_generic_monomorphization.cn:10:14 [ident] usize
-033_const_generic_monomorphization.cn:12:27 [binding_pat] array[int32, 3]
-033_const_generic_monomorphization.cn:12:27 [binding_pat] array[int32, 5]
-033_const_generic_monomorphization.cn:12:27 [binding_pat] array[int32, n]
-033_const_generic_monomorphization.cn:12:47 [binding_pat] usize
-033_const_generic_monomorphization.cn:12:47 [binding_pat] usize
-033_const_generic_monomorphization.cn:12:47 [binding_pat] usize
-033_const_generic_monomorphization.cn:12:62 [named_type] int32
-033_const_generic_monomorphization.cn:12:62 [named_type] int32
-033_const_generic_monomorphization.cn:12:62 [named_type] int32
+033_const_generic_monomorphization.cn:12:27 [binding_pat] &array[int32, 3]
+033_const_generic_monomorphization.cn:12:27 [binding_pat] &array[int32, 5]
+033_const_generic_monomorphization.cn:12:27 [binding_pat] &array[int32, n]
+033_const_generic_monomorphization.cn:12:48 [binding_pat] usize
+033_const_generic_monomorphization.cn:12:48 [binding_pat] usize
+033_const_generic_monomorphization.cn:12:48 [binding_pat] usize
+033_const_generic_monomorphization.cn:12:63 [named_type] int32
+033_const_generic_monomorphization.cn:12:63 [named_type] int32
+033_const_generic_monomorphization.cn:12:63 [named_type] int32
 033_const_generic_monomorphization.cn:13:12 [option_pat] option[usize]
 033_const_generic_monomorphization.cn:13:12 [option_pat] option[usize]
 033_const_generic_monomorphization.cn:13:12 [option_pat] option[usize]
@@ -336,15 +336,15 @@
 033_const_generic_monomorphization.cn:13:44 [ident] _
 033_const_generic_monomorphization.cn:13:44 [ident] _
 033_const_generic_monomorphization.cn:13:44 [ident] _
-033_const_generic_monomorphization.cn:14:16 [ident] fn(array[int32, 3], usize) -> int32
-033_const_generic_monomorphization.cn:14:16 [ident] fn(array[int32, 5], usize) -> int32
-033_const_generic_monomorphization.cn:14:16 [ident] fn(array[int32, n], usize) -> int32
+033_const_generic_monomorphization.cn:14:16 [ident] fn(&array[int32, 3], usize) -> int32
+033_const_generic_monomorphization.cn:14:16 [ident] fn(&array[int32, 5], usize) -> int32
+033_const_generic_monomorphization.cn:14:16 [ident] fn(&array[int32, n], usize) -> int32
 033_const_generic_monomorphization.cn:14:16 [call] int32
 033_const_generic_monomorphization.cn:14:16 [call] int32
 033_const_generic_monomorphization.cn:14:16 [call] int32
-033_const_generic_monomorphization.cn:14:20 [ident] array[int32, 3]
-033_const_generic_monomorphization.cn:14:20 [ident] array[int32, 5]
-033_const_generic_monomorphization.cn:14:20 [ident] array[int32, n]
+033_const_generic_monomorphization.cn:14:20 [ident] &array[int32, 3]
+033_const_generic_monomorphization.cn:14:20 [ident] &array[int32, 5]
+033_const_generic_monomorphization.cn:14:20 [ident] &array[int32, n]
 033_const_generic_monomorphization.cn:14:23 [ident] usize
 033_const_generic_monomorphization.cn:14:23 [ident] usize
 033_const_generic_monomorphization.cn:14:23 [ident] usize
@@ -354,10 +354,10 @@
 033_const_generic_monomorphization.cn:15:13 [literal] int32
 033_const_generic_monomorphization.cn:15:13 [literal] int32
 033_const_generic_monomorphization.cn:15:13 [literal] int32
-033_const_generic_monomorphization.cn:17:24 [binding_pat] array[int32, 5]
-033_const_generic_monomorphization.cn:17:24 [binding_pat] array[int32, n]
-033_const_generic_monomorphization.cn:17:47 [named_type] int32
-033_const_generic_monomorphization.cn:17:47 [named_type] int32
+033_const_generic_monomorphization.cn:17:24 [binding_pat] &array[int32, 5]
+033_const_generic_monomorphization.cn:17:24 [binding_pat] &array[int32, n]
+033_const_generic_monomorphization.cn:17:48 [named_type] int32
+033_const_generic_monomorphization.cn:17:48 [named_type] int32
 033_const_generic_monomorphization.cn:18:12 [group] int32
 033_const_generic_monomorphization.cn:18:12 [group] int32
 033_const_generic_monomorphization.cn:18:13 [ident] usize
@@ -365,15 +365,15 @@
 033_const_generic_monomorphization.cn:18:13 [literal] usize
 033_const_generic_monomorphization.cn:18:13 [cast] int32
 033_const_generic_monomorphization.cn:18:13 [cast] int32
-033_const_generic_monomorphization.cn:22:21 [binding_pat] array[int32, 3]
-033_const_generic_monomorphization.cn:22:21 [binding_pat] array[int32, 5]
-033_const_generic_monomorphization.cn:22:21 [binding_pat] array[int32, n]
-033_const_generic_monomorphization.cn:22:41 [binding_pat] usize
-033_const_generic_monomorphization.cn:22:41 [binding_pat] usize
-033_const_generic_monomorphization.cn:22:41 [binding_pat] usize
-033_const_generic_monomorphization.cn:22:54 [named_type] int32
-033_const_generic_monomorphization.cn:22:54 [named_type] int32
-033_const_generic_monomorphization.cn:22:54 [named_type] int32
+033_const_generic_monomorphization.cn:22:21 [binding_pat] &array[int32, 3]
+033_const_generic_monomorphization.cn:22:21 [binding_pat] &array[int32, 5]
+033_const_generic_monomorphization.cn:22:21 [binding_pat] &array[int32, n]
+033_const_generic_monomorphization.cn:22:42 [binding_pat] usize
+033_const_generic_monomorphization.cn:22:42 [binding_pat] usize
+033_const_generic_monomorphization.cn:22:42 [binding_pat] usize
+033_const_generic_monomorphization.cn:22:55 [named_type] int32
+033_const_generic_monomorphization.cn:22:55 [named_type] int32
+033_const_generic_monomorphization.cn:22:55 [named_type] int32
 033_const_generic_monomorphization.cn:23:8 [ident] usize
 033_const_generic_monomorphization.cn:23:8 [ident] usize
 033_const_generic_monomorphization.cn:23:8 [ident] usize
@@ -388,30 +388,30 @@
 033_const_generic_monomorphization.cn:24:16 [literal] int32
 033_const_generic_monomorphization.cn:24:16 [literal] int32
 033_const_generic_monomorphization.cn:24:16 [literal] int32
-033_const_generic_monomorphization.cn:25:12 [ident] fn(array[int32, 3], usize) -> int32
-033_const_generic_monomorphization.cn:25:12 [ident] fn(array[int32, 5], usize) -> int32
-033_const_generic_monomorphization.cn:25:12 [ident] fn(array[int32, n], usize) -> int32
+033_const_generic_monomorphization.cn:25:12 [ident] fn(&array[int32, 3], usize) -> int32
+033_const_generic_monomorphization.cn:25:12 [ident] fn(&array[int32, 5], usize) -> int32
+033_const_generic_monomorphization.cn:25:12 [ident] fn(&array[int32, n], usize) -> int32
 033_const_generic_monomorphization.cn:25:12 [call] int32
 033_const_generic_monomorphization.cn:25:12 [call] int32
 033_const_generic_monomorphization.cn:25:12 [call] int32
 033_const_generic_monomorphization.cn:25:12 [binary] int32
 033_const_generic_monomorphization.cn:25:12 [binary] int32
 033_const_generic_monomorphization.cn:25:12 [binary] int32
-033_const_generic_monomorphization.cn:25:24 [ident] array[int32, 3]
-033_const_generic_monomorphization.cn:25:24 [ident] array[int32, 5]
-033_const_generic_monomorphization.cn:25:24 [ident] array[int32, n]
+033_const_generic_monomorphization.cn:25:24 [ident] &array[int32, 3]
+033_const_generic_monomorphization.cn:25:24 [ident] &array[int32, 5]
+033_const_generic_monomorphization.cn:25:24 [ident] &array[int32, n]
 033_const_generic_monomorphization.cn:25:27 [ident] usize
 033_const_generic_monomorphization.cn:25:27 [ident] usize
 033_const_generic_monomorphization.cn:25:27 [ident] usize
-033_const_generic_monomorphization.cn:25:32 [ident] fn(array[int32, 3], usize) -> int32
-033_const_generic_monomorphization.cn:25:32 [ident] fn(array[int32, 5], usize) -> int32
-033_const_generic_monomorphization.cn:25:32 [ident] fn(array[int32, n], usize) -> int32
+033_const_generic_monomorphization.cn:25:32 [ident] fn(&array[int32, 3], usize) -> int32
+033_const_generic_monomorphization.cn:25:32 [ident] fn(&array[int32, 5], usize) -> int32
+033_const_generic_monomorphization.cn:25:32 [ident] fn(&array[int32, n], usize) -> int32
 033_const_generic_monomorphization.cn:25:32 [call] int32
 033_const_generic_monomorphization.cn:25:32 [call] int32
 033_const_generic_monomorphization.cn:25:32 [call] int32
-033_const_generic_monomorphization.cn:25:38 [ident] array[int32, 3]
-033_const_generic_monomorphization.cn:25:38 [ident] array[int32, 5]
-033_const_generic_monomorphization.cn:25:38 [ident] array[int32, n]
+033_const_generic_monomorphization.cn:25:38 [ident] &array[int32, 3]
+033_const_generic_monomorphization.cn:25:38 [ident] &array[int32, 5]
+033_const_generic_monomorphization.cn:25:38 [ident] &array[int32, n]
 033_const_generic_monomorphization.cn:25:41 [ident] usize
 033_const_generic_monomorphization.cn:25:41 [ident] usize
 033_const_generic_monomorphization.cn:25:41 [ident] usize
@@ -421,46 +421,51 @@
 033_const_generic_monomorphization.cn:25:45 [literal] usize
 033_const_generic_monomorphization.cn:25:45 [literal] usize
 033_const_generic_monomorphization.cn:25:45 [literal] usize
-033_const_generic_monomorphization.cn:27:15 [named_type] int32
-033_const_generic_monomorphization.cn:28:9 [binding_pat] array[int32, 3]
-033_const_generic_monomorphization.cn:28:30 [array] array[int32, 3]
-033_const_generic_monomorphization.cn:28:31 [literal] int32
-033_const_generic_monomorphization.cn:28:35 [literal] int32
-033_const_generic_monomorphization.cn:28:39 [literal] int32
-033_const_generic_monomorphization.cn:29:9 [binding_pat] array[int32, 5]
-033_const_generic_monomorphization.cn:29:30 [array] array[int32, 5]
+033_const_generic_monomorphization.cn:28:15 [named_type] int32
+033_const_generic_monomorphization.cn:29:9 [binding_pat] array[int32, 3]
+033_const_generic_monomorphization.cn:29:30 [array] array[int32, 3]
 033_const_generic_monomorphization.cn:29:31 [literal] int32
-033_const_generic_monomorphization.cn:29:34 [literal] int32
-033_const_generic_monomorphization.cn:29:37 [literal] int32
-033_const_generic_monomorphization.cn:29:40 [literal] int32
-033_const_generic_monomorphization.cn:29:43 [literal] int32
-033_const_generic_monomorphization.cn:30:9 [binding_pat] int32
-033_const_generic_monomorphization.cn:30:21 [ident] fn(array[int32, 3], usize) -> int32
-033_const_generic_monomorphization.cn:30:21 [call] int32
-033_const_generic_monomorphization.cn:30:33 [ident] array[int32, 3]
-033_const_generic_monomorphization.cn:30:36 [literal] usize
+033_const_generic_monomorphization.cn:29:35 [literal] int32
+033_const_generic_monomorphization.cn:29:39 [literal] int32
+033_const_generic_monomorphization.cn:30:9 [binding_pat] array[int32, 5]
+033_const_generic_monomorphization.cn:30:30 [array] array[int32, 5]
+033_const_generic_monomorphization.cn:30:31 [literal] int32
+033_const_generic_monomorphization.cn:30:34 [literal] int32
+033_const_generic_monomorphization.cn:30:37 [literal] int32
+033_const_generic_monomorphization.cn:30:40 [literal] int32
+033_const_generic_monomorphization.cn:30:43 [literal] int32
 033_const_generic_monomorphization.cn:31:9 [binding_pat] int32
-033_const_generic_monomorphization.cn:31:25 [ident] fn(array[int32, 5], usize) -> int32
-033_const_generic_monomorphization.cn:31:25 [call] int32
-033_const_generic_monomorphization.cn:31:37 [ident] array[int32, 5]
-033_const_generic_monomorphization.cn:31:40 [literal] usize
-033_const_generic_monomorphization.cn:33:12 [ident] int32
-033_const_generic_monomorphization.cn:33:12 [binary] int32
-033_const_generic_monomorphization.cn:33:12 [binary] int32
-033_const_generic_monomorphization.cn:33:12 [binary] int32
-033_const_generic_monomorphization.cn:33:12 [binary] int32
-033_const_generic_monomorphization.cn:33:24 [ident] int32
-033_const_generic_monomorphization.cn:33:40 [ident] fn(array[int32, 5]) -> int32
-033_const_generic_monomorphization.cn:33:40 [call] int32
-033_const_generic_monomorphization.cn:33:49 [ident] array[int32, 5]
-033_const_generic_monomorphization.cn:33:54 [ident] fn(array[int32, 3], usize) -> int32
-033_const_generic_monomorphization.cn:33:54 [call] int32
-033_const_generic_monomorphization.cn:33:60 [ident] array[int32, 3]
-033_const_generic_monomorphization.cn:33:63 [literal] usize
-033_const_generic_monomorphization.cn:33:68 [ident] fn(array[int32, 5], usize) -> int32
-033_const_generic_monomorphization.cn:33:68 [call] int32
-033_const_generic_monomorphization.cn:33:74 [ident] array[int32, 5]
-033_const_generic_monomorphization.cn:33:77 [literal] usize
+033_const_generic_monomorphization.cn:31:21 [ident] fn(&array[int32, 3], usize) -> int32
+033_const_generic_monomorphization.cn:31:21 [call] int32
+033_const_generic_monomorphization.cn:31:33 [unary] &array[int32, 3]
+033_const_generic_monomorphization.cn:31:34 [ident] array[int32, 3]
+033_const_generic_monomorphization.cn:31:37 [literal] usize
+033_const_generic_monomorphization.cn:32:9 [binding_pat] int32
+033_const_generic_monomorphization.cn:32:25 [ident] fn(&array[int32, 5], usize) -> int32
+033_const_generic_monomorphization.cn:32:25 [call] int32
+033_const_generic_monomorphization.cn:32:37 [unary] &array[int32, 5]
+033_const_generic_monomorphization.cn:32:38 [ident] array[int32, 5]
+033_const_generic_monomorphization.cn:32:41 [literal] usize
+033_const_generic_monomorphization.cn:34:12 [ident] int32
+033_const_generic_monomorphization.cn:34:12 [binary] int32
+033_const_generic_monomorphization.cn:34:12 [binary] int32
+033_const_generic_monomorphization.cn:34:12 [binary] int32
+033_const_generic_monomorphization.cn:34:12 [binary] int32
+033_const_generic_monomorphization.cn:34:24 [ident] int32
+033_const_generic_monomorphization.cn:34:40 [ident] fn(&array[int32, 5]) -> int32
+033_const_generic_monomorphization.cn:34:40 [call] int32
+033_const_generic_monomorphization.cn:34:49 [unary] &array[int32, 5]
+033_const_generic_monomorphization.cn:34:50 [ident] array[int32, 5]
+033_const_generic_monomorphization.cn:34:55 [ident] fn(&array[int32, 3], usize) -> int32
+033_const_generic_monomorphization.cn:34:55 [call] int32
+033_const_generic_monomorphization.cn:34:61 [unary] &array[int32, 3]
+033_const_generic_monomorphization.cn:34:62 [ident] array[int32, 3]
+033_const_generic_monomorphization.cn:34:65 [literal] usize
+033_const_generic_monomorphization.cn:34:70 [ident] fn(&array[int32, 5], usize) -> int32
+033_const_generic_monomorphization.cn:34:70 [call] int32
+033_const_generic_monomorphization.cn:34:76 [unary] &array[int32, 5]
+033_const_generic_monomorphization.cn:34:77 [ident] array[int32, 5]
+033_const_generic_monomorphization.cn:34:80 [literal] usize
 034_generic_monomorphization.cn:8:36 [ident] usize
 034_generic_monomorphization.cn:8:36 [binary] bool
 034_generic_monomorphization.cn:8:43 [ident] usize
@@ -473,119 +478,122 @@
 034_generic_monomorphization.cn:17:9 [ident] usize
 034_generic_monomorphization.cn:17:9 [ident] usize
 034_generic_monomorphization.cn:17:9 [literal] usize
-034_generic_monomorphization.cn:23:25 [binding_pat] T
-034_generic_monomorphization.cn:23:25 [binding_pat] int32
-034_generic_monomorphization.cn:23:34 [array_type] array[T, n]
-034_generic_monomorphization.cn:23:34 [array_type] array[int32, 4]
-034_generic_monomorphization.cn:24:5 [array] array[T, n]
-034_generic_monomorphization.cn:24:5 [array] array[int32, 4]
-034_generic_monomorphization.cn:24:6 [ident] T
-034_generic_monomorphization.cn:24:6 [ident] int32
-034_generic_monomorphization.cn:24:9 [ident] usize
-034_generic_monomorphization.cn:24:9 [ident] usize
-034_generic_monomorphization.cn:24:9 [literal] usize
-034_generic_monomorphization.cn:26:24 [binding_pat] array[T, n]
-034_generic_monomorphization.cn:26:24 [binding_pat] array[int32, 4]
-034_generic_monomorphization.cn:26:40 [binding_pat] usize
-034_generic_monomorphization.cn:26:40 [binding_pat] usize
-034_generic_monomorphization.cn:26:56 [named_type] T
-034_generic_monomorphization.cn:26:56 [named_type] int32
-034_generic_monomorphization.cn:27:5 [ident] array[T, n]
-034_generic_monomorphization.cn:27:5 [ident] array[int32, 4]
-034_generic_monomorphization.cn:27:5 [index] T
-034_generic_monomorphization.cn:27:5 [index] int32
-034_generic_monomorphization.cn:27:7 [ident] usize
-034_generic_monomorphization.cn:27:7 [ident] usize
-034_generic_monomorphization.cn:37:22 [binding_pat] &holder
-034_generic_monomorphization.cn:37:22 [binding_pat] &holder
-034_generic_monomorphization.cn:37:28 [binding_pat] array[int32, 2]
-034_generic_monomorphization.cn:37:28 [binding_pat] array[int32, n]
-034_generic_monomorphization.cn:37:48 [binding_pat] usize
-034_generic_monomorphization.cn:37:48 [binding_pat] usize
-034_generic_monomorphization.cn:37:64 [named_type] int32
-034_generic_monomorphization.cn:37:64 [named_type] int32
-034_generic_monomorphization.cn:38:9 [ident] array[int32, 2]
-034_generic_monomorphization.cn:38:9 [ident] array[int32, n]
-034_generic_monomorphization.cn:38:9 [index] int32
-034_generic_monomorphization.cn:38:9 [index] int32
-034_generic_monomorphization.cn:38:9 [binary] int32
-034_generic_monomorphization.cn:38:9 [binary] int32
-034_generic_monomorphization.cn:38:11 [ident] usize
-034_generic_monomorphization.cn:38:11 [ident] usize
-034_generic_monomorphization.cn:38:16 [module_path] int32
-034_generic_monomorphization.cn:38:16 [module_path] int32
-034_generic_monomorphization.cn:41:17 [binding_pat] &holder
-034_generic_monomorphization.cn:41:17 [binding_pat] &holder
-034_generic_monomorphization.cn:41:23 [binding_pat] T
-034_generic_monomorphization.cn:41:23 [binding_pat] int32
-034_generic_monomorphization.cn:41:32 [named_type] T
-034_generic_monomorphization.cn:41:32 [named_type] int32
-034_generic_monomorphization.cn:42:9 [ident] T
-034_generic_monomorphization.cn:42:9 [ident] int32
-034_generic_monomorphization.cn:45:27 [binding_pat] &holder
-034_generic_monomorphization.cn:45:27 [binding_pat] &holder
-034_generic_monomorphization.cn:45:33 [binding_pat] array[T, n]
-034_generic_monomorphization.cn:45:33 [binding_pat] array[int32, 4]
-034_generic_monomorphization.cn:45:49 [binding_pat] usize
-034_generic_monomorphization.cn:45:49 [binding_pat] usize
-034_generic_monomorphization.cn:45:65 [named_type] T
-034_generic_monomorphization.cn:45:65 [named_type] int32
-034_generic_monomorphization.cn:46:9 [ident] array[T, n]
-034_generic_monomorphization.cn:46:9 [ident] array[int32, 4]
-034_generic_monomorphization.cn:46:9 [index] T
-034_generic_monomorphization.cn:46:9 [index] int32
-034_generic_monomorphization.cn:46:11 [ident] usize
-034_generic_monomorphization.cn:46:11 [ident] usize
-034_generic_monomorphization.cn:48:15 [named_type] int32
-034_generic_monomorphization.cn:49:9 [binding_pat] holder
-034_generic_monomorphization.cn:49:13 [struct_literal] holder
-034_generic_monomorphization.cn:49:28 [literal] int32
-034_generic_monomorphization.cn:52:9 [binding_pat] array[int32, 3]
-034_generic_monomorphization.cn:52:13 [ident] _
-034_generic_monomorphization.cn:52:13 [index] fn() -> array[int32, 3]
-034_generic_monomorphization.cn:52:13 [call] array[int32, 3]
-034_generic_monomorphization.cn:53:9 [binding_pat] array[int32, 2]
-034_generic_monomorphization.cn:53:30 [array] array[int32, 2]
-034_generic_monomorphization.cn:53:31 [literal] int32
-034_generic_monomorphization.cn:53:34 [literal] int32
-034_generic_monomorphization.cn:56:9 [binding_pat] array[int32, 4]
-034_generic_monomorphization.cn:56:13 [ident] _
-034_generic_monomorphization.cn:56:13 [call] fn(int32) -> array[int32, 4]
-034_generic_monomorphization.cn:56:13 [call] array[int32, 4]
-034_generic_monomorphization.cn:56:30 [literal] int32
-034_generic_monomorphization.cn:58:9 [binding_pat] int32
-034_generic_monomorphization.cn:58:20 [ident] fn(array[int32, 4], usize) -> int32
-034_generic_monomorphization.cn:58:20 [call] int32
-034_generic_monomorphization.cn:58:26 [ident] array[int32, 4]
-034_generic_monomorphization.cn:58:29 [literal] usize
-034_generic_monomorphization.cn:59:9 [binding_pat] int32
-034_generic_monomorphization.cn:59:22 [ident] holder
-034_generic_monomorphization.cn:59:22 [field] fn(_, array[int32, n], usize) -> int32
-034_generic_monomorphization.cn:59:22 [call] int32
-034_generic_monomorphization.cn:59:27 [ident] array[int32, 2]
-034_generic_monomorphization.cn:59:30 [literal] usize
+034_generic_monomorphization.cn:24:31 [binding_pat] T
+034_generic_monomorphization.cn:24:31 [binding_pat] int32
+034_generic_monomorphization.cn:24:40 [array_type] array[T, n]
+034_generic_monomorphization.cn:24:40 [array_type] array[int32, 4]
+034_generic_monomorphization.cn:25:5 [array] array[T, n]
+034_generic_monomorphization.cn:25:5 [array] array[int32, 4]
+034_generic_monomorphization.cn:25:6 [ident] T
+034_generic_monomorphization.cn:25:6 [ident] int32
+034_generic_monomorphization.cn:25:9 [ident] usize
+034_generic_monomorphization.cn:25:9 [ident] usize
+034_generic_monomorphization.cn:25:9 [literal] usize
+034_generic_monomorphization.cn:27:30 [binding_pat] &array[T, n]
+034_generic_monomorphization.cn:27:30 [binding_pat] &array[int32, 4]
+034_generic_monomorphization.cn:27:47 [binding_pat] usize
+034_generic_monomorphization.cn:27:47 [binding_pat] usize
+034_generic_monomorphization.cn:27:63 [named_type] T
+034_generic_monomorphization.cn:27:63 [named_type] int32
+034_generic_monomorphization.cn:28:5 [ident] &array[T, n]
+034_generic_monomorphization.cn:28:5 [ident] &array[int32, 4]
+034_generic_monomorphization.cn:28:5 [index] T
+034_generic_monomorphization.cn:28:5 [index] int32
+034_generic_monomorphization.cn:28:7 [ident] usize
+034_generic_monomorphization.cn:28:7 [ident] usize
+034_generic_monomorphization.cn:38:22 [binding_pat] &holder
+034_generic_monomorphization.cn:38:22 [binding_pat] &holder
+034_generic_monomorphization.cn:38:28 [binding_pat] &array[int32, 2]
+034_generic_monomorphization.cn:38:28 [binding_pat] &array[int32, n]
+034_generic_monomorphization.cn:38:49 [binding_pat] usize
+034_generic_monomorphization.cn:38:49 [binding_pat] usize
+034_generic_monomorphization.cn:38:65 [named_type] int32
+034_generic_monomorphization.cn:38:65 [named_type] int32
+034_generic_monomorphization.cn:39:9 [ident] &array[int32, 2]
+034_generic_monomorphization.cn:39:9 [ident] &array[int32, n]
+034_generic_monomorphization.cn:39:9 [index] int32
+034_generic_monomorphization.cn:39:9 [index] int32
+034_generic_monomorphization.cn:39:9 [binary] int32
+034_generic_monomorphization.cn:39:9 [binary] int32
+034_generic_monomorphization.cn:39:11 [ident] usize
+034_generic_monomorphization.cn:39:11 [ident] usize
+034_generic_monomorphization.cn:39:16 [module_path] int32
+034_generic_monomorphization.cn:39:16 [module_path] int32
+034_generic_monomorphization.cn:42:17 [binding_pat] &holder
+034_generic_monomorphization.cn:42:17 [binding_pat] &holder
+034_generic_monomorphization.cn:42:23 [binding_pat] T
+034_generic_monomorphization.cn:42:23 [binding_pat] int32
+034_generic_monomorphization.cn:42:32 [named_type] T
+034_generic_monomorphization.cn:42:32 [named_type] int32
+034_generic_monomorphization.cn:43:9 [ident] T
+034_generic_monomorphization.cn:43:9 [ident] int32
+034_generic_monomorphization.cn:46:33 [binding_pat] &holder
+034_generic_monomorphization.cn:46:33 [binding_pat] &holder
+034_generic_monomorphization.cn:46:39 [binding_pat] &array[T, n]
+034_generic_monomorphization.cn:46:39 [binding_pat] &array[int32, 4]
+034_generic_monomorphization.cn:46:56 [binding_pat] usize
+034_generic_monomorphization.cn:46:56 [binding_pat] usize
+034_generic_monomorphization.cn:46:72 [named_type] T
+034_generic_monomorphization.cn:46:72 [named_type] int32
+034_generic_monomorphization.cn:47:9 [ident] &array[T, n]
+034_generic_monomorphization.cn:47:9 [ident] &array[int32, 4]
+034_generic_monomorphization.cn:47:9 [index] T
+034_generic_monomorphization.cn:47:9 [index] int32
+034_generic_monomorphization.cn:47:11 [ident] usize
+034_generic_monomorphization.cn:47:11 [ident] usize
+034_generic_monomorphization.cn:50:15 [named_type] int32
+034_generic_monomorphization.cn:51:9 [binding_pat] holder
+034_generic_monomorphization.cn:51:13 [struct_literal] holder
+034_generic_monomorphization.cn:51:28 [literal] int32
+034_generic_monomorphization.cn:54:9 [binding_pat] array[int32, 3]
+034_generic_monomorphization.cn:54:13 [ident] _
+034_generic_monomorphization.cn:54:13 [index] fn() -> array[int32, 3]
+034_generic_monomorphization.cn:54:13 [call] array[int32, 3]
+034_generic_monomorphization.cn:55:9 [binding_pat] array[int32, 2]
+034_generic_monomorphization.cn:55:30 [array] array[int32, 2]
+034_generic_monomorphization.cn:55:31 [literal] int32
+034_generic_monomorphization.cn:55:34 [literal] int32
+034_generic_monomorphization.cn:58:9 [binding_pat] array[int32, 4]
+034_generic_monomorphization.cn:58:13 [ident] _
+034_generic_monomorphization.cn:58:13 [call] fn(int32) -> array[int32, 4]
+034_generic_monomorphization.cn:58:13 [call] array[int32, 4]
+034_generic_monomorphization.cn:58:30 [literal] int32
 034_generic_monomorphization.cn:60:9 [binding_pat] int32
-034_generic_monomorphization.cn:60:20 [ident] holder
-034_generic_monomorphization.cn:60:20 [field] fn(_, T) -> T
+034_generic_monomorphization.cn:60:20 [ident] fn(&array[int32, 4], usize) -> int32
 034_generic_monomorphization.cn:60:20 [call] int32
-034_generic_monomorphization.cn:60:27 [literal] int32
+034_generic_monomorphization.cn:60:26 [unary] &array[int32, 4]
+034_generic_monomorphization.cn:60:27 [ident] array[int32, 4]
+034_generic_monomorphization.cn:60:30 [literal] usize
 034_generic_monomorphization.cn:61:9 [binding_pat] int32
-034_generic_monomorphization.cn:61:21 [ident] holder
-034_generic_monomorphization.cn:61:21 [field] fn(_, array[T, n], usize) -> T
-034_generic_monomorphization.cn:61:21 [call] int32
-034_generic_monomorphization.cn:61:28 [ident] array[int32, 4]
+034_generic_monomorphization.cn:61:22 [ident] holder
+034_generic_monomorphization.cn:61:22 [field] fn(_, &array[int32, n], usize) -> int32
+034_generic_monomorphization.cn:61:22 [call] int32
+034_generic_monomorphization.cn:61:27 [unary] &array[int32, 2]
+034_generic_monomorphization.cn:61:28 [ident] array[int32, 2]
 034_generic_monomorphization.cn:61:31 [literal] usize
-034_generic_monomorphization.cn:64:12 [ident] array[int32, 3]
-034_generic_monomorphization.cn:64:12 [index] int32
-034_generic_monomorphization.cn:64:12 [binary] int32
-034_generic_monomorphization.cn:64:12 [binary] int32
-034_generic_monomorphization.cn:64:12 [binary] int32
-034_generic_monomorphization.cn:64:12 [binary] int32
-034_generic_monomorphization.cn:64:14 [literal] usize
-034_generic_monomorphization.cn:64:19 [ident] int32
-034_generic_monomorphization.cn:64:30 [ident] int32
-034_generic_monomorphization.cn:64:43 [ident] int32
-034_generic_monomorphization.cn:64:54 [ident] int32
+034_generic_monomorphization.cn:62:9 [binding_pat] int32
+034_generic_monomorphization.cn:62:20 [ident] holder
+034_generic_monomorphization.cn:62:20 [field] fn(_, T) -> T
+034_generic_monomorphization.cn:62:20 [call] int32
+034_generic_monomorphization.cn:62:27 [literal] int32
+034_generic_monomorphization.cn:63:9 [binding_pat] int32
+034_generic_monomorphization.cn:63:21 [ident] holder
+034_generic_monomorphization.cn:63:21 [field] fn(_, &array[T, n], usize) -> T
+034_generic_monomorphization.cn:63:21 [call] int32
+034_generic_monomorphization.cn:63:28 [unary] &array[int32, 4]
+034_generic_monomorphization.cn:63:29 [ident] array[int32, 4]
+034_generic_monomorphization.cn:63:32 [literal] usize
+034_generic_monomorphization.cn:66:12 [ident] array[int32, 3]
+034_generic_monomorphization.cn:66:12 [index] int32
+034_generic_monomorphization.cn:66:12 [binary] int32
+034_generic_monomorphization.cn:66:12 [binary] int32
+034_generic_monomorphization.cn:66:12 [binary] int32
+034_generic_monomorphization.cn:66:12 [binary] int32
+034_generic_monomorphization.cn:66:14 [literal] usize
+034_generic_monomorphization.cn:66:19 [ident] int32
+034_generic_monomorphization.cn:66:30 [ident] int32
+034_generic_monomorphization.cn:66:43 [ident] int32
+034_generic_monomorphization.cn:66:54 [ident] int32
 034_higher_kinded_trait_dispatch.cn:10:19 [binding_pat] F[A]
 034_higher_kinded_trait_dispatch.cn:10:29 [binding_pat] fn(A) -> B
 034_higher_kinded_trait_dispatch.cn:10:47 [named_type] F[B]
@@ -2494,374 +2502,354 @@
 110_instances_by_substitution.cn:37:25 [ident] option[B]
 110_instances_by_substitution.cn:37:25 [ident] option[int32]
 110_instances_by_substitution.cn:37:25 [ident] option[int64]
-110_instances_by_substitution.cn:42:15 [binding_pat] &bag[T]
-110_instances_by_substitution.cn:42:15 [binding_pat] &bag[int32]
-110_instances_by_substitution.cn:42:24 [named_type] usize
-110_instances_by_substitution.cn:42:24 [named_type] usize
-110_instances_by_substitution.cn:43:16 [module_path] list[T]
-110_instances_by_substitution.cn:43:16 [module_path] list[int32]
-110_instances_by_substitution.cn:43:16 [field] fn(_) -> usize
-110_instances_by_substitution.cn:43:16 [field] fn(_) -> usize
-110_instances_by_substitution.cn:43:16 [call] usize
-110_instances_by_substitution.cn:43:16 [call] usize
-110_instances_by_substitution.cn:46:16 [binding_pat] &bag[T]
-110_instances_by_substitution.cn:46:16 [binding_pat] &bag[int32]
-110_instances_by_substitution.cn:46:16 [binding_pat] &bag[int32]
-110_instances_by_substitution.cn:46:22 [binding_pat] fn(T) -> U
-110_instances_by_substitution.cn:46:22 [binding_pat] fn(int32) -> int32
-110_instances_by_substitution.cn:46:22 [binding_pat] fn(int32) -> int64
-110_instances_by_substitution.cn:46:40 [named_type] bag[U]
-110_instances_by_substitution.cn:46:40 [named_type] bag[int32]
-110_instances_by_substitution.cn:46:40 [named_type] bag[int64]
-110_instances_by_substitution.cn:47:9 [var_stmt] list[U]
-110_instances_by_substitution.cn:47:9 [var_stmt] list[int32]
-110_instances_by_substitution.cn:47:9 [var_stmt] list[int64]
-110_instances_by_substitution.cn:47:28 [array] list[U]
-110_instances_by_substitution.cn:47:28 [array] list[int32]
-110_instances_by_substitution.cn:47:28 [array] list[int64]
-110_instances_by_substitution.cn:48:9 [var_stmt] usize
-110_instances_by_substitution.cn:48:9 [var_stmt] usize
-110_instances_by_substitution.cn:48:9 [var_stmt] usize
-110_instances_by_substitution.cn:48:24 [literal] usize
-110_instances_by_substitution.cn:48:24 [literal] usize
-110_instances_by_substitution.cn:48:24 [literal] usize
-110_instances_by_substitution.cn:49:15 [ident] usize
-110_instances_by_substitution.cn:49:15 [ident] usize
-110_instances_by_substitution.cn:49:15 [ident] usize
-110_instances_by_substitution.cn:49:15 [binary] bool
-110_instances_by_substitution.cn:49:15 [binary] bool
-110_instances_by_substitution.cn:49:15 [binary] bool
-110_instances_by_substitution.cn:49:19 [module_path] list[T]
-110_instances_by_substitution.cn:49:19 [module_path] list[int32]
-110_instances_by_substitution.cn:49:19 [module_path] list[int32]
-110_instances_by_substitution.cn:49:19 [field] fn(_) -> usize
-110_instances_by_substitution.cn:49:19 [field] fn(_) -> usize
-110_instances_by_substitution.cn:49:19 [field] fn(_) -> usize
-110_instances_by_substitution.cn:49:19 [call] usize
-110_instances_by_substitution.cn:49:19 [call] usize
-110_instances_by_substitution.cn:49:19 [call] usize
-110_instances_by_substitution.cn:50:13 [ident] list[U]
-110_instances_by_substitution.cn:50:13 [ident] list[int32]
-110_instances_by_substitution.cn:50:13 [ident] list[int64]
-110_instances_by_substitution.cn:50:13 [field] fn(_, _) -> unit
-110_instances_by_substitution.cn:50:13 [field] fn(_, _) -> unit
-110_instances_by_substitution.cn:50:13 [field] fn(_, _) -> unit
-110_instances_by_substitution.cn:50:13 [call] unit
-110_instances_by_substitution.cn:50:13 [call] unit
-110_instances_by_substitution.cn:50:13 [call] unit
-110_instances_by_substitution.cn:50:22 [ident] fn(T) -> U
-110_instances_by_substitution.cn:50:22 [ident] fn(int32) -> int32
-110_instances_by_substitution.cn:50:22 [ident] fn(int32) -> int64
-110_instances_by_substitution.cn:50:22 [call] U
-110_instances_by_substitution.cn:50:22 [call] int32
-110_instances_by_substitution.cn:50:22 [call] int64
-110_instances_by_substitution.cn:50:24 [ident] &bag[T]
-110_instances_by_substitution.cn:50:24 [ident] &bag[int32]
-110_instances_by_substitution.cn:50:24 [ident] &bag[int32]
-110_instances_by_substitution.cn:50:24 [field] list[T]
-110_instances_by_substitution.cn:50:24 [field] list[int32]
-110_instances_by_substitution.cn:50:24 [field] list[int32]
-110_instances_by_substitution.cn:50:24 [index] T
-110_instances_by_substitution.cn:50:24 [index] int32
-110_instances_by_substitution.cn:50:24 [index] int32
-110_instances_by_substitution.cn:50:35 [ident] usize
-110_instances_by_substitution.cn:50:35 [ident] usize
-110_instances_by_substitution.cn:50:35 [ident] usize
-110_instances_by_substitution.cn:51:13 [ident] usize
-110_instances_by_substitution.cn:51:13 [ident] usize
-110_instances_by_substitution.cn:51:13 [ident] usize
-110_instances_by_substitution.cn:51:17 [ident] usize
-110_instances_by_substitution.cn:51:17 [ident] usize
-110_instances_by_substitution.cn:51:17 [ident] usize
-110_instances_by_substitution.cn:51:17 [binary] usize
-110_instances_by_substitution.cn:51:17 [binary] usize
-110_instances_by_substitution.cn:51:17 [binary] usize
-110_instances_by_substitution.cn:51:21 [literal] usize
-110_instances_by_substitution.cn:51:21 [literal] usize
-110_instances_by_substitution.cn:51:21 [literal] usize
-110_instances_by_substitution.cn:52:16 [struct_literal] bag[U]
-110_instances_by_substitution.cn:52:16 [struct_literal] bag[int32]
-110_instances_by_substitution.cn:52:16 [struct_literal] bag[int64]
-110_instances_by_substitution.cn:52:32 [ident] fn(T) -> U
-110_instances_by_substitution.cn:52:32 [ident] fn(int32) -> int32
-110_instances_by_substitution.cn:52:32 [ident] fn(int32) -> int64
-110_instances_by_substitution.cn:52:32 [call] U
-110_instances_by_substitution.cn:52:32 [call] int32
-110_instances_by_substitution.cn:52:32 [call] int64
-110_instances_by_substitution.cn:52:34 [module_path] T
-110_instances_by_substitution.cn:52:34 [module_path] int32
-110_instances_by_substitution.cn:52:34 [module_path] int32
-110_instances_by_substitution.cn:52:54 [ident] list[U]
-110_instances_by_substitution.cn:52:54 [ident] list[int32]
-110_instances_by_substitution.cn:52:54 [ident] list[int64]
-110_instances_by_substitution.cn:55:17 [binding_pat] list[T]
-110_instances_by_substitution.cn:55:17 [binding_pat] list[int32]
-110_instances_by_substitution.cn:55:17 [binding_pat] list[money]
-110_instances_by_substitution.cn:55:30 [binding_pat] T
-110_instances_by_substitution.cn:55:30 [binding_pat] int32
-110_instances_by_substitution.cn:55:30 [binding_pat] money
-110_instances_by_substitution.cn:55:42 [named_type] T
-110_instances_by_substitution.cn:55:42 [named_type] int32
-110_instances_by_substitution.cn:55:42 [named_type] money
-110_instances_by_substitution.cn:56:5 [var_stmt] T
-110_instances_by_substitution.cn:56:5 [var_stmt] int32
-110_instances_by_substitution.cn:56:5 [var_stmt] money
-110_instances_by_substitution.cn:56:15 [ident] T
-110_instances_by_substitution.cn:56:15 [ident] int32
-110_instances_by_substitution.cn:56:15 [ident] money
-110_instances_by_substitution.cn:57:9 [binding_pat] T
-110_instances_by_substitution.cn:57:9 [binding_pat] int32
-110_instances_by_substitution.cn:57:9 [binding_pat] money
-110_instances_by_substitution.cn:57:14 [ident] list[T]
-110_instances_by_substitution.cn:57:14 [ident] list[int32]
-110_instances_by_substitution.cn:57:14 [ident] list[money]
-110_instances_by_substitution.cn:58:9 [ident] T
-110_instances_by_substitution.cn:58:9 [ident] int32
-110_instances_by_substitution.cn:58:9 [ident] money
-110_instances_by_substitution.cn:58:15 [ident] T
-110_instances_by_substitution.cn:58:15 [ident] int32
-110_instances_by_substitution.cn:58:15 [ident] money
-110_instances_by_substitution.cn:58:15 [binary] T
-110_instances_by_substitution.cn:58:15 [binary] int32
-110_instances_by_substitution.cn:58:15 [binary] money
-110_instances_by_substitution.cn:58:21 [ident] T
-110_instances_by_substitution.cn:58:21 [ident] int32
-110_instances_by_substitution.cn:58:21 [ident] money
-110_instances_by_substitution.cn:59:12 [ident] T
-110_instances_by_substitution.cn:59:12 [ident] int32
-110_instances_by_substitution.cn:59:12 [ident] money
-110_instances_by_substitution.cn:61:11 [field] int64
-110_instances_by_substitution.cn:61:22 [ident] &money
-110_instances_by_substitution.cn:61:62 [interp_string] str
-110_instances_by_substitution.cn:62:16 [binding_pat] &list[T]
-110_instances_by_substitution.cn:62:16 [binding_pat] &list[int32]
-110_instances_by_substitution.cn:62:16 [binding_pat] &list[money]
-110_instances_by_substitution.cn:62:33 [named_type] T
-110_instances_by_substitution.cn:62:33 [named_type] int32
-110_instances_by_substitution.cn:62:33 [named_type] money
-110_instances_by_substitution.cn:63:5 [var_stmt] T
-110_instances_by_substitution.cn:63:5 [var_stmt] int32
-110_instances_by_substitution.cn:63:5 [var_stmt] money
-110_instances_by_substitution.cn:63:16 [ident] &list[T]
-110_instances_by_substitution.cn:63:16 [ident] &list[int32]
-110_instances_by_substitution.cn:63:16 [ident] &list[money]
-110_instances_by_substitution.cn:63:16 [index] T
-110_instances_by_substitution.cn:63:16 [index] int32
-110_instances_by_substitution.cn:63:16 [index] money
-110_instances_by_substitution.cn:63:19 [literal] usize
-110_instances_by_substitution.cn:63:19 [literal] usize
-110_instances_by_substitution.cn:63:19 [literal] usize
-110_instances_by_substitution.cn:64:5 [var_stmt] usize
-110_instances_by_substitution.cn:64:5 [var_stmt] usize
-110_instances_by_substitution.cn:64:5 [var_stmt] usize
-110_instances_by_substitution.cn:64:20 [literal] usize
-110_instances_by_substitution.cn:64:20 [literal] usize
-110_instances_by_substitution.cn:64:20 [literal] usize
-110_instances_by_substitution.cn:65:11 [ident] usize
-110_instances_by_substitution.cn:65:11 [ident] usize
-110_instances_by_substitution.cn:65:11 [ident] usize
-110_instances_by_substitution.cn:65:11 [binary] bool
-110_instances_by_substitution.cn:65:11 [binary] bool
-110_instances_by_substitution.cn:65:11 [binary] bool
-110_instances_by_substitution.cn:65:15 [ident] &list[T]
-110_instances_by_substitution.cn:65:15 [ident] &list[int32]
-110_instances_by_substitution.cn:65:15 [ident] &list[money]
-110_instances_by_substitution.cn:65:15 [field] fn(_) -> usize
-110_instances_by_substitution.cn:65:15 [field] fn(_) -> usize
-110_instances_by_substitution.cn:65:15 [field] fn(_) -> usize
-110_instances_by_substitution.cn:65:15 [call] usize
-110_instances_by_substitution.cn:65:15 [call] usize
-110_instances_by_substitution.cn:65:15 [call] usize
-110_instances_by_substitution.cn:65:20 [binding_pat] &money
-110_instances_by_substitution.cn:66:5 [named_type] str
-110_instances_by_substitution.cn:66:12 [ident] &list[T]
-110_instances_by_substitution.cn:66:12 [ident] &list[int32]
-110_instances_by_substitution.cn:66:12 [ident] &list[money]
-110_instances_by_substitution.cn:66:12 [index] T
-110_instances_by_substitution.cn:66:12 [index] int32
-110_instances_by_substitution.cn:66:12 [index] money
-110_instances_by_substitution.cn:66:12 [binary] bool
-110_instances_by_substitution.cn:66:12 [binary] bool
-110_instances_by_substitution.cn:66:12 [binary] bool
-110_instances_by_substitution.cn:66:15 [ident] usize
-110_instances_by_substitution.cn:66:15 [ident] usize
-110_instances_by_substitution.cn:66:15 [ident] usize
-110_instances_by_substitution.cn:66:20 [ident] T
-110_instances_by_substitution.cn:66:20 [ident] int32
-110_instances_by_substitution.cn:66:20 [ident] money
-110_instances_by_substitution.cn:67:13 [ident] T
-110_instances_by_substitution.cn:67:13 [ident] int32
-110_instances_by_substitution.cn:67:13 [ident] money
-110_instances_by_substitution.cn:67:20 [ident] &list[T]
-110_instances_by_substitution.cn:67:20 [ident] &list[int32]
-110_instances_by_substitution.cn:67:20 [ident] &list[money]
-110_instances_by_substitution.cn:67:20 [index] T
-110_instances_by_substitution.cn:67:20 [index] int32
-110_instances_by_substitution.cn:67:20 [index] money
-110_instances_by_substitution.cn:67:23 [ident] usize
-110_instances_by_substitution.cn:67:23 [ident] usize
-110_instances_by_substitution.cn:67:23 [ident] usize
-110_instances_by_substitution.cn:68:9 [ident] usize
-110_instances_by_substitution.cn:68:9 [ident] usize
-110_instances_by_substitution.cn:68:9 [ident] usize
-110_instances_by_substitution.cn:68:13 [ident] usize
-110_instances_by_substitution.cn:68:13 [ident] usize
-110_instances_by_substitution.cn:68:13 [ident] usize
-110_instances_by_substitution.cn:68:13 [binary] usize
-110_instances_by_substitution.cn:68:13 [binary] usize
-110_instances_by_substitution.cn:68:13 [binary] usize
-110_instances_by_substitution.cn:68:17 [literal] usize
-110_instances_by_substitution.cn:68:17 [literal] usize
-110_instances_by_substitution.cn:68:17 [literal] usize
-110_instances_by_substitution.cn:69:12 [ident] T
-110_instances_by_substitution.cn:69:12 [ident] int32
-110_instances_by_substitution.cn:69:12 [ident] money
-110_instances_by_substitution.cn:72:13 [binding_pat] option[T]
-110_instances_by_substitution.cn:72:13 [binding_pat] option[int32]
-110_instances_by_substitution.cn:72:13 [binding_pat] option[int64]
-110_instances_by_substitution.cn:72:27 [binding_pat] fn(T) -> T
-110_instances_by_substitution.cn:72:27 [binding_pat] fn(int32) -> int32
-110_instances_by_substitution.cn:72:27 [binding_pat] fn(int64) -> int64
-110_instances_by_substitution.cn:72:45 [named_type] option[T]
-110_instances_by_substitution.cn:72:45 [named_type] option[int32]
-110_instances_by_substitution.cn:72:45 [named_type] option[int64]
-110_instances_by_substitution.cn:73:12 [ident] option[T]
-110_instances_by_substitution.cn:73:12 [ident] option[int32]
-110_instances_by_substitution.cn:73:12 [ident] option[int64]
-110_instances_by_substitution.cn:73:12 [field] fn(option[A], fn(A) -> B) -> option[B]
-110_instances_by_substitution.cn:73:12 [field] fn(option[A], fn(A) -> B) -> option[B]
-110_instances_by_substitution.cn:73:12 [field] fn(option[A], fn(A) -> B) -> option[B]
-110_instances_by_substitution.cn:73:12 [call] option[T]
-110_instances_by_substitution.cn:73:12 [call] option[int32]
-110_instances_by_substitution.cn:73:12 [call] option[int64]
-110_instances_by_substitution.cn:73:18 [ident] fn(T) -> T
-110_instances_by_substitution.cn:73:18 [ident] fn(int32) -> int32
-110_instances_by_substitution.cn:73:18 [ident] fn(int64) -> int64
-110_instances_by_substitution.cn:75:15 [binding_pat] option[T]
-110_instances_by_substitution.cn:75:15 [binding_pat] option[int32]
-110_instances_by_substitution.cn:75:15 [binding_pat] option[int64]
-110_instances_by_substitution.cn:75:29 [binding_pat] T
-110_instances_by_substitution.cn:75:29 [binding_pat] int32
-110_instances_by_substitution.cn:75:29 [binding_pat] int64
-110_instances_by_substitution.cn:75:38 [named_type] T
-110_instances_by_substitution.cn:75:38 [named_type] int32
-110_instances_by_substitution.cn:75:38 [named_type] int64
-110_instances_by_substitution.cn:76:11 [ident] option[T]
-110_instances_by_substitution.cn:76:11 [ident] option[int32]
-110_instances_by_substitution.cn:76:11 [ident] option[int64]
-110_instances_by_substitution.cn:77:9 [option_pat] option[T]
-110_instances_by_substitution.cn:77:9 [option_pat] option[int32]
-110_instances_by_substitution.cn:77:9 [option_pat] option[int64]
-110_instances_by_substitution.cn:77:15 [binding_pat] T
-110_instances_by_substitution.cn:77:15 [binding_pat] int32
-110_instances_by_substitution.cn:77:15 [binding_pat] int64
-110_instances_by_substitution.cn:77:21 [ident] T
-110_instances_by_substitution.cn:77:21 [ident] int32
-110_instances_by_substitution.cn:77:21 [ident] int64
-110_instances_by_substitution.cn:78:9 [ctor_pat] option[T]
-110_instances_by_substitution.cn:78:9 [ctor_pat] option[int32]
-110_instances_by_substitution.cn:78:9 [ctor_pat] option[int64]
-110_instances_by_substitution.cn:78:18 [ident] T
-110_instances_by_substitution.cn:78:18 [ident] int32
-110_instances_by_substitution.cn:78:18 [ident] int64
-110_instances_by_substitution.cn:81:16 [binding_pat] T
-110_instances_by_substitution.cn:81:16 [binding_pat] int32
-110_instances_by_substitution.cn:81:16 [binding_pat] int64
-110_instances_by_substitution.cn:81:25 [named_type] list[T]
-110_instances_by_substitution.cn:81:25 [named_type] list[int32]
-110_instances_by_substitution.cn:81:25 [named_type] list[int64]
-110_instances_by_substitution.cn:82:5 [var_stmt] list[T]
-110_instances_by_substitution.cn:82:5 [var_stmt] list[int32]
-110_instances_by_substitution.cn:82:5 [var_stmt] list[int64]
-110_instances_by_substitution.cn:82:15 [field] fn() -> list[_]
-110_instances_by_substitution.cn:82:15 [field] fn() -> list[_]
-110_instances_by_substitution.cn:82:15 [field] fn() -> list[_]
-110_instances_by_substitution.cn:82:15 [call] list[T]
-110_instances_by_substitution.cn:82:15 [call] list[int32]
-110_instances_by_substitution.cn:82:15 [call] list[int64]
-110_instances_by_substitution.cn:83:5 [ident] list[T]
-110_instances_by_substitution.cn:83:5 [ident] list[int32]
-110_instances_by_substitution.cn:83:5 [ident] list[int64]
-110_instances_by_substitution.cn:83:5 [field] fn(_, _) -> unit
-110_instances_by_substitution.cn:83:5 [field] fn(_, _) -> unit
-110_instances_by_substitution.cn:83:5 [field] fn(_, _) -> unit
-110_instances_by_substitution.cn:83:5 [call] unit
-110_instances_by_substitution.cn:83:5 [call] unit
-110_instances_by_substitution.cn:83:5 [call] unit
-110_instances_by_substitution.cn:83:14 [ident] T
-110_instances_by_substitution.cn:83:14 [ident] int32
-110_instances_by_substitution.cn:83:14 [ident] int64
-110_instances_by_substitution.cn:84:5 [ident] list[T]
-110_instances_by_substitution.cn:84:5 [ident] list[int32]
-110_instances_by_substitution.cn:84:5 [ident] list[int64]
-110_instances_by_substitution.cn:84:5 [field] fn(_, _) -> unit
-110_instances_by_substitution.cn:84:5 [field] fn(_, _) -> unit
-110_instances_by_substitution.cn:84:5 [field] fn(_, _) -> unit
-110_instances_by_substitution.cn:84:5 [call] unit
-110_instances_by_substitution.cn:84:5 [call] unit
-110_instances_by_substitution.cn:84:5 [call] unit
-110_instances_by_substitution.cn:84:14 [ident] T
-110_instances_by_substitution.cn:84:14 [ident] int32
-110_instances_by_substitution.cn:84:14 [ident] int64
-110_instances_by_substitution.cn:85:12 [ident] list[T]
-110_instances_by_substitution.cn:85:12 [ident] list[int32]
-110_instances_by_substitution.cn:85:12 [ident] list[int64]
-110_instances_by_substitution.cn:88:21 [binding_pat] bag[T]
-110_instances_by_substitution.cn:88:21 [binding_pat] bag[int32]
-110_instances_by_substitution.cn:88:35 [named_type] usize
-110_instances_by_substitution.cn:88:35 [named_type] usize
-110_instances_by_substitution.cn:89:9 [binding_pat] bag[int32]
-110_instances_by_substitution.cn:89:9 [binding_pat] bag[int32]
-110_instances_by_substitution.cn:89:13 [ident] bag[T]
-110_instances_by_substitution.cn:89:13 [ident] bag[int32]
-110_instances_by_substitution.cn:89:13 [field] fn(_, fn(_) -> U) -> bag[U]
-110_instances_by_substitution.cn:89:13 [field] fn(_, fn(_) -> U) -> bag[U]
-110_instances_by_substitution.cn:89:13 [call] bag[int32]
-110_instances_by_substitution.cn:89:13 [call] bag[int32]
-110_instances_by_substitution.cn:89:19 [lambda] fn(T) -> int32
-110_instances_by_substitution.cn:89:19 [lambda] fn(int32) -> int32
-110_instances_by_substitution.cn:89:29 [literal] int32
-110_instances_by_substitution.cn:89:29 [literal] int32
-110_instances_by_substitution.cn:90:12 [ident] bag[int32]
-110_instances_by_substitution.cn:90:12 [ident] bag[int32]
-110_instances_by_substitution.cn:90:12 [field] fn(_) -> usize
-110_instances_by_substitution.cn:90:12 [field] fn(_) -> usize
-110_instances_by_substitution.cn:90:12 [call] usize
-110_instances_by_substitution.cn:90:12 [call] usize
-110_instances_by_substitution.cn:90:12 [binary] usize
-110_instances_by_substitution.cn:90:12 [binary] usize
-110_instances_by_substitution.cn:90:24 [ident] bag[T]
-110_instances_by_substitution.cn:90:24 [ident] bag[int32]
-110_instances_by_substitution.cn:90:24 [field] fn(_) -> usize
-110_instances_by_substitution.cn:90:24 [field] fn(_) -> usize
-110_instances_by_substitution.cn:90:24 [call] usize
-110_instances_by_substitution.cn:90:24 [call] usize
-110_instances_by_substitution.cn:94:22 [named_type] int32
-110_instances_by_substitution.cn:94:22 [named_type] int32
-110_instances_by_substitution.cn:94:22 [named_type] int32
-110_instances_by_substitution.cn:94:22 [named_type] int32
-110_instances_by_substitution.cn:95:9 [binding_pat] str
-110_instances_by_substitution.cn:95:9 [binding_pat] str
-110_instances_by_substitution.cn:95:9 [binding_pat] str
-110_instances_by_substitution.cn:95:9 [binding_pat] str
-110_instances_by_substitution.cn:95:13 [call] str
-110_instances_by_substitution.cn:95:13 [call] str
-110_instances_by_substitution.cn:95:13 [call] str
-110_instances_by_substitution.cn:95:13 [call] str
-110_instances_by_substitution.cn:96:15 [ident] str
-110_instances_by_substitution.cn:96:15 [ident] str
-110_instances_by_substitution.cn:96:15 [ident] str
-110_instances_by_substitution.cn:96:15 [ident] str
-110_instances_by_substitution.cn:96:15 [binary] bool
-110_instances_by_substitution.cn:96:15 [binary] bool
-110_instances_by_substitution.cn:96:15 [binary] bool
-110_instances_by_substitution.cn:96:15 [binary] bool
-110_instances_by_substitution.cn:96:20 [literal] str
-110_instances_by_substitution.cn:96:20 [literal] str
-110_instances_by_substitution.cn:96:20 [literal] str
-110_instances_by_substitution.cn:96:20 [literal] str
-110_instances_by_substitution.cn:97:16 [literal] int32
-110_instances_by_substitution.cn:97:16 [literal] int32
+110_instances_by_substitution.cn:43:15 [binding_pat] &bag[T]
+110_instances_by_substitution.cn:43:15 [binding_pat] &bag[int32]
+110_instances_by_substitution.cn:43:24 [named_type] usize
+110_instances_by_substitution.cn:43:24 [named_type] usize
+110_instances_by_substitution.cn:44:16 [module_path] list[T]
+110_instances_by_substitution.cn:44:16 [module_path] list[int32]
+110_instances_by_substitution.cn:44:16 [field] fn(_) -> usize
+110_instances_by_substitution.cn:44:16 [field] fn(_) -> usize
+110_instances_by_substitution.cn:44:16 [call] usize
+110_instances_by_substitution.cn:44:16 [call] usize
+110_instances_by_substitution.cn:47:16 [binding_pat] &bag[T]
+110_instances_by_substitution.cn:47:16 [binding_pat] &bag[int32]
+110_instances_by_substitution.cn:47:16 [binding_pat] &bag[int32]
+110_instances_by_substitution.cn:47:22 [binding_pat] fn(T) -> U
+110_instances_by_substitution.cn:47:22 [binding_pat] fn(int32) -> int32
+110_instances_by_substitution.cn:47:22 [binding_pat] fn(int32) -> int64
+110_instances_by_substitution.cn:47:40 [named_type] bag[U]
+110_instances_by_substitution.cn:47:40 [named_type] bag[int32]
+110_instances_by_substitution.cn:47:40 [named_type] bag[int64]
+110_instances_by_substitution.cn:48:9 [var_stmt] list[U]
+110_instances_by_substitution.cn:48:9 [var_stmt] list[int32]
+110_instances_by_substitution.cn:48:9 [var_stmt] list[int64]
+110_instances_by_substitution.cn:48:28 [array] list[U]
+110_instances_by_substitution.cn:48:28 [array] list[int32]
+110_instances_by_substitution.cn:48:28 [array] list[int64]
+110_instances_by_substitution.cn:49:9 [var_stmt] usize
+110_instances_by_substitution.cn:49:9 [var_stmt] usize
+110_instances_by_substitution.cn:49:9 [var_stmt] usize
+110_instances_by_substitution.cn:49:24 [literal] usize
+110_instances_by_substitution.cn:49:24 [literal] usize
+110_instances_by_substitution.cn:49:24 [literal] usize
+110_instances_by_substitution.cn:50:15 [ident] usize
+110_instances_by_substitution.cn:50:15 [ident] usize
+110_instances_by_substitution.cn:50:15 [ident] usize
+110_instances_by_substitution.cn:50:15 [binary] bool
+110_instances_by_substitution.cn:50:15 [binary] bool
+110_instances_by_substitution.cn:50:15 [binary] bool
+110_instances_by_substitution.cn:50:19 [module_path] list[T]
+110_instances_by_substitution.cn:50:19 [module_path] list[int32]
+110_instances_by_substitution.cn:50:19 [module_path] list[int32]
+110_instances_by_substitution.cn:50:19 [field] fn(_) -> usize
+110_instances_by_substitution.cn:50:19 [field] fn(_) -> usize
+110_instances_by_substitution.cn:50:19 [field] fn(_) -> usize
+110_instances_by_substitution.cn:50:19 [call] usize
+110_instances_by_substitution.cn:50:19 [call] usize
+110_instances_by_substitution.cn:50:19 [call] usize
+110_instances_by_substitution.cn:51:13 [ident] list[U]
+110_instances_by_substitution.cn:51:13 [ident] list[int32]
+110_instances_by_substitution.cn:51:13 [ident] list[int64]
+110_instances_by_substitution.cn:51:13 [field] fn(_, _) -> unit
+110_instances_by_substitution.cn:51:13 [field] fn(_, _) -> unit
+110_instances_by_substitution.cn:51:13 [field] fn(_, _) -> unit
+110_instances_by_substitution.cn:51:13 [call] unit
+110_instances_by_substitution.cn:51:13 [call] unit
+110_instances_by_substitution.cn:51:13 [call] unit
+110_instances_by_substitution.cn:51:22 [ident] fn(T) -> U
+110_instances_by_substitution.cn:51:22 [ident] fn(int32) -> int32
+110_instances_by_substitution.cn:51:22 [ident] fn(int32) -> int64
+110_instances_by_substitution.cn:51:22 [call] U
+110_instances_by_substitution.cn:51:22 [call] int32
+110_instances_by_substitution.cn:51:22 [call] int64
+110_instances_by_substitution.cn:51:24 [ident] &bag[T]
+110_instances_by_substitution.cn:51:24 [ident] &bag[int32]
+110_instances_by_substitution.cn:51:24 [ident] &bag[int32]
+110_instances_by_substitution.cn:51:24 [field] list[T]
+110_instances_by_substitution.cn:51:24 [field] list[int32]
+110_instances_by_substitution.cn:51:24 [field] list[int32]
+110_instances_by_substitution.cn:51:24 [index] T
+110_instances_by_substitution.cn:51:24 [index] int32
+110_instances_by_substitution.cn:51:24 [index] int32
+110_instances_by_substitution.cn:51:35 [ident] usize
+110_instances_by_substitution.cn:51:35 [ident] usize
+110_instances_by_substitution.cn:51:35 [ident] usize
+110_instances_by_substitution.cn:52:13 [ident] usize
+110_instances_by_substitution.cn:52:13 [ident] usize
+110_instances_by_substitution.cn:52:13 [ident] usize
+110_instances_by_substitution.cn:52:17 [ident] usize
+110_instances_by_substitution.cn:52:17 [ident] usize
+110_instances_by_substitution.cn:52:17 [ident] usize
+110_instances_by_substitution.cn:52:17 [binary] usize
+110_instances_by_substitution.cn:52:17 [binary] usize
+110_instances_by_substitution.cn:52:17 [binary] usize
+110_instances_by_substitution.cn:52:21 [literal] usize
+110_instances_by_substitution.cn:52:21 [literal] usize
+110_instances_by_substitution.cn:52:21 [literal] usize
+110_instances_by_substitution.cn:53:16 [struct_literal] bag[U]
+110_instances_by_substitution.cn:53:16 [struct_literal] bag[int32]
+110_instances_by_substitution.cn:53:16 [struct_literal] bag[int64]
+110_instances_by_substitution.cn:53:32 [ident] fn(T) -> U
+110_instances_by_substitution.cn:53:32 [ident] fn(int32) -> int32
+110_instances_by_substitution.cn:53:32 [ident] fn(int32) -> int64
+110_instances_by_substitution.cn:53:32 [call] U
+110_instances_by_substitution.cn:53:32 [call] int32
+110_instances_by_substitution.cn:53:32 [call] int64
+110_instances_by_substitution.cn:53:34 [module_path] T
+110_instances_by_substitution.cn:53:34 [module_path] int32
+110_instances_by_substitution.cn:53:34 [module_path] int32
+110_instances_by_substitution.cn:53:54 [ident] list[U]
+110_instances_by_substitution.cn:53:54 [ident] list[int32]
+110_instances_by_substitution.cn:53:54 [ident] list[int64]
+110_instances_by_substitution.cn:56:17 [binding_pat] list[T]
+110_instances_by_substitution.cn:56:17 [binding_pat] list[int32]
+110_instances_by_substitution.cn:56:17 [binding_pat] list[money]
+110_instances_by_substitution.cn:56:30 [binding_pat] T
+110_instances_by_substitution.cn:56:30 [binding_pat] int32
+110_instances_by_substitution.cn:56:30 [binding_pat] money
+110_instances_by_substitution.cn:56:42 [named_type] T
+110_instances_by_substitution.cn:56:42 [named_type] int32
+110_instances_by_substitution.cn:56:42 [named_type] money
+110_instances_by_substitution.cn:57:5 [var_stmt] T
+110_instances_by_substitution.cn:57:5 [var_stmt] int32
+110_instances_by_substitution.cn:57:5 [var_stmt] money
+110_instances_by_substitution.cn:57:15 [ident] T
+110_instances_by_substitution.cn:57:15 [ident] int32
+110_instances_by_substitution.cn:57:15 [ident] money
+110_instances_by_substitution.cn:58:1 [field] int64
+110_instances_by_substitution.cn:58:9 [binding_pat] T
+110_instances_by_substitution.cn:58:9 [binding_pat] int32
+110_instances_by_substitution.cn:58:9 [binding_pat] money
+110_instances_by_substitution.cn:58:12 [ident] &money
+110_instances_by_substitution.cn:58:14 [ident] list[T]
+110_instances_by_substitution.cn:58:14 [ident] list[int32]
+110_instances_by_substitution.cn:58:14 [ident] list[money]
+110_instances_by_substitution.cn:59:9 [ident] T
+110_instances_by_substitution.cn:59:9 [ident] int32
+110_instances_by_substitution.cn:59:9 [ident] money
+110_instances_by_substitution.cn:59:15 [ident] T
+110_instances_by_substitution.cn:59:15 [ident] int32
+110_instances_by_substitution.cn:59:15 [ident] money
+110_instances_by_substitution.cn:59:15 [binary] T
+110_instances_by_substitution.cn:59:15 [binary] int32
+110_instances_by_substitution.cn:59:15 [binary] money
+110_instances_by_substitution.cn:59:21 [ident] T
+110_instances_by_substitution.cn:59:21 [ident] int32
+110_instances_by_substitution.cn:59:21 [ident] money
+110_instances_by_substitution.cn:60:12 [ident] T
+110_instances_by_substitution.cn:60:12 [ident] int32
+110_instances_by_substitution.cn:60:12 [ident] money
+110_instances_by_substitution.cn:60:13 [interp_string] str
+110_instances_by_substitution.cn:63:45 [binding_pat] &money
+110_instances_by_substitution.cn:63:54 [named_type] str
+110_instances_by_substitution.cn:64:16 [binding_pat] &list[T]
+110_instances_by_substitution.cn:64:16 [binding_pat] &list[int32]
+110_instances_by_substitution.cn:64:16 [binding_pat] &list[money]
+110_instances_by_substitution.cn:64:33 [named_type] usize
+110_instances_by_substitution.cn:64:33 [named_type] usize
+110_instances_by_substitution.cn:64:33 [named_type] usize
+110_instances_by_substitution.cn:65:5 [var_stmt] usize
+110_instances_by_substitution.cn:65:5 [var_stmt] usize
+110_instances_by_substitution.cn:65:5 [var_stmt] usize
+110_instances_by_substitution.cn:65:23 [literal] usize
+110_instances_by_substitution.cn:65:23 [literal] usize
+110_instances_by_substitution.cn:65:23 [literal] usize
+110_instances_by_substitution.cn:66:5 [var_stmt] usize
+110_instances_by_substitution.cn:66:5 [var_stmt] usize
+110_instances_by_substitution.cn:66:5 [var_stmt] usize
+110_instances_by_substitution.cn:66:20 [literal] usize
+110_instances_by_substitution.cn:66:20 [literal] usize
+110_instances_by_substitution.cn:66:20 [literal] usize
+110_instances_by_substitution.cn:67:11 [ident] usize
+110_instances_by_substitution.cn:67:11 [ident] usize
+110_instances_by_substitution.cn:67:11 [ident] usize
+110_instances_by_substitution.cn:67:11 [binary] bool
+110_instances_by_substitution.cn:67:11 [binary] bool
+110_instances_by_substitution.cn:67:11 [binary] bool
+110_instances_by_substitution.cn:67:15 [ident] &list[T]
+110_instances_by_substitution.cn:67:15 [ident] &list[int32]
+110_instances_by_substitution.cn:67:15 [ident] &list[money]
+110_instances_by_substitution.cn:67:15 [field] fn(_) -> usize
+110_instances_by_substitution.cn:67:15 [field] fn(_) -> usize
+110_instances_by_substitution.cn:67:15 [field] fn(_) -> usize
+110_instances_by_substitution.cn:67:15 [call] usize
+110_instances_by_substitution.cn:67:15 [call] usize
+110_instances_by_substitution.cn:67:15 [call] usize
+110_instances_by_substitution.cn:68:12 [ident] &list[T]
+110_instances_by_substitution.cn:68:12 [ident] &list[int32]
+110_instances_by_substitution.cn:68:12 [ident] &list[money]
+110_instances_by_substitution.cn:68:12 [index] T
+110_instances_by_substitution.cn:68:12 [index] int32
+110_instances_by_substitution.cn:68:12 [index] money
+110_instances_by_substitution.cn:68:12 [binary] bool
+110_instances_by_substitution.cn:68:12 [binary] bool
+110_instances_by_substitution.cn:68:12 [binary] bool
+110_instances_by_substitution.cn:68:15 [ident] usize
+110_instances_by_substitution.cn:68:15 [ident] usize
+110_instances_by_substitution.cn:68:15 [ident] usize
+110_instances_by_substitution.cn:68:20 [ident] &list[T]
+110_instances_by_substitution.cn:68:20 [ident] &list[int32]
+110_instances_by_substitution.cn:68:20 [ident] &list[money]
+110_instances_by_substitution.cn:68:20 [index] T
+110_instances_by_substitution.cn:68:20 [index] int32
+110_instances_by_substitution.cn:68:20 [index] money
+110_instances_by_substitution.cn:68:23 [ident] usize
+110_instances_by_substitution.cn:68:23 [ident] usize
+110_instances_by_substitution.cn:68:23 [ident] usize
+110_instances_by_substitution.cn:69:13 [ident] usize
+110_instances_by_substitution.cn:69:13 [ident] usize
+110_instances_by_substitution.cn:69:13 [ident] usize
+110_instances_by_substitution.cn:69:20 [ident] usize
+110_instances_by_substitution.cn:69:20 [ident] usize
+110_instances_by_substitution.cn:69:20 [ident] usize
+110_instances_by_substitution.cn:70:9 [ident] usize
+110_instances_by_substitution.cn:70:9 [ident] usize
+110_instances_by_substitution.cn:70:9 [ident] usize
+110_instances_by_substitution.cn:70:13 [ident] usize
+110_instances_by_substitution.cn:70:13 [ident] usize
+110_instances_by_substitution.cn:70:13 [ident] usize
+110_instances_by_substitution.cn:70:13 [binary] usize
+110_instances_by_substitution.cn:70:13 [binary] usize
+110_instances_by_substitution.cn:70:13 [binary] usize
+110_instances_by_substitution.cn:70:17 [literal] usize
+110_instances_by_substitution.cn:70:17 [literal] usize
+110_instances_by_substitution.cn:70:17 [literal] usize
+110_instances_by_substitution.cn:71:12 [ident] usize
+110_instances_by_substitution.cn:71:12 [ident] usize
+110_instances_by_substitution.cn:71:12 [ident] usize
+110_instances_by_substitution.cn:74:13 [binding_pat] option[T]
+110_instances_by_substitution.cn:74:13 [binding_pat] option[int32]
+110_instances_by_substitution.cn:74:13 [binding_pat] option[int64]
+110_instances_by_substitution.cn:74:27 [binding_pat] fn(T) -> T
+110_instances_by_substitution.cn:74:27 [binding_pat] fn(int32) -> int32
+110_instances_by_substitution.cn:74:27 [binding_pat] fn(int64) -> int64
+110_instances_by_substitution.cn:74:45 [named_type] option[T]
+110_instances_by_substitution.cn:74:45 [named_type] option[int32]
+110_instances_by_substitution.cn:74:45 [named_type] option[int64]
+110_instances_by_substitution.cn:75:12 [ident] option[T]
+110_instances_by_substitution.cn:75:12 [ident] option[int32]
+110_instances_by_substitution.cn:75:12 [ident] option[int64]
+110_instances_by_substitution.cn:75:12 [field] fn(option[A], fn(A) -> B) -> option[B]
+110_instances_by_substitution.cn:75:12 [field] fn(option[A], fn(A) -> B) -> option[B]
+110_instances_by_substitution.cn:75:12 [field] fn(option[A], fn(A) -> B) -> option[B]
+110_instances_by_substitution.cn:75:12 [call] option[T]
+110_instances_by_substitution.cn:75:12 [call] option[int32]
+110_instances_by_substitution.cn:75:12 [call] option[int64]
+110_instances_by_substitution.cn:75:18 [ident] fn(T) -> T
+110_instances_by_substitution.cn:75:18 [ident] fn(int32) -> int32
+110_instances_by_substitution.cn:75:18 [ident] fn(int64) -> int64
+110_instances_by_substitution.cn:77:15 [binding_pat] option[T]
+110_instances_by_substitution.cn:77:15 [binding_pat] option[int32]
+110_instances_by_substitution.cn:77:15 [binding_pat] option[int64]
+110_instances_by_substitution.cn:77:29 [binding_pat] T
+110_instances_by_substitution.cn:77:29 [binding_pat] int32
+110_instances_by_substitution.cn:77:29 [binding_pat] int64
+110_instances_by_substitution.cn:77:38 [named_type] T
+110_instances_by_substitution.cn:77:38 [named_type] int32
+110_instances_by_substitution.cn:77:38 [named_type] int64
+110_instances_by_substitution.cn:78:11 [ident] option[T]
+110_instances_by_substitution.cn:78:11 [ident] option[int32]
+110_instances_by_substitution.cn:78:11 [ident] option[int64]
+110_instances_by_substitution.cn:79:9 [option_pat] option[T]
+110_instances_by_substitution.cn:79:9 [option_pat] option[int32]
+110_instances_by_substitution.cn:79:9 [option_pat] option[int64]
+110_instances_by_substitution.cn:79:15 [binding_pat] T
+110_instances_by_substitution.cn:79:15 [binding_pat] int32
+110_instances_by_substitution.cn:79:15 [binding_pat] int64
+110_instances_by_substitution.cn:79:21 [ident] T
+110_instances_by_substitution.cn:79:21 [ident] int32
+110_instances_by_substitution.cn:79:21 [ident] int64
+110_instances_by_substitution.cn:80:9 [ctor_pat] option[T]
+110_instances_by_substitution.cn:80:9 [ctor_pat] option[int32]
+110_instances_by_substitution.cn:80:9 [ctor_pat] option[int64]
+110_instances_by_substitution.cn:80:18 [ident] T
+110_instances_by_substitution.cn:80:18 [ident] int32
+110_instances_by_substitution.cn:80:18 [ident] int64
+110_instances_by_substitution.cn:83:22 [binding_pat] T
+110_instances_by_substitution.cn:83:22 [binding_pat] int32
+110_instances_by_substitution.cn:83:22 [binding_pat] int64
+110_instances_by_substitution.cn:83:31 [named_type] list[T]
+110_instances_by_substitution.cn:83:31 [named_type] list[int32]
+110_instances_by_substitution.cn:83:31 [named_type] list[int64]
+110_instances_by_substitution.cn:84:5 [var_stmt] list[T]
+110_instances_by_substitution.cn:84:5 [var_stmt] list[int32]
+110_instances_by_substitution.cn:84:5 [var_stmt] list[int64]
+110_instances_by_substitution.cn:84:15 [field] fn() -> list[_]
+110_instances_by_substitution.cn:84:15 [field] fn() -> list[_]
+110_instances_by_substitution.cn:84:15 [field] fn() -> list[_]
+110_instances_by_substitution.cn:84:15 [call] list[T]
+110_instances_by_substitution.cn:84:15 [call] list[int32]
+110_instances_by_substitution.cn:84:15 [call] list[int64]
+110_instances_by_substitution.cn:85:5 [ident] list[T]
+110_instances_by_substitution.cn:85:5 [ident] list[int32]
+110_instances_by_substitution.cn:85:5 [ident] list[int64]
+110_instances_by_substitution.cn:85:5 [field] fn(_, _) -> unit
+110_instances_by_substitution.cn:85:5 [field] fn(_, _) -> unit
+110_instances_by_substitution.cn:85:5 [field] fn(_, _) -> unit
+110_instances_by_substitution.cn:85:5 [call] unit
+110_instances_by_substitution.cn:85:5 [call] unit
+110_instances_by_substitution.cn:85:5 [call] unit
+110_instances_by_substitution.cn:85:14 [ident] T
+110_instances_by_substitution.cn:85:14 [ident] int32
+110_instances_by_substitution.cn:85:14 [ident] int64
+110_instances_by_substitution.cn:86:5 [ident] list[T]
+110_instances_by_substitution.cn:86:5 [ident] list[int32]
+110_instances_by_substitution.cn:86:5 [ident] list[int64]
+110_instances_by_substitution.cn:86:5 [field] fn(_, _) -> unit
+110_instances_by_substitution.cn:86:5 [field] fn(_, _) -> unit
+110_instances_by_substitution.cn:86:5 [field] fn(_, _) -> unit
+110_instances_by_substitution.cn:86:5 [call] unit
+110_instances_by_substitution.cn:86:5 [call] unit
+110_instances_by_substitution.cn:86:5 [call] unit
+110_instances_by_substitution.cn:86:14 [ident] T
+110_instances_by_substitution.cn:86:14 [ident] int32
+110_instances_by_substitution.cn:86:14 [ident] int64
+110_instances_by_substitution.cn:87:12 [ident] list[T]
+110_instances_by_substitution.cn:87:12 [ident] list[int32]
+110_instances_by_substitution.cn:87:12 [ident] list[int64]
+110_instances_by_substitution.cn:90:21 [binding_pat] bag[T]
+110_instances_by_substitution.cn:90:21 [binding_pat] bag[int32]
+110_instances_by_substitution.cn:90:35 [named_type] usize
+110_instances_by_substitution.cn:90:35 [named_type] usize
+110_instances_by_substitution.cn:91:9 [binding_pat] bag[int32]
+110_instances_by_substitution.cn:91:9 [binding_pat] bag[int32]
+110_instances_by_substitution.cn:91:13 [ident] bag[T]
+110_instances_by_substitution.cn:91:13 [ident] bag[int32]
+110_instances_by_substitution.cn:91:13 [field] fn(_, fn(_) -> U) -> bag[U]
+110_instances_by_substitution.cn:91:13 [field] fn(_, fn(_) -> U) -> bag[U]
+110_instances_by_substitution.cn:91:13 [call] bag[int32]
+110_instances_by_substitution.cn:91:13 [call] bag[int32]
+110_instances_by_substitution.cn:91:19 [lambda] fn(T) -> int32
+110_instances_by_substitution.cn:91:19 [lambda] fn(int32) -> int32
+110_instances_by_substitution.cn:91:29 [literal] int32
+110_instances_by_substitution.cn:91:29 [literal] int32
+110_instances_by_substitution.cn:92:12 [ident] bag[int32]
+110_instances_by_substitution.cn:92:12 [ident] bag[int32]
+110_instances_by_substitution.cn:92:12 [field] fn(_) -> usize
+110_instances_by_substitution.cn:92:12 [field] fn(_) -> usize
+110_instances_by_substitution.cn:92:12 [call] usize
+110_instances_by_substitution.cn:92:12 [call] usize
+110_instances_by_substitution.cn:92:12 [binary] usize
+110_instances_by_substitution.cn:92:12 [binary] usize
+110_instances_by_substitution.cn:92:24 [ident] bag[T]
+110_instances_by_substitution.cn:92:24 [ident] bag[int32]
+110_instances_by_substitution.cn:92:24 [field] fn(_) -> usize
+110_instances_by_substitution.cn:92:24 [field] fn(_) -> usize
+110_instances_by_substitution.cn:92:24 [call] usize
+110_instances_by_substitution.cn:92:24 [call] usize
+110_instances_by_substitution.cn:96:22 [named_type] int32
+110_instances_by_substitution.cn:96:22 [named_type] int32
+110_instances_by_substitution.cn:96:22 [named_type] int32
+110_instances_by_substitution.cn:96:22 [named_type] int32
+110_instances_by_substitution.cn:97:9 [binding_pat] str
+110_instances_by_substitution.cn:97:9 [binding_pat] str
+110_instances_by_substitution.cn:97:9 [binding_pat] str
+110_instances_by_substitution.cn:97:9 [binding_pat] str
+110_instances_by_substitution.cn:97:13 [call] str
+110_instances_by_substitution.cn:97:13 [call] str
+110_instances_by_substitution.cn:97:13 [call] str
+110_instances_by_substitution.cn:97:13 [call] str
 110_instances_by_substitution.cn:98:15 [ident] str
 110_instances_by_substitution.cn:98:15 [ident] str
 110_instances_by_substitution.cn:98:15 [ident] str
@@ -2876,251 +2864,270 @@
 110_instances_by_substitution.cn:98:20 [literal] str
 110_instances_by_substitution.cn:99:16 [literal] int32
 110_instances_by_substitution.cn:99:16 [literal] int32
-110_instances_by_substitution.cn:100:12 [literal] int32
-110_instances_by_substitution.cn:100:12 [literal] int32
-110_instances_by_substitution.cn:100:12 [literal] int32
-110_instances_by_substitution.cn:100:12 [literal] int32
-110_instances_by_substitution.cn:103:26 [binding_pat] array[int32, 3]
-110_instances_by_substitution.cn:103:26 [binding_pat] array[int32, n]
-110_instances_by_substitution.cn:103:46 [binding_pat] usize
-110_instances_by_substitution.cn:103:46 [binding_pat] usize
-110_instances_by_substitution.cn:103:59 [named_type] int32
-110_instances_by_substitution.cn:103:59 [named_type] int32
-110_instances_by_substitution.cn:104:8 [ident] usize
-110_instances_by_substitution.cn:104:8 [ident] usize
-110_instances_by_substitution.cn:104:8 [binary] bool
-110_instances_by_substitution.cn:104:8 [binary] bool
-110_instances_by_substitution.cn:104:13 [ident] usize
-110_instances_by_substitution.cn:104:13 [ident] usize
-110_instances_by_substitution.cn:104:13 [literal] usize
-110_instances_by_substitution.cn:105:16 [literal] int32
-110_instances_by_substitution.cn:105:16 [literal] int32
-110_instances_by_substitution.cn:106:12 [ident] array[int32, 3]
-110_instances_by_substitution.cn:106:12 [ident] array[int32, n]
-110_instances_by_substitution.cn:106:12 [index] int32
-110_instances_by_substitution.cn:106:12 [index] int32
-110_instances_by_substitution.cn:106:12 [binary] int32
-110_instances_by_substitution.cn:106:12 [binary] int32
-110_instances_by_substitution.cn:106:14 [ident] usize
-110_instances_by_substitution.cn:106:14 [ident] usize
-110_instances_by_substitution.cn:106:19 [ident] fn(array[int32, 3], usize) -> int32
-110_instances_by_substitution.cn:106:19 [ident] fn(array[int32, n], usize) -> int32
-110_instances_by_substitution.cn:106:19 [call] int32
-110_instances_by_substitution.cn:106:19 [call] int32
-110_instances_by_substitution.cn:106:30 [ident] array[int32, 3]
-110_instances_by_substitution.cn:106:30 [ident] array[int32, n]
-110_instances_by_substitution.cn:106:33 [ident] usize
-110_instances_by_substitution.cn:106:33 [ident] usize
-110_instances_by_substitution.cn:106:33 [binary] usize
-110_instances_by_substitution.cn:106:33 [binary] usize
-110_instances_by_substitution.cn:106:37 [literal] usize
-110_instances_by_substitution.cn:106:37 [literal] usize
-110_instances_by_substitution.cn:109:15 [binding_pat] T
-110_instances_by_substitution.cn:109:15 [binding_pat] int32
-110_instances_by_substitution.cn:109:15 [binding_pat] int64
-110_instances_by_substitution.cn:109:15 [binding_pat] money
-110_instances_by_substitution.cn:109:24 [named_type] str
-110_instances_by_substitution.cn:109:24 [named_type] str
-110_instances_by_substitution.cn:109:24 [named_type] str
-110_instances_by_substitution.cn:109:24 [named_type] str
-110_instances_by_substitution.cn:110:12 [interp_string] str
-110_instances_by_substitution.cn:110:12 [interp_string] str
-110_instances_by_substitution.cn:110:12 [interp_string] str
-110_instances_by_substitution.cn:110:12 [interp_string] str
-110_instances_by_substitution.cn:110:15 [ident] T
-110_instances_by_substitution.cn:110:15 [ident] int32
-110_instances_by_substitution.cn:110:15 [ident] int64
-110_instances_by_substitution.cn:110:15 [ident] money
-110_instances_by_substitution.cn:112:15 [named_type] int32
-110_instances_by_substitution.cn:113:5 [var_stmt] int32
-110_instances_by_substitution.cn:113:24 [literal] int32
-110_instances_by_substitution.cn:114:9 [binding_pat] list[int32]
-110_instances_by_substitution.cn:114:29 [array] list[int32]
-110_instances_by_substitution.cn:114:30 [literal] int32
-110_instances_by_substitution.cn:114:33 [literal] int32
-110_instances_by_substitution.cn:114:36 [literal] int32
-110_instances_by_substitution.cn:115:9 [binding_pat] list[money]
-110_instances_by_substitution.cn:115:31 [array] list[money]
-110_instances_by_substitution.cn:115:32 [struct_literal] money
-110_instances_by_substitution.cn:115:47 [literal] int64
-110_instances_by_substitution.cn:115:53 [struct_literal] money
-110_instances_by_substitution.cn:115:68 [literal] int64
-110_instances_by_substitution.cn:116:5 [ident] int32
-110_instances_by_substitution.cn:116:13 [ident] int32
-110_instances_by_substitution.cn:116:13 [binary] int32
-110_instances_by_substitution.cn:116:21 [ident] fn(&list[int32]) -> int32
-110_instances_by_substitution.cn:116:21 [call] int32
-110_instances_by_substitution.cn:116:29 [unary] &list[int32]
-110_instances_by_substitution.cn:116:30 [ident] list[int32]
-110_instances_by_substitution.cn:117:5 [ident] int32
-110_instances_by_substitution.cn:117:13 [ident] int32
-110_instances_by_substitution.cn:117:13 [binary] int32
-110_instances_by_substitution.cn:117:21 [call] int32
-110_instances_by_substitution.cn:117:27 [ident] fn(&list[money]) -> money
-110_instances_by_substitution.cn:117:27 [call] money
-110_instances_by_substitution.cn:117:27 [field] int64
-110_instances_by_substitution.cn:117:35 [unary] &list[money]
-110_instances_by_substitution.cn:117:36 [ident] list[money]
+110_instances_by_substitution.cn:100:15 [ident] str
+110_instances_by_substitution.cn:100:15 [ident] str
+110_instances_by_substitution.cn:100:15 [ident] str
+110_instances_by_substitution.cn:100:15 [ident] str
+110_instances_by_substitution.cn:100:15 [binary] bool
+110_instances_by_substitution.cn:100:15 [binary] bool
+110_instances_by_substitution.cn:100:15 [binary] bool
+110_instances_by_substitution.cn:100:15 [binary] bool
+110_instances_by_substitution.cn:100:20 [literal] str
+110_instances_by_substitution.cn:100:20 [literal] str
+110_instances_by_substitution.cn:100:20 [literal] str
+110_instances_by_substitution.cn:100:20 [literal] str
+110_instances_by_substitution.cn:101:16 [literal] int32
+110_instances_by_substitution.cn:101:16 [literal] int32
+110_instances_by_substitution.cn:102:12 [literal] int32
+110_instances_by_substitution.cn:102:12 [literal] int32
+110_instances_by_substitution.cn:102:12 [literal] int32
+110_instances_by_substitution.cn:102:12 [literal] int32
+110_instances_by_substitution.cn:105:26 [binding_pat] &array[int32, 3]
+110_instances_by_substitution.cn:105:26 [binding_pat] &array[int32, n]
+110_instances_by_substitution.cn:105:47 [binding_pat] usize
+110_instances_by_substitution.cn:105:47 [binding_pat] usize
+110_instances_by_substitution.cn:105:60 [named_type] int32
+110_instances_by_substitution.cn:105:60 [named_type] int32
+110_instances_by_substitution.cn:106:8 [ident] usize
+110_instances_by_substitution.cn:106:8 [ident] usize
+110_instances_by_substitution.cn:106:8 [binary] bool
+110_instances_by_substitution.cn:106:8 [binary] bool
+110_instances_by_substitution.cn:106:13 [ident] usize
+110_instances_by_substitution.cn:106:13 [ident] usize
+110_instances_by_substitution.cn:106:13 [literal] usize
+110_instances_by_substitution.cn:107:16 [literal] int32
+110_instances_by_substitution.cn:107:16 [literal] int32
+110_instances_by_substitution.cn:108:12 [ident] &array[int32, 3]
+110_instances_by_substitution.cn:108:12 [ident] &array[int32, n]
+110_instances_by_substitution.cn:108:12 [index] int32
+110_instances_by_substitution.cn:108:12 [index] int32
+110_instances_by_substitution.cn:108:12 [binary] int32
+110_instances_by_substitution.cn:108:12 [binary] int32
+110_instances_by_substitution.cn:108:14 [ident] usize
+110_instances_by_substitution.cn:108:14 [ident] usize
+110_instances_by_substitution.cn:108:19 [ident] fn(&array[int32, 3], usize) -> int32
+110_instances_by_substitution.cn:108:19 [ident] fn(&array[int32, n], usize) -> int32
+110_instances_by_substitution.cn:108:19 [call] int32
+110_instances_by_substitution.cn:108:19 [call] int32
+110_instances_by_substitution.cn:108:30 [ident] &array[int32, 3]
+110_instances_by_substitution.cn:108:30 [ident] &array[int32, n]
+110_instances_by_substitution.cn:108:33 [ident] usize
+110_instances_by_substitution.cn:108:33 [ident] usize
+110_instances_by_substitution.cn:108:33 [binary] usize
+110_instances_by_substitution.cn:108:33 [binary] usize
+110_instances_by_substitution.cn:108:37 [literal] usize
+110_instances_by_substitution.cn:108:37 [literal] usize
+110_instances_by_substitution.cn:111:15 [binding_pat] T
+110_instances_by_substitution.cn:111:15 [binding_pat] int32
+110_instances_by_substitution.cn:111:15 [binding_pat] int64
+110_instances_by_substitution.cn:111:15 [binding_pat] money
+110_instances_by_substitution.cn:111:24 [named_type] str
+110_instances_by_substitution.cn:111:24 [named_type] str
+110_instances_by_substitution.cn:111:24 [named_type] str
+110_instances_by_substitution.cn:111:24 [named_type] str
+110_instances_by_substitution.cn:112:12 [interp_string] str
+110_instances_by_substitution.cn:112:12 [interp_string] str
+110_instances_by_substitution.cn:112:12 [interp_string] str
+110_instances_by_substitution.cn:112:12 [interp_string] str
+110_instances_by_substitution.cn:112:15 [ident] T
+110_instances_by_substitution.cn:112:15 [ident] int32
+110_instances_by_substitution.cn:112:15 [ident] int64
+110_instances_by_substitution.cn:112:15 [ident] money
+110_instances_by_substitution.cn:114:15 [named_type] int32
+110_instances_by_substitution.cn:115:5 [var_stmt] int32
+110_instances_by_substitution.cn:115:24 [literal] int32
+110_instances_by_substitution.cn:116:9 [binding_pat] list[int32]
+110_instances_by_substitution.cn:116:29 [array] list[int32]
+110_instances_by_substitution.cn:116:30 [literal] int32
+110_instances_by_substitution.cn:116:33 [literal] int32
+110_instances_by_substitution.cn:116:36 [literal] int32
+110_instances_by_substitution.cn:117:9 [binding_pat] list[money]
+110_instances_by_substitution.cn:117:31 [array] list[money]
+110_instances_by_substitution.cn:117:32 [struct_literal] money
+110_instances_by_substitution.cn:117:47 [literal] int64
+110_instances_by_substitution.cn:117:53 [struct_literal] money
+110_instances_by_substitution.cn:117:68 [literal] int64
 110_instances_by_substitution.cn:118:5 [ident] int32
 110_instances_by_substitution.cn:118:13 [ident] int32
 110_instances_by_substitution.cn:118:13 [binary] int32
-110_instances_by_substitution.cn:118:21 [ident] fn(list[int32], int32) -> int32
-110_instances_by_substitution.cn:118:21 [call] int32
-110_instances_by_substitution.cn:118:30 [ident] list[int32]
-110_instances_by_substitution.cn:118:36 [literal] int32
+110_instances_by_substitution.cn:118:21 [ident] list[int32]
+110_instances_by_substitution.cn:118:21 [index] int32
+110_instances_by_substitution.cn:118:26 [ident] fn(&list[int32]) -> usize
+110_instances_by_substitution.cn:118:26 [call] usize
+110_instances_by_substitution.cn:118:34 [unary] &list[int32]
+110_instances_by_substitution.cn:118:35 [ident] list[int32]
 110_instances_by_substitution.cn:119:5 [ident] int32
 110_instances_by_substitution.cn:119:13 [ident] int32
 110_instances_by_substitution.cn:119:13 [binary] int32
 110_instances_by_substitution.cn:119:21 [call] int32
-110_instances_by_substitution.cn:119:27 [ident] fn(list[money], money) -> money
-110_instances_by_substitution.cn:119:27 [call] money
+110_instances_by_substitution.cn:119:27 [ident] list[money]
+110_instances_by_substitution.cn:119:27 [index] money
 110_instances_by_substitution.cn:119:27 [field] int64
-110_instances_by_substitution.cn:119:36 [ident] list[money]
-110_instances_by_substitution.cn:119:44 [struct_literal] money
-110_instances_by_substitution.cn:119:59 [literal] int64
+110_instances_by_substitution.cn:119:34 [ident] fn(&list[money]) -> usize
+110_instances_by_substitution.cn:119:34 [call] usize
+110_instances_by_substitution.cn:119:42 [unary] &list[money]
+110_instances_by_substitution.cn:119:43 [ident] list[money]
 110_instances_by_substitution.cn:120:5 [ident] int32
 110_instances_by_substitution.cn:120:13 [ident] int32
 110_instances_by_substitution.cn:120:13 [binary] int32
-110_instances_by_substitution.cn:120:21 [ident] fn(option[int32], int32) -> int32
+110_instances_by_substitution.cn:120:21 [ident] fn(list[int32], int32) -> int32
 110_instances_by_substitution.cn:120:21 [call] int32
-110_instances_by_substitution.cn:120:28 [ident] fn(option[int32], fn(int32) -> int32) -> option[int32]
-110_instances_by_substitution.cn:120:28 [call] option[int32]
-110_instances_by_substitution.cn:120:33 [call] option[_]
-110_instances_by_substitution.cn:120:39 [literal] int32
-110_instances_by_substitution.cn:120:44 [lambda] fn(int32) -> int32
-110_instances_by_substitution.cn:120:58 [ident] int32
-110_instances_by_substitution.cn:120:58 [binary] int32
-110_instances_by_substitution.cn:120:62 [literal] int32
-110_instances_by_substitution.cn:120:66 [literal] int32
+110_instances_by_substitution.cn:120:30 [ident] list[int32]
+110_instances_by_substitution.cn:120:36 [literal] int32
 110_instances_by_substitution.cn:121:5 [ident] int32
 110_instances_by_substitution.cn:121:13 [ident] int32
 110_instances_by_substitution.cn:121:13 [binary] int32
 110_instances_by_substitution.cn:121:21 [call] int32
-110_instances_by_substitution.cn:121:27 [ident] fn(option[int64], int64) -> int64
-110_instances_by_substitution.cn:121:27 [call] int64
-110_instances_by_substitution.cn:121:34 [ident] fn(option[int64], fn(int64) -> int64) -> option[int64]
-110_instances_by_substitution.cn:121:34 [call] option[int64]
-110_instances_by_substitution.cn:121:39 [call] option[int64]
-110_instances_by_substitution.cn:121:45 [call] int64
-110_instances_by_substitution.cn:121:51 [literal] int64
-110_instances_by_substitution.cn:121:56 [lambda] fn(int64) -> int64
-110_instances_by_substitution.cn:121:70 [ident] int64
-110_instances_by_substitution.cn:121:70 [binary] int64
-110_instances_by_substitution.cn:121:74 [literal] int64
-110_instances_by_substitution.cn:121:78 [call] int64
-110_instances_by_substitution.cn:121:84 [literal] int64
-110_instances_by_substitution.cn:121:86 [binary] bool
+110_instances_by_substitution.cn:121:27 [ident] fn(list[money], money) -> money
+110_instances_by_substitution.cn:121:27 [call] money
+110_instances_by_substitution.cn:121:27 [field] int64
+110_instances_by_substitution.cn:121:36 [ident] list[money]
+110_instances_by_substitution.cn:121:44 [struct_literal] money
+110_instances_by_substitution.cn:121:59 [literal] int64
 110_instances_by_substitution.cn:122:5 [ident] int32
+110_instances_by_substitution.cn:122:7 [binary] bool
 110_instances_by_substitution.cn:122:13 [ident] int32
 110_instances_by_substitution.cn:122:13 [binary] int32
-110_instances_by_substitution.cn:122:21 [ident] fn(int32) -> list[int32]
-110_instances_by_substitution.cn:122:21 [call] list[int32]
-110_instances_by_substitution.cn:122:21 [index] int32
-110_instances_by_substitution.cn:122:23 [field] int64
-110_instances_by_substitution.cn:122:29 [literal] int32
-110_instances_by_substitution.cn:122:34 [literal] usize
-110_instances_by_substitution.cn:122:34 [ident] &money
-110_instances_by_substitution.cn:123:2 [field] int64
+110_instances_by_substitution.cn:122:21 [ident] fn(option[int32], int32) -> int32
+110_instances_by_substitution.cn:122:21 [call] int32
+110_instances_by_substitution.cn:122:28 [ident] fn(option[int32], fn(int32) -> int32) -> option[int32]
+110_instances_by_substitution.cn:122:28 [call] option[int32]
+110_instances_by_substitution.cn:122:33 [call] option[int32]
+110_instances_by_substitution.cn:122:38 [field] int64
+110_instances_by_substitution.cn:122:39 [literal] int32
+110_instances_by_substitution.cn:122:44 [lambda] fn(int32) -> int32
+110_instances_by_substitution.cn:122:49 [ident] &money
+110_instances_by_substitution.cn:122:58 [ident] int32
+110_instances_by_substitution.cn:122:58 [binary] int32
+110_instances_by_substitution.cn:122:62 [literal] int32
+110_instances_by_substitution.cn:122:66 [literal] int32
 110_instances_by_substitution.cn:123:5 [ident] int32
-110_instances_by_substitution.cn:123:13 [ident] &money
 110_instances_by_substitution.cn:123:13 [ident] int32
 110_instances_by_substitution.cn:123:13 [binary] int32
+110_instances_by_substitution.cn:123:14 [field] int64
 110_instances_by_substitution.cn:123:21 [call] int32
-110_instances_by_substitution.cn:123:27 [ident] fn(int64) -> list[int64]
-110_instances_by_substitution.cn:123:27 [call] list[int64]
-110_instances_by_substitution.cn:123:27 [index] int64
-110_instances_by_substitution.cn:123:35 [call] int64
-110_instances_by_substitution.cn:123:41 [literal] int64
-110_instances_by_substitution.cn:123:47 [literal] usize
-110_instances_by_substitution.cn:124:9 [binding_pat] bag[int32]
-110_instances_by_substitution.cn:124:13 [struct_literal] bag[int32]
-110_instances_by_substitution.cn:124:33 [literal] int32
-110_instances_by_substitution.cn:124:43 [array] list[int32]
-110_instances_by_substitution.cn:124:44 [literal] int32
-110_instances_by_substitution.cn:124:47 [literal] int32
-110_instances_by_substitution.cn:124:50 [literal] int32
-110_instances_by_substitution.cn:125:9 [binding_pat] bag[int64]
-110_instances_by_substitution.cn:125:16 [ident] bag[int32]
-110_instances_by_substitution.cn:125:16 [field] fn(_, fn(_) -> U) -> bag[U]
-110_instances_by_substitution.cn:125:16 [call] bag[int64]
-110_instances_by_substitution.cn:125:22 [lambda] fn(int32) -> int64
-110_instances_by_substitution.cn:125:36 [call] int64
-110_instances_by_substitution.cn:125:36 [binary] int64
-110_instances_by_substitution.cn:125:42 [ident] int32
-110_instances_by_substitution.cn:125:47 [literal] int64
-110_instances_by_substitution.cn:126:5 [ident] int32
-110_instances_by_substitution.cn:126:13 [ident] int32
-110_instances_by_substitution.cn:126:13 [binary] int32
-110_instances_by_substitution.cn:126:13 [binary] int32
-110_instances_by_substitution.cn:126:21 [call] int32
-110_instances_by_substitution.cn:126:27 [module_path] int64
-110_instances_by_substitution.cn:126:41 [call] int32
-110_instances_by_substitution.cn:126:47 [ident] bag[int64]
-110_instances_by_substitution.cn:126:47 [field] list[int64]
-110_instances_by_substitution.cn:126:47 [index] int64
-110_instances_by_substitution.cn:126:58 [literal] usize
-110_instances_by_substitution.cn:126:69 [binding_pat] &money
-110_instances_by_substitution.cn:127:1 [binding_pat] &money
-110_instances_by_substitution.cn:127:5 [ident] int32
-110_instances_by_substitution.cn:127:13 [ident] int32
-110_instances_by_substitution.cn:127:13 [binary] int32
-110_instances_by_substitution.cn:127:18 [named_type] bool
-110_instances_by_substitution.cn:127:21 [call] int32
-110_instances_by_substitution.cn:127:21 [binary] int32
-110_instances_by_substitution.cn:127:27 [ident] fn(bag[int32]) -> usize
-110_instances_by_substitution.cn:127:27 [call] usize
-110_instances_by_substitution.cn:127:40 [ident] bag[int32]
-110_instances_by_substitution.cn:127:46 [literal] int32
+110_instances_by_substitution.cn:123:25 [ident] &money
+110_instances_by_substitution.cn:123:27 [ident] fn(option[int64], int64) -> int64
+110_instances_by_substitution.cn:123:27 [call] int64
+110_instances_by_substitution.cn:123:34 [ident] fn(option[int64], fn(int64) -> int64) -> option[int64]
+110_instances_by_substitution.cn:123:34 [call] option[int64]
+110_instances_by_substitution.cn:123:39 [call] option[int64]
+110_instances_by_substitution.cn:123:45 [call] int64
+110_instances_by_substitution.cn:123:51 [literal] int64
+110_instances_by_substitution.cn:123:56 [lambda] fn(int64) -> int64
+110_instances_by_substitution.cn:123:70 [ident] int64
+110_instances_by_substitution.cn:123:70 [binary] int64
+110_instances_by_substitution.cn:123:74 [literal] int64
+110_instances_by_substitution.cn:123:78 [call] int64
+110_instances_by_substitution.cn:123:84 [literal] int64
+110_instances_by_substitution.cn:124:5 [ident] int32
+110_instances_by_substitution.cn:124:13 [ident] int32
+110_instances_by_substitution.cn:124:13 [binary] int32
+110_instances_by_substitution.cn:124:21 [ident] fn(int32) -> list[int32]
+110_instances_by_substitution.cn:124:21 [call] list[int32]
+110_instances_by_substitution.cn:124:21 [index] int32
+110_instances_by_substitution.cn:124:29 [literal] int32
+110_instances_by_substitution.cn:124:34 [literal] usize
+110_instances_by_substitution.cn:125:5 [ident] int32
+110_instances_by_substitution.cn:125:13 [ident] int32
+110_instances_by_substitution.cn:125:13 [binary] int32
+110_instances_by_substitution.cn:125:21 [call] int32
+110_instances_by_substitution.cn:125:27 [ident] fn(int64) -> list[int64]
+110_instances_by_substitution.cn:125:27 [call] list[int64]
+110_instances_by_substitution.cn:125:27 [index] int64
+110_instances_by_substitution.cn:125:35 [call] int64
+110_instances_by_substitution.cn:125:41 [literal] int64
+110_instances_by_substitution.cn:125:47 [literal] usize
+110_instances_by_substitution.cn:126:9 [binding_pat] bag[int32]
+110_instances_by_substitution.cn:126:13 [struct_literal] bag[int32]
+110_instances_by_substitution.cn:126:20 [binding_pat] &money
+110_instances_by_substitution.cn:126:26 [binding_pat] &money
+110_instances_by_substitution.cn:126:33 [literal] int32
+110_instances_by_substitution.cn:126:43 [named_type] bool
+110_instances_by_substitution.cn:126:43 [array] list[int32]
+110_instances_by_substitution.cn:126:44 [literal] int32
+110_instances_by_substitution.cn:126:47 [literal] int32
+110_instances_by_substitution.cn:126:50 [literal] int32
+110_instances_by_substitution.cn:127:9 [binding_pat] bag[int64]
+110_instances_by_substitution.cn:127:16 [ident] bag[int32]
+110_instances_by_substitution.cn:127:16 [field] fn(_, fn(_) -> U) -> bag[U]
+110_instances_by_substitution.cn:127:16 [call] bag[int64]
+110_instances_by_substitution.cn:127:22 [lambda] fn(int32) -> int64
+110_instances_by_substitution.cn:127:36 [call] int64
+110_instances_by_substitution.cn:127:36 [binary] int64
+110_instances_by_substitution.cn:127:42 [ident] int32
+110_instances_by_substitution.cn:127:47 [literal] int64
 110_instances_by_substitution.cn:128:5 [ident] int32
 110_instances_by_substitution.cn:128:13 [ident] int32
 110_instances_by_substitution.cn:128:13 [binary] int32
 110_instances_by_substitution.cn:128:13 [binary] int32
-110_instances_by_substitution.cn:128:13 [binary] int32
-110_instances_by_substitution.cn:128:21 [ident] _
-110_instances_by_substitution.cn:128:21 [index] fn() -> int32
 110_instances_by_substitution.cn:128:21 [call] int32
-110_instances_by_substitution.cn:128:40 [ident] _
-110_instances_by_substitution.cn:128:40 [index] fn() -> int32
-110_instances_by_substitution.cn:128:40 [call] int32
-110_instances_by_substitution.cn:128:60 [ident] _
-110_instances_by_substitution.cn:128:60 [index] fn() -> int32
-110_instances_by_substitution.cn:128:60 [call] int32
-110_instances_by_substitution.cn:129:9 [binding_pat] array[int32, 3]
-110_instances_by_substitution.cn:129:32 [array] array[int32, 3]
-110_instances_by_substitution.cn:129:33 [literal] int32
-110_instances_by_substitution.cn:129:36 [literal] int32
-110_instances_by_substitution.cn:129:39 [literal] int32
+110_instances_by_substitution.cn:128:27 [module_path] int64
+110_instances_by_substitution.cn:128:41 [call] int32
+110_instances_by_substitution.cn:128:47 [ident] bag[int64]
+110_instances_by_substitution.cn:128:47 [field] list[int64]
+110_instances_by_substitution.cn:128:47 [index] int64
+110_instances_by_substitution.cn:128:58 [literal] usize
+110_instances_by_substitution.cn:129:5 [ident] int32
+110_instances_by_substitution.cn:129:13 [ident] int32
+110_instances_by_substitution.cn:129:13 [binary] int32
+110_instances_by_substitution.cn:129:21 [call] int32
+110_instances_by_substitution.cn:129:21 [binary] int32
+110_instances_by_substitution.cn:129:27 [ident] fn(bag[int32]) -> usize
+110_instances_by_substitution.cn:129:27 [call] usize
+110_instances_by_substitution.cn:129:40 [ident] bag[int32]
+110_instances_by_substitution.cn:129:46 [literal] int32
 110_instances_by_substitution.cn:130:5 [ident] int32
 110_instances_by_substitution.cn:130:13 [ident] int32
 110_instances_by_substitution.cn:130:13 [binary] int32
-110_instances_by_substitution.cn:130:21 [ident] fn(array[int32, 3], usize) -> int32
+110_instances_by_substitution.cn:130:13 [binary] int32
+110_instances_by_substitution.cn:130:13 [binary] int32
+110_instances_by_substitution.cn:130:21 [ident] _
+110_instances_by_substitution.cn:130:21 [index] fn() -> int32
 110_instances_by_substitution.cn:130:21 [call] int32
-110_instances_by_substitution.cn:130:32 [ident] array[int32, 3]
-110_instances_by_substitution.cn:130:37 [literal] usize
-110_instances_by_substitution.cn:131:5 [ident] fn(str) -> unit
-110_instances_by_substitution.cn:131:5 [call] unit
-110_instances_by_substitution.cn:131:13 [ident] fn(int32) -> str
-110_instances_by_substitution.cn:131:13 [call] str
-110_instances_by_substitution.cn:131:20 [literal] int32
-110_instances_by_substitution.cn:132:5 [ident] fn(str) -> unit
-110_instances_by_substitution.cn:132:5 [call] unit
-110_instances_by_substitution.cn:132:13 [ident] fn(money) -> str
-110_instances_by_substitution.cn:132:13 [call] str
-110_instances_by_substitution.cn:132:20 [struct_literal] money
-110_instances_by_substitution.cn:132:35 [literal] int64
-110_instances_by_substitution.cn:133:9 [binding_pat] str
-110_instances_by_substitution.cn:133:16 [ident] fn(int64) -> str
-110_instances_by_substitution.cn:133:16 [call] str
-110_instances_by_substitution.cn:133:23 [call] int64
-110_instances_by_substitution.cn:133:29 [unary] int64
-110_instances_by_substitution.cn:133:30 [literal] int64
-110_instances_by_substitution.cn:134:5 [ident] int32
-110_instances_by_substitution.cn:134:13 [ident] int32
-110_instances_by_substitution.cn:134:13 [binary] int32
-110_instances_by_substitution.cn:134:21 [call] int32
-110_instances_by_substitution.cn:134:27 [ident] str
-110_instances_by_substitution.cn:134:27 [call] usize
-110_instances_by_substitution.cn:135:12 [ident] int32
+110_instances_by_substitution.cn:130:40 [ident] _
+110_instances_by_substitution.cn:130:40 [index] fn() -> int32
+110_instances_by_substitution.cn:130:40 [call] int32
+110_instances_by_substitution.cn:130:60 [ident] _
+110_instances_by_substitution.cn:130:60 [index] fn() -> int32
+110_instances_by_substitution.cn:130:60 [call] int32
+110_instances_by_substitution.cn:131:9 [binding_pat] array[int32, 3]
+110_instances_by_substitution.cn:131:32 [array] array[int32, 3]
+110_instances_by_substitution.cn:131:33 [literal] int32
+110_instances_by_substitution.cn:131:36 [literal] int32
+110_instances_by_substitution.cn:131:39 [literal] int32
+110_instances_by_substitution.cn:132:5 [ident] int32
+110_instances_by_substitution.cn:132:13 [ident] int32
+110_instances_by_substitution.cn:132:13 [binary] int32
+110_instances_by_substitution.cn:132:21 [ident] fn(&array[int32, 3], usize) -> int32
+110_instances_by_substitution.cn:132:21 [call] int32
+110_instances_by_substitution.cn:132:32 [unary] &array[int32, 3]
+110_instances_by_substitution.cn:132:33 [ident] array[int32, 3]
+110_instances_by_substitution.cn:132:38 [literal] usize
+110_instances_by_substitution.cn:133:5 [ident] fn(str) -> unit
+110_instances_by_substitution.cn:133:5 [call] unit
+110_instances_by_substitution.cn:133:13 [ident] fn(int32) -> str
+110_instances_by_substitution.cn:133:13 [call] str
+110_instances_by_substitution.cn:133:20 [literal] int32
+110_instances_by_substitution.cn:134:5 [ident] fn(str) -> unit
+110_instances_by_substitution.cn:134:5 [call] unit
+110_instances_by_substitution.cn:134:13 [ident] fn(money) -> str
+110_instances_by_substitution.cn:134:13 [call] str
+110_instances_by_substitution.cn:134:20 [struct_literal] money
+110_instances_by_substitution.cn:134:35 [literal] int64
+110_instances_by_substitution.cn:135:9 [binding_pat] str
+110_instances_by_substitution.cn:135:16 [ident] fn(int64) -> str
+110_instances_by_substitution.cn:135:16 [call] str
+110_instances_by_substitution.cn:135:23 [call] int64
+110_instances_by_substitution.cn:135:29 [unary] int64
+110_instances_by_substitution.cn:135:30 [literal] int64
+110_instances_by_substitution.cn:136:5 [ident] int32
+110_instances_by_substitution.cn:136:13 [ident] int32
+110_instances_by_substitution.cn:136:13 [binary] int32
+110_instances_by_substitution.cn:136:21 [call] int32
+110_instances_by_substitution.cn:136:27 [ident] str
+110_instances_by_substitution.cn:136:27 [call] usize
+110_instances_by_substitution.cn:137:12 [ident] int32
 111_method_on_literal_waits.cn:15:15 [binding_pat] int64
 111_method_on_literal_waits.cn:15:24 [named_type] int64
 111_method_on_literal_waits.cn:16:16 [ident] int64
@@ -33866,13 +33873,13 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1686 data *mut uint32
 ?:1686 data *mut usize
 ?:1702 nanos uint64
-?:1730 first U
-?:1730 first int32
-?:1730 first int64
-?:1739 base int32
-?:1752 items list[U]
-?:1752 items list[int32]
-?:1752 items list[int64]
+?:1795 first U
+?:1795 first int32
+?:1795 first int64
+?:1817 items list[U]
+?:1817 items list[int32]
+?:1817 items list[int64]
+?:1825 base int32
 ?:1925 name str
 ?:1937 run fn() -> result[unit, test_failure]
 ?:1947 skip bool
@@ -33917,22 +33924,22 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:3286 after_each option[fn() -> result[unit, test_failure]]
 ?:3435 at int32
 ?:3442 stop int32
-?:3519 cents int64
-?:3540 cents int64
 ?:3553 at int32
 ?:3560 stop int32
-?:3819 cents int64
+?:3674 cents int64
+?:3695 cents int64
+?:3974 cents int64
 ?:3982 grams int32
 ?:4003 grams int32
 ?:4085 seen int32
 ?:4085 seen int32
 ?:4124 inner I
 ?:4135 f fn(T) -> U
-?:4186 first int32
-?:4196 items list[int32]
 ?:4322 fill char
+?:4341 first int32
 ?:4343 fd int32
 ?:4347 align option[align_mode]
+?:4351 items list[int32]
 ?:4379 total int32
 ?:4379 total int32
 ?:4397 state usize
@@ -33944,7 +33951,6 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4459 zero_pad bool
 ?:4484 width option[usize]
 ?:4511 precision option[usize]
-?:4661 cents int64
 ?:4664 inner I
 ?:4675 pred fn(&T) -> bool
 ?:4685 src &list[T]
@@ -33954,6 +33960,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4701 end usize
 ?:4701 end usize
 ?:4775 inner *mut mutex_block[T]
+?:4817 cents int64
 ?:4914 v T
 ?:4914 v int32
 ?:4937 fd raw_fd
@@ -34110,17 +34117,17 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 033_const_generic_monomorphization.cn:25:32 [call] (v=arg, i=arg)
 033_const_generic_monomorphization.cn:25:32 [call] (v=arg, i=arg)
 033_const_generic_monomorphization.cn:25:32 [call] (v=arg, i=arg)
-033_const_generic_monomorphization.cn:30:21 [call] (v=arg, raw=arg)
-033_const_generic_monomorphization.cn:31:25 [call] (v=arg, raw=arg)
-033_const_generic_monomorphization.cn:33:40 [call] (v=arg)
-033_const_generic_monomorphization.cn:33:54 [call] (v=arg, i=arg)
-033_const_generic_monomorphization.cn:33:68 [call] (v=arg, i=arg)
-034_generic_monomorphization.cn:52:13 [call] ()
-034_generic_monomorphization.cn:56:13 [call] (v=arg)
-034_generic_monomorphization.cn:58:20 [call] (v=arg, i=arg)
-034_generic_monomorphization.cn:59:22 [call] (v=arg, i=arg)
-034_generic_monomorphization.cn:60:20 [call] (x=arg)
-034_generic_monomorphization.cn:61:21 [call] (v=arg, i=arg)
+033_const_generic_monomorphization.cn:31:21 [call] (v=arg, raw=arg)
+033_const_generic_monomorphization.cn:32:25 [call] (v=arg, raw=arg)
+033_const_generic_monomorphization.cn:34:40 [call] (v=arg)
+033_const_generic_monomorphization.cn:34:55 [call] (v=arg, i=arg)
+033_const_generic_monomorphization.cn:34:70 [call] (v=arg, i=arg)
+034_generic_monomorphization.cn:54:13 [call] ()
+034_generic_monomorphization.cn:58:13 [call] (v=arg)
+034_generic_monomorphization.cn:60:20 [call] (v=arg, i=arg)
+034_generic_monomorphization.cn:61:22 [call] (v=arg, i=arg)
+034_generic_monomorphization.cn:62:20 [call] (x=arg)
+034_generic_monomorphization.cn:63:21 [call] (v=arg, i=arg)
 034_higher_kinded_trait_dispatch.cn:35:17 [call] (a=arg)
 034_higher_kinded_trait_dispatch.cn:36:19 [call] (f=arg)
 034_higher_kinded_trait_dispatch.cn:37:21 [call] (f=arg)
@@ -34235,58 +34242,58 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 093_index_settles_its_receiver.cn:36:5 [call] (value=arg)
 093_index_settles_its_receiver.cn:37:5 [call] (value=arg)
 093_index_settles_its_receiver.cn:42:15 [call] ()
-110_instances_by_substitution.cn:43:16 [call] ()
-110_instances_by_substitution.cn:43:16 [call] ()
-110_instances_by_substitution.cn:49:19 [call] ()
-110_instances_by_substitution.cn:49:19 [call] ()
-110_instances_by_substitution.cn:49:19 [call] ()
-110_instances_by_substitution.cn:50:13 [call] (value=arg)
-110_instances_by_substitution.cn:50:13 [call] (value=arg)
-110_instances_by_substitution.cn:50:13 [call] (value=arg)
-110_instances_by_substitution.cn:65:15 [call] ()
-110_instances_by_substitution.cn:65:15 [call] ()
-110_instances_by_substitution.cn:65:15 [call] ()
-110_instances_by_substitution.cn:73:12 [call] (f=arg)
-110_instances_by_substitution.cn:73:12 [call] (f=arg)
-110_instances_by_substitution.cn:73:12 [call] (f=arg)
-110_instances_by_substitution.cn:82:15 [call] ()
-110_instances_by_substitution.cn:82:15 [call] ()
-110_instances_by_substitution.cn:82:15 [call] ()
-110_instances_by_substitution.cn:83:5 [call] (value=arg)
-110_instances_by_substitution.cn:83:5 [call] (value=arg)
-110_instances_by_substitution.cn:83:5 [call] (value=arg)
-110_instances_by_substitution.cn:84:5 [call] (value=arg)
-110_instances_by_substitution.cn:84:5 [call] (value=arg)
-110_instances_by_substitution.cn:84:5 [call] (value=arg)
-110_instances_by_substitution.cn:89:13 [call] (f=arg)
-110_instances_by_substitution.cn:89:13 [call] (f=arg)
-110_instances_by_substitution.cn:90:12 [call] ()
-110_instances_by_substitution.cn:90:12 [call] ()
-110_instances_by_substitution.cn:90:24 [call] ()
-110_instances_by_substitution.cn:90:24 [call] ()
-110_instances_by_substitution.cn:106:19 [call] (v=arg, i=arg)
-110_instances_by_substitution.cn:106:19 [call] (v=arg, i=arg)
-110_instances_by_substitution.cn:116:21 [call] (xs=arg)
-110_instances_by_substitution.cn:117:27 [call] (xs=arg)
-110_instances_by_substitution.cn:118:21 [call] (xs=arg, zero=arg)
-110_instances_by_substitution.cn:119:27 [call] (xs=arg, zero=arg)
-110_instances_by_substitution.cn:120:21 [call] (o=arg, d=arg)
-110_instances_by_substitution.cn:120:28 [call] (o=arg, f=arg)
-110_instances_by_substitution.cn:121:27 [call] (o=arg, d=arg)
-110_instances_by_substitution.cn:121:34 [call] (o=arg, f=arg)
-110_instances_by_substitution.cn:122:21 [call] (x=arg)
-110_instances_by_substitution.cn:123:27 [call] (x=arg)
-110_instances_by_substitution.cn:125:16 [call] (f=arg)
-110_instances_by_substitution.cn:127:27 [call] (b=arg)
-110_instances_by_substitution.cn:128:21 [call] ()
-110_instances_by_substitution.cn:128:40 [call] ()
-110_instances_by_substitution.cn:128:60 [call] ()
-110_instances_by_substitution.cn:130:21 [call] (v=arg, i=arg)
-110_instances_by_substitution.cn:131:5 [call] (s=arg)
-110_instances_by_substitution.cn:131:13 [call] (x=arg)
-110_instances_by_substitution.cn:132:5 [call] (s=arg)
-110_instances_by_substitution.cn:132:13 [call] (x=arg)
-110_instances_by_substitution.cn:133:16 [call] (x=arg)
+110_instances_by_substitution.cn:44:16 [call] ()
+110_instances_by_substitution.cn:44:16 [call] ()
+110_instances_by_substitution.cn:50:19 [call] ()
+110_instances_by_substitution.cn:50:19 [call] ()
+110_instances_by_substitution.cn:50:19 [call] ()
+110_instances_by_substitution.cn:51:13 [call] (value=arg)
+110_instances_by_substitution.cn:51:13 [call] (value=arg)
+110_instances_by_substitution.cn:51:13 [call] (value=arg)
+110_instances_by_substitution.cn:67:15 [call] ()
+110_instances_by_substitution.cn:67:15 [call] ()
+110_instances_by_substitution.cn:67:15 [call] ()
+110_instances_by_substitution.cn:75:12 [call] (f=arg)
+110_instances_by_substitution.cn:75:12 [call] (f=arg)
+110_instances_by_substitution.cn:75:12 [call] (f=arg)
+110_instances_by_substitution.cn:84:15 [call] ()
+110_instances_by_substitution.cn:84:15 [call] ()
+110_instances_by_substitution.cn:84:15 [call] ()
+110_instances_by_substitution.cn:85:5 [call] (value=arg)
+110_instances_by_substitution.cn:85:5 [call] (value=arg)
+110_instances_by_substitution.cn:85:5 [call] (value=arg)
+110_instances_by_substitution.cn:86:5 [call] (value=arg)
+110_instances_by_substitution.cn:86:5 [call] (value=arg)
+110_instances_by_substitution.cn:86:5 [call] (value=arg)
+110_instances_by_substitution.cn:91:13 [call] (f=arg)
+110_instances_by_substitution.cn:91:13 [call] (f=arg)
+110_instances_by_substitution.cn:92:12 [call] ()
+110_instances_by_substitution.cn:92:12 [call] ()
+110_instances_by_substitution.cn:92:24 [call] ()
+110_instances_by_substitution.cn:92:24 [call] ()
+110_instances_by_substitution.cn:108:19 [call] (v=arg, i=arg)
+110_instances_by_substitution.cn:108:19 [call] (v=arg, i=arg)
+110_instances_by_substitution.cn:118:26 [call] (xs=arg)
+110_instances_by_substitution.cn:119:34 [call] (xs=arg)
+110_instances_by_substitution.cn:120:21 [call] (xs=arg, zero=arg)
+110_instances_by_substitution.cn:121:27 [call] (xs=arg, zero=arg)
+110_instances_by_substitution.cn:122:21 [call] (o=arg, d=arg)
+110_instances_by_substitution.cn:122:28 [call] (o=arg, f=arg)
+110_instances_by_substitution.cn:123:27 [call] (o=arg, d=arg)
+110_instances_by_substitution.cn:123:34 [call] (o=arg, f=arg)
+110_instances_by_substitution.cn:124:21 [call] (x=arg)
+110_instances_by_substitution.cn:125:27 [call] (x=arg)
+110_instances_by_substitution.cn:127:16 [call] (f=arg)
+110_instances_by_substitution.cn:129:27 [call] (b=arg)
+110_instances_by_substitution.cn:130:21 [call] ()
+110_instances_by_substitution.cn:130:40 [call] ()
+110_instances_by_substitution.cn:130:60 [call] ()
+110_instances_by_substitution.cn:132:21 [call] (v=arg, i=arg)
+110_instances_by_substitution.cn:133:5 [call] (s=arg)
+110_instances_by_substitution.cn:133:13 [call] (x=arg)
+110_instances_by_substitution.cn:134:5 [call] (s=arg)
+110_instances_by_substitution.cn:134:13 [call] (x=arg)
+110_instances_by_substitution.cn:135:16 [call] (x=arg)
 111_method_on_literal_waits.cn:20:13 [call] ()
 111_method_on_literal_waits.cn:25:13 [call] (other=arg)
 176_or_else.cn:23:12 [call] (msg=arg)
@@ -35150,17 +35157,17 @@ std/unicode.cn:288:29 [call] (cp=arg)
 033_const_generic_monomorphization.cn:25:12 [call] codegen_stress.const_generic_monomorphization::checked_get$5
 033_const_generic_monomorphization.cn:25:32 [call] codegen_stress.const_generic_monomorphization::total$3
 033_const_generic_monomorphization.cn:25:32 [call] codegen_stress.const_generic_monomorphization::total$5
-033_const_generic_monomorphization.cn:30:21 [call] codegen_stress.const_generic_monomorphization::checked_get$3
-033_const_generic_monomorphization.cn:31:25 [call] codegen_stress.const_generic_monomorphization::checked_get$5
-033_const_generic_monomorphization.cn:33:40 [call] codegen_stress.const_generic_monomorphization::capacity$5
-033_const_generic_monomorphization.cn:33:54 [call] codegen_stress.const_generic_monomorphization::total$3
-033_const_generic_monomorphization.cn:33:68 [call] codegen_stress.const_generic_monomorphization::total$5
-034_generic_monomorphization.cn:52:13 [call] codegen_stress.generic_monomorphization::zeros$3
-034_generic_monomorphization.cn:56:13 [call] codegen_stress.generic_monomorphization::filled$4$int32
-034_generic_monomorphization.cn:58:20 [call] codegen_stress.generic_monomorphization::first$4$int32
-034_generic_monomorphization.cn:59:22 [call] codegen_stress.generic_monomorphization::holder::at$2 recv
-034_generic_monomorphization.cn:60:20 [call] codegen_stress.generic_monomorphization::holder::echo$int32 recv
-034_generic_monomorphization.cn:61:21 [call] codegen_stress.generic_monomorphization::holder::pick$4$int32 recv
+033_const_generic_monomorphization.cn:31:21 [call] codegen_stress.const_generic_monomorphization::checked_get$3
+033_const_generic_monomorphization.cn:32:25 [call] codegen_stress.const_generic_monomorphization::checked_get$5
+033_const_generic_monomorphization.cn:34:40 [call] codegen_stress.const_generic_monomorphization::capacity$5
+033_const_generic_monomorphization.cn:34:55 [call] codegen_stress.const_generic_monomorphization::total$3
+033_const_generic_monomorphization.cn:34:70 [call] codegen_stress.const_generic_monomorphization::total$5
+034_generic_monomorphization.cn:54:13 [call] codegen_stress.generic_monomorphization::zeros$3
+034_generic_monomorphization.cn:58:13 [call] codegen_stress.generic_monomorphization::filled$4$int32
+034_generic_monomorphization.cn:60:20 [call] codegen_stress.generic_monomorphization::first$4$int32
+034_generic_monomorphization.cn:61:22 [call] codegen_stress.generic_monomorphization::holder::at$2 recv
+034_generic_monomorphization.cn:62:20 [call] codegen_stress.generic_monomorphization::holder::echo$int32 recv
+034_generic_monomorphization.cn:63:21 [call] codegen_stress.generic_monomorphization::holder::pick$4$int32 recv
 034_higher_kinded_trait_dispatch.cn:35:17 [call] codegen_stress.higher_kinded_trait_dispatch::option::pure$int32
 034_higher_kinded_trait_dispatch.cn:36:19 [call] codegen_stress.instances_by_substitution::option::map$int32$int32 recv
 034_higher_kinded_trait_dispatch.cn:37:21 [call] codegen_stress.higher_kinded_trait_dispatch::option::bind$int32$int32 recv
@@ -35228,56 +35235,56 @@ std/unicode.cn:288:29 [call] (cp=arg)
 093_index_settles_its_receiver.cn:36:5 [call] std.list::list::push$list_int32_ recv
 093_index_settles_its_receiver.cn:37:5 [call] std.list::list::push$list_int32_ recv
 093_index_settles_its_receiver.cn:42:15 [call] std.list::list::len$list_int32_ recv
-110_instances_by_substitution.cn:43:16 [call] std.list::list::len recv
-110_instances_by_substitution.cn:43:16 [call] std.list::list::len$list_int32_ recv
-110_instances_by_substitution.cn:49:19 [call] std.list::list::len recv
-110_instances_by_substitution.cn:49:19 [call] std.list::list::len$list_int32_ recv
-110_instances_by_substitution.cn:49:19 [call] std.list::list::len$list_int32_ recv
-110_instances_by_substitution.cn:50:13 [call] std.list::list::push recv
-110_instances_by_substitution.cn:50:13 [call] std.list::list::push$list_int32_ recv
-110_instances_by_substitution.cn:50:13 [call] std.list::list::push$list_int64_ recv
-110_instances_by_substitution.cn:65:15 [call] std.list::list::len recv
-110_instances_by_substitution.cn:65:15 [call] std.list::list::len$list_int32_ recv
-110_instances_by_substitution.cn:65:15 [call] std.list::list::len$list_money_ recv
-110_instances_by_substitution.cn:73:12 [call] codegen_stress.instances_by_substitution::option::map$int32$int32 recv
-110_instances_by_substitution.cn:73:12 [call] codegen_stress.instances_by_substitution::option::map$int64$int64 recv
-110_instances_by_substitution.cn:82:15 [call] std.list::list::new$list_int32_
-110_instances_by_substitution.cn:82:15 [call] std.list::list::new$list_int64_
-110_instances_by_substitution.cn:82:15 [call] std.list::list[T]::new
-110_instances_by_substitution.cn:83:5 [call] std.list::list::push recv
-110_instances_by_substitution.cn:83:5 [call] std.list::list::push$list_int32_ recv
-110_instances_by_substitution.cn:83:5 [call] std.list::list::push$list_int64_ recv
-110_instances_by_substitution.cn:84:5 [call] std.list::list::push recv
-110_instances_by_substitution.cn:84:5 [call] std.list::list::push$list_int32_ recv
-110_instances_by_substitution.cn:84:5 [call] std.list::list::push$list_int64_ recv
-110_instances_by_substitution.cn:89:13 [call] codegen_stress.instances_by_substitution::bag::map recv
-110_instances_by_substitution.cn:89:13 [call] codegen_stress.instances_by_substitution::bag::map$int32 recv
-110_instances_by_substitution.cn:90:12 [call] codegen_stress.instances_by_substitution::bag::count$bag_int32_ recv
-110_instances_by_substitution.cn:90:12 [call] codegen_stress.instances_by_substitution::bag::count$bag_int32_ recv
-110_instances_by_substitution.cn:90:24 [call] codegen_stress.instances_by_substitution::bag::count recv
-110_instances_by_substitution.cn:90:24 [call] codegen_stress.instances_by_substitution::bag::count$bag_int32_ recv
-110_instances_by_substitution.cn:106:19 [call] codegen_stress.instances_by_substitution::count_down$3
-110_instances_by_substitution.cn:116:21 [call] codegen_stress.instances_by_substitution::biggest$int32
-110_instances_by_substitution.cn:117:27 [call] codegen_stress.instances_by_substitution::biggest$money
-110_instances_by_substitution.cn:118:21 [call] codegen_stress.instances_by_substitution::sum_list$int32
-110_instances_by_substitution.cn:119:27 [call] codegen_stress.instances_by_substitution::sum_list$money
-110_instances_by_substitution.cn:120:21 [call] codegen_stress.instances_by_substitution::get_or$int32
-110_instances_by_substitution.cn:120:28 [call] codegen_stress.instances_by_substitution::bump$int32
-110_instances_by_substitution.cn:121:27 [call] codegen_stress.instances_by_substitution::get_or$int64
-110_instances_by_substitution.cn:121:34 [call] codegen_stress.instances_by_substitution::bump$int64
-110_instances_by_substitution.cn:122:21 [call] codegen_stress.instances_by_substitution::pair_of$int32
-110_instances_by_substitution.cn:123:27 [call] codegen_stress.instances_by_substitution::pair_of$int64
-110_instances_by_substitution.cn:125:16 [call] codegen_stress.instances_by_substitution::bag::map$int64 recv
-110_instances_by_substitution.cn:127:27 [call] codegen_stress.instances_by_substitution::mapped_count$int32
-110_instances_by_substitution.cn:128:21 [call] codegen_stress.instances_by_substitution::width_of$int8
-110_instances_by_substitution.cn:128:40 [call] codegen_stress.instances_by_substitution::width_of$int64
-110_instances_by_substitution.cn:128:60 [call] codegen_stress.instances_by_substitution::width_of$int32
-110_instances_by_substitution.cn:130:21 [call] codegen_stress.instances_by_substitution::count_down$3
-110_instances_by_substitution.cn:131:5 [call] std.console::println
-110_instances_by_substitution.cn:131:13 [call] codegen_stress.instances_by_substitution::framed$int32
-110_instances_by_substitution.cn:132:5 [call] std.console::println
-110_instances_by_substitution.cn:132:13 [call] codegen_stress.instances_by_substitution::framed$money
-110_instances_by_substitution.cn:133:16 [call] codegen_stress.instances_by_substitution::framed$int64
+110_instances_by_substitution.cn:44:16 [call] std.list::list::len recv
+110_instances_by_substitution.cn:44:16 [call] std.list::list::len$list_int32_ recv
+110_instances_by_substitution.cn:50:19 [call] std.list::list::len recv
+110_instances_by_substitution.cn:50:19 [call] std.list::list::len$list_int32_ recv
+110_instances_by_substitution.cn:50:19 [call] std.list::list::len$list_int32_ recv
+110_instances_by_substitution.cn:51:13 [call] std.list::list::push recv
+110_instances_by_substitution.cn:51:13 [call] std.list::list::push$list_int32_ recv
+110_instances_by_substitution.cn:51:13 [call] std.list::list::push$list_int64_ recv
+110_instances_by_substitution.cn:67:15 [call] std.list::list::len recv
+110_instances_by_substitution.cn:67:15 [call] std.list::list::len$list_int32_ recv
+110_instances_by_substitution.cn:67:15 [call] std.list::list::len$list_money_ recv
+110_instances_by_substitution.cn:75:12 [call] codegen_stress.instances_by_substitution::option::map$int32$int32 recv
+110_instances_by_substitution.cn:75:12 [call] codegen_stress.instances_by_substitution::option::map$int64$int64 recv
+110_instances_by_substitution.cn:84:15 [call] std.list::list::new$list_int32_
+110_instances_by_substitution.cn:84:15 [call] std.list::list::new$list_int64_
+110_instances_by_substitution.cn:84:15 [call] std.list::list[T]::new
+110_instances_by_substitution.cn:85:5 [call] std.list::list::push recv
+110_instances_by_substitution.cn:85:5 [call] std.list::list::push$list_int32_ recv
+110_instances_by_substitution.cn:85:5 [call] std.list::list::push$list_int64_ recv
+110_instances_by_substitution.cn:86:5 [call] std.list::list::push recv
+110_instances_by_substitution.cn:86:5 [call] std.list::list::push$list_int32_ recv
+110_instances_by_substitution.cn:86:5 [call] std.list::list::push$list_int64_ recv
+110_instances_by_substitution.cn:91:13 [call] codegen_stress.instances_by_substitution::bag::map recv
+110_instances_by_substitution.cn:91:13 [call] codegen_stress.instances_by_substitution::bag::map$int32 recv
+110_instances_by_substitution.cn:92:12 [call] codegen_stress.instances_by_substitution::bag::count$bag_int32_ recv
+110_instances_by_substitution.cn:92:12 [call] codegen_stress.instances_by_substitution::bag::count$bag_int32_ recv
+110_instances_by_substitution.cn:92:24 [call] codegen_stress.instances_by_substitution::bag::count recv
+110_instances_by_substitution.cn:92:24 [call] codegen_stress.instances_by_substitution::bag::count$bag_int32_ recv
+110_instances_by_substitution.cn:108:19 [call] codegen_stress.instances_by_substitution::count_down$3
+110_instances_by_substitution.cn:118:26 [call] codegen_stress.instances_by_substitution::biggest$int32
+110_instances_by_substitution.cn:119:34 [call] codegen_stress.instances_by_substitution::biggest$money
+110_instances_by_substitution.cn:120:21 [call] codegen_stress.instances_by_substitution::sum_list$int32
+110_instances_by_substitution.cn:121:27 [call] codegen_stress.instances_by_substitution::sum_list$money
+110_instances_by_substitution.cn:122:21 [call] codegen_stress.instances_by_substitution::get_or$int32
+110_instances_by_substitution.cn:122:28 [call] codegen_stress.instances_by_substitution::bump$int32
+110_instances_by_substitution.cn:123:27 [call] codegen_stress.instances_by_substitution::get_or$int64
+110_instances_by_substitution.cn:123:34 [call] codegen_stress.instances_by_substitution::bump$int64
+110_instances_by_substitution.cn:124:21 [call] codegen_stress.instances_by_substitution::pair_of$int32
+110_instances_by_substitution.cn:125:27 [call] codegen_stress.instances_by_substitution::pair_of$int64
+110_instances_by_substitution.cn:127:16 [call] codegen_stress.instances_by_substitution::bag::map$int64 recv
+110_instances_by_substitution.cn:129:27 [call] codegen_stress.instances_by_substitution::mapped_count$int32
+110_instances_by_substitution.cn:130:21 [call] codegen_stress.instances_by_substitution::width_of$int8
+110_instances_by_substitution.cn:130:40 [call] codegen_stress.instances_by_substitution::width_of$int64
+110_instances_by_substitution.cn:130:60 [call] codegen_stress.instances_by_substitution::width_of$int32
+110_instances_by_substitution.cn:132:21 [call] codegen_stress.instances_by_substitution::count_down$3
+110_instances_by_substitution.cn:133:5 [call] std.console::println
+110_instances_by_substitution.cn:133:13 [call] codegen_stress.instances_by_substitution::framed$int32
+110_instances_by_substitution.cn:134:5 [call] std.console::println
+110_instances_by_substitution.cn:134:13 [call] codegen_stress.instances_by_substitution::framed$money
+110_instances_by_substitution.cn:135:16 [call] codegen_stress.instances_by_substitution::framed$int64
 111_method_on_literal_waits.cn:20:13 [call] codegen_stress.method_on_literal_waits::int64::twice recv
 111_method_on_literal_waits.cn:25:13 [call] std.traits::int64::cmp trait=ord recv
 176_or_else.cn:100:12 [call] codegen_stress.or_else::pick$int32
@@ -35741,16 +35748,16 @@ std/unicode.cn:277:13 [call] std.list::list::len$list_uint32_ recv
 
 ## operator_dispatches (100)
 089_elaboration_snapshot_gaps.cn:72:8 [binary] codegen_stress.elaboration_snapshot_gaps::weight::cmp recv
-110_instances_by_substitution.cn:58:15 [binary] codegen_stress.instances_by_substitution::money::add recv
-110_instances_by_substitution.cn:66:12 [binary] codegen_stress.instances_by_substitution::money::cmp recv
-110_instances_by_substitution.cn:96:15 [binary] std.string::str::eq recv
-110_instances_by_substitution.cn:96:15 [binary] std.string::str::eq recv
-110_instances_by_substitution.cn:96:15 [binary] std.string::str::eq recv
-110_instances_by_substitution.cn:96:15 [binary] std.string::str::eq recv
+110_instances_by_substitution.cn:59:15 [binary] codegen_stress.instances_by_substitution::money::add recv
+110_instances_by_substitution.cn:68:12 [binary] codegen_stress.instances_by_substitution::money::cmp recv
 110_instances_by_substitution.cn:98:15 [binary] std.string::str::eq recv
 110_instances_by_substitution.cn:98:15 [binary] std.string::str::eq recv
 110_instances_by_substitution.cn:98:15 [binary] std.string::str::eq recv
 110_instances_by_substitution.cn:98:15 [binary] std.string::str::eq recv
+110_instances_by_substitution.cn:100:15 [binary] std.string::str::eq recv
+110_instances_by_substitution.cn:100:15 [binary] std.string::str::eq recv
+110_instances_by_substitution.cn:100:15 [binary] std.string::str::eq recv
+110_instances_by_substitution.cn:100:15 [binary] std.string::str::eq recv
 std/deriving.cn:213:16 [binary] std.string::str::eq recv
 std/deriving.cn:253:16 [binary] std.string::str::eq recv
 std/limits.cn:38:15 [binary] std.string::str::eq recv
@@ -35843,9 +35850,9 @@ std/unicode.cn:288:23 [binary] std.string::str::add recv
 
 ## ord_dispatch_result_types (2)
 089_elaboration_snapshot_gaps.cn:72:8 [binary] ordering
-110_instances_by_substitution.cn:66:12 [binary] ordering
+110_instances_by_substitution.cn:68:12 [binary] ordering
 
-## index_dispatches (72)
+## index_dispatches (71)
 003_collections_lambdas.cn:11:23 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.cn:42:17 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.cn:58:19 [index] std.list::list::at$list_int32_$usize recv
@@ -35874,21 +35881,20 @@ std/unicode.cn:288:23 [binary] std.string::str::add recv
 091_unannotated_accumulator_in_generic.cn:53:31 [index] std.list::list::at$list_int64_$usize recv
 093_index_settles_its_receiver.cn:43:25 [index] std.list::list::at$list_int32_$usize recv
 108_shape_demand_leaves_elements_open.cn:26:20 [index] std.list::list::at$list_int64_$usize recv
-110_instances_by_substitution.cn:50:24 [index] std.list::list::at recv
-110_instances_by_substitution.cn:50:24 [index] std.list::list::at$list_int32_$usize recv
-110_instances_by_substitution.cn:50:24 [index] std.list::list::at$list_int32_$usize recv
-110_instances_by_substitution.cn:63:16 [index] std.list::list::at recv
-110_instances_by_substitution.cn:63:16 [index] std.list::list::at$list_int32_$usize recv
-110_instances_by_substitution.cn:63:16 [index] std.list::list::at$list_money_$usize recv
-110_instances_by_substitution.cn:66:12 [index] std.list::list::at recv
-110_instances_by_substitution.cn:66:12 [index] std.list::list::at$list_int32_$usize recv
-110_instances_by_substitution.cn:66:12 [index] std.list::list::at$list_money_$usize recv
-110_instances_by_substitution.cn:67:20 [index] std.list::list::at recv
-110_instances_by_substitution.cn:67:20 [index] std.list::list::at$list_int32_$usize recv
-110_instances_by_substitution.cn:67:20 [index] std.list::list::at$list_money_$usize recv
-110_instances_by_substitution.cn:122:21 [index] std.list::list::at$list_int32_$usize recv
-110_instances_by_substitution.cn:123:27 [index] std.list::list::at$list_int64_$usize recv
-110_instances_by_substitution.cn:126:47 [index] std.list::list::at$list_int64_$usize recv
+110_instances_by_substitution.cn:51:24 [index] std.list::list::at recv
+110_instances_by_substitution.cn:51:24 [index] std.list::list::at$list_int32_$usize recv
+110_instances_by_substitution.cn:51:24 [index] std.list::list::at$list_int32_$usize recv
+110_instances_by_substitution.cn:68:12 [index] std.list::list::at recv
+110_instances_by_substitution.cn:68:12 [index] std.list::list::at$list_int32_$usize recv
+110_instances_by_substitution.cn:68:12 [index] std.list::list::at$list_money_$usize recv
+110_instances_by_substitution.cn:68:20 [index] std.list::list::at recv
+110_instances_by_substitution.cn:68:20 [index] std.list::list::at$list_int32_$usize recv
+110_instances_by_substitution.cn:68:20 [index] std.list::list::at$list_money_$usize recv
+110_instances_by_substitution.cn:118:21 [index] std.list::list::at$list_int32_$usize recv
+110_instances_by_substitution.cn:119:27 [index] std.list::list::at$list_money_$usize recv
+110_instances_by_substitution.cn:124:21 [index] std.list::list::at$list_int32_$usize recv
+110_instances_by_substitution.cn:125:27 [index] std.list::list::at$list_int64_$usize recv
+110_instances_by_substitution.cn:128:47 [index] std.list::list::at$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:17:14 [index] std.list::list::at$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:18:20 [index] std.list::list::at$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:21:18 [index] std.list::list::at$list_int64_$usize recv
@@ -35934,7 +35940,7 @@ std/algo.cn:1769:13 [index] std.list::list::set_at$list_usize_$usize recv
 112_index_borrow_and_write_wait.cn:21:18 [index] std.list::list::at_mut$list_int64_$usize recv
 std/iter.cn:162:27 [index] std.list::list::at_mut recv
 
-## index_ref_dispatches (67)
+## index_ref_dispatches (66)
 003_collections_lambdas.cn:11:23 [index] std.list::list::at_ref$list_int32_$usize recv
 052_element_assignment.cn:42:17 [index] std.list::list::at_ref$list_int32_$usize recv
 052_element_assignment.cn:58:19 [index] std.list::list::at_ref$list_int32_$usize recv
@@ -35960,21 +35966,20 @@ std/iter.cn:162:27 [index] std.list::list::at_mut recv
 091_unannotated_accumulator_in_generic.cn:53:31 [index] std.list::list::at_ref$list_int64_$usize recv
 093_index_settles_its_receiver.cn:43:25 [index] std.list::list::at_ref$list_int32_$usize recv
 108_shape_demand_leaves_elements_open.cn:26:20 [index] std.list::list::at_ref$list_int64_$usize recv
-110_instances_by_substitution.cn:50:24 [index] std.list::list::at_ref recv
-110_instances_by_substitution.cn:50:24 [index] std.list::list::at_ref$list_int32_$usize recv
-110_instances_by_substitution.cn:50:24 [index] std.list::list::at_ref$list_int32_$usize recv
-110_instances_by_substitution.cn:63:16 [index] std.list::list::at_ref recv
-110_instances_by_substitution.cn:63:16 [index] std.list::list::at_ref$list_int32_$usize recv
-110_instances_by_substitution.cn:63:16 [index] std.list::list::at_ref$list_money_$usize recv
-110_instances_by_substitution.cn:66:12 [index] std.list::list::at_ref recv
-110_instances_by_substitution.cn:66:12 [index] std.list::list::at_ref$list_int32_$usize recv
-110_instances_by_substitution.cn:66:12 [index] std.list::list::at_ref$list_money_$usize recv
-110_instances_by_substitution.cn:67:20 [index] std.list::list::at_ref recv
-110_instances_by_substitution.cn:67:20 [index] std.list::list::at_ref$list_int32_$usize recv
-110_instances_by_substitution.cn:67:20 [index] std.list::list::at_ref$list_money_$usize recv
-110_instances_by_substitution.cn:122:21 [index] std.list::list::at_ref$list_int32_$usize recv
-110_instances_by_substitution.cn:123:27 [index] std.list::list::at_ref$list_int64_$usize recv
-110_instances_by_substitution.cn:126:47 [index] std.list::list::at_ref$list_int64_$usize recv
+110_instances_by_substitution.cn:51:24 [index] std.list::list::at_ref recv
+110_instances_by_substitution.cn:51:24 [index] std.list::list::at_ref$list_int32_$usize recv
+110_instances_by_substitution.cn:51:24 [index] std.list::list::at_ref$list_int32_$usize recv
+110_instances_by_substitution.cn:68:12 [index] std.list::list::at_ref recv
+110_instances_by_substitution.cn:68:12 [index] std.list::list::at_ref$list_int32_$usize recv
+110_instances_by_substitution.cn:68:12 [index] std.list::list::at_ref$list_money_$usize recv
+110_instances_by_substitution.cn:68:20 [index] std.list::list::at_ref recv
+110_instances_by_substitution.cn:68:20 [index] std.list::list::at_ref$list_int32_$usize recv
+110_instances_by_substitution.cn:68:20 [index] std.list::list::at_ref$list_money_$usize recv
+110_instances_by_substitution.cn:118:21 [index] std.list::list::at_ref$list_int32_$usize recv
+110_instances_by_substitution.cn:119:27 [index] std.list::list::at_ref$list_money_$usize recv
+110_instances_by_substitution.cn:124:21 [index] std.list::list::at_ref$list_int32_$usize recv
+110_instances_by_substitution.cn:125:27 [index] std.list::list::at_ref$list_int64_$usize recv
+110_instances_by_substitution.cn:128:47 [index] std.list::list::at_ref$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:17:14 [index] std.list::list::at_ref$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:18:20 [index] std.list::list::at_ref$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:21:18 [index] std.list::list::at_ref$list_int64_$usize recv
@@ -36028,12 +36033,12 @@ std/unicode.cn:281:18 [index] std.list::list::at_ref$list_uint32_$usize recv
 108_shape_demand_leaves_elements_open.cn:25:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
 108_shape_demand_leaves_elements_open.cn:29:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
 108_shape_demand_leaves_elements_open.cn:33:19 [array] std.list::list::from_array$1$list__int64__int32__ from array[(int64, int32), 1]
-110_instances_by_substitution.cn:47:28 [array] std.list::list::from_array from array[U, 0]
-110_instances_by_substitution.cn:47:28 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
-110_instances_by_substitution.cn:47:28 [array] std.list::list::from_array$0$list_int64_ from array[int64, 0]
-110_instances_by_substitution.cn:114:29 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
-110_instances_by_substitution.cn:115:31 [array] std.list::list::from_array$2$list_money_ from array[money, 2]
-110_instances_by_substitution.cn:124:43 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
+110_instances_by_substitution.cn:48:28 [array] std.list::list::from_array from array[U, 0]
+110_instances_by_substitution.cn:48:28 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
+110_instances_by_substitution.cn:48:28 [array] std.list::list::from_array$0$list_int64_ from array[int64, 0]
+110_instances_by_substitution.cn:116:29 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
+110_instances_by_substitution.cn:117:31 [array] std.list::list::from_array$2$list_money_ from array[money, 2]
+110_instances_by_substitution.cn:126:43 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
 112_index_borrow_and_write_wait.cn:16:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
 112_index_borrow_and_write_wait.cn:20:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
 112_index_borrow_and_write_wait.cn:25:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
@@ -36056,11 +36061,11 @@ std/unicode.cn:58:29 [array] std.list::list::from_array$0$list_uint32_ from arra
 
 ## interp_dispatches (64)
 003_collections_lambdas.cn:18:15 [ident] show spec=' ' value=int32
-110_instances_by_substitution.cn:61:11 [field] show spec=' ' value=int64
-110_instances_by_substitution.cn:110:15 [ident] show spec=' ' value=int32
-110_instances_by_substitution.cn:110:15 [ident] show spec=' ' value=int64
-110_instances_by_substitution.cn:110:15 [ident] trait_method spec=' ' value=T
-110_instances_by_substitution.cn:110:15 [ident] trait_method spec=' ' value=money -> codegen_stress.instances_by_substitution::money::show
+110_instances_by_substitution.cn:58:1 [field] show spec=' ' value=int64
+110_instances_by_substitution.cn:112:15 [ident] show spec=' ' value=int32
+110_instances_by_substitution.cn:112:15 [ident] show spec=' ' value=int64
+110_instances_by_substitution.cn:112:15 [ident] trait_method spec=' ' value=T
+110_instances_by_substitution.cn:112:15 [ident] trait_method spec=' ' value=money -> codegen_stress.instances_by_substitution::money::show
 std/deriving.cn:162:71 [ident] show spec=' ' value=int32
 std/deriving.cn:187:56 [ident] show spec=' ' value=int32
 std/deriving.cn:217:45 [ident] show spec=' ' value=int32
@@ -36121,9 +36126,9 @@ std/traits.scalar.cn:333:18 [ident] show spec=' ' value=float64
 std/traits.scalar.cn:337:18 [ident] debug spec='?' value=float64
 
 ## type_param_reflections (6)
-110_instances_by_substitution.cn:95:13 [call] int32
-110_instances_by_substitution.cn:95:13 [call] int64
-110_instances_by_substitution.cn:95:13 [call] int8
+110_instances_by_substitution.cn:97:13 [call] int32
+110_instances_by_substitution.cn:97:13 [call] int64
+110_instances_by_substitution.cn:97:13 [call] int8
 std/deriving.cn:29:31 [call] money
 std/deriving.cn:41:41 [call] money
 std/deriving.cn:93:39 [call] money
@@ -36133,9 +36138,9 @@ std/deriving.cn:93:39 [call] money
 ?:927 [for_stmt] next=counter::next elem=int32 owner=codegen_stress.user_iterator_for_loop
 ?:1197 [for_stmt] next=::list_into_iter::next$list_into_iter_int64_ elem=int64 owner=std.iter adapter=::list::into_iter$list_int64_ -> list_into_iter[int64]
 ?:1267 [for_stmt] next=::list_into_iter::next$list_into_iter__int64__int32__ elem=(int64, int32) owner=std.iter adapter=::list::into_iter$list__int64__int32__ -> list_into_iter[(int64, int32)]
-?:1922 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
-?:1922 [for_stmt] next=::list_into_iter::next$list_into_iter_money_ elem=money owner=std.iter adapter=::list::into_iter$list_money_ -> list_into_iter[money]
-?:1922 [for_stmt] next=list_into_iter::next elem=T owner=std.iter adapter=list::into_iter -> list_into_iter[T]
+?:1987 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
+?:1987 [for_stmt] next=::list_into_iter::next$list_into_iter_money_ elem=money owner=std.iter adapter=::list::into_iter$list_money_ -> list_into_iter[money]
+?:1987 [for_stmt] next=list_into_iter::next elem=T owner=std.iter adapter=list::into_iter -> list_into_iter[T]
 ?:2391 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:2986 [for_stmt] next=::map_iter::next$map_iter_counter__int32__int32_ elem=int32 owner=codegen_stress.generic_impl_iterator_adapter
 ?:3115 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
@@ -36354,13 +36359,13 @@ std/mem.cn:91:16 [call] array[usize, 256] x 1
 033_const_generic_monomorphization.cn:10:12 [index] 
 033_const_generic_monomorphization.cn:10:12 [index] 
 033_const_generic_monomorphization.cn:10:12 [index] 
-034_generic_monomorphization.cn:27:5 [index] 
-034_generic_monomorphization.cn:27:5 [index] 
-034_generic_monomorphization.cn:38:9 [index] 
-034_generic_monomorphization.cn:38:9 [index] 
-034_generic_monomorphization.cn:46:9 [index] 
-034_generic_monomorphization.cn:46:9 [index] 
-034_generic_monomorphization.cn:64:12 [index] 
+034_generic_monomorphization.cn:28:5 [index] 
+034_generic_monomorphization.cn:28:5 [index] 
+034_generic_monomorphization.cn:39:9 [index] 
+034_generic_monomorphization.cn:39:9 [index] 
+034_generic_monomorphization.cn:47:9 [index] 
+034_generic_monomorphization.cn:47:9 [index] 
+034_generic_monomorphization.cn:66:12 [index] 
 074_range_index_general_stride.cn:50:13 [index] 
 074_range_index_general_stride.cn:50:22 [index] 
 074_range_index_general_stride.cn:50:31 [index] 
@@ -36371,11 +36376,11 @@ std/mem.cn:91:16 [call] array[usize, 256] x 1
 033_const_generic_monomorphization.cn:23:13 [ident] 3
 033_const_generic_monomorphization.cn:23:13 [ident] 5
 034_generic_monomorphization.cn:17:9 [ident] 3
-034_generic_monomorphization.cn:24:9 [ident] 4
+034_generic_monomorphization.cn:25:9 [ident] 4
 078_impl_const_generic_value_param.cn:27:16 [ident] 4
 078_impl_const_generic_value_param.cn:27:16 [ident] 8
 082_default_parameter_values.cn:19:38 [ident] 7
-110_instances_by_substitution.cn:104:13 [ident] 3
+110_instances_by_substitution.cn:106:13 [ident] 3
 176_or_else.cn:181:33 [ident] 50
 176_or_else.cn:181:48 [ident] 7
 std/list.cn:270:21 [ident] 0
@@ -36469,12 +36474,12 @@ std/unicode.cn:284:18 [ident] static$FOLD_CP2$24
 std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 
 ## static_if_taken_branch (6)
-?:2975 [static_decl] else
-?:2975 [static_decl] else
-?:2975 [static_decl] then
-?:3019 [static_decl] else
-?:3019 [static_decl] else
-?:3019 [static_decl] then
+?:3129 [static_decl] else
+?:3129 [static_decl] else
+?:3129 [static_decl] then
+?:3173 [static_decl] else
+?:3173 [static_decl] else
+?:3173 [static_decl] then
 
 ## static_global_defs (26)
 ?:515 [static_decl] static$SIMPLE_UPPER_KEY$10 : array[uint32, 1505] [1505 element(s)]
@@ -36514,7 +36519,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (832)
+## drop_plans (833)
 array[test_suite, 1] own=- fields=[]
 async_file own=std.io::async_file::drop fields=[]
 async_pipe_ends own=- fields=[reader: async_file, writer: async_file]
@@ -36586,9 +36591,24 @@ fn(&T, &U) -> ordering own=- fields=[] glue=fn() -> unit
 fn(&_) -> bool own=- fields=[] glue=fn() -> unit
 fn(&_) -> unit own=- fields=[] glue=fn() -> unit
 fn(&_, &_) -> ordering own=- fields=[] glue=fn() -> unit
-fn(&list[T]) -> T own=- fields=[] glue=fn() -> unit
+fn(&array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
+fn(&array[int32, 3], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, 3], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, 4], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, 4], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, 5]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, 5], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, 5], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&list[T]) -> usize own=- fields=[] glue=fn() -> unit
 fn(&list[int32]) -> int32 own=- fields=[] glue=fn() -> unit
-fn(&list[money]) -> money own=- fields=[] glue=fn() -> unit
+fn(&list[int32]) -> usize own=- fields=[] glue=fn() -> unit
+fn(&list[money]) -> usize own=- fields=[] glue=fn() -> unit
 fn(&mut T, T) -> T own=- fields=[] glue=fn() -> unit
 fn(&mut acc, int32) -> int32 own=- fields=[] glue=fn() -> unit
 fn(&mut int32) -> int32 own=- fields=[] glue=fn() -> unit
@@ -36916,6 +36936,10 @@ fn(_) -> unit own=- fields=[] glue=fn() -> unit
 fn(_) -> usize own=- fields=[] glue=fn() -> unit
 fn(_) -> watch_reader[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> write_guard[_] own=- fields=[] glue=fn() -> unit
+fn(_, &array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
+fn(_, &array[T, n], usize) -> T own=- fields=[] glue=fn() -> unit
+fn(_, &array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(_, &array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(_, &bool) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &byte) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &byte) -> ordering own=- fields=[] glue=fn() -> unit
@@ -36974,10 +36998,6 @@ fn(_, _) -> task[unit, _, io] own=- fields=[] glue=fn() -> unit
 fn(_, _) -> unit own=- fields=[] glue=fn() -> unit
 fn(_, _, _) -> result[_, _] own=- fields=[] glue=fn() -> unit
 fn(_, _, _) -> unit own=- fields=[] glue=fn() -> unit
-fn(_, array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
-fn(_, array[T, n], usize) -> T own=- fields=[] glue=fn() -> unit
-fn(_, array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
-fn(_, array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(_, byte) -> byte own=- fields=[] glue=fn() -> unit
 fn(_, float32) -> float32 own=- fields=[] glue=fn() -> unit
 fn(_, float64) -> float64 own=- fields=[] glue=fn() -> unit
@@ -37019,29 +37039,15 @@ fn(array[(int64, int32), 1]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[(usize, usize), 0]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[T, n]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
-fn(array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
 fn(array[_, n]) -> list[_] own=- fields=[] glue=fn() -> unit
 fn(array[_, n]) -> self own=- fields=[] glue=fn() -> unit
 fn(array[field_info, 1]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[int32, 0]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[int32, 3]) -> unit own=- fields=[] glue=fn() -> unit
-fn(array[int32, 3], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
-fn(array[int32, 3], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, 4]) -> unit own=- fields=[] glue=fn() -> unit
-fn(array[int32, 4], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
-fn(array[int32, 4], usize) -> int32 own=- fields=[] glue=fn() -> unit
-fn(array[int32, 5]) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, 5]) -> unit own=- fields=[] glue=fn() -> unit
-fn(array[int32, 5], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
-fn(array[int32, 5], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, 8], index[8]) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, 8], usize) -> int32 own=- fields=[] glue=fn() -> unit
-fn(array[int32, n]) -> int32 own=- fields=[] glue=fn() -> unit
-fn(array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
-fn(array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
-fn(array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
-fn(array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
-fn(array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int64, 0]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[int64, 2]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[money, 2]) -> unit own=- fields=[] glue=fn() -> unit
@@ -37348,7 +37354,7 @@ write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (2035)
+## borrow_bearing_types (2053)
 &K
 &T
 &T
@@ -37402,6 +37408,22 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &U
 &_
 &_
+&array[T, n]
+&array[T, n]
+&array[_, n]
+&array[_, n]
+&array[int32, 2]
+&array[int32, 3]
+&array[int32, 4]
+&array[int32, 5]
+&array[int32, ?n]
+&array[int32, ?n]
+&array[int32, n]
+&array[int32, n]
+&array[int32, n]
+&array[int32, n]
+&array[int32, n]
+&array[int32, n]
 &async_file
 &atomic[T]
 &bag[T]
@@ -38387,9 +38409,24 @@ fn(&T, &U) -> ordering
 fn(&_) -> bool
 fn(&_) -> unit
 fn(&_, &_) -> ordering
-fn(&list[T]) -> T
+fn(&array[T, n], index[n]) -> T
+fn(&array[int32, 3], index[n]) -> int32
+fn(&array[int32, 3], usize) -> int32
+fn(&array[int32, 4], index[n]) -> int32
+fn(&array[int32, 4], usize) -> int32
+fn(&array[int32, 5]) -> int32
+fn(&array[int32, 5], index[n]) -> int32
+fn(&array[int32, 5], usize) -> int32
+fn(&array[int32, n]) -> int32
+fn(&array[int32, n], index[n]) -> int32
+fn(&array[int32, n], index[n]) -> int32
+fn(&array[int32, n], usize) -> int32
+fn(&array[int32, n], usize) -> int32
+fn(&array[int32, n], usize) -> int32
+fn(&list[T]) -> usize
 fn(&list[int32]) -> int32
-fn(&list[money]) -> money
+fn(&list[int32]) -> usize
+fn(&list[money]) -> usize
 fn(&mut T, T) -> T
 fn(&mut acc, int32) -> int32
 fn(&mut int32) -> int32
@@ -38684,6 +38721,7 @@ fn(_) -> _
 fn(_) -> _
 fn(_) -> _
 fn(_) -> _
+fn(_) -> _
 fn(_) -> atomic[_]
 fn(_) -> bool
 fn(_) -> bool
@@ -38737,6 +38775,10 @@ fn(_) -> unit
 fn(_) -> usize
 fn(_) -> watch_reader[_]
 fn(_) -> write_guard[_]
+fn(_, &array[T, n], index[n]) -> T
+fn(_, &array[T, n], usize) -> T
+fn(_, &array[int32, n], index[n]) -> int32
+fn(_, &array[int32, n], usize) -> int32
 fn(_, &bool) -> bool
 fn(_, &byte) -> bool
 fn(_, &byte) -> ordering
@@ -38795,10 +38837,6 @@ fn(_, _) -> task[unit, _, io]
 fn(_, _) -> unit
 fn(_, _, _) -> result[_, _]
 fn(_, _, _) -> unit
-fn(_, array[T, n], index[n]) -> T
-fn(_, array[T, n], usize) -> T
-fn(_, array[int32, n], index[n]) -> int32
-fn(_, array[int32, n], usize) -> int32
 fn(_, byte) -> byte
 fn(_, float32) -> float32
 fn(_, float64) -> float64
@@ -38841,29 +38879,15 @@ fn(array[(int64, int32), 1]) -> unit
 fn(array[(usize, usize), 0]) -> unit
 fn(array[T, n]) -> unit
 fn(array[T, n], index[n]) -> T
-fn(array[T, n], index[n]) -> T
 fn(array[_, n]) -> list[_]
 fn(array[_, n]) -> self
 fn(array[field_info, 1]) -> unit
 fn(array[int32, 0]) -> unit
 fn(array[int32, 3]) -> unit
-fn(array[int32, 3], index[n]) -> int32
-fn(array[int32, 3], usize) -> int32
 fn(array[int32, 4]) -> unit
-fn(array[int32, 4], index[n]) -> int32
-fn(array[int32, 4], usize) -> int32
-fn(array[int32, 5]) -> int32
 fn(array[int32, 5]) -> unit
-fn(array[int32, 5], index[n]) -> int32
-fn(array[int32, 5], usize) -> int32
 fn(array[int32, 8], index[8]) -> int32
 fn(array[int32, 8], usize) -> int32
-fn(array[int32, n]) -> int32
-fn(array[int32, n], index[n]) -> int32
-fn(array[int32, n], index[n]) -> int32
-fn(array[int32, n], usize) -> int32
-fn(array[int32, n], usize) -> int32
-fn(array[int32, n], usize) -> int32
 fn(array[int64, 0]) -> unit
 fn(array[int64, 2]) -> unit
 fn(array[money, 2]) -> unit

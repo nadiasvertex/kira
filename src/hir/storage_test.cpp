@@ -2506,6 +2506,18 @@ auto test_arrays_forget_and_owned_receivers() -> void {
   expect_ops(*f, "use_twice$fn0", {"call s1 = twice(s0)", "return s1"});
   expect_verifies(*f, f->function("use_twice"), "use_twice");
   expect_verifies(*f, f->function("use_twice$fn0"), "use_twice$fn0");
+
+  // `@some(20)` at `keep_some(_, int32(1))` is an `option[int32]`, not an
+  // `option[_]` with no layout.
+  const auto keep_literal = f->function("keep_literal");
+  const auto option_int32 = types.builtin_generic("option", {f->builtin("int32")});
+  expect(std::ranges::any_of(keep_literal.slots,
+                             [&](const hir::storage_slot &slot) {
+                               return slot.cls == hir::storage_class::outgoing_argument &&
+                                      slot.type == option_int32;
+                             }),
+         "expected the literal payload's argument to be an `option[int32]`");
+  expect_verifies(*f, keep_literal, "keep_literal");
 }
 
 auto test_constant_array_index_is_an_element_projection() -> void {

@@ -72,3 +72,11 @@ def twice(x: int64) -> int64:
 
 def use_twice() -> int64:
     return apply(twice, 21)
+
+# A literal payload passed to a generic parameter is typed by the sibling
+# argument that settles `T`, so its storage has a layout.
+def keep_some[T](o: option[T], d: T) -> option[T]:
+    return o
+
+def keep_literal() -> option[int32]:
+    return keep_some(@some(20), int32(1))
