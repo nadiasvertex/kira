@@ -7,6 +7,7 @@
 #include "src/runtime/scheduler.h"
 
 #include <algorithm>
+#include <deque>
 #include <charconv>
 #include <functional>
 #include <optional>
@@ -139,6 +140,13 @@ struct body_shape {
 /// The closure bodies and drop glue that lowering one function produced.
 struct closure_sink {
   std::vector<storage_function> functions;
+  /// A named function used as a value is a closure over a function that
+  /// forwards to it, made once per function: its name, by the function's key.
+  std::unordered_map<std::string, std::string> forwarders;
+  /// The parameters and bodies of those forwarding functions, which their
+  /// lowering points into.
+  std::deque<std::vector<hir_param>> forwarder_params;
+  std::vector<ptr<hir_block>> forwarder_bodies;
 };
 
 [[nodiscard]] auto shape_of(const hir_function &function) -> body_shape {
@@ -1146,9 +1154,71 @@ private:
       return std::unexpected(source.error());
     }
     if (!source->has_value()) {
+      if (expr.kind == hir_node_kind::hir_local_ref) {
+        return lower_function_value(as<hir_local_ref>(expr), dest);
+      }
       return refuse(expr.span, "a function name used as a value");
     }
     return transfer(**source, dest, expr.span);
+  }
+
+  /// A named function used as a value: a closure with an empty environment
+  /// whose entry forwards its arguments to the function.
+  [[nodiscard]] auto lower_function_value(const hir_local_ref &ref,
+                                          const place &dest) -> result {
+    const auto &fn_type = types().entry(types().strip_refinement(ref.type));
+    if (fn_type.kind != semantic::type_kind::fn_kind) {
+      return refuse(ref.span, "a function name used as a value");
+    }
+    const auto key = ref.owner_module.value_or("") + "::" + ref.name;
+    auto entry = std::string{};
+    if (const auto found = closures_.forwarders.find(key);
+        found != closures_.forwarders.end()) {
+      entry = found->second;
+    } else {
+      entry = out_.name + "$fn" + std::to_string(closure_count_++);
+      auto &params = closures_.forwarder_params.emplace_back();
+      auto args = ptr_vec<hir_expr>{};
+      for (size_t i = 0; i < fn_type.args.size(); ++i) {
+        // The forwarder's own symbols; it names nothing else but the callee.
+        const auto symbol = static_cast<symbol_id>(k_invalid_symbol_id - 1 - i);
+        const auto name = "p" + std::to_string(i);
+        params.push_back(
+            hir_param{.symbol = symbol, .name = name, .type = fn_type.args[i]});
+        args.push_back(std::make_unique<hir_local_ref>(ref.span, fn_type.args[i],
+                                                       symbol, name));
+      }
+      auto callee = std::make_unique<hir_local_ref>(ref.span, ref.type, ref.symbol,
+                                                    ref.name, ref.owner_module);
+      auto stmts = ptr_vec<hir_node>{};
+      stmts.push_back(std::make_unique<hir_return>(
+          ref.span, std::make_unique<hir_call>(ref.span, fn_type.result,
+                                               std::move(callee), std::move(args))));
+      auto body = std::make_unique<hir_block>(ref.span, fn_type.result,
+                                              std::move(stmts));
+      static const auto no_environment = environment_plan{};
+      auto lowered = function_lowerer(body_shape{.name = entry,
+                                                 .params = &params,
+                                                 .return_type = fn_type.result,
+                                                 .body = body.get(),
+                                                 .span = ref.span,
+                                                 .environment = &no_environment},
+                                      env_, closures_)
+                         .run();
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      closures_.functions.push_back(std::move(*lowered));
+      closures_.forwarder_bodies.push_back(std::move(body));
+      closures_.forwarders.emplace(key, entry);
+    }
+    auto op = storage_op{.kind = op_kind::make_closure};
+    op.dest = dest;
+    op.entry = entry;
+    op.env_size = 0;
+    op.env_align = 1;
+    emit(std::move(op), ref.span);
+    return {};
   }
 
   /// The container `expr` names, behind any references. A computed one is
