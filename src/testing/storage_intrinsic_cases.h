@@ -417,6 +417,25 @@ inline auto run_time_indexes_are_checked(case_backend &backend) -> void {
   oob("window_sum", args{3, 6});
 }
 
+/// Array fills, fields of computed values, and loops over values that need a
+/// drop. The drop log reads newest digit last: `321` is ids 3, 2, then 1.
+inline auto computed_values_and_droppable_loops(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "computed.cn");
+  using args = std::vector<int64_t>;
+  expect_equal(p->scalar("fill_sum", args{3}), 31, "fill_sum(3)");
+  expect_equal(p->scalar("fill_count", args{3}), 4096, "fill_count(3)");
+  expect_equal(p->scalar("fill_words", args{0}), 9, "fill_words(0)");
+  expect_equal(p->scalar("fill_words", args{6}), 9, "fill_words(6)");
+  expect_equal(p->scalar("second_of", args{5}), 10, "second_of(5)");
+  expect_equal(p->scalar("third_of", args{5}), 7, "third_of(5)");
+  expect_equal(p->scalar("row_last", args{4}), 400, "row_last(4)");
+  expect_equal(p->scalar("while_sum", args{3}), 32106, "while_sum(3)");
+  expect_equal(p->scalar("while_sum", args{0}), 0, "while_sum(0)");
+  expect_equal(p->scalar("for_sum", args{3}), 32106, "for_sum(3)");
+  expect_equal(p->scalar("for_moved", args{3}), 32106, "for_moved(3)");
+  expect_equal(p->scalar("for_break", args{3}), 3203, "for_break(3)");
+}
+
 inline auto intrinsic_cases(case_backend &backend) -> void {
   io_results_are_written_in_place(backend);
   repeated_io_allocates_nothing(backend);
@@ -425,6 +444,7 @@ inline auto intrinsic_cases(case_backend &backend) -> void {
   string_literals_are_static_descriptors(backend);
   descriptor_words_are_read_and_written(backend);
   run_time_indexes_are_checked(backend);
+  computed_values_and_droppable_loops(backend);
 }
 
 } // namespace cinder::testing::storage_cases

@@ -733,6 +733,8 @@ private:
     case op_kind::copy_into:
     case op_kind::move_into:
       return emit_transfer(op);
+    case op_kind::replicate:
+      return emit_replicate(op);
     case op_kind::publish_variant:
       return emit_publish(op);
     case op_kind::test_variant:
@@ -1045,6 +1047,47 @@ private:
     emit_register(*dest_address);
     emit_register(*source_address);
     writer_.emit_u32(static_cast<uint32_t>(value->size));
+    return {};
+  }
+
+  /// Copies element 0 over the rest of the array by doubling the written
+  /// prefix: about log2(count) copies, each of a constant size and offset.
+  [[nodiscard]] auto emit_replicate(const hir::storage_op &op) -> checked<void> {
+    const auto layout = layout_of(op.dest.type, op.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto count = static_cast<size_t>((*layout)->count);
+    const auto stride = (*layout)->stride;
+    if (count < 2 || stride == 0) {
+      return {};
+    }
+    const auto to = locate(op.dest);
+    if (!to.has_value()) {
+      return std::unexpected(to.error());
+    }
+    if (to->where != location::kind::memory) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "an array of more than one element outside memory");
+    }
+    const auto first = address_of(*to);
+    if (!first.has_value()) {
+      return std::unexpected(first.error());
+    }
+    for (auto filled = size_t{1}; filled < count;) {
+      const auto chunk = std::min(filled, count - filled);
+      auto next = *to;
+      next.offset += filled * stride;
+      const auto at = address_of(next);
+      if (!at.has_value()) {
+        return std::unexpected(at.error());
+      }
+      emit_op(opcode::op_copy_bytes);
+      emit_register(*at);
+      emit_register(*first);
+      writer_.emit_u32(static_cast<uint32_t>(chunk * stride));
+      filled += chunk;
+    }
     return {};
   }
 

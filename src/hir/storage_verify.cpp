@@ -1,5 +1,6 @@
 #include "src/hir/storage_verify.h"
 
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <set>
@@ -979,6 +980,8 @@ private:
     case op_kind::copy_into:
     case op_kind::move_into:
       return do_transfer(op);
+    case op_kind::replicate:
+      return do_replicate(op);
     case op_kind::publish_variant:
       return do_publish(op);
     case op_kind::test_variant:
@@ -1698,6 +1701,56 @@ private:
       if (auto ok = invalidate(op.source, *from, from->tracked); !ok.has_value()) {
         return ok;
       }
+    }
+    commit_write(op.dest, *to);
+    return {};
+  }
+
+  /// Copies an array's written element 0 over the rest of it, which leaves the
+  /// whole array written. Element 0 is the only source that can be correct:
+  /// any other place is a different value, or one the copies would overwrite.
+  [[nodiscard]] auto do_replicate(const storage_op &op) -> result {
+    const auto from = resolve(op.source);
+    if (!from.has_value()) {
+      return std::unexpected(from.error());
+    }
+    const auto to = resolve(op.dest);
+    if (!to.has_value()) {
+      return std::unexpected(to.error());
+    }
+    const auto layout = layout_of(op.dest.type);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    if ((*layout)->kind != runtime::value_layout_kind::array ||
+        (*layout)->count == 0) {
+      return fail(verify_error_kind::type_mismatch,
+                  "replicate fills an array of at least one element, not " +
+                      name_of(op.dest.type));
+    }
+    const auto &steps = op.source.steps;
+    const auto is_first =
+        op.source.base == op.dest.base &&
+        steps.size() == op.dest.steps.size() + 1 &&
+        std::equal(op.dest.steps.begin(), op.dest.steps.end(), steps.begin()) &&
+        steps.back().kind == projection_kind::element && steps.back().index == 0;
+    if (!is_first) {
+      return fail(verify_error_kind::bad_operation,
+                  "replicate copies element 0 of the array it fills, not " +
+                      describe(op.source, from->tracked));
+    }
+    if (!env_.is_copy(op.source.type)) {
+      return fail(verify_error_kind::not_copy,
+                  name_of(op.source.type) +
+                      " is moved, not copied, so it cannot fill an array");
+    }
+    if (auto ok = require_init(op.source, *from); !ok.has_value()) {
+      return ok;
+    }
+    if (!to->through_deref && above_dropped(op.dest, to->tracked)) {
+      return fail(verify_error_kind::use_after_drop,
+                  describe(op.dest, to->tracked) +
+                      " is written inside a value whose drop ran");
     }
     commit_write(op.dest, *to);
     return {};

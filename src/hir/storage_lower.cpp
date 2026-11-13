@@ -425,14 +425,13 @@ private:
     }
     case hir_node_kind::hir_field: {
       const auto &field = as<hir_field>(expr);
-      auto base = lower_place(*field.object);
+      // A computed value is built in a temporary first, which lasts to the
+      // end of the statement; one that needs a drop is refused there.
+      auto base = container_place(*field.object);
       if (!base.has_value()) {
         return std::unexpected(base.error());
       }
-      if (!base->has_value()) {
-        return refuse(expr.span, "a field of a computed value");
-      }
-      auto object = auto_deref(std::move(**base));
+      auto object = std::move(*base);
       const auto layout = layout_of(object.type, expr.span);
       if (!layout.has_value()) {
         return std::unexpected(layout.error());
@@ -451,14 +450,13 @@ private:
     }
     case hir_node_kind::hir_tuple_index: {
       const auto &index = as<hir_tuple_index>(expr);
-      auto base = lower_place(*index.object);
+      // A computed value is built in a temporary first, which lasts to the
+      // end of the statement; one that needs a drop is refused there.
+      auto base = container_place(*index.object);
       if (!base.has_value()) {
         return std::unexpected(base.error());
       }
-      if (!base->has_value()) {
-        return refuse(expr.span, "an element of a computed value");
-      }
-      auto object = auto_deref(std::move(**base));
+      auto object = std::move(*base);
       const auto layout = layout_of(object.type, expr.span);
       if (!layout.has_value()) {
         return std::unexpected(layout.error());
@@ -576,14 +574,11 @@ private:
         (*object_layout)->kind != runtime::value_layout_kind::array) {
       return lower_checked_index(index);
     }
-    auto base = lower_place(*index.object);
+    auto base = container_place(*index.object);
     if (!base.has_value()) {
       return std::unexpected(base.error());
     }
-    if (!base->has_value()) {
-      return refuse(index.span, "an element of a computed value");
-    }
-    auto object = auto_deref(std::move(**base));
+    auto object = std::move(*base);
     const auto layout = layout_of(object.type, index.span);
     if (!layout.has_value()) {
       return std::unexpected(layout.error());
@@ -1461,15 +1456,14 @@ private:
 
   [[nodiscard]] auto lower_array(const hir_array_init &init, const place &dest)
       -> result {
-    if (init.fill_value != nullptr) {
-      return refuse(init.span, "an array fill `[value; count]`, which needs a "
-                               "loop");
-    }
     const auto layout = layout_of(dest.type, init.span);
     if (!layout.has_value()) {
       return std::unexpected(layout.error());
     }
     const auto &found = **layout;
+    if (init.fill_value != nullptr) {
+      return lower_array_fill(init, found, dest);
+    }
     if (found.kind != runtime::value_layout_kind::array ||
         found.count != init.elements.size()) {
       return refuse(init.span, "an array literal that does not build a fixed "
@@ -1489,6 +1483,41 @@ private:
       note_built(part);
     }
     forget_built(mark);
+    return {};
+  }
+
+  /// `[value; count]`: the value is built once, into element 0, and copied
+  /// over the rest. The count is the array type's; the checker made the two
+  /// agree. With no elements the value is still evaluated, in a temporary.
+  [[nodiscard]] auto lower_array_fill(const hir_array_init &init,
+                                      const runtime::value_layout &found,
+                                      const place &dest) -> result {
+    if (found.kind != runtime::value_layout_kind::array) {
+      return refuse(init.span, "an array fill that does not build a fixed "
+                               "`array`");
+    }
+    if (!env_.is_copy(found.element)) {
+      return refuse(init.span, "an array fill of `" +
+                                   types().display(found.element) +
+                                   "`, which is moved, not copied");
+    }
+    if (found.count == 0) {
+      const auto temp = new_temp(found.element, init.span);
+      if (auto ok = lower_into(*init.fill_value, whole(temp)); !ok.has_value()) {
+        return ok;
+      }
+      return empty_value(dest, init.span);
+    }
+    const auto first = project(
+        dest, projection{.kind = projection_kind::element, .index = 0},
+        found.element);
+    if (auto ok = lower_into(*init.fill_value, first); !ok.has_value()) {
+      return ok;
+    }
+    auto op = storage_op{.kind = op_kind::replicate};
+    op.dest = dest;
+    op.source = first;
+    emit(std::move(op), init.span);
     return {};
   }
 
@@ -3281,12 +3310,14 @@ private:
     frames_.push_back(loop_frame{.kind = loop_frame_kind::loop, .partials = partials_.size()});
     scopes_.emplace_back();
     auto head = in_region(loop.span, [&]() -> result {
-      // HIR turns a `while let` over a value that owns drops into a `loop`
-      // around a `match`, so this form never sees one.
-      if (env_.needs_drop(loop.subject->type)) {
-        return malformed(loop.span, "a `while let` over `" +
-                                        types().display(loop.subject->type) +
-                                        "`, which needs a drop");
+      // A `for` over values that need a drop arrives here as a `while let`
+      // over the iterator's `option`. Its variants are tested like a `let
+      // else`: the payload is moved or dropped in the body, and the loop is
+      // left where the pattern fails.
+      if (auto ok = check_droppable_subject(*loop.subject, *loop.pattern,
+                                            loop.span);
+          !ok.has_value()) {
+        return ok;
       }
       auto subject = bind_subject(*loop.subject, loop.subject_symbol, loop.span);
       if (!subject.has_value()) {
@@ -3294,6 +3325,18 @@ private:
       }
       if (subject->held != k_invalid_storage) {
         scopes_.back().push_back(subject->held);
+      }
+      if (env_.needs_drop(subject->where.type)) {
+        auto ok = emit_tests(
+            {obligation{.pattern = loop.pattern.get(), .where = subject->where}},
+            []() -> result { return {}; }, [&]() -> result {
+              auto leave = storage_op{.kind = op_kind::exit};
+              leave.depth = 0;
+              emit(std::move(leave), loop.span);
+              return {};
+            });
+        terminated_ = false;
+        return ok;
       }
       const auto flag = new_slot(storage_class::frame_local,
                                  types().bool_type(), "", k_invalid_symbol_id,

@@ -65,6 +65,8 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "copy";
   case op_kind::move_into:
     return "move";
+  case op_kind::replicate:
+    return "replicate";
   case op_kind::publish_variant:
     return "publish";
   case op_kind::test_variant:
@@ -306,6 +308,9 @@ namespace {
     return "copy " + render_place(op.dest) + " <- " + render_place(op.source);
   case op_kind::move_into:
     return "move " + render_place(op.dest) + " <- " + render_place(op.source);
+  case op_kind::replicate:
+    return "replicate " + render_place(op.dest) + " <- " +
+           render_place(op.source);
   case op_kind::publish_variant:
     return "publish " + render_place(op.dest) + " @" + op.variant;
   case op_kind::test_variant:

@@ -65,6 +65,7 @@ auto for_each_place(Op &op, Visit &&visit) -> void {
   case op_kind::publish_variant:
   case op_kind::drop_in_place:
   case op_kind::copy_into:
+  case op_kind::replicate:
   case op_kind::test_variant:
   case op_kind::storage_dead:
     return {};

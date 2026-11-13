@@ -218,6 +218,9 @@ enum class op_kind : uint8_t {
                    ///< which live in static data for the program's lifetime.
   copy_into,       ///< `dest` <- bytes of `source`; both stay initialized.
   move_into,       ///< `dest` <- bytes of `source`; `source` is invalidated.
+  replicate,       ///< `dest` (an array) <- every element a copy of `source`,
+                   ///< which is its element 0 and already written. The
+                   ///< element is copied, so it needs no drop.
   publish_variant, ///< `dest` (a sum) becomes initialized with `variant`.
   test_variant,    ///< `dest` (a `bool`) <- whether the sum at `source` holds
                    ///< `variant`. `source` stays initialized.

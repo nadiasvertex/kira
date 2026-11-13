@@ -1692,6 +1692,27 @@ auto test_indexes_are_checked() -> void {
                  "a byte offset stepping a word at a time", {}, "steps 8 bytes");
 }
 
+auto test_fills_and_computed_fields() -> void {
+  auto f = build(read_program("forms.cn"));
+  expect_ops(*f, "filled",
+             {"compute s0[0] = copy s1", "replicate s0 <- s0[0]", "return"});
+  expect_ops(*f, "doubled", {"call s1 = make_pair(s0)", "compute s2 = copy s1.b",
+                              "dead s1", "return s2"});
+
+  // Only element 0 can be the source: another element is not the value, and
+  // is overwritten by the copies.
+  auto second = f->function("filled");
+  second.ops[1].source.steps.back().index = 1;
+  expect_rejects(*f, second, hir::verify_error_kind::bad_operation,
+                 "a fill copied from element 1", {}, "element 0");
+
+  // The source must be written before it is copied.
+  auto unwritten = f->function("filled");
+  unwritten.ops.erase(unwritten.ops.begin());
+  expect_rejects(*f, unwritten, hir::verify_error_kind::uninitialized,
+                 "a fill whose element 0 was never written");
+}
+
 auto test_verifier_checks_call_signatures() -> void {
   auto f = build(read_program("forms.cn"));
   // The caller's view of `make_pair` disagrees with the callee's.
@@ -3201,6 +3222,7 @@ auto main() -> int {
     test_string_literals_are_descriptors_over_static_bytes();
     test_descriptor_words_are_parts();
     test_indexes_are_checked();
+    test_fills_and_computed_fields();
     test_every_lowered_function_verifies();
     test_dump_is_stable();
     test_droppable_values_lower_and_verify();

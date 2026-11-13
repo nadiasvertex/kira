@@ -682,6 +682,8 @@ private:
     case op_kind::copy_into:
     case op_kind::move_into:
       return emit_transfer(op);
+    case op_kind::replicate:
+      return emit_replicate(op);
     case op_kind::publish_variant:
       return emit_publish(op);
     case op_kind::test_variant:
@@ -931,6 +933,35 @@ private:
     builder_.CreateMemMove(pointer_at(*to), access_align(*to, value->align),
                            pointer_at(*from), access_align(*from, value->align),
                            constant(i64(), value->size));
+    return {};
+  }
+
+  /// Copies element 0 over the rest of the array by doubling the written
+  /// prefix: about log2(count) copies, each of a constant size and offset.
+  [[nodiscard]] auto emit_replicate(const hir::storage_op &op) -> checked<void> {
+    const auto layout = layout_of(mc_, op.dest.type, op.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto count = static_cast<size_t>((*layout)->count);
+    const auto stride = (*layout)->stride;
+    if (count < 2 || stride == 0) {
+      return {};
+    }
+    const auto to = locate(op.dest);
+    if (!to.has_value()) {
+      return std::unexpected(to.error());
+    }
+    const auto align = (*layout)->align;
+    for (auto filled = size_t{1}; filled < count;) {
+      const auto chunk = std::min(filled, count - filled);
+      auto next = *to;
+      next.offset += filled * stride;
+      builder_.CreateMemCpy(pointer_at(next), access_align(next, align),
+                            pointer_at(*to), access_align(*to, align),
+                            constant(i64(), chunk * stride));
+      filled += chunk;
+    }
     return {};
   }
 

@@ -154,3 +154,11 @@ def text_at(s: str, i: usize) -> byte:
 # A range is checked end first, then start against end.
 def text_part(s: str, a: usize, b: usize) -> str:
     return s[a..b]
+
+# A fill builds element 0 and copies it over the rest.
+def filled(v: int64) -> array[int64, 3]:
+    return [v; 3]
+
+# A field of a computed value is read from a temporary.
+def doubled(n: int32) -> int32:
+    return make_pair(n).b
