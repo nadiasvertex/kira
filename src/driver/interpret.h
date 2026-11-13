@@ -6,7 +6,7 @@
 
 #include "src/bytecode/value.h"
 #include "src/hir/nodes.h"
-#include "src/semantic/type_table.h"
+#include "src/semantic/checker_results.h"
 
 namespace cinder::driver {
 
@@ -61,11 +61,12 @@ namespace cinder::driver {
 /// `function_name`) plus every module `hir::find_reachable_modules` found it
 /// transitively needs — passed straight through to
 /// `bytecode_compiler::compile_module`'s multi-module overload.
-/// @param types Checked type table the modules' HIR indexes into.
+/// @param checked The checked program the modules' HIR indexes into; the
+/// modules are lowered to the storage form (`prepare_storage_program`).
 /// @param function_name Name of the zero-argument function to execute.
 [[nodiscard]] auto
 run_hir_module(std::span<const hir::hir_module *const> modules,
-               const semantic::type_table &types,
+               semantic::checked_types &checked,
                std::string_view function_name) -> run_outcome;
 
 } // namespace cinder::driver

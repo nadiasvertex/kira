@@ -8,7 +8,7 @@
 
 #include "defaults.h"
 #include "src/hir/nodes.h"
-#include "src/semantic/type_table.h"
+#include "src/semantic/checker_results.h"
 
 namespace cinder::driver {
 
@@ -41,7 +41,7 @@ namespace cinder::driver {
 /// (`interpret.h`) for the full contract, shared with this function.
 [[nodiscard]] auto build_hir_module(
     std::span<const hir::hir_module *const> modules,
-    const semantic::type_table &types, std::string_view function_name,
+    semantic::checked_types &checked, std::string_view function_name,
     const std::filesystem::path &output_path, std::string_view program_name,
     optimization_level level = k_default_optimization_level) -> build_outcome;
 

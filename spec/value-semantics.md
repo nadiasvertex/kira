@@ -521,6 +521,24 @@ rejected with help that suggests `move`, because no escape analysis exists yet
 programs now pass on both tiers, which is the condition for the driver switch
 (decision 6 rules out a program that mixes the two forms).
 
+The driver can now run and build a whole program through the storage form, with
+`CINDER_STORAGE_FORM=1`; the pointer form stays the default until the driver's own
+suites pass. Running the corpus with small calls inlined, as the driver does, found
+three inliner bugs, now fixed: it expanded scheduled drops (leaving the value still
+owing its drop), it bound an owned receiver's `&v` where the body expects the value,
+and its copy of a call lost the call's `target`. It also accepted an argument whose
+type differed from the parameter's by a reference, which only worked while every
+aggregate was a pointer. A `break` out of an inlined call's argument block now ends
+those temporaries. The corpus test now runs each program both ways, and all 190
+pass both ways on both tiers. With the storage form, 59 of the 76 `std_test`
+programs match. The other 17 hit storage-form gaps the corpus does not reach: a
+value moved on one path and not another, which needs a drop flag (5); or-patterns
+and guards on values that need a drop; a literal pattern on `str`; generic adapters
+whose `option[_]` element type is not settled when its layout is asked for; and
+several verifier failures in drop and reference handling. `cli_test` also fails on
+building a program with a panicking task. These are the next work before the
+default switches.
+
 | Status | ID | Task | Owner | Priority | Depends On | Acceptance Criteria |
 |---|---|---|---|---|---|---|
 | [x] | T-01 | Inventory representations and capture baselines | Compiler implementer | H | — | Every boundary and opaque/recursive type classified; baseline evidence recorded. |

@@ -3053,13 +3053,13 @@ private:
   [[nodiscard]] auto in_region(const source_span &span, F &&body) -> result {
     auto saved = std::move(pending_);
     pending_.clear();
-    outer_pending_ += saved.size();
+    outer_pending_.push_back(outer_temps{.temps = &saved, .frames = frames_.size()});
     auto ok = body();
     if (ok.has_value() && !terminated_) {
       ok = flush_pending(span);
     }
     pending_.clear();
-    outer_pending_ -= saved.size();
+    outer_pending_.pop_back();
     pending_ = std::move(saved);
     return ok;
   }
@@ -3951,10 +3951,6 @@ private:
   /// `break` leaves the innermost loop; `continue` leaves its body block.
   [[nodiscard]] auto lower_exit(const source_span &span, loop_frame_kind target)
       -> result {
-    if (outer_pending_ != 0) {
-      return refuse(span, "`break` or `continue` inside an expression that has "
-                          "live temporaries");
-    }
     for (size_t depth = 0; depth < frames_.size(); ++depth) {
       auto &frame = frames_[frames_.size() - 1 - depth];
       if (frame.kind != target) {
@@ -3964,10 +3960,38 @@ private:
         return refuse(span, "`break` or `continue` inside a value under "
                             "construction that holds values needing a drop");
       }
+      const auto target_index = frames_.size() - 1 - depth;
+      // The temporaries of an enclosing expression inside the region being
+      // left end here, as they would at the end of their statement (an
+      // inlined call's argument `let`s in `f(x) or else break`). One that
+      // still holds a value needing a drop is refused, as at a statement's
+      // end.
+      for (auto group = outer_pending_.rbegin(); group != outer_pending_.rend();
+           ++group) {
+        if (group->frames <= target_index) {
+          continue;
+        }
+        for (auto it = group->temps->rbegin(); it != group->temps->rend(); ++it) {
+          if (!it->consumed && env_.needs_drop(out_.slots[it->slot].type)) {
+            return refuse(span, "`break` or `continue` inside an expression "
+                                "with a temporary of type `" +
+                                    types().display(out_.slots[it->slot].type) +
+                                    "` that needs a drop");
+          }
+        }
+      }
+      for (auto group = outer_pending_.rbegin(); group != outer_pending_.rend();
+           ++group) {
+        if (group->frames <= target_index) {
+          continue;
+        }
+        for (auto it = group->temps->rbegin(); it != group->temps->rend(); ++it) {
+          kill(it->slot, span);
+        }
+      }
       frame.reached = true;
       // A computed `match` subject inside the region being left ends here
       // (`x or else continue`), as it does where the match ends.
-      const auto target_index = frames_.size() - 1 - depth;
       for (auto it = open_subjects_.rbegin(); it != open_subjects_.rend();
            ++it) {
         if (it->frames > target_index &&
@@ -4369,8 +4393,13 @@ private:
   std::unordered_map<std::string, storage_id> globals_;
   std::vector<pending_temp> pending_;
   /// Temporaries of enclosing expressions, set aside while a nested region
-  /// (a branch or a loop) lowers.
-  size_t outer_pending_ = 0;
+  /// (a branch or a loop) lowers, each group with the number of loop frames
+  /// open where it was set aside.
+  struct outer_temps {
+    const std::vector<pending_temp> *temps = nullptr;
+    size_t frames = 0;
+  };
+  std::vector<outer_temps> outer_pending_;
   /// The computed subjects of the `match`es being lowered, each with the
   /// number of loop frames open where it was made.
   struct open_subject {

@@ -43,6 +43,7 @@
 #include "src/bytecode_compiler/compile.h"
 #include "src/bytecode_compiler/storage_compile.h"
 #include "src/comptime_vm/backend.h"
+#include "src/hir/inline.h"
 #include "src/hir/link.h"
 #include "src/hir/lower.h"
 #include "src/hir/storage.h"
@@ -198,9 +199,15 @@ struct program {
   const hir::hir_function *main_fn = nullptr;
 };
 
+/// Call sites `hir::inline_small_calls` replaced across the inlined passes:
+/// checked in `main`, so the inlined pass cannot quietly become a re-run of
+/// the plain one.
+auto inlined_call_sites = size_t{0};
+
 /// Unset when the file does not get as far as HIR; the reason is in `why`.
-auto load(const fs::path &path, const std::string &text, std::string &why)
-    -> std::unique_ptr<program> {
+/// With `inline_calls`, small calls are inlined first, as the driver does.
+auto load(const fs::path &path, const std::string &text, std::string &why,
+          bool inline_calls) -> std::unique_ptr<program> {
   auto out = std::make_unique<program>();
   out->stdlib = cinder::testing::parse_stdlib(out->sources, out->diag);
   const auto file_id = out->sources.add_file(path.string(), text);
@@ -242,6 +249,10 @@ auto load(const fs::path &path, const std::string &text, std::string &why)
     out->modules.push_back(std::move(submodule));
   }
   cinder::testing::lower_stdlib_modules(out->stdlib, out->checked, out->modules);
+  if (inline_calls) {
+    inlined_call_sites +=
+        hir::inline_small_calls(out->modules, out->checked.types).call_sites;
+  }
   out->reached = hir::find_reachable_modules(*out->modules.front(), out->modules);
   for (const auto &fn : out->modules.front()->functions) {
     if (fn != nullptr && fn->name == "main") {
@@ -504,10 +515,10 @@ auto llvm_tier(program &p, std::span<const hir::storage_module *const> modules,
   return {true, "passed"};
 }
 
-auto survey(const fs::path &path) -> verdict {
+auto survey(const fs::path &path, bool inline_calls) -> verdict {
   const auto text = read_file(path);
   auto why = std::string{};
-  auto p = load(path, text, why);
+  auto p = load(path, text, why, inline_calls);
   if (p == nullptr) {
     return {.status = why};
   }
@@ -731,7 +742,21 @@ auto main() -> int {
     if (filter != nullptr && *filter != '\0' && !name.contains(filter)) {
       continue;
     }
-    const auto result = survey(file);
+    // Each program runs as lowered and again with small calls inlined, as
+    // the driver runs it: both must pass for the program to count.
+    auto result = survey(file, false);
+    if (result.passed) {
+      const auto inlined = survey(file, true);
+      if (!inlined.passed) {
+        result.passed = false;
+        result.status = "inlined: " + inlined.status;
+        result.llvm_passed = false;
+        result.llvm_status = result.status;
+      } else if (result.llvm_passed && !inlined.llvm_passed) {
+        result.llvm_passed = false;
+        result.llvm_status = "inlined: " + inlined.llvm_status;
+      }
+    }
     if (verbose != nullptr) {
       std::cout << name << ": " << result.status << "\n";
       if (result.passed) {
@@ -776,6 +801,10 @@ auto main() -> int {
   }
   for (const auto &name : llvm_newly) {
     std::cout << "  now passing on LLVM (add to the LLVM baseline): " << name << "\n";
+  }
+  if (filter == nullptr || *filter == '\0') {
+    expect(inlined_call_sites > 0,
+           "expected the inlined pass to inline at least one call site");
   }
   if (!regressions.empty()) {
     for (const auto &line : regressions) {

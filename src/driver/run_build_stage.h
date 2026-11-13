@@ -20,7 +20,7 @@ namespace cinder::driver {
 /// @param report Aggregate compile report; `run` is populated on request.
 auto run_requested_function(
     const cli_config &cfg, const hir::ptr_vec<hir::hir_module> &lowered_modules,
-    const semantic::checked_types &checked, compile_report &report) -> void;
+    semantic::checked_types &checked, compile_report &report) -> void;
 
 /// Builds `cfg.build_function` into a standalone executable when
 /// `cfg.build` is set, recording the outcome in `report.build`. Mirrors
@@ -37,6 +37,6 @@ auto run_requested_function(
 /// @param report Aggregate compile report; `build` is populated on request.
 auto build_requested_function(
     const cli_config &cfg, const hir::ptr_vec<hir::hir_module> &lowered_modules,
-    const semantic::checked_types &checked, compile_report &report) -> void;
+    semantic::checked_types &checked, compile_report &report) -> void;
 
 } // namespace cinder::driver

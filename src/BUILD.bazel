@@ -299,7 +299,7 @@ filegroup(
 
 cc_test(
     name = "storage_corpus_test",
-    size = "medium",
+    size = "large",
     srcs = ["storage_corpus_test.cpp"],
     data = [
         ":codegen_stress_corpus",

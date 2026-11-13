@@ -366,7 +366,7 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 
   // Compile-time code runs on the VM.
   auto comptime_backend = comptime_vm::vm_backend{};
-  const auto checked = semantic::validate_semantics(
+  auto checked = semantic::validate_semantics(
       semantic_inputs, session_diagnostics, file_has_errors,
       semantic::semantic_options{.check_names_and_types =
                                      !effective_cfg.parse_only,

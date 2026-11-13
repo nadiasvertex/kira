@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <bit>
 #include <cstdlib>
+#include <cstring>
 #include <format>
 #include <string>
 #include <string_view>
@@ -9,7 +11,10 @@
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/compile.h"
+#include "src/bytecode_compiler/storage_compile.h"
+#include "src/driver/storage_program.h"
 #include "src/hir/lower.h"
+#include "src/runtime/aligned_buffer.h"
 #include "src/runtime/scheduler.h"
 #include "src/util/integer_literal.h"
 
@@ -93,10 +98,67 @@ namespace cinder::driver {
   return 0;
 }
 
+/// The inline result bytes at `at` as the `slot_value` `render_run_value`
+/// and `exit_code_of` read: a signed integer sign-extended into `i`, an
+/// unsigned one zero-extended into `u`, a 128-bit one in `w`, and a float's
+/// bits where its width reads them.
+[[nodiscard]] static auto
+slot_of_inline(const semantic::type_table &types, semantic::type_id type,
+               const std::byte *at, size_t size) -> bytecode::slot_value {
+  auto bits = uint64_t{0};
+  std::memcpy(&bits, at, std::min(size, sizeof(bits)));
+  auto slot = bytecode::slot_value{};
+  slot.u = bits;
+  const auto kind = bytecode::numeric_kind_of(types, type);
+  if (!kind.has_value()) {
+    return slot;
+  }
+  const auto sign = [bits](unsigned width) -> int64_t {
+    const auto shift = 64U - width;
+    return static_cast<int64_t>(bits << shift) >> shift;
+  };
+  switch (*kind) {
+  case bytecode::numeric_kind::i8:
+    slot.i = sign(8);
+    break;
+  case bytecode::numeric_kind::i16:
+    slot.i = sign(16);
+    break;
+  case bytecode::numeric_kind::i32:
+    slot.i = sign(32);
+    break;
+  case bytecode::numeric_kind::u8:
+    slot.u = bits & 0xffU;
+    break;
+  case bytecode::numeric_kind::u16:
+    slot.u = bits & 0xffffU;
+    break;
+  case bytecode::numeric_kind::u32:
+  case bytecode::numeric_kind::character:
+  case bytecode::numeric_kind::f32:
+    slot.u = bits & 0xffffffffU;
+    break;
+  case bytecode::numeric_kind::boolean:
+    slot.u = bits & 1U;
+    break;
+  case bytecode::numeric_kind::i128:
+  case bytecode::numeric_kind::u128: {
+    auto wide = static_cast<unsigned __int128>(0);
+    std::memcpy(&wide, at, std::min(size, sizeof(wide)));
+    slot.w = wide;
+    break;
+  }
+  default:
+    break;
+  }
+  return slot;
+}
+
 [[nodiscard]] auto
 run_hir_module(std::span<const hir::hir_module *const> modules,
-               const semantic::type_table &types,
+               semantic::checked_types &checked,
                std::string_view function_name) -> run_outcome {
+  const auto &types = checked.types;
   const auto &entry_module = *modules.front();
   const auto *target = static_cast<const hir::hir_function *>(nullptr);
   for (const auto &fn : entry_module.functions) {
@@ -121,7 +183,22 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
             function_name)};
   }
 
-  auto compiled = bytecode_compiler::compile_module(modules, types);
+  const auto storage = storage_form_enabled();
+  auto program = std::unique_ptr<storage_program>{};
+  if (storage) {
+    auto prepared = prepare_storage_program(modules, checked);
+    if (!prepared.has_value()) {
+      return run_outcome{.succeeded = false,
+                         .message = std::format("failed to compile `{}`: {}",
+                                                function_name, prepared.error())};
+    }
+    program = std::move(*prepared);
+  }
+  auto compiled =
+      storage ? bytecode_compiler::compile_storage_module(
+                    std::span<const hir::storage_module *const>(program->modules),
+                    *program->env)
+              : bytecode_compiler::compile_module(modules, types);
   if (!compiled) {
     return run_outcome{.succeeded = false,
                        .message = std::format("failed to compile `{}` to "
@@ -139,13 +216,16 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
   }
 
   const auto vm = bytecode::vm{*compiled};
-  if (compiled->static_init_function.has_value()) {
-    // Builds every reified `static let`'s backing value once, into `vm`'s
-    // own `globals_` — which persists across this and the next `run` call on
-    // the same instance (see `vm::globals_`'s doc comment) — before the
-    // program's real entry point can read any of them.
-    auto init_result = vm.run(*compiled->static_init_function,
-                              std::span<const bytecode::slot_value>{});
+  // Builds every static's value before the entry point can read any of
+  // them: the storage form has one initializer per module, writing the
+  // module's globals; the pointer form one for the program, writing `vm`'s
+  // own `globals_`, which persist across `run` calls on the same instance.
+  auto initializers = compiled->static_initializers;
+  if (!storage && compiled->static_init_function.has_value()) {
+    initializers = {*compiled->static_init_function};
+  }
+  for (const auto init : initializers) {
+    auto init_result = vm.run(init, std::span<const bytecode::slot_value>{});
     if (!init_result) {
       return run_outcome{
           .succeeded = false,
@@ -154,7 +234,32 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
                           bytecode::panic_reason_message(init_result.error()))};
     }
   }
-  auto result = vm.run(index, std::span<const bytecode::slot_value>{});
+  // The result's inline bytes: built through an address for an aggregate,
+  // returned in a register otherwise.
+  const auto &abi = compiled->functions[index].abi;
+  const auto result_size = abi.has_value() ? abi->result.size : size_t{8};
+  auto bytes = runtime::aligned_buffer(
+      std::max<size_t>(result_size, 16),
+      std::max<size_t>(abi.has_value() ? abi->result.align : 8, 16));
+  auto result = std::expected<bytecode::vm_result, bytecode::panic_reason>{};
+  if (!storage) {
+    result = vm.run(index, std::span<const bytecode::slot_value>{});
+  } else if (abi.has_value() && abi->returns_through_address) {
+    auto into = vm.run_into(index, std::span<std::byte>(bytes.data(), bytes.size()),
+                            std::span<const bytecode::slot_value>{});
+    if (into.has_value()) {
+      result = bytecode::vm_result{.has_value = true};
+    } else {
+      result = std::unexpected(into.error().reason);
+    }
+  } else {
+    result = vm.run(index, std::span<const bytecode::slot_value>{});
+    if (result.has_value()) {
+      std::memcpy(bytes.data(), &result->value, sizeof(result->value));
+      result->value =
+          slot_of_inline(types, target->return_type, bytes.data(), result_size);
+    }
+  }
   // `vm` and `compiled` end with this function, and a task still running
   // reads both, so one that will not stop has to end with the process.
   const auto stopped = runtime::scheduler::shutdown();
