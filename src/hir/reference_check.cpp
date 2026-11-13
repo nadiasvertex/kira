@@ -809,11 +809,17 @@ private:
     return expr;
   }
 
-  /// `&expr` typed `want`; a value that is not a place is stored first.
+  /// `&expr`, a reference as mutable as `want`; a value that is not a place
+  /// is stored first. The reference is to `expr`'s own type: a callee shared
+  /// by every instance of a generic impl (a trait default) writes `want` in
+  /// the impl's parameters, which name no type here.
   auto borrow(ptr<hir_expr> expr, type_id want) -> ptr<hir_expr> {
     const auto span = expr->span;
-    const auto op = types_.entry(want).is_mut ? ast::unary_op::addr_of_mut
-                                              : ast::unary_op::addr_of;
+    const auto is_mut = types_.entry(want).is_mut;
+    const auto op = is_mut ? ast::unary_op::addr_of_mut : ast::unary_op::addr_of;
+    if (!types_.is_unknown(expr->type)) {
+      want = const_cast<semantic::type_table &>(types_).ref_to(expr->type, is_mut);
+    }
     if (is_place(*expr)) {
       // A part of a temporary that is borrowed stays in it.
       auto path = std::vector<std::string>{};

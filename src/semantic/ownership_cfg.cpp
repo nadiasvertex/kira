@@ -1610,7 +1610,7 @@ private:
       if (short_circuits && binary.rhs != nullptr) {
         stash(temp, eval_full(*binary.rhs, use_mode::read));
       } else {
-        stash(temp, eval_opt(binary.rhs.get(), use_mode::read));
+        stash(temp, eval_opt(binary.rhs.get(), operand_mode(binary)));
       }
       return compound_result(expr, temp);
     }
@@ -1960,6 +1960,25 @@ private:
       return receiver_passing::move;
     }
     return entry.is_mut ? receiver_passing::mut : receiver_passing::shared;
+  }
+
+  /// How an operator's right operand is used: moved into an overload's
+  /// by-value parameter (`add(self, other: self)`), as any argument is, and
+  /// only read for a built-in operator or a `&` parameter. The left operand
+  /// is the overload's `self`, which is lent.
+  [[nodiscard]] auto operand_mode(const ast::binary_expr &binary) const
+      -> use_mode {
+    const auto found = checked_.lowering.operator_dispatches.find(&binary);
+    if (found == checked_.lowering.operator_dispatches.end() ||
+        found->second.decl == nullptr || found->second.decl->params.size() < 2) {
+      return use_mode::read;
+    }
+    const auto type = type_of(found->second.decl->params[1].pattern.get());
+    if (checked_.types.is_unknown(type) ||
+        checked_.types.entry(type).kind == type_kind::ref_kind) {
+      return use_mode::read;
+    }
+    return use_mode::move;
   }
 
   [[nodiscard]] auto argument_passing(const ast::call_expr &call,

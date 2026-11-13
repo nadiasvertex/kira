@@ -281,6 +281,22 @@ auto test_copying_a_mut_reference_moves_it() -> void {
                     "expected binding a `&mut` to a second name to move it");
 }
 
+auto test_operator_right_operand_is_moved() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_use_after_operator_moves_operand.cn");
+  expect_diagnostic(analyzed, "use of moved value `b`",
+                    "expected an overloaded operator to move a non-copy right "
+                    "operand into its by-value parameter");
+}
+
+auto test_operator_left_operand_is_borrowed() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_operator_left_operand_reused.cn");
+  expect(analyzed.error_count == 0,
+         "expected an overloaded operator's left operand (the `self` "
+         "receiver) and `copy` operands to stay usable");
+}
+
 // ==========================================================================
 //  Exclusivity within a single call: at most one `&mut`, and a `&mut` cannot
 //  coexist with any `&` of the same value.
@@ -1290,6 +1306,8 @@ auto main() -> int {
     test_returning_a_reference_to_a_member_is_accepted();
     test_mutating_while_member_reference_live_is_rejected();
     test_copying_a_mut_reference_moves_it();
+    test_operator_right_operand_is_moved();
+    test_operator_left_operand_is_borrowed();
     test_two_mutable_borrows_in_one_call_are_rejected();
     test_mutable_and_shared_borrow_in_one_call_are_rejected();
     test_borrowing_as_a_call_argument_is_accepted();

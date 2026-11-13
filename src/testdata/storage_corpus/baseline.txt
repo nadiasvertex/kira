@@ -191,3 +191,5 @@
 187_value_baseline_pipe_reads_10n.cn
 188_array_element_drops.cn
 189_closure_borrows_captures.cn
+190_bindings_through_references.cn
+191_variant_payload_from_sibling_argument.cn

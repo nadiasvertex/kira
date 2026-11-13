@@ -1,5 +1,5 @@
 # inference snapshot
-# 2720 interned types
+# 2724 interned types
 
 ## node_types (33841)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -1679,7 +1679,7 @@
 057_lambda_solves_under_constructor.cn:24:62 [ident] int32
 057_lambda_solves_under_constructor.cn:24:62 [binary] int32
 057_lambda_solves_under_constructor.cn:24:66 [literal] int32
-057_lambda_solves_under_constructor.cn:24:76 [ident] option[_]
+057_lambda_solves_under_constructor.cn:24:76 [ident] option[int32]
 057_lambda_solves_under_constructor.cn:25:13 [option_pat] option[int32]
 057_lambda_solves_under_constructor.cn:25:19 [binding_pat] int32
 057_lambda_solves_under_constructor.cn:25:25 [ident] int32
@@ -4005,7 +4005,7 @@ std/algo.cn:475:20 [ident] fn(&mut option[T], option[T]) -> option[T]
 std/algo.cn:475:20 [call] option[T]
 std/algo.cn:475:28 [unary] &mut option[T]
 std/algo.cn:475:33 [module_path] option[T]
-std/algo.cn:475:44 [ident] option[_]
+std/algo.cn:475:44 [ident] option[T]
 std/algo.cn:476:16 [module_path] I
 std/algo.cn:476:16 [field] fn() -> option[T]
 std/algo.cn:476:16 [call] option[T]

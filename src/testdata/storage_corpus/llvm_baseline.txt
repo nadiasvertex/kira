@@ -190,3 +190,5 @@
 188_array_element_drops.cn
 189_closure_borrows_captures.cn
 wed_element_needs_a_load.cn
+190_bindings_through_references.cn
+191_variant_payload_from_sibling_argument.cn

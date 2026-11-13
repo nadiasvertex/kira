@@ -1743,27 +1743,24 @@ auto lowerer::guarded(const std::vector<std::size_t> &flags,
   if (flags.empty() || body.empty()) {
     return body;
   }
-  auto condition = flag_ref(flags.front(), span);
-  if (!condition.has_value()) {
-    return std::unexpected(condition.error());
-  }
-  for (std::size_t i = 1; i < flags.size(); ++i) {
-    auto next = flag_ref(flags[i], span);
-    if (!next.has_value()) {
-      return std::unexpected(next.error());
+  // One `if` per flag, the last innermost, rather than one `if` on their
+  // `&&`: each test reads a flag itself, which is how the storage form's
+  // verifier ties a value's drop to the flag that says it is still held.
+  auto out = std::move(body);
+  for (auto flag = flags.rbegin(); flag != flags.rend(); ++flag) {
+    auto condition = flag_ref(*flag, span);
+    if (!condition.has_value()) {
+      return std::unexpected(condition.error());
     }
-    condition = ok_expr(hir::make<hir_binary>(
-        span, checked_.types.bool_type(), ast::binary_op::logical_and,
-        std::move(*condition), std::move(*next)));
+    auto branches = std::vector<hir_if_branch>{};
+    branches.push_back(hir_if_branch{
+        .condition = std::move(*condition),
+        .body = make<hir_block>(span, k_unknown_type, std::move(out))});
+    out = ptr_vec<hir_node>{};
+    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(make<hir_if>(span, k_unknown_type,
+                                         std::move(branches), nullptr)))));
   }
-  auto branches = std::vector<hir_if_branch>{};
-  branches.push_back(hir_if_branch{
-      .condition = std::move(*condition),
-      .body = make<hir_block>(span, k_unknown_type, std::move(body))});
-  auto out = ptr_vec<hir_node>{};
-  out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span, ptr<hir_expr>(make<hir_if>(span, k_unknown_type,
-                                       std::move(branches), nullptr)))));
   return out;
 }
 

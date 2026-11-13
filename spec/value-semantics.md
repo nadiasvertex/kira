@@ -530,14 +530,26 @@ and its copy of a call lost the call's `target`. It also accepted an argument wh
 type differed from the parameter's by a reference, which only worked while every
 aggregate was a pointer. A `break` out of an inlined call's argument block now ends
 those temporaries. The corpus test now runs each program both ways, and all 190
-pass both ways on both tiers. With the storage form, 59 of the 76 `std_test`
-programs match. The other 17 hit storage-form gaps the corpus does not reach: a
-value moved on one path and not another, which needs a drop flag (5); or-patterns
-and guards on values that need a drop; a literal pattern on `str`; generic adapters
-whose `option[_]` element type is not settled when its layout is asked for; and
-several verifier failures in drop and reference handling. `cli_test` also fails on
-building a program with a panicking task. These are the next work before the
-default switches.
+pass both ways on both tiers. With the storage form, 69 of the 76 `std_test`
+programs match. Getting there fixed several gaps the corpus did not reach. A
+binding a pattern reaches through a reference now names the payload in place, so
+a write through a `mut` binding on a `&mut` subject changes the referenced value
+(chapter 3; the pointer form copied it, and corpus 190 records the difference). The
+verifier accepts `*r = v` (a drop through a `&mut` that the next write replaces),
+`ptr_cast` of a reference, and a value held on one path and dropped in place on the
+other. A `while let` head lives until its enclosing loop or the function ends, so
+drops written after the loop find it. Borrows the reference check adds to a
+generic impl's trait default are typed from the borrowed value. The checker gives
+`@none`, `@ok` and `@err` an open slot for the type they do not name, so a sibling
+argument settles it (corpus 191). The ownership check now treats a user operator's
+right operand as moved when the impl takes it by value (chapter 20), which the std
+sample `operator_overload.cn` violated. The remaining 7 hit: a slot used after its
+storage ended (`stable_sort`), a tuple from `partition` still owing its drop at
+return, a literal pattern on `str`, a slot ended while still owing its drop in
+nested iterator adapters, an or-pattern on a droppable value, the drop of a
+fallible task with a droppable result, and a match guard after a partial drop.
+`cli_test` also fails on building a program with a panicking task. These are the
+next work before the default switches.
 
 | Status | ID | Task | Owner | Priority | Depends On | Acceptance Criteria |
 |---|---|---|---|---|---|---|

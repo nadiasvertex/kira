@@ -448,6 +448,39 @@ private:
   //  Places read from expressions
   // ------------------------------------------------------------------
 
+  /// Whether `expr` projects a pattern subject: fields, elements, payloads
+  /// and dereferences down to a subject `match`, `while let` or `let ...
+  /// else` named in place.
+  [[nodiscard]] auto rooted_at_subject(const hir_expr &expr) const -> bool {
+    const auto *at = &expr;
+    while (true) {
+      switch (at->kind) {
+      case hir_node_kind::hir_local_ref:
+        return subjects_.contains(as<hir_local_ref>(*at).symbol);
+      case hir_node_kind::hir_field:
+        at = as<hir_field>(*at).object.get();
+        break;
+      case hir_node_kind::hir_tuple_index:
+        at = as<hir_tuple_index>(*at).object.get();
+        break;
+      case hir_node_kind::hir_variant_payload:
+        at = as<hir_variant_payload>(*at).object.get();
+        break;
+      case hir_node_kind::hir_unary:
+        if (as<hir_unary>(*at).op != ast::unary_op::deref) {
+          return false;
+        }
+        at = as<hir_unary>(*at).operand.get();
+        break;
+      default:
+        return false;
+      }
+      if (at == nullptr) {
+        return false;
+      }
+    }
+  }
+
   /// The place `expr` names, or nullopt when it is a computed value.
   [[nodiscard]] auto lower_place(const hir_expr &expr)
       -> std::expected<std::optional<place>, storage_lower_error> {
@@ -2977,6 +3010,22 @@ private:
         return flush_pending(let.span);
       }
     }
+    if (let.initializer != nullptr && rooted_at_subject(*let.initializer)) {
+      // A pattern binding reached through a reference names part of what the
+      // reference points at (ch. 3): it reads and, through a `&mut`, writes
+      // that place, and never owns or drops it.
+      auto named = lower_place(*let.initializer);
+      if (!named.has_value()) {
+        return std::unexpected(named.error());
+      }
+      if (named->has_value() &&
+          std::ranges::any_of((*named)->steps, [](const projection &step) {
+            return step.kind == projection_kind::deref;
+          })) {
+        subjects_[let.symbol] = **named;
+        return flush_pending(let.span);
+      }
+    }
     const auto slot = new_slot(storage_class::frame_local, let.type(), let.name,
                                let.symbol, let.span, false);
     if (let.initializer != nullptr) {
@@ -3250,11 +3299,20 @@ private:
     frames_.pop_back();
     if (left) {
       // Every path out of the loop leaves the head's storage (a `while let`
-      // subject) live; it ends here, so an enclosing loop body ends as it
-      // began.
-      for (auto i = head_storage; i > 0; --i) {
-        kill(scopes_.back()[i - 1], span);
+      // subject and its temporaries) live. The statements after the loop may
+      // still drop those temporaries under their live flags, so the storage
+      // ends with the enclosing scope, which keeps an enclosing loop body
+      // ending as it began.
+      auto head = std::vector<storage_id>(
+          scopes_.back().begin(),
+          scopes_.back().begin() + static_cast<std::ptrdiff_t>(head_storage));
+      scopes_.pop_back();
+      // Outside every loop, storage lasts until the function returns.
+      if (!scopes_.empty()) {
+        scopes_.back().insert(scopes_.back().end(), head.begin(), head.end());
       }
+      terminated_ = false;
+      return {};
     }
     scopes_.pop_back();
     terminated_ = !left;

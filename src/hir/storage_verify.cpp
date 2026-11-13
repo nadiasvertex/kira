@@ -6,6 +6,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -1144,8 +1145,114 @@ private:
     /// The drop flags that were `true` on every path where the value is
     /// held and `false` on every other, and have not been written since.
     std::set<storage_id> flags;
+    /// The member keys from the slot to the part that may be held (a field
+    /// moved on one path only); empty when it is the whole slot. The rest of
+    /// a slot with a part that may be held keeps its state as usual.
+    std::vector<std::string> keys;
     auto operator==(const maybe_value &) const -> bool = default;
   };
+
+  [[nodiscard]] static auto path_of(const std::vector<std::string> &keys)
+      -> std::string {
+    auto out = std::string{};
+    for (const auto &key : keys) {
+      out += "/" + key;
+    }
+    return out;
+  }
+
+  /// The node for the part at `keys` of `node`, or null when it is not held;
+  /// a part of a whole value is whole.
+  [[nodiscard]] static auto part_at(const init_node &node,
+                                    const std::vector<std::string> &keys)
+      -> const init_node * {
+    static const auto whole_value = [] {
+      auto out = init_node{};
+      out.whole = true;
+      return out;
+    }();
+    const auto *at = &node;
+    for (const auto &key : keys) {
+      if (at->whole) {
+        return &whole_value;
+      }
+      const auto found = at->children.find(key);
+      if (found == at->children.end()) {
+        return nullptr;
+      }
+      at = &found->second;
+    }
+    return at;
+  }
+
+  /// Puts `part` back at `keys` in `node`, which does not hold it.
+  static auto put_part(init_node &node, const std::vector<std::string> &keys,
+                       const init_node &part) -> void {
+    auto *at = &node;
+    for (const auto &key : keys) {
+      at = &at->children[key];
+    }
+    *at = part;
+  }
+
+  /// Where `held` and `empty` differ only in one part of a structure or
+  /// tuple, which `held` owes a drop for and `empty` does not hold at all:
+  /// that part's keys, appended to `keys`.
+  [[nodiscard]] auto differing_part(type_id type, storage_id slot,
+                                    const std::string &path,
+                                    const init_node *held,
+                                    const std::set<std::string> &dropped_held,
+                                    const init_node *empty,
+                                    const std::set<std::string> &dropped_empty,
+                                    std::vector<std::string> &keys) -> bool {
+    static const auto nothing = init_node{};
+    const auto &node_h = held != nullptr ? *held : nothing;
+    const auto &node_e = empty != nullptr ? *empty : nothing;
+    if (!path.empty() && node_e.empty() &&
+        dropped_under(dropped_empty, path).empty() &&
+        first_owed(&node_h, type, slot, path, dropped_held).has_value()) {
+      return true;
+    }
+    const auto stripped = types().strip_refinement(type);
+    const auto *plan = env_.drop_plan(stripped);
+    const auto own = plan != nullptr && (plan->own_drop.has_value() ||
+                                         plan->closure_glue.has_value() ||
+                                         plan->cancels_generator);
+    const auto layout = env_.layouts.layout(stripped);
+    if (own || !layout.has_value() || (node_h.whole && node_e.whole) ||
+        ((*layout)->kind != runtime::value_layout_kind::structure &&
+         (*layout)->kind != runtime::value_layout_kind::tuple)) {
+      return false;
+    }
+    auto differs = std::optional<size_t>{};
+    for (size_t m = 0; m < (*layout)->members.size(); ++m) {
+      const auto key = std::vector<std::string>{member_key(m)};
+      const auto sub = path + "/" + key.front();
+      const auto *part_h = part_at(node_h, key);
+      const auto *part_e = part_at(node_e, key);
+      const auto member_type = (*layout)->members[m].type;
+      const auto same =
+          normalize(part_h != nullptr ? *part_h : nothing, member_type) ==
+              normalize(part_e != nullptr ? *part_e : nothing, member_type) &&
+          dropped_under(dropped_held, sub) == dropped_under(dropped_empty, sub);
+      if (!same) {
+        if (differs.has_value()) {
+          return false;
+        }
+        differs = m;
+      }
+    }
+    if (!differs.has_value()) {
+      return false;
+    }
+    const auto key = member_key(*differs);
+    keys.push_back(key);
+    return differing_part((*layout)->members[*differs].type, slot,
+                          path + "/" + key, part_at(node_h, {key}),
+                          dropped_held, part_at(node_e, {key}), dropped_empty,
+                          keys);
+  }
+
 
   struct flow_state {
     std::vector<init_node> state;
@@ -1156,6 +1263,39 @@ private:
     std::vector<std::optional<maybe_value>> maybe;
   };
   using maybe_flow = std::optional<flow_state>;
+
+  /// Slot `i` where a path that holds a part of it meets one that holds all
+  /// the rest and not that part, told apart by a drop flag: the rest's state
+  /// and drops, and the part as a value that may be held.
+  [[nodiscard]] auto join_maybe_part(size_t i, const flow_state &a,
+                                     const flow_state &b)
+      -> std::optional<std::tuple<init_node, std::set<std::string>, maybe_value>> {
+    const auto type = fn_.slots[i].type;
+    const auto id = static_cast<storage_id>(i);
+    for (const auto &[held, empty] :
+         {std::pair{&a, &b}, std::pair{&b, &a}}) {
+      auto keys = std::vector<std::string>{};
+      const auto state_h = normalize(held->state[i], type);
+      const auto state_e = normalize(empty->state[i], type);
+      if (!differing_part(type, id, "", &state_h, held->dropped[i], &state_e,
+                          empty->dropped[i], keys) ||
+          keys.empty()) {
+        continue;
+      }
+      const auto flags = telling_flags(*held, *empty);
+      if (flags.empty()) {
+        continue;
+      }
+      const auto *live = part_at(state_h, keys);
+      return std::tuple{state_e, empty->dropped[i],
+                        maybe_value{.live = live != nullptr ? *live : init_node{},
+                                    .dropped = dropped_under(held->dropped[i],
+                                                             path_of(keys)),
+                                    .flags = flags,
+                                    .keys = keys}};
+    }
+    return std::nullopt;
+  }
 
   enum class region_kind : uint8_t { branch, loop, block };
 
@@ -1175,6 +1315,9 @@ private:
     /// `then` side.
     std::optional<storage_id> tested_flag;
     std::vector<storage_id> flagged;
+    /// A branch on a drop flag whose value is known on this path: the side
+    /// that runs. The other cannot be reached.
+    std::optional<bool> known_side;
   };
 
   [[nodiscard]] static auto continues_dead_path(op_kind kind) -> bool {
@@ -1194,10 +1337,15 @@ private:
     maybe_ = std::move(from.maybe);
   }
 
-  /// Whether slot `id` is a drop flag HIR declared (`<drop flag>`).
+  /// Whether slot `id` is a drop flag HIR declared (`<drop flag>` for a
+  /// binding, `<live>` for a temporary a jump can leave), in the frame or, in
+  /// a generator or task step, in the coroutine's state block.
   [[nodiscard]] auto is_drop_flag(size_t id) const -> bool {
-    return id < fn_.slots.size() && fn_.slots[id].name == "<drop flag>" &&
-           fn_.slots[id].cls == storage_class::frame_local;
+    return id < fn_.slots.size() &&
+           (fn_.slots[id].name == "<drop flag>" ||
+            fn_.slots[id].name == "<live>") &&
+           (fn_.slots[id].cls == storage_class::frame_local ||
+            fn_.slots[id].cls == storage_class::coroutine_frame);
   }
 
   /// After `op`: what each drop flag is known to hold, and that no value that
@@ -1217,7 +1365,11 @@ private:
       }
     }
     for (size_t i = 0; i < maybe_.size(); ++i) {
-      if (maybe_[i].has_value() && !state_[i].empty()) {
+      if (!maybe_[i].has_value()) {
+        continue;
+      }
+      const auto *part = part_at(state_[i], maybe_[i]->keys);
+      if (part != nullptr && !part->empty()) {
         return fail(verify_error_kind::join_mismatch,
                     "s" + std::to_string(i) +
                         " is written while it may still hold a value that "
@@ -1248,9 +1400,13 @@ private:
                                 const flow_state &b)
       -> std::optional<maybe_value> {
     const auto type = fn_.slots[i].type;
+    // Not held: nothing written, or everything written already dropped (a
+    // drop call leaves the bytes in place).
     const auto empty_on = [&](const flow_state &s) -> bool {
-      return !s.maybe[i].has_value() && normalize(s.state[i], type).empty() &&
-             s.dropped[i].empty();
+      return !s.maybe[i].has_value() &&
+             !first_owed(&s.state[i], type, static_cast<storage_id>(i), "",
+                         s.dropped[i])
+                  .has_value();
     };
     const auto as_held = [&](const flow_state &held,
                              const flow_state &empty) -> std::optional<maybe_value> {
@@ -1263,7 +1419,8 @@ private:
       }
       auto out = maybe_value{.live = held.state[i],
                              .dropped = held.dropped[i],
-                             .flags = telling_flags(held, empty)};
+                             .flags = telling_flags(held, empty),
+                             .keys = {}};
       return out.flags.empty() ? std::nullopt : std::optional{out};
     };
     if (a.maybe[i].has_value() && b.maybe[i].has_value()) {
@@ -1457,6 +1614,30 @@ private:
       if (same && a.dead[i] == b.dead[i]) {
         continue;
       }
+      // A part that may be held, on both paths alike.
+      const auto is_part = [&](const flow_state &s) -> bool {
+        return s.maybe[i].has_value() && !s.maybe[i]->keys.empty();
+      };
+      if (is_part(a) || is_part(b)) {
+        if (is_part(a) && is_part(b) && a.dead[i] == b.dead[i] &&
+            a.maybe[i]->keys == b.maybe[i]->keys &&
+            a.maybe[i]->live == b.maybe[i]->live &&
+            a.maybe[i]->dropped == b.maybe[i]->dropped && state_a == state_b &&
+            a.dropped[i] == b.dropped[i]) {
+          auto maybe = *a.maybe[i];
+          std::erase_if(maybe.flags, [&](storage_id f) {
+            return !b.maybe[i]->flags.contains(f);
+          });
+          if (!maybe.flags.empty()) {
+            out.maybe[i] = std::move(maybe);
+            continue;
+          }
+        }
+        return fail(verify_error_kind::join_mismatch,
+                    "s" + std::to_string(i) +
+                        " may hold a part on one path, and no drop flag "
+                        "tells the paths apart");
+      }
       // A value that owes its drop on one path and is not held on the other.
       const auto owes = [&](const flow_state &s) -> bool {
         return first_owed(&s.state[i], slot.type, id, "", s.dropped[i])
@@ -1496,6 +1677,20 @@ private:
         auto joined = join_part(slot.type, id, "", &state_a, a.dropped[i],
                                 &state_b, b.dropped[i], dropped);
         if (!joined.has_value()) {
+          // A part moved on one path only, told apart by a drop flag.
+          if (auto part = join_maybe_part(i, a, b); part.has_value()) {
+            out.state[i] = std::get<0>(*part);
+            out.dropped[i] = std::get<1>(*part);
+            out.maybe[i] = std::get<2>(*part);
+            continue;
+          }
+          // Held on one path and dropped in place on the other.
+          if (auto maybe = join_maybe(i, a, b); maybe.has_value()) {
+            out.state[i] = init_node{};
+            out.dropped[i].clear();
+            out.maybe[i] = std::move(maybe);
+            continue;
+          }
           return fail(verify_error_kind::join_mismatch,
                       "s" + std::to_string(i) + " owes a drop on one path " +
                           "and not on the other; that needs a drop flag");
@@ -1646,9 +1841,12 @@ private:
                      const std::vector<storage_id> &flagged) const -> void {
     state.known[flag] = false;
     for (const auto id : flagged) {
+      const auto part = state.maybe[id].has_value() && !state.maybe[id]->keys.empty();
       state.maybe[id] = std::nullopt;
-      state.state[id] = init_node{};
-      state.dropped[id].clear();
+      if (!part) {
+        state.state[id] = init_node{};
+        state.dropped[id].clear();
+      }
     }
   }
 
@@ -1666,11 +1864,21 @@ private:
       const auto flag = op.condition.where.base;
       auto &reg = regions_.back();
       reg.tested_flag = flag;
+      reg.known_side = known_[flag];
+      if (reg.known_side == std::optional<bool>{false}) {
+        reachable_ = false;
+      }
       for (size_t i = 0; i < maybe_.size(); ++i) {
         if (maybe_[i].has_value() && maybe_[i]->flags.contains(flag)) {
           reg.flagged.push_back(static_cast<storage_id>(i));
-          state_[i] = maybe_[i]->live;
-          dropped_[i] = maybe_[i]->dropped;
+          if (maybe_[i]->keys.empty()) {
+            state_[i] = maybe_[i]->live;
+            dropped_[i] = maybe_[i]->dropped;
+          } else {
+            put_part(state_[i], maybe_[i]->keys, maybe_[i]->live);
+            dropped_[i].insert(maybe_[i]->dropped.begin(),
+                               maybe_[i]->dropped.end());
+          }
           maybe_[i] = std::nullopt;
         }
       }
@@ -1766,6 +1974,10 @@ private:
     reg.has_else = true;
     reg.then_end = current();
     resume(reg.entry);
+    if (reg.known_side == std::optional<bool>{true}) {
+      reachable_ = false;
+      return {};
+    }
     if (reg.tested_flag.has_value()) {
       auto here = snapshot();
       flag_is_false(here, *reg.tested_flag, reg.flagged);
@@ -1787,9 +1999,11 @@ private:
     if (!reg.has_else && reg.tested_flag.has_value()) {
       flag_is_false(reg.entry, *reg.tested_flag, reg.flagged);
     }
-    const auto joined = reg.has_else
-                            ? join(reg.then_end, current())
-                            : join(current(), maybe_flow{reg.entry});
+    // The side a known flag rules out adds nothing to the join.
+    const auto skipped = !reg.has_else && reg.known_side == std::optional<bool>{true};
+    const auto joined = reg.has_else  ? join(reg.then_end, current())
+                        : skipped     ? join(current(), maybe_flow{})
+                                      : join(current(), maybe_flow{reg.entry});
     if (!joined.has_value()) {
       return std::unexpected(joined.error());
     }
@@ -1872,6 +2086,16 @@ private:
            semantic::type_kind::ptr_kind;
   }
 
+  /// `ptr_cast` of a reference (ch. 38): a raw pointer to the place it
+  /// borrows, which may write only when the reference may.
+  [[nodiscard]] auto reference_to_pointer(type_id from, type_id to) -> bool {
+    const auto &source = types().entry(types().strip_refinement(from));
+    const auto &target = types().entry(types().strip_refinement(to));
+    return source.kind == semantic::type_kind::ref_kind &&
+           target.kind == semantic::type_kind::ptr_kind &&
+           (source.is_mut || !target.is_mut);
+  }
+
   [[nodiscard]] auto do_compute(const storage_op &op) -> result {
     const auto at = resolve(op.dest);
     if (!at.has_value()) {
@@ -1908,6 +2132,7 @@ private:
     if (op.computation == compute_kind::copy &&
         !same_type(op.operands[0].type, op.dest.type) &&
         !(is_raw_pointer(op.operands[0].type) && is_raw_pointer(op.dest.type)) &&
+        !reference_to_pointer(op.operands[0].type, op.dest.type) &&
         !env_.cell_reads_as_reference(op.operands[0].type, op.dest.type)) {
       return fail(verify_error_kind::type_mismatch,
                   "a copy joins " + name_of(op.operands[0].type) + " and " +
@@ -2323,6 +2548,12 @@ private:
       return {}; // Raw memory: the program says what it holds.
     }
     if (at->through_deref) {
+      // `*r = v` through a `&mut`: the old value is dropped in place and the
+      // new one written over it before anything else happens, so the owner
+      // still holds a value.
+      if (behind_mut_reference(*at) && replaced_next(target)) {
+        return {};
+      }
       return fail(verify_error_kind::move_from_reference,
                   "a drop of bytes behind a reference; their owner drops them");
     }
@@ -2340,6 +2571,49 @@ private:
                   describe(target, at->tracked) + " is dropped twice");
     }
     return {};
+  }
+
+  /// Whether the first dereference on the way to `at` is of a `&mut`.
+  [[nodiscard]] auto behind_mut_reference(const resolved_place &at) const
+      -> bool {
+    if (at.tracked >= at.types.size()) {
+      return false;
+    }
+    const auto &entry = types().entry(types().strip_refinement(at.types[at.tracked]));
+    return entry.kind == semantic::type_kind::ref_kind && entry.is_mut;
+  }
+
+  /// Whether the next operations write a new value over `target`: after the
+  /// drop calls of its other parts and the ends of temporaries, the first
+  /// other operation writes all of `target`.
+  [[nodiscard]] auto replaced_next(const place &target) const -> bool {
+    const auto under_target = [&](const place &where) -> bool {
+      return where.base == target.base &&
+             where.steps.size() >= target.steps.size() &&
+             std::equal(target.steps.begin(), target.steps.end(),
+                        where.steps.begin());
+    };
+    for (auto j = op_index_ + 1; j < fn_.ops.size(); ++j) {
+      const auto &next = fn_.ops[j];
+      if (next.kind == op_kind::storage_dead) {
+        continue;
+      }
+      if (next.kind == op_kind::call_into && next.is_drop &&
+          next.args.size() == 1 && under_target(next.args[0].value.where)) {
+        continue;
+      }
+      switch (next.kind) {
+      case op_kind::move_into:
+      case op_kind::copy_into:
+      case op_kind::compute:
+      case op_kind::call_into:
+      case op_kind::init_empty:
+        return next.dest == target;
+      default:
+        return false;
+      }
+    }
+    return false;
   }
 
   /// The function a direct call names, when its module is known here: this

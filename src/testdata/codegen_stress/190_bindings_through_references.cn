@@ -1,0 +1,38 @@
+module codegen_stress.bindings_through_references
+
+# A name a pattern binds through a reference names part of what the reference
+# points at (chapter 3): it is not moved out, and through a `&mut` subject a
+# write to it changes the referent.
+#
+# The pointer-per-aggregate tiers copy a `copy` payload into the binding, so
+# the write in `bump` is lost there and they answer 1028. The storage form
+# writes the referent and answers 1029; `# storage-expect:` holds the answer
+# chapter 3 asks for.
+#
+# expect: 1028
+# storage-expect: 1029
+
+def grow(o: &mut option[list[int64]]) -> unit:
+    match o:
+        @some(xs) => xs.push(9)
+        @none => return
+
+def bump(o: &mut option[int32]) -> unit:
+    if let @some(mut n) = o:
+        n = n + 1
+
+def length(o: &option[list[int64]]) -> int64:
+    return match o:
+        @some(xs) => xs.len() as int64
+        @none => 0
+
+def main() -> int64:
+    var lists: option[list[int64]] = @some([1, 2, 3])
+    grow(&mut lists)
+    var count: option[int32] = @some(4)
+    bump(&mut count)
+    let n = match count:
+        @some(v) => v as int64
+        @none => 0
+    # 4 elements, read twice through `&` without moving the list out.
+    return length(&lists) * 250 + length(&lists) * 6 + n

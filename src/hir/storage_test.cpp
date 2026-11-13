@@ -1400,6 +1400,54 @@ auto test_patterns_on_droppable_sums_test_only_the_variant() -> void {
          "expected an or-pattern on a droppable sum to be refused by name");
 }
 
+auto test_places_reached_through_references() -> void {
+  auto f = build(read_program("references.cn"));
+
+  // `*r = v` drops the old value through the `&mut` and writes the new one
+  // straight after.
+  expect_verifies(*f, f->function("set_list"), "set_list");
+  auto unreplaced = f->function("set_list");
+  unreplaced.ops.erase(unreplaced.ops.begin() + static_cast<std::ptrdiff_t>(
+                           find_op(unreplaced, hir::op_kind::move_into, 1)));
+  expect_rejects(*f, unreplaced, hir::verify_error_kind::move_from_reference,
+                 "a drop through a reference that nothing replaces");
+
+  // `ptr_cast` of a reference is a copy into a raw pointer, which may write
+  // only where the reference may.
+  expect_verifies(*f, f->function("poke"), "poke");
+  auto shared = f->function("poke");
+  const auto int32_type = f->checked.types.entry(shared.slots[0].type).result;
+  shared.slots[0].type = f->checked.types.ref_to(int32_type, false);
+  shared.signature.params[0].type = shared.slots[0].type;
+  for (auto &op : shared.ops) {
+    for (auto &value : op.operands) {
+      if (value.where.base == 0 && value.where.steps.empty()) {
+        value.where.type = shared.slots[0].type;
+        value.type = shared.slots[0].type;
+      }
+    }
+  }
+  expect_rejects(*f, shared, hir::verify_error_kind::type_mismatch,
+                 "a writable pointer made from a shared reference");
+
+  // A binding through a reference names the payload in place: nothing is
+  // moved out from behind the reference.
+  const auto &grow = f->function("grow");
+  expect_verifies(*f, grow, "grow");
+  for (const auto &op : grow.ops) {
+    const auto through_deref =
+        std::ranges::any_of(op.source.steps, [](const hir::projection &step) {
+          return step.kind == hir::projection_kind::deref;
+        });
+    expect(op.kind != hir::op_kind::move_into || !through_deref,
+           "expected a binding through a reference not to move the payload");
+  }
+
+  // The `break` drops the subject's temporary, the failed pattern leaves it
+  // held, and its live flag tells the two exits apart.
+  expect_verifies(*f, f->function("while_let_break"), "while_let_break");
+}
+
 auto test_verifier_follows_the_variant_a_droppable_sum_holds() -> void {
   auto f = build(read_program("sumdrops.cn"));
 
@@ -2917,6 +2965,7 @@ auto test_while_let_and_let_else_lower() -> void {
   auto f = build(read_program("patterns.cn"));
   // The subject is rebuilt on every iteration, the loop leaves when the
   // pattern fails, and the subject's storage ends before the loop repeats.
+  // On the way out it stays live: outside every loop it lasts to the return.
   expect_ops(*f, "drain",
              {"compute s1 = copy s0", "compute s2 = const 0", "loop",
               "compute s4 = binary > s1, #0", "call s3 = make_option(s4, s1)",
@@ -2926,7 +2975,7 @@ auto test_while_let_and_let_else_lower() -> void {
               "dead s5", "exit 0", "end_if", "block",
               "compute s7 = copy s3.@some.0", "compute s2 = binary + s2, s7",
               "compute s1 = binary - s1, #1", "end_block", "dead s7", "dead s3",
-              "end_loop", "dead s3", "return s2"});
+              "end_loop", "return s2"});
   // The else block leaves, so the code after the statement runs only when the
   // pattern held and reads the payload unconditionally.
   expect_ops(*f, "first_or",
@@ -3102,7 +3151,7 @@ auto test_next_resumes_then_takes_or_publishes_none() -> void {
               "compute s6 = const false", "end_if", "if s6", "dead s6", "else",
               "dead s6", "exit 0", "end_if", "block",
               "compute s8 = copy s3.@some.0", "compute s2 = binary + s2, s8",
-              "end_block", "dead s8", "dead s3", "end_loop", "dead s3",
+              "end_block", "dead s8", "dead s3", "end_loop",
               "compute s9 = copy s2", "drop s1", "return s9"});
   expect_verifies(*f, f->function("sum_to"), "sum_to");
   // Two generators in one function each get their own drop.
@@ -3681,6 +3730,7 @@ auto main() -> int {
     test_match_arm_guards();
     test_patterns_on_droppable_sums_test_only_the_variant();
     test_verifier_follows_the_variant_a_droppable_sum_holds();
+    test_places_reached_through_references();
     test_discarded_temporary_is_dropped();
     test_replacement_drops_the_old_value_first();
     test_fields_drop_in_order_and_moved_fields_are_skipped();

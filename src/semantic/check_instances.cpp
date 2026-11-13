@@ -1671,13 +1671,22 @@ auto checker::check_prelude_variant(std::string_view name,
     }
     return expected;
   }
+  // A slot nothing here says anything about is a fresh leaf, not `unknown`:
+  // `pick(@none, &mut o)` learns it from a sibling argument, and an unknown
+  // slot could never be solved.
+  const auto open_slot = [&](std::string_view what) -> type_id {
+    return leaf_ctxt_.fresh_type(
+        std::format("the {} type of this `@{}`", what, name),
+        source_location{.file_id = file_.file_id_, .span = span});
+  };
   if (name == "some" || name == "none") {
-    return session_.types_.builtin_generic("option", {payload_found});
+    return session_.types_.builtin_generic(
+        "option", {name == "none" ? open_slot("payload") : payload_found});
   }
   return session_.types_.builtin_generic(
       "result", name == "ok"
-                    ? std::vector<type_id>{payload_found, k_unknown_type}
-                    : std::vector<type_id>{k_unknown_type, payload_found});
+                    ? std::vector<type_id>{payload_found, open_slot("error")}
+                    : std::vector<type_id>{open_slot("value"), payload_found});
 }
 
 /// Finds a sum-type variant named `name` declared by the current module,

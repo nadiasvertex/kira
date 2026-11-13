@@ -28,6 +28,8 @@ let c = a + b    # vec2 { x: 4.0, y: 6.0 }
 
 `type output` is an associated type: each `impl` fixes what `self.output` means for that type, so `add`'s signature can describe "the result type of adding two `self`s" once, generically, without a type parameter on the trait itself.
 
+An operator passes its operands as the method's parameters. The left operand is the receiver, a `self` borrow, so `a` stays usable after `a + b`. The right operand is the `other` parameter, which takes its argument by value, so a `b` that is not `copy` (any struct, under [Ownership and Borrowing](14-ownership-and-borrowing.md)) is moved and cannot be used after `a + b`.
+
 ## See also
 
 - [Traits](18-traits.md) — trait/`impl` mechanics this builds on.
