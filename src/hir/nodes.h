@@ -336,6 +336,10 @@ struct hir_call : hir_expr {
   /// (`hir_function::owns_receiver`), so the storage form moves the receiver
   /// into the call instead of passing its address.
   bool receiver_by_value = false;
+  /// With `receiver_by_value`: the first argument is a reference to the
+  /// receiver, which a `for` loop over a borrowed collection only borrows.
+  /// The callee gets a bitwise copy, and what it returns owns nothing.
+  bool receiver_borrowed = false;
   /// This call is a type's own `drop` that lowering synthesized where a value
   /// goes out of scope or is overwritten (`build_drop_calls`), not one the
   /// source wrote. The storage form reads it to tell a value's end from an

@@ -785,7 +785,8 @@ private:
       node.whole = true;
       return node;
     }();
-    if (node == nullptr || node->empty()) {
+    if (node == nullptr || node->empty() ||
+        (slot < fn_.slots.size() && fn_.slots[slot].owns_nothing)) {
       return std::nullopt;
     }
     const auto stripped = types().strip_refinement(type);
@@ -1835,6 +1836,14 @@ private:
         return fail(verify_error_kind::move_from_reference,
                     "cannot move " + name_of(op.source.type) +
                         " out of a static, which every function shares");
+      }
+    } else if (op.shallow) {
+      if (!from->through_deref || from->through_raw ||
+          fn_.slots[op.dest.base].cls != storage_class::outgoing_argument ||
+          !op.dest.steps.empty()) {
+        return fail(verify_error_kind::bad_operation,
+                    "a shallow copy reads through a reference into an "
+                    "outgoing argument");
       }
     } else if (!env_.is_copy(op.source.type)) {
       return fail(verify_error_kind::not_copy,

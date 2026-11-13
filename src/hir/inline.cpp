@@ -205,6 +205,7 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
     copy->is_drop = n.is_drop;
     copy->consumes_receiver = n.consumes_receiver;
     copy->receiver_by_value = n.receiver_by_value;
+    copy->receiver_borrowed = n.receiver_borrowed;
     return copy;
   }
   case hir_node_kind::hir_field: {

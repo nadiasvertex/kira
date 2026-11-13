@@ -444,8 +444,17 @@ auto survey(const fs::path &path) -> verdict {
     lowerings.push_back(hir::lower_to_storage(*module, *p->env));
     if (!lowerings.back().refused.empty()) {
       const auto &first = lowerings.back().refused.front();
-      return {.status = std::format("refused {}.{}: {}", module->module_name,
-                                    first.name, first.error.message)};
+      // The source the refusal names, when it is in the corpus file.
+      auto where = std::string{};
+      const auto span = first.error.span;
+      if (module == p->reached.front() && span.end > span.start &&
+          span.end <= text.size()) {
+        where = std::format(" (at `{}`)",
+                            text.substr(span.start, std::min<size_t>(
+                                                        span.end - span.start, 60)));
+      }
+      return {.status = std::format("refused {}.{}: {}{}", module->module_name,
+                                    first.name, first.error.message, where)};
     }
   }
   auto modules = std::vector<const hir::storage_module *>{};

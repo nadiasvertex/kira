@@ -345,7 +345,8 @@ namespace {
   case op_kind::init_empty:
     return "init_empty " + render_place(op.dest);
   case op_kind::copy_into:
-    return "copy " + render_place(op.dest) + " <- " + render_place(op.source);
+    return std::string{op.shallow ? "copy.shallow " : "copy "} +
+           render_place(op.dest) + " <- " + render_place(op.source);
   case op_kind::move_into:
     return "move " + render_place(op.dest) + " <- " + render_place(op.source);
   case op_kind::replicate:
@@ -443,6 +444,7 @@ auto dump(const storage_function &function, const semantic::type_table &types)
            (slot.name.empty() ? std::string{"_"} : slot.name) + ": " +
            types.display(slot.type) +
            (slot.initially_initialized ? " (initialized)" : "") +
+           (slot.owns_nothing ? " (owns nothing)" : "") +
            (slot.cls == storage_class::closure_environment
                 ? std::string{slot.env_indirect ? " env->@" : " env@"} +
                       std::to_string(slot.env_offset)

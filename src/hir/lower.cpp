@@ -6447,10 +6447,9 @@ auto lowerer::lower_stmt(const ast::node &node)
           return std::unexpected(assigned.error());
         }
         auto call = lower_index_dispatch(
-            // `set_at` returns `unit` and this is a statement, so the
-            // call's value is discarded — `k_unknown_type` is what
-            // `lower_binary` uses for the same reason on its callee.
-            assign.span, k_unknown_type, found->second, std::move(*object),
+            // `set_at` returns `unit`, and the statement discards it.
+            assign.span, interning_types().builtin("unit"), found->second,
+            std::move(*object),
             std::move(*subject), std::move(*assigned));
         if (!call.has_value()) {
           return std::unexpected(call.error());
@@ -7634,6 +7633,12 @@ auto lowerer::lower_iterator_loop(
         std::move(adapter_args), dispatch.adapter_decl);
     adapter_call->consumes_receiver = true;
     adapter_call->receiver_by_value = owns_receiver(dispatch.adapter_decl);
+    // A borrowed collection (the checker allows one only for `copy`
+    // elements) is copied into the iterator, which owns nothing.
+    adapter_call->receiver_borrowed =
+        adapter_call->receiver_by_value &&
+        interning_types().entry(interning_types().strip_refinement(iterable_type))
+                .kind == semantic::type_kind::ref_kind;
     handle_value = ok_expr(std::move(adapter_call));
     handle_type = dispatch.adapter_result_type;
   }

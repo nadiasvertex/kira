@@ -112,6 +112,9 @@ struct storage_slot {
   /// the variable it points at.
   size_t env_offset = 0;
   bool env_indirect = false;
+  /// The value here owes no drop: the iterator a `for` loop makes from a
+  /// borrowed collection, which holds a bitwise copy of what it borrows.
+  bool owns_nothing = false;
 };
 
 /// One checked step from a value to a part of it.
@@ -331,6 +334,10 @@ struct storage_op {
   /// records that the value's own drop has run.
   bool is_drop = false;
   call_target callee{};
+  /// `copy_into` only: a bitwise copy of a value that is not `copy`, out of a
+  /// reference, into the receiver of a call whose result owns nothing
+  /// (`storage_slot::owns_nothing`).
+  bool shallow = false;
   abi_signature signature{};
   std::vector<call_argument> args{};
   // if_begin

@@ -50,6 +50,8 @@
 049_generic_impl_iterator_adapter.cn
 050_bound_driven_inference.cn
 051_static_trait_method.cn
+052_element_assignment.cn
+053_mutable_iteration.cn
 054_static_dispatch_on_generic_types.cn
 055_generic_impl_static_on_builtin.cn
 057_lambda_solves_under_constructor.cn
@@ -57,6 +59,7 @@
 059_never_returning_function.cn
 060_numeric_conversion_calls.cn
 061_tuple_index_and_nested_patterns.cn
+062_break_and_continue.cn
 063_lambda_capture_list_mut_ref.cn
 064_lambda_capture_list_by_value.cn
 065_lambda_capture_list_nested_ref.cn
@@ -76,6 +79,7 @@
 090_empty_literal_inferred_from_use.cn
 092_open_leaf_is_not_an_answer.cn
 093_index_settles_its_receiver.cn
+094_borrowed_element_needs_a_load.cn
 095_ufcs_call_waits_for_open_receiver.cn
 096_unannotated_param_is_a_leaf.cn
 097_unannotated_return_is_inferred.cn
@@ -87,8 +91,10 @@
 105_open_leaf_answered_by_sibling.cn
 106_wide_literal_conversion.cn
 107_demand_defaults_only_its_own_leaf.cn
+108_shape_demand_leaves_elements_open.cn
 109_flowing_type_is_not_a_demand.cn
 111_method_on_literal_waits.cn
+112_index_borrow_and_write_wait.cn
 113_value_param_solving.cn
 114_method_on_literal_waits_everywhere.cn
 115_demand_skips_unrelated_pending_decisions.cn
@@ -114,6 +120,7 @@
 137_nested_generic_struct_literal.cn
 139_lambda_returns_reference.cn
 141_static_def_tail_static_for_inline.cn
+142_static_for_inline_as_value.cn
 144_tail_call_borrowed_temporary.cn
 146_static_for_block_unrolls.cn
 147_nested_static_for_block.cn

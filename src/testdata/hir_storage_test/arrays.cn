@@ -47,3 +47,18 @@ def walk(b: bag) -> unit:
 # `&noisy` the payload holds: the same address.
 def first_of(xs: &list[noisy]) -> option[&noisy]:
     return @some(&xs[0])
+
+# A loop over a borrowed list of `copy` elements gives `into_iter` a bitwise
+# copy of the list, and the iterator it returns owns nothing.
+def total(xs: &list[int64]) -> int64:
+    var sum: int64 = 0
+    for x in xs:
+        sum = sum + x
+    return sum
+
+# A literal iterated directly is bound to a temporary, which moves in.
+def literal_total() -> int64:
+    var sum: int64 = 0
+    for x in [1, 2, 3]:
+        sum = sum + x
+    return sum
