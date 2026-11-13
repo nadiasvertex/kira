@@ -1,0 +1,24 @@
+module accept_implicit_capture_borrows
+
+# The accepted forms: a `move` lambda owns what it uses and may be returned;
+# a borrowing closure that is finished with lets its value move again; a
+# closure that changes a value borrows it mutably.
+
+def make() -> fn(int64) -> int64:
+    var xs: list[int64] = []
+    xs.push(1)
+    return move (x) => x + xs.len() as int64
+
+def moved_after_use() -> int64:
+    var ys: list[int64] = []
+    let f = (x: int64) => x + ys.len() as int64
+    let r = f(1)
+    let zs = ys
+    return r + zs.len() as int64
+
+def pushes() -> int64:
+    var seen: list[int32] = []
+    let push = (x: int32) => seen.push(x)
+    push(1)
+    push(2)
+    return seen.len() as int64

@@ -511,15 +511,15 @@ which is a legal interleaving. Iteration over `str` (076) then lowered through t
 runtime decode intrinsics on the descriptor, a function value that is not a place is
 held in a temporary while it is called, and each copy of a generic lambda became a
 binding of its own to the ownership checker, so moving one copy leaves the others
-to drop (129, 130). That makes 188 of 189 on both tiers. The one failure left is a
-closure that pushes onto a captured `list` (071). It is a language gap rather than a
-storage one: implicit capture is always a bitwise copy, while chapter 16 says a
-closure that does not escape captures by borrow. The legacy form shares the list's
-heap header through the copy, so the push shows; the storage form pushes onto the
-closure's own copy, and the two copies share a buffer that a reallocation frees
-(`spec/todo.md`). The
-driver switches when the whole corpus passes, because decision 6 rules out a
-program that mixes the two forms.
+to drop (129, 130). That made 188 of 189 on both tiers. The last failure, a closure
+that pushes onto a captured `list` (071), was a language gap: implicit capture was a
+bitwise copy, while chapter 16 says a closure that does not escape captures by
+borrow. A closure without a capture list now borrows each value it uses that is not
+`copy`, mutably when it changes it; an escaping one that needs such a value is
+rejected with help that suggests `move`, because no escape analysis exists yet
+(`spec/todo.md`). Corpus 189 covers the nested and struct-field cases. All 190
+programs now pass on both tiers, which is the condition for the driver switch
+(decision 6 rules out a program that mixes the two forms).
 
 | Status | ID | Task | Owner | Priority | Depends On | Acceptance Criteria |
 |---|---|---|---|---|---|---|

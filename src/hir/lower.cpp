@@ -1008,6 +1008,14 @@ private:
       -> std::expected<ptr<hir_lambda>, lowering_error>;
   [[nodiscard]] auto lower_lambda(const ast::lambda_expr &lambda)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// The capture plan of `closure`, which has no capture list, when it
+  /// borrows some of what it captures (`function_cfg::borrowed_captures`):
+  /// `free_variables` in order, `borrowed` by reference and the rest by
+  /// value. None when it borrows nothing, so `capture_plan` reads the body.
+  [[nodiscard]] auto implicit_capture_plan(
+      const ast::lambda_expr &lambda, const hir_lambda &closure,
+      const std::unordered_map<symbol_id, ast::capture_mode> &borrowed)
+      -> std::optional<std::vector<hir_capture>>;
   [[nodiscard]] auto lower_where(const ast::where_expr &where)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_try(const ast::try_expr &try_expr)
@@ -4127,6 +4135,23 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
     }
     captures = std::move(resolved);
   }
+  // What the ownership checker decided this lambda borrows, resolved here
+  // for the same reason as a capture list.
+  auto borrowed = std::unordered_map<symbol_id, ast::capture_mode>{};
+  if (const auto found = drop_schedule_.borrowed_captures.find(&lambda);
+      found != drop_schedule_.borrowed_captures.end()) {
+    for (const auto &capture : found->second) {
+      const auto symbol = capture_symbol(capture.name, capture.node);
+      if (!symbol.has_value()) {
+        return fail(lowering_error_kind::unsupported_construct, lambda.span,
+                    "internal error: a value a closure borrows did not "
+                    "resolve to a local of the enclosing function");
+      }
+      borrowed.insert_or_assign(*symbol, capture.is_mut
+                                             ? ast::capture_mode::by_mut_ref
+                                             : ast::capture_mode::by_ref);
+    }
+  }
 
   push_scope();
 
@@ -4232,12 +4257,37 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
   auto closure =
       make<hir_lambda>(lambda.span, *lambda_type, std::move(params),
                        return_type, std::move(*body), std::move(captures));
+  if (!closure->captures.has_value()) {
+    closure->captures = implicit_capture_plan(lambda, *closure, borrowed);
+  }
   auto glue = lower_drop_glue(lambda, *closure);
   if (!glue.has_value()) {
     return std::unexpected(glue.error());
   }
   closure->drop_glue = std::move(*glue);
   return ok_expr(std::move(closure));
+}
+
+auto lowerer::implicit_capture_plan(
+    const ast::lambda_expr & /*lambda*/, const hir_lambda &closure,
+    const std::unordered_map<symbol_id, ast::capture_mode> &borrowed)
+    -> std::optional<std::vector<hir_capture>> {
+  // Without borrows, `capture_plan` gives the same plan from the body.
+  if (borrowed.empty()) {
+    return std::nullopt;
+  }
+  auto plan = std::vector<hir_capture>{};
+  for (const auto symbol : free_variables(closure)) {
+    if (!local_types_.contains(symbol)) {
+      continue; // a module-level function, resolved directly
+    }
+    const auto mode = borrowed.find(symbol);
+    plan.push_back(hir_capture{.symbol = symbol,
+                               .mode = mode != borrowed.end()
+                                           ? mode->second
+                                           : ast::capture_mode::by_value});
+  }
+  return plan;
 }
 
 auto lowerer::lower_drop_glue(const ast::lambda_expr &lambda,

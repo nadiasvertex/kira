@@ -11,6 +11,11 @@ def add_captured(n: int64) -> int64:
 
 def captured_pair() -> int64:
     let p = pair { a: 3, b: 40 }
+    let f = move [p] (x) => x + int64(p.a) + p.b
+    return call_it(f, 1)
+
+def borrowed_pair() -> int64:
+    let p = pair { a: 3, b: 40 }
     let f = x => x + int64(p.a) + p.b
     return call_it(f, 1)
 

@@ -1,0 +1,27 @@
+module codegen_stress.closure_borrows_captures
+
+# expect: 4015
+
+# Chapter 16: a closure that does not escape borrows the values it uses
+# that are not `copy`, mutably when its body changes them. A copy would
+# give the list and the struct a second owner, and the pushes and the
+# writes would land on the copy. `inner` borrows `seen` through `outer`,
+# which borrows it from `main`.
+
+type tally = { pub total: int64 }
+
+def main() -> int64:
+    var seen: list[int32] = []
+    let outer = () =>:
+        let inner = (x: int32) => seen.push(x)
+        inner(4)
+        inner(5)
+    outer()
+    outer()
+    var t = tally { total: 0 }
+    let add = (x: int64) =>:
+        t.total = t.total + x
+    add(10)
+    add(5)
+    let read = () => seen.len() as int64 * 1000
+    return read() + t.total

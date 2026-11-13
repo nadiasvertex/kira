@@ -389,6 +389,12 @@ public:
     return captures_;
   }
 
+  /// Whether this (lambda) body changes `name`, a name it captures: a write
+  /// to or into it, a `&mut` of it, or a `mut self` call on it.
+  [[nodiscard]] auto writes_capture(std::string_view name) const -> bool {
+    return written_captures_.contains(std::string(name));
+  }
+
 private:
   struct scope {
     /// The statement vector this scope is the body of, as
@@ -427,6 +433,8 @@ private:
   /// plain name finds), to the locals of all its copies: a capture list
   /// naming it captures every one (`declare_generic_lambda`).
   std::unordered_map<local_id, std::vector<local_id>> generic_groups_;
+  /// The captured names this (lambda) body changes (`writes_capture`).
+  std::unordered_set<std::string> written_captures_;
   block_id current_ = 0;
   block_id exit_ = 0;
   local_id return_slot_ = 0;
@@ -1074,6 +1082,7 @@ private:
   auto reject_captured_write(const root_name &root, const ast::expr &place,
                              static_write kind, source_span span,
                              std::string_view method = {}) -> void {
+    written_captures_.insert(root.name);
     if (const auto *info = captured_local(root.name)) {
       reject_place_write(*info, &place, kind, span, method);
     }
@@ -2451,10 +2460,62 @@ private:
       return result;
     }
     for (const auto &capture : nested.captures()) {
+      const auto written = nested.writes_capture(capture.name);
+      if (borrow_capture(lambda, capture, written, result)) {
+        continue;
+      }
+      if (written && !lookup(capture.name).has_value()) {
+        // Captured from further out: this body changes it too.
+        written_captures_.insert(capture.name);
+      }
       capture_by_value(capture.name, capture.moved || lambda.is_move,
                        capture.span, capture.node);
     }
     return result;
+  }
+
+  /// An implicit capture of a local that is not `copy`, which the body does
+  /// not consume and `move` does not force to move: the closure borrows it
+  /// (ch. 16), mutably when the body changes it. The closure carries the
+  /// loan, so the local cannot be moved or dropped while the closure may
+  /// still be called, and a closure that must outlive it is written `move`.
+  /// `self` is left out: it is already a reference to the receiver.
+  auto borrow_capture(const ast::lambda_expr &lambda,
+                      const implicit_capture &capture, bool written,
+                      value &result) -> bool {
+    if (capture.moved || lambda.is_move || capture.name == "self") {
+      return false;
+    }
+    const auto local = lookup(capture.name);
+    if (!local.has_value()) {
+      // Captured from further out: the enclosing closure or task holds it,
+      // and this closure borrows it from there. The enclosing capture is
+      // what the owner sees, through `note_capture`.
+      const auto type = captured_type(capture.name);
+      if (!type.has_value() || !movable(*type) || task_block_ ||
+          task_probe_) {
+        return false;
+      }
+      if (written) {
+        written_captures_.insert(capture.name);
+      }
+      note_capture(capture.name, /*moved=*/false, capture.span, capture.node);
+      cfg_.borrowed_captures[&lambda].push_back(borrowed_capture{
+          .name = capture.name, .node = capture.node, .is_mut = written});
+      return true;
+    }
+    if (!cfg_.locals[*local].movable) {
+      return false;
+    }
+    access(*local, written ? access_kind::borrow_mut : access_kind::borrow_shared,
+           capture.span);
+    const auto loan =
+        new_loan(*local, written, loan_origin::capture, capture.span);
+    cfg_.loans[loan].implicit = true;
+    result.loans.push_back(loan);
+    cfg_.borrowed_captures[&lambda].push_back(borrowed_capture{
+        .name = capture.name, .node = capture.node, .is_mut = written});
+    return true;
   }
 
   /// Leaves the function from the current block, returning `returned`:
@@ -3179,6 +3240,7 @@ private:
       if (projected) {
         reject_captured_write(*root, target, static_write::assign, target.span);
       }
+      written_captures_.insert(root->name);
       note_capture(root->name, false, root->span, root->node);
       return;
     }

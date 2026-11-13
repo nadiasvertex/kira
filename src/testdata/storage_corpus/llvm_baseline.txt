@@ -70,6 +70,7 @@
 069_multiline_sum_type.cn
 070_tuple_mixed_width_layout.cn
 071_array_destructure_narrow_width_layout.cn
+071_lambda_push_expr_position.cn
 072_lambda_capture_list_move.cn
 073_static_array_global.cn
 074_range_index_general_stride.cn
@@ -187,3 +188,5 @@
 186_value_baseline_pipe_reads_n.cn
 187_value_baseline_pipe_reads_10n.cn
 188_array_element_drops.cn
+189_closure_borrows_captures.cn
+wed_element_needs_a_load.cn

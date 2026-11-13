@@ -996,7 +996,18 @@ private:
                     is_capture ? std::format("the closure `{}`", info.name)
                                : std::format("`{}`", info.name),
                     root));
-    if (is_capture) {
+    if (is_capture && loan.implicit) {
+      d.with_note(std::format(
+          "a closure borrows each value it uses that is not `copy`, for as "
+          "long as the closure is live (mutably when its body changes the "
+          "value); while it does, `{}` allows at most one `&mut` and no "
+          "`&mut` alongside any `&`, exactly like a direct borrow",
+          root));
+      d.with_help(std::format(
+          "finish using the closure before touching `{0}` again, or mark the "
+          "lambda `move` so the closure owns `{0}` instead of borrowing it",
+          root));
+    } else if (is_capture) {
       d.with_note("a `&`/`&mut` entry in a capture list borrows that variable "
                   "for as long as the closure is live; while it is, the "
                   "variable allows at most one `&mut` and no `&mut` alongside "
@@ -1104,7 +1115,13 @@ private:
     d.with_note("a returned value outlives every local of the function that "
                 "returns it, so it cannot borrow one of them");
     d.with_help(
-        is_capture
+        is_capture && loan.implicit
+            ? std::format("mark the lambda `move` so the closure owns `{0}` "
+                          "instead of borrowing it; a closure borrows the "
+                          "values it uses that are not `copy` unless it is "
+                          "`move`",
+                          root)
+        : is_capture
             ? std::format("capture `{0}` by value — list it without `&` in the "
                           "capture list, or mark the lambda `move` — so the "
                           "closure owns what it uses",

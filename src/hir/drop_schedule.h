@@ -108,6 +108,11 @@ struct drop_schedule {
   std::unordered_map<const void *,
                      std::vector<semantic::ownership::owned_capture>>
       owned_captures;
+  /// `function_cfg::borrowed_captures`: what each lambda without a capture
+  /// list borrows instead of copying.
+  std::unordered_map<const void *,
+                     std::vector<semantic::ownership::borrowed_capture>>
+      borrowed_captures;
   /// `function_cfg::task_captures`: what each `async:` or `on(...)` block's
   /// task captures, and which captures it owns.
   std::unordered_map<const void *,

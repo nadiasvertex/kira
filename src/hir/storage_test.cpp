@@ -2713,10 +2713,31 @@ auto test_aggregate_captures_sit_at_their_own_alignment() -> void {
   const auto &made = closure_op(pair_fn);
   expect(made.env_size == 16 && made.captures.size() == 1 &&
              made.captures[0].offset == 0,
-         "expected the whole pair copied into the environment");
+         "expected the whole pair moved into the environment");
   expect_verifies(*f, f->function("captured_pair"), "captured_pair");
   expect_verifies(*f, f->function("captured_pair$closure0"),
                   "captured_pair$closure0");
+}
+
+auto test_implicit_captures_of_non_copy_values_borrow() -> void {
+  auto f = build(read_program("closures.cn"));
+  // A struct is not `copy`, and the body only reads it: the closure holds
+  // its address (ch. 16), not a second owner's copy.
+  const auto owner = f->function("borrowed_pair");
+  const auto &made = closure_op(owner);
+  expect(made.captures.size() == 1 &&
+             made.captures[0].kind == hir::capture_kind::reference &&
+             made.env_size == 8,
+         "expected `p` borrowed by the closure");
+  // An `int64` is `copy`, so it is still copied.
+  const auto adder = f->function("add_captured");
+  const auto &copied = closure_op(adder);
+  expect(copied.captures.size() == 1 &&
+             copied.captures[0].kind == hir::capture_kind::copy,
+         "expected `n` copied into the closure");
+  expect_verifies(*f, owner, "borrowed_pair");
+  expect_verifies(*f, f->function("borrowed_pair$closure0"),
+                  "borrowed_pair$closure0");
 }
 
 auto test_moved_captures_are_dropped_by_the_glue() -> void {
@@ -3599,6 +3620,7 @@ auto main() -> int {
     test_verifier_checks_generators();
     test_closure_is_built_with_its_captures_and_glue();
     test_aggregate_captures_sit_at_their_own_alignment();
+    test_implicit_captures_of_non_copy_values_borrow();
     test_moved_captures_are_dropped_by_the_glue();
     test_reference_captures_are_reached_through_an_address();
     test_verifier_checks_closures();
