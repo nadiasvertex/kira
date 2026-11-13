@@ -289,6 +289,35 @@ cc_test(
     deps = ["//src/driver:driver"],
 )
 
+filegroup(
+    name = "storage_corpus_baseline",
+    srcs = ["testdata/storage_corpus/baseline.txt"],
+)
+
+cc_test(
+    name = "storage_corpus_test",
+    size = "medium",
+    srcs = ["storage_corpus_test.cpp"],
+    data = [
+        ":codegen_stress_corpus",
+        ":std_sources",
+        ":storage_corpus_baseline",
+    ],
+    tags = ["no-sandbox"],
+    deps = [
+        "//src/comptime_vm",
+        "//src/bytecode:bytecode",
+        "//src/bytecode:vm",
+        "//src/bytecode_compiler:bytecode_compiler",
+        "//src/hir:hir",
+        "//src/parser:parser",
+        "//src/runtime:runtime",
+        "//src/semantic:semantic",
+        "//src/testing",
+        "//src/testing:stdlib_fixtures",
+    ],
+)
+
 cc_test(
     name = "codegen_stress_test",
     size = "medium",

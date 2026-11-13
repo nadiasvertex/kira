@@ -487,6 +487,15 @@ generators, tasks and `await`, `par`/`race`/`on`, droppable task results, `crew`
 blocks, and sums that own drops (pattern tests and drops over such sums, which also
 lets a generator hand out droppable items). T-10 is partly done and T-11 (NRVO) is done and T-12 (frame budgets) is partly done (see below). T-13 and T-14 are not started.
 
+The driver still uses the pointer-per-aggregate form. `src/storage_corpus_test.cpp`
+measures how ready the codegen stress corpus is for the switch. It runs each program
+through the storage form on the bytecode VM and compares `main` with `# expect:`, or
+with the legacy VM when a file has no expected value. The programs listed in
+`src/testdata/storage_corpus/baseline.txt` must keep passing. On 2026-11-12, 109 of
+188 programs passed. The largest group of failures (22) is `list.from_array`, which
+waits on array drops (`spec/todo.md` item 19). The driver switches when the whole
+corpus passes, because decision 6 rules out a program that mixes the two forms.
+
 | Status | ID | Task | Owner | Priority | Depends On | Acceptance Criteria |
 |---|---|---|---|---|---|---|
 | [x] | T-01 | Inventory representations and capture baselines | Compiler implementer | H | — | Every boundary and opaque/recursive type classified; baseline evidence recorded. |
