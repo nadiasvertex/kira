@@ -286,6 +286,10 @@ struct basic_block {
 struct owned_capture {
   std::string name;
   type_id type = k_unknown_type;
+  /// The capture-list entry, or the body's first use of the name. A use of
+  /// a generic lambda names the one copy it was checked against
+  /// (`checked_types::generic_lambda_refs`).
+  const void *node = nullptr;
 };
 
 /// A value an `async:` or `on(...)` block captures from the enclosing

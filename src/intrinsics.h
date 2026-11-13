@@ -109,7 +109,7 @@ inline constexpr auto f64 = intrinsic_wire_kind::f64;
 /// Every runtime-called intrinsic, in the order `op_call_intrinsic` encodes
 /// as its `intrinsic_id` and the VM's native table (`src/bytecode/vm.cpp`)
 /// follows. Adding one means adding a row here and a function there.
-inline constexpr std::array<intrinsic_signature, 67> known_intrinsics = {{
+inline constexpr std::array<intrinsic_signature, 69> known_intrinsics = {{
     into_intrinsic("rt_stdin", {}),
     into_intrinsic("rt_stdout", {}),
     into_intrinsic("rt_stderr", {}),
@@ -259,6 +259,16 @@ inline constexpr std::array<intrinsic_signature, 67> known_intrinsics = {{
     into_intrinsic("rt_set_nonblocking", {wire::ptr}), // (fd),
     intrinsic("rt_errno_would_block", wire::i32,
               {}), // rt_errno_would_block (),
+    // `for c in s` over a `str` (`src/runtime/string_ops.h`): the scalar at a
+    // byte offset, and how many bytes it takes. The storage form calls these
+    // with the descriptor's data and length words; the typed-HIR compilers
+    // have opcodes and their own declarations for the same symbols.
+    intrinsic("rt_str_scalar_at", wire::i32,
+              {wire::ptr, wire::i64,
+               wire::i64}), // rt_str_scalar_at (data, len, offset),
+    intrinsic("rt_str_scalar_width", wire::i64,
+              {wire::ptr, wire::i64,
+               wire::i64}), // rt_str_scalar_width (data, len, offset),
 }};
 
 static_assert(std::ranges::none_of(known_intrinsics,

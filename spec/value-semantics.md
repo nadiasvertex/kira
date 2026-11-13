@@ -507,10 +507,12 @@ arrays are inline frame storage and the original pair needed about 1.08 MB, over
 be called twice. With that, 185 of 189 programs pass on the VM, and all 185 also pass
 on LLVM. Corpus 156 was rewritten so its loser waits on a channel instead of a short
 `on(cpu)` spin, because on LLVM the spin could end before the race cancelled it,
-which is a legal interleaving. The remaining failures: generic lambda temporaries and
-drops (129, 130), iteration over `str` (076; needs runtime decode intrinsics on the
-descriptor), and a closure that
-pushes onto a captured `list` (071). The last is a language gap rather than a
+which is a legal interleaving. Iteration over `str` (076) then lowered through two
+runtime decode intrinsics on the descriptor, a function value that is not a place is
+held in a temporary while it is called, and each copy of a generic lambda became a
+binding of its own to the ownership checker, so moving one copy leaves the others
+to drop (129, 130). That makes 188 of 189 on both tiers. The one failure left is a
+closure that pushes onto a captured `list` (071). It is a language gap rather than a
 storage one: implicit capture is always a bitwise copy, while chapter 16 says a
 closure that does not escape captures by borrow. The legacy form shares the list's
 heap header through the copy, so the push shows; the storage form pushes onto the

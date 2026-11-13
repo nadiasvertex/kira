@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <format>
 #include <functional>
 #include <map>
 #include <optional>
@@ -155,11 +156,40 @@ auto strip_groups(const ast::expr &expr) -> const ast::expr & {
 
 /// The name a place expression is rooted at.
 struct root_name {
-  std::string_view name;
+  /// A local's name, or a generic lambda copy's key (`use_name`).
+  std::string name;
   source_span span = source_span::dummy();
   /// The `ident_expr` or `module_path_expr` the name was read from.
   const ast::expr *node = nullptr;
 };
+
+/// The key of `copy`, one of the copies of the generic lambda `name` binds
+/// (`checked_types::generic_lambda_instances`). Each copy is a closure of
+/// its own, moved and dropped on its own, so each is a local of its own
+/// under this key. The `$` keeps it apart from every name a program spells.
+[[nodiscard]] auto copy_key(std::string_view name,
+                            const ast::lambda_expr *copy) -> std::string {
+  return std::format("{}${}", name, static_cast<const void *>(copy));
+}
+
+/// The name the use `use` of `name` resolves to: the key of the copy the
+/// checker made for it when `name` is a generic lambda
+/// (`checked_types::generic_lambda_refs`), otherwise `name` itself.
+[[nodiscard]] auto use_name(std::string_view name, const void *use,
+                            const checked_types *checked) -> std::string {
+  if (checked != nullptr) {
+    if (const auto copy = checked->ownership.generic_lambda_refs.find(use);
+        copy != checked->ownership.generic_lambda_refs.end()) {
+      return copy_key(name, copy->second);
+    }
+  }
+  return std::string(name);
+}
+
+/// The name `key` spells in a diagnostic: a copy's key without its suffix.
+[[nodiscard]] auto spelled(std::string_view key) -> std::string_view {
+  return key.substr(0, key.find('$'));
+}
 
 /// One step from a place's root toward the place: a field, an element, or a
 /// dereference, with the type it reaches.
@@ -212,16 +242,18 @@ auto place_root(const ast::expr &expr, bool &projected,
       if (current->has_error) {
         return std::nullopt;
       }
-      return root_name{.name = ast::cast<ast::ident_expr>(*current).name,
-                       .span = current->span,
-                       .node = current};
+      return root_name{
+          .name = use_name(ast::cast<ast::ident_expr>(*current).name, current,
+                           checked),
+          .span = current->span,
+          .node = current};
     case ast::node_kind::module_path_expr: {
       const auto &path = ast::cast<ast::module_path_expr>(*current);
       if (path.segments.empty()) {
         return std::nullopt;
       }
       projected = projected || path.segments.size() > 1;
-      return root_name{.name = path.segments.front(),
+      return root_name{.name = std::string(path.segments.front()),
                        .span = current->span,
                        .node = current};
     }
@@ -391,6 +423,10 @@ private:
   function_cfg cfg_;
   std::vector<scope> scopes_;
   std::vector<implicit_capture> captures_;
+  /// A generic lambda's binding, by the local of its first copy (which its
+  /// plain name finds), to the locals of all its copies: a capture list
+  /// naming it captures every one (`declare_generic_lambda`).
+  std::unordered_map<local_id, std::vector<local_id>> generic_groups_;
   block_id current_ = 0;
   block_id exit_ = 0;
   local_id return_slot_ = 0;
@@ -809,7 +845,7 @@ private:
     if (moved && !task_probe_) {
       const auto type = captured_type(name);
       if (type.has_value() && movable(*type)) {
-        reject_capture_move(std::string(name), name, span);
+        reject_capture_move(std::string(spelled(name)), spelled(name), span);
         moved = false;
       }
     }
@@ -1029,7 +1065,7 @@ private:
     if (report_captures_) {
       emit(task_capture_write_event{.span = span,
                                     .kind = kind,
-                                    .name = std::string(root.name),
+                                    .name = std::string(spelled(root.name)),
                                     .method = std::string(method)});
     }
     return true;
@@ -1315,8 +1351,9 @@ private:
           movable(type_of(&expr))) {
         auto steps = std::vector<place_step>{};
         place_steps(expr, steps);
-        reject_capture_move(spell_place(root->name, steps, steps.size()),
-                            root->name, expr.span);
+        reject_capture_move(
+            spell_place(spelled(root->name), steps, steps.size()),
+            spelled(root->name), expr.span);
       }
       // A task owns what its body consumes, a part of a capture included.
       note_capture(root->name,
@@ -1817,9 +1854,10 @@ private:
 
   /// A struct literal's shorthand field `{x}`, which reads as `{x: x}`.
   auto eval_shorthand_field(const ast::struct_field_init &field) -> value {
-    const auto local = lookup(field.name);
+    const auto name = use_name(field.name, &field, &checked_);
+    const auto local = lookup(name);
     if (!local.has_value()) {
-      note_capture(field.name, /*moved=*/true, field.span, &field);
+      note_capture(name, /*moved=*/true, field.span, &field);
       return {};
     }
     const auto type = cfg_.locals[*local].type;
@@ -2328,6 +2366,16 @@ private:
     return result;
   }
 
+  /// The locals `local` stands for in a capture list: every copy of a
+  /// generic lambda, or `local` alone.
+  [[nodiscard]] auto group_of(local_id local) const -> std::vector<local_id> {
+    if (const auto group = generic_groups_.find(local);
+        group != generic_groups_.end()) {
+      return group->second;
+    }
+    return {local};
+  }
+
   /// A lambda: its body is a function of its own; here, only what creating
   /// it does to the enclosing function's locals. A `&`/`&mut` capture-list
   /// entry borrows for as long as the closure lives. Everything else is
@@ -2348,16 +2396,22 @@ private:
         note_capture(name, moved, span, node);
         return;
       }
-      const auto &info = cfg_.locals[*local];
-      const auto moves = moved && info.movable;
-      access(*local, moves ? access_kind::move : access_kind::read, span,
-             k_no_loan, &lambda);
-      if (moves && checked_.drop.drop_plans.contains(info.type)) {
-        cfg_.owned_captures[&lambda].push_back(
-            owned_capture{.name = std::string(name), .type = info.type});
+      auto owned = std::optional<type_id>{};
+      for (const auto part : group_of(*local)) {
+        const auto &info = cfg_.locals[part];
+        const auto moves = moved && info.movable;
+        access(part, moves ? access_kind::move : access_kind::read, span,
+               k_no_loan, &lambda);
+        if (moves && checked_.drop.drop_plans.contains(info.type)) {
+          owned = info.type;
+        }
+        if (bears(info.type)) {
+          result.sources.push_back(part);
+        }
       }
-      if (bears(info.type)) {
-        result.sources.push_back(*local);
+      if (owned.has_value()) {
+        cfg_.owned_captures[&lambda].push_back(owned_capture{
+            .name = std::string(name), .type = *owned, .node = node});
       }
     };
 
@@ -2372,15 +2426,18 @@ private:
             continue;
           }
           const auto is_mut = entry.mode == ast::capture_mode::by_mut_ref;
-          if (is_mut) {
-            reject_place_write(cfg_.locals[*local], nullptr,
-                               static_write::borrow_mut, entry.span);
+          for (const auto part : group_of(*local)) {
+            if (is_mut) {
+              reject_place_write(cfg_.locals[part], nullptr,
+                                 static_write::borrow_mut, entry.span);
+            }
+            access(part,
+                   is_mut ? access_kind::borrow_mut
+                          : access_kind::borrow_shared,
+                   entry.span);
+            result.loans.push_back(
+                new_loan(part, is_mut, loan_origin::capture, entry.span));
           }
-          access(*local,
-                 is_mut ? access_kind::borrow_mut : access_kind::borrow_shared,
-                 entry.span);
-          result.loans.push_back(
-              new_loan(*local, is_mut, loan_origin::capture, entry.span));
           break;
         }
         case ast::capture_mode::by_move:
@@ -3022,7 +3079,48 @@ private:
     }
   }
 
+  /// `let f = (x) => ...` whose parameter has no type: one closure per copy
+  /// the checker made for a use of `f`, each a local of its own under its
+  /// copy's key (`use_name`), so moving one leaves the others to drop. The
+  /// plain name finds the first copy and, through `generic_groups_`, all of
+  /// them, which is what a capture list naming `f` captures.
+  auto declare_generic_lambda(const ast::let_stmt &stmt) -> bool {
+    const auto *lambda =
+        ast::as<const ast::lambda_expr>(stmt.initializer.get());
+    if (lambda == nullptr || stmt.pattern == nullptr ||
+        stmt.pattern->kind != ast::node_kind::binding_pattern ||
+        !stmt.else_body.empty()) {
+      return false;
+    }
+    const auto copies =
+        checked_.ownership.generic_lambda_instances.find(lambda);
+    if (copies == checked_.ownership.generic_lambda_instances.end()) {
+      return false;
+    }
+    const auto &binding = ast::cast<ast::binding_pattern>(*stmt.pattern);
+    auto group = std::vector<local_id>{};
+    auto first = true;
+    for (const auto *copy : copies->second) {
+      auto made = eval_lambda(*copy, first);
+      first = false;
+      const auto local = declare(binding.name, type_of(copy), binding.span,
+                                 /*whole=*/true, /*owns=*/false, copy);
+      scopes_.back().names.back().first = copy_key(binding.name, copy);
+      cfg_.locals[local].immutable = true;
+      bind_value(local, made);
+      group.push_back(local);
+    }
+    if (!group.empty()) {
+      scopes_.back().names.emplace_back(binding.name, group.front());
+      generic_groups_.insert_or_assign(group.front(), std::move(group));
+    }
+    return true;
+  }
+
   auto lower_let(const ast::let_stmt &stmt) -> void {
+    if (declare_generic_lambda(stmt)) {
+      return;
+    }
     auto v =
         eval_opt(stmt.initializer.get(),
                  subject_mode(stmt.initializer.get(), {stmt.pattern.get()}));

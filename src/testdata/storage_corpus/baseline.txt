@@ -76,6 +76,7 @@
 073_static_array_global.cn
 074_range_index_general_stride.cn
 075_type_param_reflection.cn
+076_str_scalar_iteration.cn
 077_compound_where_bound.cn
 078_impl_const_generic_value_param.cn
 079_static_if_statement_in_function_body.cn
@@ -128,6 +129,8 @@
 126_match_first_arm_jumps.cn
 127_list_literal_solves_generic_param.cn
 128_generic_body_calls_implicit_generic.cn
+129_generic_lambda.cn
+130_generic_lambda_captured_and_shorthand.cn
 131_value_and_ref_capture_of_one_local.cn
 132_atomic_fetch_add_sub.cn
 133_deref_member_lookup.cn

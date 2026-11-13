@@ -1214,8 +1214,12 @@ private:
     case hir_node_kind::hir_call: {
       auto &call = dynamic_cast<hir_call &>(node);
       // Calling through a `&fn(...)` calls the function value it refers to.
+      // A call borrows its function value, so one that is not a place (a
+      // lambda called where it is written) is held in a temporary that drops
+      // at the end of the statement.
       if (call.target == nullptr) {
         project(call.callee);
+        read_through_temporary(call.callee);
       }
       const auto params = param_types(call);
       if (params.size() == call.args.size()) {

@@ -1145,6 +1145,16 @@ private:
       return lower_coroutine_cancel(as<hir_coroutine_cancel>(expr), dest);
     case hir_node_kind::hir_container_len:
       return lower_container_len(as<hir_container_len>(expr), dest);
+    case hir_node_kind::hir_str_decode_scalar: {
+      const auto &node = as<hir_str_decode_scalar>(expr);
+      return lower_str_scalar_call("rt_str_scalar_at", *node.object,
+                                   *node.byte_offset, node.span, dest);
+    }
+    case hir_node_kind::hir_str_scalar_width: {
+      const auto &node = as<hir_str_scalar_width>(expr);
+      return lower_str_scalar_call("rt_str_scalar_width", *node.object,
+                                   *node.byte_offset, node.span, dest);
+    }
     case hir_node_kind::hir_container_data:
       return lower_container_data(as<hir_container_data>(expr), dest);
     case hir_node_kind::hir_stack_buffer:
@@ -1261,6 +1271,52 @@ private:
 
   /// `xs.len()` as `for`-loop lowering asks for it: the length word of a
   /// `str` or `slice`, or the count of an array.
+  /// A step of `for c in s` over a `str`: the runtime decodes the scalar at a
+  /// byte offset (`rt_str_scalar_at`) or measures it (`rt_str_scalar_width`)
+  /// from the descriptor's data and length words, read in place.
+  [[nodiscard]] auto lower_str_scalar_call(std::string_view name,
+                                           const hir_expr &text,
+                                           const hir_expr &offset,
+                                           const source_span &span,
+                                           const place &dest) -> result {
+    auto object = container_place(text);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto view = view_of(*object, span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
+    }
+    if (!view->has_value() ||
+        types().entry(types().strip_refinement(object->type)).name != "str") {
+      return refuse(span, "decoding the scalars of `" +
+                              types().display(object->type) + "`");
+    }
+    auto cursor = lower_operand(offset, false);
+    if (!cursor.has_value()) {
+      return std::unexpected(cursor.error());
+    }
+    const auto word = types().usize_type();
+    auto signature = classify_signature(
+        env_.layouts, std::vector<type_id>{(**view).pointer, word, word}, dest.type);
+    if (!signature.has_value()) {
+      return layout_failure(span, signature.error());
+    }
+    auto call = storage_op{.kind = op_kind::call_into};
+    call.callee.name = std::string(name);
+    auto values = std::array{std::move((**view).data), std::move((**view).length),
+                             std::move(*cursor)};
+    for (size_t i = 0; i < values.size(); ++i) {
+      call.args.push_back(call_argument{.source_index = i,
+                                        .cls = signature->params[i].cls,
+                                        .value = std::move(values[i])});
+    }
+    call.signature = std::move(*signature);
+    call.dest = dest;
+    emit(std::move(call), span);
+    return {};
+  }
+
   [[nodiscard]] auto lower_container_len(const hir_container_len &node,
                                          const place &dest) -> result {
     auto object = container_place(*node.object);

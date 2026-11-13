@@ -462,6 +462,24 @@ private:
     return std::nullopt;
   }
 
+  /// The local a capture names: the copy of a generic lambda that `node`, a
+  /// use of its name, was checked against, or else the local `name` names.
+  [[nodiscard]] auto capture_symbol(std::string_view name,
+                                    const void *node) const
+      -> std::optional<symbol_id> {
+    if (node != nullptr) {
+      if (const auto copy = checked_.ownership.generic_lambda_refs.find(node);
+          copy != checked_.ownership.generic_lambda_refs.end()) {
+        const auto symbol = generic_lambda_symbols_.find(copy->second);
+        if (symbol == generic_lambda_symbols_.end()) {
+          return std::nullopt;
+        }
+        return symbol->second;
+      }
+    }
+    return lookup_local(name);
+  }
+
   /// Mints an id with no name of its own — used for a `match` subject's
   /// synthetic binding, which arm code never refers to by spelling (see
   /// `lower_match`).
@@ -1528,10 +1546,6 @@ private:
   /// locals of its copies, so a capture list that names it (`[f]`) captures
   /// every closure made for it.
   std::unordered_map<symbol_id, std::vector<symbol_id>> generic_lambda_groups_;
-  /// A generic lambda's `let` pattern, mapped to the locals of its copies:
-  /// dropping the binding drops every closure made for it.
-  std::unordered_map<const void *, std::vector<symbol_id>>
-      generic_lambda_bindings_;
   std::unordered_map<symbol_id, type_id> local_types_;
   symbol_id next_symbol_ = 0;
   /// The name of the function being lowered, which names the task functions
@@ -3558,29 +3572,7 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
 auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
   auto drops = ptr_vec<hir_node>{};
-  if (const auto copies = generic_lambda_bindings_.find(drop.node);
-      copies != generic_lambda_bindings_.end()) {
-    // A generic lambda's binding holds one closure per copy.
-    for (const auto copy : copies->second) {
-      const auto type = local_types_.find(copy);
-      if (type == local_types_.end() ||
-          !checked_.drop.drop_plans.contains(type->second)) {
-        continue;
-      }
-      const auto copy_type = type->second;
-      const auto copy_name = drop.name;
-      const place_fn make_copy = [copy, copy_type,
-                                  copy_name]() -> ptr<hir_expr> {
-        return {make<hir_local_ref>(source_span::dummy(), copy_type, copy,
-                                    copy_name)};
-      };
-      if (auto built = build_drop_calls(make_copy, copy_type,
-                                        source_span::dummy(), drops);
-          !built.has_value()) {
-        return built;
-      }
-    }
-  } else {
+  {
     const auto symbol = lookup_whole_local(drop.node);
     if (!symbol.has_value()) {
       return fail(lowering_error_kind::unsupported_construct,
@@ -4268,7 +4260,7 @@ auto lowerer::lower_drop_glue(const ast::lambda_expr &lambda,
   // ordinary scope.
   auto stmts = ptr_vec<hir_node>{};
   for (const auto &capture : std::views::reverse(owned->second)) {
-    const auto symbol = lookup_local(capture.name);
+    const auto symbol = capture_symbol(capture.name, capture.node);
     if (!symbol.has_value()) {
       return fail(lowering_error_kind::unsupported_construct, lambda.span,
                   "internal error: a value moved into a closure did not "
@@ -4610,7 +4602,7 @@ auto lowerer::lower_task_function(
     if (!capture.moved) {
       continue;
     }
-    const auto symbol = lookup_local(capture.name);
+    const auto symbol = capture_symbol(capture.name, capture.node);
     if (symbol.has_value()) {
       owned.insert(*symbol);
     }
@@ -6237,20 +6229,22 @@ auto lowerer::lower_stmt(const ast::node &node)
           return std::unexpected(closure.error());
         }
         auto copy_name = std::format("{}${}", name, i);
-        const auto symbol = declare_local(copy_name, (*closure)->type);
+        // Each copy is a binding of its own to the ownership checker, which
+        // drops it by the copy (`ownership_cfg`'s `declare_generic_lambda`).
+        const auto symbol = declare_local(copy_name, (*closure)->type,
+                                          /*whole=*/true, copy);
         generic_lambda_symbols_.insert_or_assign(copy, symbol);
         group.push_back(symbol);
         result.push_back(ptr<hir_node>(make<hir_let>(
             let.span, symbol, std::move(copy_name), std::move(*closure))));
+        declare_flags(copy, let.span, result);
       }
       // Bound after the copies, so the name shadows like any `let`; only a
       // capture list reads it (`lower_lambda`), every other use names its
       // own copy.
       const auto name_symbol = mint_symbol();
       scopes_.back().by_name.insert_or_assign(name, name_symbol);
-      generic_lambda_bindings_.insert_or_assign(let.pattern.get(), group);
       generic_lambda_groups_.emplace(name_symbol, std::move(group));
-      declare_flags(let.pattern.get(), let.span, result);
       return result;
     }
     auto initializer = lower_expr(*let.initializer);

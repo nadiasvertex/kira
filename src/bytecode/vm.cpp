@@ -1660,6 +1660,17 @@ auto intrinsic_rt_crew_len(std::span<const slot_value> args) -> slot_value {
       sched::crew_size(reinterpret_cast<sched::crew *>(args[0].u))); // NOLINT
 }
 
+auto intrinsic_rt_str_scalar_at(std::span<const slot_value> args) -> slot_value {
+  return slot_value{static_cast<uint64_t>(cinder::runtime::cinder_rt_str_scalar_at(
+      reinterpret_cast<const char *>(args[0].u), args[1].u, args[2].u))}; // NOLINT
+}
+
+auto intrinsic_rt_str_scalar_width(std::span<const slot_value> args)
+    -> slot_value {
+  return slot_value{cinder::runtime::cinder_rt_str_scalar_width(
+      reinterpret_cast<const char *>(args[0].u), args[1].u, args[2].u)}; // NOLINT
+}
+
 auto intrinsic_rt_crew_task(std::span<const slot_value> args) -> slot_value {
   namespace sched = cinder::runtime::scheduler;
   return slot_value{reinterpret_cast<uint64_t>(sched::crew_task( // NOLINT
@@ -1974,6 +1985,8 @@ constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
         intrinsic_rt_pipe,
         intrinsic_rt_set_nonblocking,
         intrinsic_rt_errno_would_block,
+        intrinsic_rt_str_scalar_at,
+        intrinsic_rt_str_scalar_width,
     }};
 
 static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),
