@@ -73,10 +73,14 @@
 077_compound_where_bound.cn
 078_impl_const_generic_value_param.cn
 079_static_if_statement_in_function_body.cn
+080_fn_typed_struct_field_call.cn
+081_fn_typed_struct_field_list_heterogeneous.cn
 082_default_parameter_values.cn
 084_raw_pointer_read_write.cn
 086_for_over_ref_borrow.cn
+089_elaboration_snapshot_gaps.cn
 090_empty_literal_inferred_from_use.cn
+091_unannotated_accumulator_in_generic.cn
 092_open_leaf_is_not_an_answer.cn
 093_index_settles_its_receiver.cn
 094_borrowed_element_needs_a_load.cn

@@ -491,11 +491,12 @@ The driver still uses the pointer-per-aggregate form. `src/storage_corpus_test.c
 measures how ready the codegen stress corpus is for the switch. It runs each program
 through the storage form on the bytecode VM and compares `main` with `# expect:`, or
 with the legacy VM when a file has no expected value. The programs listed in
-`src/testdata/storage_corpus/baseline.txt` must keep passing. On 2026-11-12, after
-array drops (below), 131 of 189 programs passed. The largest groups of failures are
-`list_iter::next`, whose call result is a `cell[T]` stored into a `&T` (9), and a
-`main` that returns an aggregate, which the test does not compare yet (6). The rest
-are spread over refusals and verifier reports of one or two programs each. The
+`src/testdata/storage_corpus/baseline.txt` must keep passing. On 2026-11-13, after
+named functions as values, 157 of 189 programs passed. The failures are
+spread over about twenty causes of one to four programs each: reads before
+initialization, `&mut` of a mutable slice, owed drops in coroutines, generic lambda
+temporaries, iteration over `str`, `cell` writes, frame offsets past the VM encoding,
+`_` layouts at VM compile time, `crew` errors, and a few checker typing gaps. The
 driver switches when the whole corpus passes, because decision 6 rules out a
 program that mixes the two forms.
 

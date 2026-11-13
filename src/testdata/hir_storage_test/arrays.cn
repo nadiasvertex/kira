@@ -62,3 +62,13 @@ def literal_total() -> int64:
     for x in [1, 2, 3]:
         sum = sum + x
     return sum
+
+# A named function used as a value is a closure over a forwarding function.
+def apply(f: fn(int64) -> int64, x: int64) -> int64:
+    return f(x)
+
+def twice(x: int64) -> int64:
+    return x * 2
+
+def use_twice() -> int64:
+    return apply(twice, 21)

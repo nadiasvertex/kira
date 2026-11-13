@@ -2497,6 +2497,15 @@ auto test_arrays_forget_and_owned_receivers() -> void {
                  literal.end(),
          "expected the literal to move into the iterator, which drops it");
   expect_verifies(*f, f->function("literal_total"), "literal_total");
+
+  // A named function used as a value is a closure with no environment over a
+  // forwarder, and the forwarder calls the function with its own arguments.
+  expect_ops(*f, "use_twice",
+             {"closure s1 = use_twice$fn0 glue - env 0/1 []",
+              "call s0 = apply(move s1, #21)", "dead s1", "return s0"});
+  expect_ops(*f, "use_twice$fn0", {"call s1 = twice(s0)", "return s1"});
+  expect_verifies(*f, f->function("use_twice"), "use_twice");
+  expect_verifies(*f, f->function("use_twice$fn0"), "use_twice$fn0");
 }
 
 auto test_constant_array_index_is_an_element_projection() -> void {
