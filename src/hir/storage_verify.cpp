@@ -1688,7 +1688,8 @@ private:
     }
     if (op.computation == compute_kind::copy &&
         !same_type(op.operands[0].type, op.dest.type) &&
-        !(is_raw_pointer(op.operands[0].type) && is_raw_pointer(op.dest.type))) {
+        !(is_raw_pointer(op.operands[0].type) && is_raw_pointer(op.dest.type)) &&
+        !env_.cell_reads_as_reference(op.operands[0].type, op.dest.type)) {
       return fail(verify_error_kind::type_mismatch,
                   "a copy joins " + name_of(op.operands[0].type) + " and " +
                       name_of(op.dest.type));

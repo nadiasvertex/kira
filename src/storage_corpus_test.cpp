@@ -12,10 +12,15 @@
 // `# storage-max-live-blocks: <integer>`, apart from the
 // `# max-live-blocks:` that `codegen_stress_test` checks on the
 // pointer-per-aggregate tiers, whose struct shells are never freed.
+//
+// A `main` that returns a `str`, a `list[T]`, a tuple, or a fixed array is
+// compared as text: the storage form's inline bytes and the legacy VM's
+// pointer value are each rendered from their own layout.
 #include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -46,7 +51,9 @@
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
 #include "src/parser/source_location.h"
+#include "src/runtime/aligned_buffer.h"
 #include "src/runtime/allocator.h"
+#include "src/runtime/layout.h"
 #include "src/runtime/scheduler.h"
 #include "src/runtime/value_layout.h"
 #include "src/semantic/analysis.h"
@@ -135,7 +142,45 @@ auto widen(bc::numeric_kind kind, uint64_t bits) -> int64_t {
   }
 }
 
-/// A program, checked, in HIR, with the storage environment it lowers in.
+/// `width` bytes at `at`, zero-extended.
+auto load_bits(const std::byte *at, size_t width) -> uint64_t {
+  auto value = uint64_t{0};
+  std::memcpy(&value, at, std::min<size_t>(width, sizeof(value)));
+  return value;
+}
+
+auto address_bits(uint64_t bits) -> const std::byte * {
+  return reinterpret_cast<const std::byte *>(static_cast<uintptr_t>(bits));
+}
+
+auto is_list(const semantic::type_entry &entry) -> bool {
+  return (entry.kind == semantic::type_kind::builtin_generic_kind ||
+          entry.kind == semantic::type_kind::struct_kind) &&
+         entry.name == "list" && entry.args.size() == 1;
+}
+
+auto quoted(const std::byte *data, uint64_t length) -> std::string {
+  return "\"" +
+         std::string(reinterpret_cast<const char *>(data),
+                     static_cast<size_t>(length)) +
+         "\"";
+}
+
+/// `count` elements, each rendered by `one` from its byte offset.
+template <typename render_one>
+auto render_sequence(uint64_t count, size_t stride, const render_one &one)
+    -> std::optional<std::string> {
+  auto out = std::string{"["};
+  for (uint64_t i = 0; i < count; ++i) {
+    const auto element = one(i * stride);
+    if (!element.has_value()) {
+      return std::nullopt;
+    }
+    out += (i == 0 ? "" : ", ") + *element;
+  }
+  return out + "]";
+}
+
 struct program {
   cinder::source_manager sources;
   cinder::diagnostic_bag diag{};
@@ -210,6 +255,143 @@ auto load(const fs::path &path, const std::string &text, std::string &why)
   return out;
 }
 
+/// A `str`, `list[T]`, tuple, fixed array, or scalar in the inline layout at
+/// `at`, as text; none for any other type.
+auto render_inline(program &p, semantic::type_id type, const std::byte *at)
+    -> std::optional<std::string> {
+  const auto &types = p.checked.types;
+  const auto id = types.strip_refinement(type);
+  const auto layout = p.layouts->layout(id);
+  if (!layout.has_value()) {
+    return std::nullopt;
+  }
+  const auto &shape = **layout;
+  if (const auto kind = bc::numeric_kind_of(types, id); kind.has_value()) {
+    return std::to_string(widen(*kind, load_bits(at, shape.size)));
+  }
+  const auto &entry = types.entry(id);
+  if (is_list(entry)) {
+    const auto *length = shape.find_field("len");
+    const auto *data = shape.find_field("data");
+    const auto element = p.layouts->layout(entry.args.front());
+    if (length == nullptr || data == nullptr || !element.has_value()) {
+      return std::nullopt;
+    }
+    const auto align = std::max<size_t>((*element)->align, 1);
+    const auto stride = ((*element)->size + align - 1) / align * align;
+    const auto *elements = address_bits(load_bits(at + data->offset, 8));
+    return render_sequence(
+        load_bits(at + length->offset, 8), stride, [&](uint64_t offset) {
+          return render_inline(p, entry.args.front(), elements + offset);
+        });
+  }
+  if (entry.kind == semantic::type_kind::builtin_kind && entry.name == "str") {
+    return quoted(address_bits(load_bits(at + 8, 8)), load_bits(at, 8));
+  }
+  if (entry.kind == semantic::type_kind::tuple_kind) {
+    auto out = std::string{"("};
+    for (size_t i = 0; i < shape.members.size(); ++i) {
+      const auto part =
+          render_inline(p, shape.members[i].type, at + shape.members[i].offset);
+      if (!part.has_value()) {
+        return std::nullopt;
+      }
+      out += (i == 0 ? "" : ", ") + *part;
+    }
+    return out + ")";
+  }
+  if (entry.kind == semantic::type_kind::array_kind) {
+    return render_sequence(shape.count, shape.stride, [&](uint64_t offset) {
+      return render_inline(p, shape.element, at + offset);
+    });
+  }
+  return std::nullopt;
+}
+
+/// The byte distance between elements in the pointer-per-aggregate layout.
+auto legacy_stride(const semantic::type_table &types, semantic::type_id element)
+    -> uint8_t {
+  const auto layout = cinder::runtime::layout_of(types, element);
+  if (!layout.has_value() || layout->size_bytes == 0 || layout->size_bytes > 8) {
+    return 8;
+  }
+  return static_cast<uint8_t>(layout->size_bytes);
+}
+
+/// The same types as `render_inline`, from a pointer-per-aggregate value:
+/// `bits` is a scalar, or the address of the value's block.
+auto render_legacy(const semantic::type_table &types, semantic::type_id type,
+                   uint64_t bits) -> std::optional<std::string> {
+  const auto id = types.strip_refinement(type);
+  if (const auto kind = bc::numeric_kind_of(types, id); kind.has_value()) {
+    return std::to_string(widen(*kind, bits));
+  }
+  const auto &entry = types.entry(id);
+  const auto *block = address_bits(bits);
+  if (is_list(entry)) {
+    // `{len, cap, data}`, one word each.
+    const auto stride = legacy_stride(types, entry.args.front());
+    const auto *elements = address_bits(load_bits(block + 16, 8));
+    return render_sequence(load_bits(block, 8), stride, [&](uint64_t offset) {
+      return render_legacy(types, entry.args.front(),
+                           load_bits(elements + offset, stride));
+    });
+  }
+  if (entry.kind == semantic::type_kind::builtin_kind && entry.name == "str") {
+    return quoted(address_bits(load_bits(block + 8, 8)), load_bits(block, 8));
+  }
+  if (entry.kind == semantic::type_kind::tuple_kind) {
+    auto out = std::string{"("};
+    for (size_t i = 0; i < entry.args.size(); ++i) {
+      const auto offset = cinder::runtime::tuple_element_offset(types, id, i);
+      if (!offset.has_value()) {
+        return std::nullopt;
+      }
+      const auto part = render_legacy(
+          types, entry.args[i],
+          load_bits(block + *offset, legacy_stride(types, entry.args[i])));
+      if (!part.has_value()) {
+        return std::nullopt;
+      }
+      out += (i == 0 ? "" : ", ") + *part;
+    }
+    return out + ")";
+  }
+  if (entry.kind == semantic::type_kind::array_kind &&
+      entry.array_size.has_value()) {
+    const auto stride = legacy_stride(types, entry.result);
+    return render_sequence(*entry.array_size, stride, [&](uint64_t offset) {
+      return render_legacy(types, entry.result, load_bits(block + offset, stride));
+    });
+  }
+  return std::nullopt;
+}
+
+/// The legacy VM's `main` rendered by `render_legacy`, or the panic.
+auto legacy_rendering(const program &p) -> std::optional<std::string> {
+  auto compiled = cinder::bytecode_compiler::compile_module(
+      std::span<const hir::hir_module *const>(p.reached), p.checked.types);
+  if (!compiled.has_value()) {
+    return std::nullopt;
+  }
+  auto index = uint16_t{0};
+  while (index < compiled->functions.size() &&
+         compiled->functions[index].name != "main") {
+    ++index;
+  }
+  const auto machine = bc::vm{*compiled};
+  if (compiled->static_init_function.has_value() &&
+      !machine.run(*compiled->static_init_function, std::span<const bc::slot_value>{})
+           .has_value()) {
+    return std::nullopt;
+  }
+  const auto run = machine.run(index, std::span<const bc::slot_value>{});
+  if (!run.has_value()) {
+    return describe(outcome{.panicked = true, .panic = run.error()});
+  }
+  return render_legacy(p.checked.types, p.main_fn->return_type, run->value.u);
+}
+
 /// The pointer-per-aggregate VM's answer, for a file with no `# expect:`.
 auto legacy_outcome(const program &p, bc::numeric_kind kind)
     -> std::optional<outcome> {
@@ -252,8 +434,9 @@ auto survey(const fs::path &path) -> verdict {
   const auto &types = p->checked.types;
   const auto is_unit = types.is_unit(p->main_fn->return_type);
   const auto kind = bc::numeric_kind_of(types, p->main_fn->return_type);
-  if (!is_unit && !kind.has_value()) {
-    return {.status = "`main` returns a value that is not a scalar"};
+  const auto aggregate = !is_unit && !kind.has_value();
+  if (aggregate && !legacy_rendering(*p).has_value()) {
+    return {.status = "`main` returns a value this test cannot compare"};
   }
 
   auto lowerings = std::vector<hir::storage_lowering>{};
@@ -301,6 +484,40 @@ auto survey(const fs::path &path) -> verdict {
     if (!machine.run(init, std::span<const bc::slot_value>{}).has_value()) {
       return {.status = "static init panicked"};
     }
+  }
+  if (aggregate) {
+    const auto &abi = compiled->functions[index].abi;
+    if (!abi.has_value()) {
+      return {.status = "compiled `main` has no inline-value signature"};
+    }
+    auto result = cinder::runtime::aligned_buffer(
+        std::max<size_t>(abi->result.size, 8), std::max<size_t>(abi->result.align, 8));
+    auto got = std::optional<std::string>{};
+    if (abi->returns_through_address) {
+      const auto run = machine.run_into(
+          index, std::span<std::byte>(result.data(), result.size()),
+          std::span<const bc::slot_value>{});
+      got = run.has_value()
+                ? render_inline(*p, p->main_fn->return_type, result.data())
+                : describe(outcome{.panicked = true, .panic = run.error().reason});
+    } else {
+      const auto run = machine.run(index, std::span<const bc::slot_value>{});
+      if (run.has_value()) {
+        std::memcpy(result.data(), &run->value.u, sizeof(run->value.u));
+        got = render_inline(*p, p->main_fn->return_type, result.data());
+      } else {
+        got = describe(outcome{.panicked = true, .panic = run.error()});
+      }
+    }
+    const auto want = legacy_rendering(*p);
+    if (!got.has_value()) {
+      return {.status = "`main`'s inline result cannot be rendered"};
+    }
+    if (got != want) {
+      return {.status = std::format("main gave {}, expected {}", *got,
+                                    want.value_or("?"))};
+    }
+    return {.passed = true, .status = "passed"};
   }
   const auto run = machine.run(index, std::span<const bc::slot_value>{});
   cinder::runtime::scheduler::wait_idle();

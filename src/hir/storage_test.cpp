@@ -2431,6 +2431,28 @@ auto test_arrays_forget_and_owned_receivers() -> void {
   borrowed.ops.erase(borrowed.ops.begin());
   expect_rejects(*f, borrowed, hir::verify_error_kind::uninitialized,
                  "a receiver moved in before it was filled");
+
+  // A `cell[T]` call result read as a `&T` is built apart and copied.
+  expect_ops(*f, "first_of",
+             {"call s2 = list::at_ref$list_noisy_$usize(s1, #0)",
+              "compute s0.@some.0 = copy s2", "publish s0 @some", "dead s2",
+              "return"});
+  expect_verifies(*f, f->function("first_of"), "first_of");
+  // Only a `cell_mut[T]` may be read as a `&mut T`, and only as a reference
+  // to its own `T`.
+  auto &types = f->checked.types;
+  const auto cell = f->function("first_of").slots[2].type;
+  const auto element = types.entry(cell).args.front();
+  const auto cell_mut = types.builtin_generic("cell_mut", {element});
+  expect(f->env->cell_reads_as_reference(cell, types.ref_to(element, false)),
+         "expected a `cell[T]` to read as a `&T`");
+  expect(!f->env->cell_reads_as_reference(cell, types.ref_to(element, true)),
+         "expected a `cell[T]` not to read as a `&mut T`");
+  expect(f->env->cell_reads_as_reference(cell_mut, types.ref_to(element, true)),
+         "expected a `cell_mut[T]` to read as a `&mut T`");
+  expect(!f->env->cell_reads_as_reference(
+             cell, types.ref_to(f->builtin("int32"), false)),
+         "expected a `cell[T]` not to read as a reference to another type");
 }
 
 auto test_constant_array_index_is_an_element_projection() -> void {

@@ -156,6 +156,22 @@ auto storage_env::pointee(semantic::type_id type) const
   return std::nullopt;
 }
 
+auto storage_env::cell_reads_as_reference(semantic::type_id from,
+                                          semantic::type_id to) const -> bool {
+  const auto &source = checked.types.entry(checked.types.strip_refinement(from));
+  const auto &target = checked.types.entry(checked.types.strip_refinement(to));
+  if (source.kind != semantic::type_kind::builtin_generic_kind ||
+      (source.name != "cell" && source.name != "cell_mut") ||
+      source.args.size() != 1 || target.kind != semantic::type_kind::ref_kind) {
+    return false;
+  }
+  if (target.is_mut && source.name != "cell_mut") {
+    return false;
+  }
+  return checked.types.strip_refinement(source.args.front()) ==
+         checked.types.strip_refinement(target.result);
+}
+
 auto storage_env::needs_drop(semantic::type_id type) -> bool {
   const auto stripped = checked.types.strip_refinement(type);
   if (const auto &entry = checked.types.entry(stripped);

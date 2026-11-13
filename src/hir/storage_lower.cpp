@@ -1084,6 +1084,20 @@ private:
     case hir_node_kind::hir_cast:
       return lower_cast(as<hir_cast>(expr), dest);
     case hir_node_kind::hir_call:
+      if (env_.cell_reads_as_reference(expr.type, dest.type)) {
+        // A `cell[T]` result read as a `&T`: the same address, retyped.
+        const auto temp = new_temp(expr.type, expr.span);
+        if (auto ok = lower_call(as<hir_call>(expr), whole(temp));
+            !ok.has_value() || terminated_) {
+          return ok;
+        }
+        auto op = storage_op{.kind = op_kind::compute};
+        op.dest = dest;
+        op.computation = compute_kind::copy;
+        op.operands.push_back(read_of(whole(temp), false));
+        emit(std::move(op), expr.span);
+        return {};
+      }
       return lower_call(as<hir_call>(expr), dest);
     case hir_node_kind::hir_tuple:
       return lower_tuple(as<hir_tuple>(expr), dest);
