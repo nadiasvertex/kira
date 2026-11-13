@@ -436,6 +436,20 @@ inline auto computed_values_and_droppable_loops(case_backend &backend) -> void {
   expect_equal(p->scalar("for_break", args{3}), 3203, "for_break(3)");
 }
 
+/// Statics: built once before anything runs, then read in place by every
+/// function. Values pin layout, since both tiers share it.
+inline auto statics_are_built_once_and_shared(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "statics.cn");
+  using args = std::vector<int64_t>;
+  expect_equal(p->scalar("table_at", args{0}), 10, "table_at(0)");
+  expect_equal(p->scalar("table_at", args{3}), 40, "table_at(3)");
+  expect_equal(p->scalar("table_sum", args{}), 100, "table_sum()");
+  expect_equal(p->scalar("point_mix", args{}), 3454, "point_mix()");
+  expect_equal(p->scalar("pair_mix", args{}), 79, "pair_mix()");
+  expect_equal(p->scalar("word_len", args{}), 6, "word_len()");
+  expect_equal(p->scalar("word_byte", args{1}), 't', "word_byte(1)");
+}
+
 inline auto intrinsic_cases(case_backend &backend) -> void {
   io_results_are_written_in_place(backend);
   repeated_io_allocates_nothing(backend);
@@ -445,6 +459,7 @@ inline auto intrinsic_cases(case_backend &backend) -> void {
   descriptor_words_are_read_and_written(backend);
   run_time_indexes_are_checked(backend);
   computed_values_and_droppable_loops(backend);
+  statics_are_built_once_and_shared(backend);
 }
 
 } // namespace cinder::testing::storage_cases

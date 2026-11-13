@@ -109,6 +109,13 @@ struct module_context {
   std::string entry;
   /// Every function of the program by its program-wide name.
   std::unordered_map<std::string, llvm::Function *> functions;
+  /// Every module's statics by name: their bytes, and the alignment the
+  /// bytes were given.
+  struct static_storage {
+    llvm::GlobalVariable *bytes = nullptr;
+    size_t align = 1;
+  };
+  std::unordered_map<std::string, static_storage> statics;
 };
 
 [[nodiscard]] auto layout_of(module_context &mc, type_id type,
@@ -505,6 +512,17 @@ private:
           here = home{.ptr = at,
                       .align = aligned_at(k_environment_align, slot.env_offset)};
         }
+        break;
+      }
+      case hir::storage_class::global: {
+        // A static is its own LLVM global, which every function reaches.
+        const auto found = mc_.statics.find(slot.name);
+        if (found == mc_.statics.end()) {
+          return fail(codegen_error_kind::unsupported_construct, slot.span,
+                      std::format("no module declares the static `{}`",
+                                  slot.name));
+        }
+        here = home{.ptr = found->second.bytes, .align = found->second.align};
         break;
       }
       default:
@@ -1987,6 +2005,57 @@ private:
   return {};
 }
 
+/// Registers one load-time constructor that runs each module's static init,
+/// in module order, through `llvm.global_ctors`: the C runtime runs it
+/// before `main`, and `jit_module::create` runs it in the JIT.
+[[nodiscard]] auto emit_static_ctor(
+    module_context &mc, std::span<const hir::storage_module *const> modules)
+    -> checked<void> {
+  auto inits = std::vector<llvm::Function *>{};
+  for (const auto *module : modules) {
+    if (module->globals.empty()) {
+      continue;
+    }
+    const auto found = mc.functions.find(hir::program_function_name(
+        mc.entry, module->name, hir::k_static_init_name));
+    if (found == mc.functions.end() || found->second->arg_size() != 0) {
+      return fail(codegen_error_kind::unsupported_construct, source_span{},
+                  std::format("module `{}` declares statics but has no static "
+                              "init function",
+                              module->name));
+    }
+    inits.push_back(found->second);
+  }
+  if (inits.empty()) {
+    return {};
+  }
+  auto &ctx = mc.ctx;
+  auto *ctor = llvm::Function::Create(
+      llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), /*isVarArg=*/false),
+      llvm::Function::InternalLinkage, "__cinder_storage_static_init",
+      mc.module);
+  auto builder = llvm::IRBuilder<>(llvm::BasicBlock::Create(ctx, "entry", ctor));
+  for (auto *init : inits) {
+    builder.CreateCall(init, {});
+  }
+  builder.CreateRetVoid();
+
+  // `{ i32 priority, ptr fn, ptr data }`; the lowest priority, since nothing
+  // else depends on running first.
+  auto *ptr_ty = llvm::PointerType::get(ctx, 0);
+  auto *entry_ty = llvm::StructType::get(
+      ctx, {llvm::Type::getInt32Ty(ctx), ptr_ty, ptr_ty});
+  auto *array_ty = llvm::ArrayType::get(entry_ty, 1);
+  auto *entry = llvm::ConstantStruct::get(
+      entry_ty, {llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx), 65535),
+                 ctor, llvm::ConstantPointerNull::get(ptr_ty)});
+  new llvm::GlobalVariable(mc.module, array_ty, /*isConstant=*/false,
+                           llvm::GlobalValue::AppendingLinkage,
+                           llvm::ConstantArray::get(array_ty, {entry}),
+                           "llvm.global_ctors");
+  return {};
+}
+
 } // namespace
 
 auto compile_storage_module(std::span<const hir::storage_module *const> modules,
@@ -2024,6 +2093,26 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
     return hir::program_function_name(entry, module.name, function.name);
   };
 
+  // Each static is zeroed bytes at its type's alignment, built at load time.
+  for (const auto *module : modules) {
+    for (const auto &global : module->globals) {
+      const auto layout = layout_of(mc, global.type, global.span);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      const auto align = std::max<size_t>((*layout)->align, 1);
+      auto *bytes_type = llvm::ArrayType::get(
+          llvm::Type::getInt8Ty(ctx), std::max<uint64_t>((*layout)->size, 1));
+      auto *bytes = new llvm::GlobalVariable(
+          llvm_module, bytes_type, /*isConstant=*/false,
+          llvm::GlobalValue::InternalLinkage,
+          llvm::ConstantAggregateZero::get(bytes_type), "static." + global.name);
+      bytes->setAlignment(llvm::Align(align));
+      mc.statics.emplace(global.name, module_context::static_storage{
+                                          .bytes = bytes, .align = align});
+    }
+  }
+
   // Every signature of every module is declared before any body, so a call
   // finds a real function whether it is forward, recursive, mutual, or into
   // another module.
@@ -2056,6 +2145,9 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
         return std::unexpected(std::move(error));
       }
     }
+  }
+  if (auto ok = emit_static_ctor(mc, modules); !ok.has_value()) {
+    return std::unexpected(ok.error());
   }
   if (options.entry_thunks) {
     for (const auto *module : modules) {

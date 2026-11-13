@@ -73,7 +73,9 @@ struct vm_failure {
 class vm {
 public:
   explicit vm(const bytecode_module &module)
-      : module_(module), globals_(module.global_count) {}
+      : module_(module), globals_(module.global_count),
+        global_bytes_((module.global_byte_size + sizeof(global_block) - 1) /
+                      sizeof(global_block)) {}
 
   /// Runs `module.functions[function_index]` to completion, with `args`
   /// copied into its entry frame's registers `[0, args.size())` — mirroring
@@ -150,6 +152,12 @@ private:
   /// the one piece of state a `run` call is allowed to mutate for a later
   /// `run` call to observe.
   mutable std::vector<slot_value> globals_;
+  /// Storage-form statics (`op_global_addr`). Sized once here and never
+  /// resized, so an address into it stays valid for the `vm`'s life.
+  struct alignas(16) global_block {
+    std::byte bytes[16];
+  };
+  mutable std::vector<global_block> global_bytes_;
 };
 
 } // namespace cinder::bytecode

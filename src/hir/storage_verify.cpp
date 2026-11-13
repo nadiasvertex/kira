@@ -243,6 +243,17 @@ private:
                         " lives in a state block, but the function is not a "
                         "generator step");
       }
+      // A static is written once, by its module's static init, and read by
+      // every other function.
+      if (slot.cls == storage_class::global &&
+          slot.initially_initialized == fn_.static_init) {
+        return fail(verify_error_kind::bad_slot,
+                    "static s" + std::to_string(i) +
+                        (fn_.static_init ? " starts written in the function "
+                                           "that builds it"
+                                         : " starts unwritten outside the "
+                                           "function that builds it"));
+      }
       state_[i].whole = slot.initially_initialized;
     }
     if (fn_.param_slots.size() != fn_.signature.params.size()) {
@@ -470,6 +481,14 @@ private:
     }
   }
 
+  /// Whether a test narrowed the variants of `node` or of a part of it.
+  [[nodiscard]] static auto narrowed(const init_node &node) -> bool {
+    return node.variants.has_value() ||
+           std::ranges::any_of(node.children, [](const auto &entry) {
+             return narrowed(entry.second);
+           });
+  }
+
   /// The same state with every complete part folded into a whole value, so
   /// two ways of building one value compare equal.
   [[nodiscard]] auto normalize(init_node node, type_id type) -> init_node {
@@ -479,7 +498,9 @@ private:
       node.children.clear();
       return node;
     }
-    if (covered(node, type)) {
+    // A part whose variants a test narrowed stays a part, so the join still
+    // knows what it can hold.
+    if (covered(node, type) && !narrowed(node)) {
       auto out = init_node{};
       out.whole = true;
       return out;
@@ -658,6 +679,12 @@ private:
                                       const resolved_place &at) -> result {
     if (at.through_deref) {
       return require_init(where, at);
+    }
+    if (fn_.slots[where.base].cls == storage_class::global && !fn_.static_init) {
+      return fail(verify_error_kind::already_initialized,
+                  describe(where, at.tracked) +
+                      " is a static, which only its module's static init "
+                      "writes");
     }
     // Writing a field of a value whose own drop ran would build on a value
     // that is already finished.
@@ -916,6 +943,13 @@ private:
           entry.kind == semantic::type_kind::ptr_kind && layout.has_value() &&
           (*layout)->kind == runtime::value_layout_kind::array &&
           same_type(entry.result, (*layout)->element);
+      // A `cell[T]` or `cell_mut[T]` is the address of a `T`.
+      const auto cell = (entry.name == "cell" || entry.name == "cell_mut") &&
+                        entry.args.size() == 1 &&
+                        same_type(entry.args.front(), value.where.type);
+      if (cell) {
+        return {};
+      }
       if ((entry.kind != semantic::type_kind::ref_kind &&
            entry.kind != semantic::type_kind::ptr_kind) ||
           (!same_type(entry.result, value.where.type) && !element_pointer)) {
@@ -1272,30 +1306,109 @@ private:
         continue;
       }
       if (env_.needs_drop(slot.type)) {
-        // Two whole sums that differ only in which variants they can still be
-        // are one sum that can be either.
-        if (a.dropped[i] == b.dropped[i]) {
-          if (auto merged = merge_nodes(slot.type, state_a, state_b);
-              merged.has_value()) {
-            out.state[i] = std::move(*merged);
-            out.dropped[i] = a.dropped[i];
-            continue;
-          }
-        }
-        const auto owes_a =
-            first_owed(&state_a, slot.type, id, "", a.dropped[i]);
-        const auto owes_b =
-            first_owed(&state_b, slot.type, id, "", b.dropped[i]);
-        if (owes_a.has_value() || owes_b.has_value()) {
+        auto dropped = std::set<std::string>{};
+        auto joined = join_part(slot.type, id, "", &state_a, a.dropped[i],
+                                &state_b, b.dropped[i], dropped);
+        if (!joined.has_value()) {
           return fail(verify_error_kind::join_mismatch,
                       "s" + std::to_string(i) + " owes a drop on one path " +
                           "and not on the other; that needs a drop flag");
         }
-        out.state[i] = init_node{}; // Neither path owes anything.
+        out.state[i] = std::move(*joined);
+        out.dropped[i] = std::move(dropped);
       } else {
         out.state[i] = intersect(state_a, state_b);
+        out.dropped[i].clear();
       }
-      out.dropped[i].clear();
+    }
+    return out;
+  }
+
+  /// The drops recorded at or under `path`.
+  [[nodiscard]] static auto dropped_under(const std::set<std::string> &dropped,
+                                          const std::string &path)
+      -> std::set<std::string> {
+    auto out = std::set<std::string>{};
+    for (const auto &each : dropped) {
+      if (is_prefix(path, each)) {
+        out.insert(each);
+      }
+    }
+    return out;
+  }
+
+  /// Where two paths meet, the state of the part at `path` of a value that
+  /// needs a drop, and the drops recorded under it (added to `dropped`). Each
+  /// part settles on its own: a part in the same state on both paths keeps
+  /// it, a structure or tuple joins member by member, and a part that owes
+  /// nothing on either path is spent. Null nodes are parts that were never
+  /// written or were moved out. Unset when one path owes a drop the other
+  /// does not.
+  [[nodiscard]] auto join_part(type_id type, storage_id slot,
+                               const std::string &path, const init_node *a,
+                               const std::set<std::string> &dropped_a,
+                               const init_node *b,
+                               const std::set<std::string> &dropped_b,
+                               std::set<std::string> &dropped)
+      -> std::optional<init_node> {
+    static const auto nothing = init_node{};
+    const auto &node_a = a != nullptr ? *a : nothing;
+    const auto &node_b = b != nullptr ? *b : nothing;
+    if (!env_.needs_drop(type)) {
+      return intersect(node_a, node_b);
+    }
+    const auto under_a = dropped_under(dropped_a, path);
+    const auto under_b = dropped_under(dropped_b, path);
+    if (under_a == under_b) {
+      // Two sums that differ only in which variants they can still be are one
+      // sum that can be either.
+      if (auto merged = merge_nodes(type, node_a, node_b); merged.has_value()) {
+        dropped.insert(under_a.begin(), under_a.end());
+        return merged;
+      }
+    }
+    const auto owes_a = first_owed(&node_a, type, slot, path, dropped_a);
+    const auto owes_b = first_owed(&node_b, type, slot, path, dropped_b);
+    if (!owes_a.has_value() && !owes_b.has_value()) {
+      return init_node{}; // Neither path owes anything.
+    }
+    // A structure or tuple with no drop of its own settles member by member.
+    const auto stripped = types().strip_refinement(type);
+    const auto *plan = env_.drop_plan(stripped);
+    const auto own = plan != nullptr && (plan->own_drop.has_value() ||
+                                         plan->closure_glue.has_value() ||
+                                         plan->cancels_generator);
+    const auto layout = env_.layouts.layout(stripped);
+    if (own || !layout.has_value() || (node_a.whole && node_b.whole) ||
+        ((*layout)->kind != runtime::value_layout_kind::structure &&
+         (*layout)->kind != runtime::value_layout_kind::tuple)) {
+      return std::nullopt;
+    }
+    static const auto whole_value = [] {
+      auto node = init_node{};
+      node.whole = true;
+      return node;
+    }();
+    const auto child = [&](const init_node &node,
+                           const std::string &key) -> const init_node * {
+      if (node.whole) {
+        return &whole_value;
+      }
+      const auto found = node.children.find(key);
+      return found == node.children.end() ? nullptr : &found->second;
+    };
+    auto out = init_node{};
+    for (size_t m = 0; m < (*layout)->members.size(); ++m) {
+      const auto key = member_key(m);
+      auto part = join_part((*layout)->members[m].type, slot, path + "/" + key,
+                            child(node_a, key), dropped_a, child(node_b, key),
+                            dropped_b, dropped);
+      if (!part.has_value()) {
+        return std::nullopt;
+      }
+      if (!part->empty()) {
+        out.children.emplace(key, std::move(*part));
+      }
     }
     return out;
   }
@@ -1688,6 +1801,12 @@ private:
         return fail(verify_error_kind::move_from_reference,
                     "cannot move " + name_of(op.source.type) +
                         " out of a closure's environment");
+      }
+      if (fn_.slots[op.source.base].cls == storage_class::global &&
+          !from->through_deref) {
+        return fail(verify_error_kind::move_from_reference,
+                    "cannot move " + name_of(op.source.type) +
+                        " out of a static, which every function shares");
       }
     } else if (!env_.is_copy(op.source.type)) {
       return fail(verify_error_kind::not_copy,
@@ -2613,6 +2732,13 @@ private:
       }
     }
     for (const auto &slot : fn_.slots) {
+      if (fn_.static_init && slot.cls == storage_class::global &&
+          !covered(state_[slot.id], slot.type)) {
+        return fail(verify_error_kind::bad_result,
+                    "static s" + std::to_string(slot.id) +
+                        " is not completely built when its static init "
+                        "returns");
+      }
       if (dead_[slot.id] || slot.id == fn_.result_slot) {
         continue;
       }

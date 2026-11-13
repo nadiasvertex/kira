@@ -144,6 +144,11 @@ inline auto verify_storage_program(const storage_program &program) -> void {
     if (!verdict.has_value()) {
       std::cerr << verdict.error().function << ": " << verdict.error().message
                 << "\n";
+      for (const auto &function : module->functions) {
+        if (function.name == verdict.error().function) {
+          std::cerr << hir::dump(function, program.env->checked.types) << "\n";
+        }
+      }
       fail("expected the storage form to verify");
     }
   }

@@ -60,6 +60,14 @@ public:
       index.emplace(code.functions[i].name, static_cast<uint16_t>(i));
     }
     machine = std::make_unique<bytecode::vm>(code);
+    // Each module's statics are built once, before anything reads them.
+    for (const auto init : code.static_initializers) {
+      const auto ran = machine->run(init, std::vector<slot_value>{});
+      if (!ran.has_value()) {
+        std::cerr << bytecode::panic_reason_message(ran.error()) << "\n";
+        fail("expected the statics to build");
+      }
+    }
   }
 
   [[nodiscard]] auto find(std::string_view name) const -> uint16_t {

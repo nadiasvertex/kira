@@ -96,9 +96,10 @@ public:
   function_emitter(std::string_view entry, const hir::storage_module &module,
                    const hir::storage_function &function,
                    hir::storage_env &env,
-                   const std::unordered_map<std::string, uint16_t> &index)
+                   const std::unordered_map<std::string, uint16_t> &index,
+                   const std::unordered_map<std::string, uint32_t> &statics)
       : entry_(entry), module_(module), fn_(function), env_(env),
-        index_(index) {}
+        index_(index), statics_(statics) {}
 
   /// The function-table key of a function of this module.
   [[nodiscard]] auto key(std::string_view name) const -> std::string {
@@ -339,6 +340,7 @@ private:
     homes_.assign(fn_.slots.size(), home{});
     auto entry_stores = std::vector<hir::storage_id>{};
     auto indirect_captures = std::vector<hir::storage_id>{};
+    auto statics = std::vector<hir::storage_id>{};
     for (const auto &slot : fn_.slots) {
       const auto value = class_of(slot.type, slot.span);
       if (!value.has_value()) {
@@ -431,6 +433,17 @@ private:
                       .frame_offset = static_cast<uint32_t>(slot.env_offset)};
         }
         break;
+      case hir::storage_class::global:
+        // A static lives in the program's static storage, reached through a
+        // register set once at entry.
+        if (!statics_.contains(slot.name)) {
+          return fail(compile_error_kind::internal_error, slot.span,
+                      std::format("no module declares the static `{}`",
+                                  slot.name));
+        }
+        here = home{.where = home::kind::indirect, .reg = alloc_register()};
+        statics.push_back(slot.id);
+        break;
       default:
         return fail(compile_error_kind::unsupported_construct, slot.span,
                     std::format("a `{}` slot is not placed by the bytecode "
@@ -449,6 +462,11 @@ private:
       emit_op(opcode::op_stack_alloc);
       emit_register(here.reg);
       writer_.emit_u32(here.frame_offset);
+    }
+    for (const auto id : statics) {
+      emit_op(opcode::op_global_addr);
+      emit_register(homes_[id].reg);
+      writer_.emit_u32(statics_.at(fn_.slots[id].name));
     }
     // A variable captured by reference is reached through the address the
     // environment holds.
@@ -2136,6 +2154,8 @@ private:
   const hir::storage_module &module_;
   const hir::storage_function &fn_;
   hir::storage_env &env_;
+  /// Each static's offset in the program's static storage.
+  const std::unordered_map<std::string, uint32_t> &statics_;
   const std::unordered_map<std::string, uint16_t> &index_;
 
   bytecode::chunk_writer writer_;
@@ -2191,11 +2211,42 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
     }
   }
   auto out = bytecode::bytecode_module{.module_name = entry};
+  // Every module's statics share one block, each at its type's alignment.
+  auto statics = std::unordered_map<std::string, uint32_t>{};
+  auto static_bytes = size_t{0};
+  for (const auto *module : modules) {
+    for (const auto &global : module->globals) {
+      const auto layout = env.layouts.layout(global.type);
+      if (!layout.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_type,
+            .span = global.span,
+            .message = layout.error().message});
+      }
+      const auto align = std::max<size_t>((*layout)->align, 1);
+      static_bytes = (static_bytes + align - 1) / align * align;
+      if (static_bytes + (*layout)->size > UINT32_MAX) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::encoding_limit_exceeded,
+            .span = global.span,
+            .message = "the program's statics need more bytes than an "
+                       "operand can address"});
+      }
+      statics.emplace(global.name, static_cast<uint32_t>(static_bytes));
+      static_bytes += (*layout)->size;
+    }
+    if (!module->globals.empty()) {
+      out.static_initializers.push_back(index.at(hir::program_function_name(
+          entry, module->name, hir::k_static_init_name)));
+    }
+  }
+  out.global_byte_size = static_bytes;
   out.functions.reserve(total);
   for (const auto *module : modules) {
     for (const auto &function : module->functions) {
       auto compiled =
-          function_emitter(entry, *module, function, env, index).compile();
+          function_emitter(entry, *module, function, env, index, statics)
+              .compile();
       if (!compiled.has_value()) {
         return std::unexpected(compiled.error());
       }

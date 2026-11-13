@@ -129,6 +129,8 @@ struct body_shape {
   const environment_plan *environment = nullptr;
   /// A closure's drop glue: releases the environment block when it ends.
   bool releases_environment = false;
+  /// The module's statics, which this function builds in their own storage.
+  const std::vector<hir_static_global> *statics = nullptr;
 };
 
 /// The closure bodies and drop glue that lowering one function produced.
@@ -194,6 +196,12 @@ public:
         locals_[entry.symbol] = id;
       }
     }
+    if (fn_.statics != nullptr) {
+      out_.static_init = true;
+      if (auto ok = lower_statics(*fn_.statics); !ok.has_value()) {
+        return std::unexpected(ok.error());
+      }
+    }
     if (fn_.body != nullptr) {
       const auto &stmts = fn_.body->stmts;
       for (size_t i = 0; i < stmts.size(); ++i) {
@@ -236,6 +244,24 @@ public:
 
 private:
   using result = std::expected<void, storage_lower_error>;
+
+  /// Builds each static in its `global` slot, which starts unwritten here.
+  /// A static's value is a compile-time constant, so it reads no other.
+  [[nodiscard]] auto lower_statics(const std::vector<hir_static_global> &statics)
+      -> result {
+    for (const auto &global : statics) {
+      const auto id = new_slot(storage_class::global, global.type, global.name,
+                               k_invalid_symbol_id, global.value->span, false);
+      globals_.emplace(global.name, id);
+      if (auto ok = lower_into(*global.value, whole(id)); !ok.has_value()) {
+        return ok;
+      }
+      if (auto ended = flush_pending(global.value->span); !ended.has_value()) {
+        return ended;
+      }
+    }
+    return {};
+  }
 
   enum class loop_frame_kind : uint8_t { loop, body };
 
@@ -411,7 +437,7 @@ private:
       if (found == locals_.end()) {
         return std::optional<place>{};
       }
-      return std::optional<place>{whole(found->second)};
+      return retyped(whole(found->second), expr);
     }
     case hir_node_kind::hir_global_ref: {
       const auto &name = as<hir_global_ref>(expr).name;
@@ -421,7 +447,7 @@ private:
                                  k_invalid_symbol_id, expr.span, true);
         found = globals_.emplace(name, id).first;
       }
-      return std::optional<place>{whole(found->second)};
+      return retyped(whole(found->second), expr);
     }
     case hir_node_kind::hir_field: {
       const auto &field = as<hir_field>(expr);
@@ -842,6 +868,28 @@ private:
 
   /// Initializes `dest` from the value at `source`: a scalar is copied by
   /// value, anything else is copied or moved by its `copy` classification.
+  /// The variable `where` read as `expr`'s type. `ptr_cast` retypes a raw
+  /// pointer without a node of its own, so a variable read through one can
+  /// claim another pointer type; the read copies it into a temporary of that
+  /// type, since every raw pointer has the same representation.
+  [[nodiscard]] auto retyped(place where, const hir_expr &expr)
+      -> std::expected<std::optional<place>, storage_lower_error> {
+    const auto &types = env_.checked.types;
+    const auto is_pointer = [&](type_id id) {
+      return types.entry(types.strip_refinement(id)).kind ==
+             semantic::type_kind::ptr_kind;
+    };
+    if (where.type == expr.type || !is_pointer(where.type) ||
+        !is_pointer(expr.type)) {
+      return std::optional<place>{std::move(where)};
+    }
+    const auto temp = new_temp(expr.type, expr.span);
+    if (auto ok = transfer(where, whole(temp), expr.span); !ok.has_value()) {
+      return std::unexpected(ok.error());
+    }
+    return std::optional<place>{whole(temp)};
+  }
+
   [[nodiscard]] auto transfer(const place &source, const place &dest,
                               const source_span &span) -> result {
     const auto cls = class_of(dest.type, span);
@@ -3870,6 +3918,30 @@ auto lower_to_storage(const hir_module &module, storage_env &env,
                       const storage_lower_options &options) -> storage_lowering {
   auto out = storage_lowering{};
   out.module.name = module.module_name;
+  if (!module.statics.empty()) {
+    static const auto no_params = std::vector<hir_param>{};
+    auto shape = body_shape{.name = std::string{k_static_init_name},
+                            .params = &no_params,
+                            .return_type = env.checked.types.builtin("unit"),
+                            .span = module.span,
+                            .statics = &module.statics};
+    for (const auto &global : module.statics) {
+      out.module.globals.push_back(storage_global{
+          .name = global.name, .type = global.type, .span = global.value->span});
+    }
+    auto closures = closure_sink{};
+    auto lowered = function_lowerer(std::move(shape), env, closures).run();
+    if (lowered.has_value()) {
+      out.module.functions.push_back(std::move(*lowered));
+      for (auto &closure : closures.functions) {
+        out.module.functions.push_back(std::move(closure));
+      }
+    } else {
+      out.refused.push_back(refused_function{
+          .name = std::string{k_static_init_name},
+          .error = std::move(lowered.error())});
+    }
+  }
   for (const auto &function : module.functions) {
     auto closures = closure_sink{};
     if (function->is_generator() || function->is_task()) {

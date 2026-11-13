@@ -355,6 +355,9 @@ struct storage_function {
   /// environment, then the resume index and the coroutine, and returns the
   /// status word. Its locals are `coroutine_frame` slots.
   bool coroutine_step = false;
+  /// The function builds its module's statics: their `global` slots start
+  /// unwritten and it writes each one once. Every other function reads them.
+  bool static_init = false;
   std::vector<storage_op> ops;
 
   [[nodiscard]] auto slot(storage_id id) const -> const storage_slot & {
@@ -362,10 +365,26 @@ struct storage_function {
   }
 };
 
+/// A `static` the module declares, held in program-wide storage. `name` is
+/// unique across the program, and a `global` slot names it the same way.
+struct storage_global {
+  std::string name;
+  semantic::type_id type = semantic::k_unknown_type;
+  source_span span{};
+};
+
+/// The name of the function that builds a module's statics. It contains a
+/// space, so no source function can have it.
+inline constexpr std::string_view k_static_init_name = "static init";
+
 /// The functions of one module in storage form.
 struct storage_module {
   std::string name;
   std::vector<storage_function> functions;
+  /// The statics the module declares, in declaration order. When there are
+  /// any, the function `k_static_init_name` builds them; a program runs each
+  /// module's once, in module order, before anything else.
+  std::vector<storage_global> globals;
 
   [[nodiscard]] auto find(std::string_view function_name) const
       -> const storage_function *;

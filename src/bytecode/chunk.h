@@ -143,6 +143,14 @@ struct bytecode_module {
   /// program's real entry point, using the same `vm` instance so the
   /// globals it fills in stay visible to that later run.
   std::optional<uint16_t> static_init_function;
+  /// Storage-form programs: the bytes of every module's statics, laid out
+  /// at offsets the compiler chose (`op_global_addr`), each at its type's
+  /// alignment. The `vm` allocates them zeroed and 16-byte aligned.
+  size_t global_byte_size = 0;
+  /// Storage-form programs: the function that builds each module's statics
+  /// (`hir::k_static_init_name`), in module order. A host runs each once,
+  /// on the `vm` it will use, before anything else.
+  std::vector<uint16_t> static_initializers;
 };
 
 /// Reads a little-endian-encoded operand back out of a `bytecode_function`'s

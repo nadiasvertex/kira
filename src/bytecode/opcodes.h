@@ -301,6 +301,10 @@ enum class opcode : uint8_t {
                      ///< address of `string_constants[idx]`'s bytes, which
                      ///< outlive the run. The storage form builds a `str`
                      ///< descriptor from it in the frame, allocating nothing.
+  op_global_addr,    ///< u16 dst, u32 offset — reg[dst].u = the address of
+                     ///< byte `offset` of the program's static storage
+                     ///< (`bytecode_module::global_byte_size`), which lives
+                     ///< as long as the `vm` and never moves.
   op_load_indexed,   ///< u16 dst, u16 ptr, u16 index, u8 elem_size — reg[dst] =
                      ///< a `elem_size`-byte (1/2/4/8), zero-extended read at
                      ///< *(reg[ptr] as uint8_t* + reg[index].u * elem_size).
@@ -695,6 +699,7 @@ struct operand_signature {
     return sig({reg, imm16, reg, imm8});
   case opcode::op_load_str_const:
   case opcode::op_str_const_data:
+  case opcode::op_global_addr:
     return sig({reg, imm32});
   case opcode::op_load_indexed:
   case opcode::op_store_indexed:

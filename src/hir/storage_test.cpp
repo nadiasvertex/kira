@@ -1713,6 +1713,113 @@ auto test_fills_and_computed_fields() -> void {
                  "a fill whose element 0 was never written");
 }
 
+auto test_statics() -> void {
+  auto f = build(read_program("statics.cn"));
+  const auto &init = f->function(hir::k_static_init_name);
+  expect(init.static_init, "expected the static init to be marked");
+  const auto &globals = f->lowering.module.globals;
+  expect(globals.size() == 2 && globals[0].name.contains("table") &&
+             globals[1].name.contains("pair"),
+         "expected the module to list its statics in order");
+  expect_ops(*f, hir::k_static_init_name,
+             {"compute s0[0] = const 10", "compute s0[1] = const 20",
+              "compute s0[2] = const 30", "compute s1.0 = const 7",
+              "compute s1.1 = const 9", "return"});
+  expect_ops(*f, "pair_first", {"return s0.0"});
+  expect_ops(*f, "table_at",
+             {"compute s2 = index s0 < #3", "compute s3 = offset &s1, s2 * 4",
+              "compute s4 = copy s3.*", "dead s3", "dead s2", "return s4"});
+  for (const auto *name : {"pair_first", "table_at"}) {
+    expect_verifies(*f, f->function(name), name);
+  }
+  expect_verifies(*f, init, "static init");
+
+  // Only the static init writes a static.
+  auto written = f->function("pair_first");
+  auto write = init.ops[3]; // compute s1.0 = const 7
+  write.dest.base = 0;
+  written.ops.insert(written.ops.begin(), write);
+  expect_rejects(*f, written, hir::verify_error_kind::already_initialized,
+                 "a write to a static outside its static init", {},
+                 "is a static");
+
+  // Every function shares a static, so nothing moves out of one.
+  auto moved = f->function("pair_first");
+  const auto pair_type = moved.slots[0].type;
+  const auto taken = add_slot(moved, hir::storage_class::frame_local, pair_type);
+  moved.ops.insert(moved.ops.begin(),
+                   hir::storage_op{.kind = hir::op_kind::move_into,
+                                   .dest = place_at(taken, pair_type),
+                                   .source = place_at(0, pair_type)});
+  expect_rejects(*f, moved, hir::verify_error_kind::move_from_reference,
+                 "a move out of a static", {}, "out of a static");
+
+  // The static init builds every static completely.
+  auto unbuilt = init;
+  unbuilt.ops.erase(unbuilt.ops.begin() + 4); // compute s1.1 = const 9
+  expect_rejects(*f, unbuilt, hir::verify_error_kind::bad_result,
+                 "a static init that leaves part of a static unwritten", {},
+                 "not completely built");
+
+  // A static starts unwritten only in its static init.
+  auto unwritten = f->function("pair_first");
+  unwritten.slots[0].initially_initialized = false;
+  expect_rejects(*f, unwritten, hir::verify_error_kind::bad_slot,
+                 "a reader whose static starts unwritten", {},
+                 "starts unwritten");
+  auto prewritten = init;
+  prewritten.slots[0].initially_initialized = true;
+  expect_rejects(*f, prewritten, hir::verify_error_kind::bad_slot,
+                 "a static init whose static starts written", {},
+                 "starts written");
+}
+
+/// Shapes from the stdlib's `list[T]` bodies and drop instances.
+auto test_stdlib_shapes() -> void {
+  auto f = build(read_program("joins.cn"));
+  // Each optional field is settled under its own `if`: the join after the
+  // first must keep what the `else` side learned about that field.
+  expect_ops(*f, "release",
+             {"test s1 = s0.first is @some",
+              "if s1",
+              "dead s1",
+              "call.drop s2 = noisy::drop(&s0.first.@some.0)",
+              "dead s2",
+              "else",
+              "dead s1",
+              "end_if",
+              "test s3 = s0.second is @some",
+              "if s3",
+              "dead s3",
+              "call.drop s4 = noisy::drop(&s0.second.@some.0)",
+              "dead s4",
+              "else",
+              "dead s3",
+              "end_if",
+              "return"});
+  expect_verifies(*f, f->function("release"), "release");
+
+  // The second field's drop is still owed when its `if` is removed.
+  auto skipped = f->function("release");
+  skipped.ops.erase(skipped.ops.begin() + 8, skipped.ops.begin() + 16);
+  expect_rejects(*f, skipped, hir::verify_error_kind::leaked_value,
+                 "a struct whose second optional field is never dropped");
+
+  // `ptr_cast` retypes the variable's pointer through a copy.
+  expect_ops(*f, "as_words", {"compute s1 = copy s0", "return s1"});
+  expect_verifies(*f, f->function("as_words"), "as_words");
+
+  // A `cell[T]` is the address of a `T`, and of nothing else.
+  expect_ops(*f, "first_cell", {"return &s0.*[0]"});
+  expect_verifies(*f, f->function("first_cell"), "first_cell");
+  auto wrong = f->function("first_cell");
+  wrong.ops[0].value->type =
+      f->checked.types.builtin_generic("cell", {f->builtin("int32")});
+  expect_rejects(*f, wrong, hir::verify_error_kind::type_mismatch,
+                 "a cell of int32 that addresses an int64", {},
+                 "the address of");
+}
+
 auto test_verifier_checks_call_signatures() -> void {
   auto f = build(read_program("forms.cn"));
   // The caller's view of `make_pair` disagrees with the callee's.
@@ -3223,6 +3330,8 @@ auto main() -> int {
     test_descriptor_words_are_parts();
     test_indexes_are_checked();
     test_fills_and_computed_fields();
+    test_statics();
+    test_stdlib_shapes();
     test_every_lowered_function_verifies();
     test_dump_is_stable();
     test_droppable_values_lower_and_verify();

@@ -2567,6 +2567,16 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         break;
       }
 
+      case opcode::op_global_addr: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto offset = ops.imm32();
+        f.registers[dst] =
+            ptr_to_slot(reinterpret_cast<std::byte *>(global_bytes_.data()) +
+                        offset);
+        f.pc = ops.pos();
+        break;
+      }
       case opcode::op_str_const_data: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
