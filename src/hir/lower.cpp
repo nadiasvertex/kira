@@ -909,12 +909,15 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   /// `lower_task_block` with the body made by `lower_body`. `key` names the
   /// task's captures and its scope-exit drops in the drop schedule, and
-  /// `start_key` the drops of a task dropped before it runs.
+  /// `start_key` the drops of a task dropped before it runs. `carried` are
+  /// tasks the body owns without the drop schedule knowing them (the task an
+  /// `on(pool, task)` wrapper runs), released when it is dropped before it
+  /// runs.
   [[nodiscard]] auto lower_task_function(
       const void *key, const void *start_key, std::string task_name,
       const std::function<std::expected<ptr<hir_block>, lowering_error>()>
           &lower_body,
-      type_id declared, source_span span)
+      type_id declared, source_span span, ptr_vec<hir_expr> carried = {})
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_await_on(const ast::await_expr &await, type_id type)
       -> std::expected<ptr<hir_expr>, lowering_error>;
@@ -4413,13 +4416,21 @@ auto lowerer::lower_task_read(const void *key, source_span span,
   // result:  let t = e;  <wait for t>;  <cancel check>  and the expression
   // itself becomes a read of `t`'s result. The wait is a suspension point,
   // so `t` is a local that the state machine saves across it.
-  const auto task_symbol = mint_symbol();
+  // `t.get()` on a local only looks at `t`, so it waits on `t` where it
+  // stands: binding it to a second name would be a second owner.
+  const auto *named = !consumes && task->kind == hir_node_kind::hir_local_ref
+                          ? &static_cast<const hir_local_ref &>(*task)
+                          : nullptr;
+  const auto task_symbol = named != nullptr ? named->symbol : mint_symbol();
+  const auto task_name =
+      named != nullptr ? named->name : std::string("<await task>");
   const auto task_ref = [&, task_symbol]() -> ptr<hir_expr> {
-    return {make<hir_local_ref>(task_span, task_type, task_symbol,
-                                std::string("<await task>"))};
+    return {make<hir_local_ref>(task_span, task_type, task_symbol, task_name)};
   };
-  await_hoist_->push_back(ptr<hir_node>(make<hir_let>(
-      task_span, task_symbol, std::string("<await task>"), std::move(task))));
+  if (named == nullptr) {
+    await_hoist_->push_back(ptr<hir_node>(make<hir_let>(
+        task_span, task_symbol, task_name, std::move(task))));
+  }
   auto held = ptr_vec<hir_expr>{};
   if (consumes) {
     held.push_back(task_ref());
@@ -4555,7 +4566,7 @@ auto lowerer::lower_task_function(
     const void *key, const void *start_key, std::string task_name,
     const std::function<std::expected<ptr<hir_block>, lowering_error>()>
         &lower_body,
-    type_id declared, source_span span)
+    type_id declared, source_span span, ptr_vec<hir_expr> carried)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   const auto task_type = task_type_of(declared);
   static const auto no_captures =
@@ -4606,7 +4617,7 @@ auto lowerer::lower_task_function(
     declare_flags(capture.node, span, prelude);
   }
   // A task dropped before it first runs returns at once.
-  auto cancel = coroutine_cancel_check(start_key, span);
+  auto cancel = coroutine_cancel_check(start_key, span, std::move(carried));
   if (!cancel.has_value()) {
     pop_scope();
     restore();
@@ -4769,6 +4780,9 @@ auto lowerer::lower_on_task(const ast::on_expr &on, type_id task_type)
   const auto held = declare_local("<on task>", task_type);
   pop_scope();
   const auto *key = &on.context_type;
+  auto carried = ptr_vec<hir_expr>{};
+  carried.push_back(ptr<hir_expr>(
+      make<hir_local_ref>(span, task_type, held, std::string("<on task>"))));
   auto wrapper = lower_task_function(
       key, key, std::format("<on {}@{}>", function_name_, span.start),
       [&]() -> std::expected<ptr<hir_block>, lowering_error> {
@@ -4787,7 +4801,7 @@ auto lowerer::lower_on_task(const ast::on_expr &on, type_id task_type)
         return ptr<hir_block>(
             make<hir_block>(span, declared, std::move(stmts)));
       },
-      declared, span);
+      declared, span, std::move(carried));
   if (!wrapper.has_value()) {
     return std::unexpected(wrapper.error());
   }

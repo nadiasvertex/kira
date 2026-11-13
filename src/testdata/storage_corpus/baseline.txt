@@ -45,6 +45,7 @@
 041_mutate_through_mut_ref.cn
 042_scalar_reference_places.cn
 043_impl_on_generic_target.cn
+044_for_destructuring.cn
 045_ufcs.cn
 046_address_taken_reuse.cn
 047_wide_register_pressure.cn
@@ -140,6 +141,8 @@
 154_await_in_match_arm.cn
 155_on_cpu_pool.cn
 156_race_cancels_losers.cn
+157_crew_spawn_and_get.cn
+159_crew_every_exit_joins.cn
 160_qualified_static_index.cn
 161_for_over_mut_borrow.cn
 162_int128_arithmetic.cn
@@ -150,10 +153,13 @@
 167_int128_traits_and_format.cn
 168_int128_static_globals.cn
 170_async_borrow_survives_suspension.cn
+171_sync_primitives.cn
 172_suspending_value_branches.cn
 174_pattern_subject_across_suspension.cn
 175_io_event_loop.cn
+176_or_else.cn
 177_coroutine_borrow_storage.cn
+178_coroutine_objects_freed.cn
 179_par_race_tasks_freed.cn
 180_value_baseline_slices_n.cn
 181_value_baseline_slices_10n.cn

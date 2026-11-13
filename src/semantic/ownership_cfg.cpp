@@ -293,6 +293,7 @@ public:
         declare_param(*param.pattern, type_of(param.pattern.get()));
       }
     }
+    in_task_ = decl.modifiers.is_async;
     if (decl.modifiers.is_generator || decl.modifiers.is_async) {
       // A generator or task dropped before it first runs returns at once.
       cancel_point(generator_start(decl));
@@ -329,6 +330,7 @@ public:
                         const std::vector<ast::ptr<ast::node>> &body,
                         const std::vector<task_capture> &captures) -> void {
     task_block_ = true;
+    in_task_ = true;
     begin(&key);
     for (const auto &capture : captures) {
       if (capture.moved) {
@@ -383,6 +385,9 @@ private:
   /// Set while building a task block's own graph: a name it uses from the
   /// enclosing function is one the task only borrows, so it cannot change.
   bool task_block_ = false;
+  /// Set while building a task's graph (an `async def` or a task block): a
+  /// wait in it is a point where the task may be cancelled.
+  bool in_task_ = false;
   function_cfg cfg_;
   std::vector<scope> scopes_;
   std::vector<implicit_capture> captures_;
@@ -1585,8 +1590,15 @@ private:
     case ast::node_kind::or_else_expr:
       return lower_or_else(ast::cast<ast::or_else_expr>(expr));
 
-    case ast::node_kind::call_expr:
-      return eval_call(ast::cast<ast::call_expr>(expr));
+    case ast::node_kind::call_expr: {
+      const auto &call = ast::cast<ast::call_expr>(expr);
+      auto result = eval_call(call);
+      if (in_task_ && is_task_get(call)) {
+        // A task waits for `t.get()`, and may be cancelled while it does.
+        cancel_point(&call);
+      }
+      return result;
+    }
 
     case ast::node_kind::tuple_expr: {
       const auto &tuple = ast::cast<ast::tuple_expr>(expr);
@@ -1729,7 +1741,7 @@ private:
       return eval_task_block(expr, ast::cast<ast::async_expr>(expr).body);
 
     case ast::node_kind::crew_expr:
-      lower_crew_body(ast::cast<ast::crew_expr>(expr).body);
+      lower_crew_body(&expr, ast::cast<ast::crew_expr>(expr).body);
       return {};
 
     case ast::node_kind::on_expr: {
@@ -2209,6 +2221,26 @@ private:
     return compound_result(call, temp);
   }
 
+  /// Whether `call` is `t.get()` on a `task` (through references too).
+  [[nodiscard]] auto is_task_get(const ast::call_expr &call) const -> bool {
+    if (call.callee == nullptr ||
+        call.callee->kind != ast::node_kind::field_expr || !call.args.empty()) {
+      return false;
+    }
+    const auto &field = ast::cast<ast::field_expr>(*call.callee);
+    if (field.field_name != "get" || field.object == nullptr) {
+      return false;
+    }
+    auto type = type_of(field.object.get());
+    while (!checked_.types.is_unknown(type) &&
+           checked_.types.entry(type).kind == type_kind::ref_kind) {
+      type = checked_.types.entry(type).result;
+    }
+    return !checked_.types.is_unknown(type) &&
+           checked_.types.entry(type).kind == type_kind::builtin_generic_kind &&
+           checked_.types.entry(type).name == "task";
+  }
+
   /// Whether `call` is `c.spawn(task)` on a `crew`.
   [[nodiscard]] auto is_crew_spawn(const ast::call_expr &call) const -> bool {
     if (call.callee == nullptr ||
@@ -2225,13 +2257,18 @@ private:
            checked_.types.entry(type).name == "crew";
   }
 
-  /// A `crew` body, whose spawned tasks all end with it.
-  auto lower_crew_body(const std::vector<ast::ptr<ast::node>> &body) -> void {
+  /// A `crew` body, keyed by `key`, whose spawned tasks all end with it. In
+  /// a task the wait for them is a point where the task may be cancelled.
+  auto lower_crew_body(const void *key,
+                       const std::vector<ast::ptr<ast::node>> &body) -> void {
     const auto holder = new_temp(local_role::crew_tasks);
     crew_holders_.push_back(holder);
     static_cast<void>(lower_scoped_body(body, false));
     crew_holders_.pop_back();
     emit(use_event{.local = holder});
+    if (in_task_) {
+      cancel_point(key);
+    }
   }
 
   /// An `async:` or `on(...)` block, `key`: its body runs as a task of its
@@ -2940,7 +2977,7 @@ private:
     }
 
     case ast::node_kind::crew_stmt:
-      lower_crew_body(ast::cast<ast::crew_stmt>(node).body);
+      lower_crew_body(&node, ast::cast<ast::crew_stmt>(node).body);
       return {};
 
     case ast::node_kind::splice_stmt: {

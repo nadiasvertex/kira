@@ -3030,6 +3030,7 @@ private:
   /// back edge.
   [[nodiscard]] auto finish_loop(const hir_block &body, const hir_block *step,
                                  const source_span &span) -> result {
+    const auto head_storage = scopes_.back().size();
     emit(storage_op{.kind = op_kind::block_begin}, body.span);
     frames_.push_back(loop_frame{.kind = loop_frame_kind::body, .partials = partials_.size()});
     auto ok = in_region(body.span, [&] { return lower_discarded(body); });
@@ -3057,6 +3058,14 @@ private:
     emit(storage_op{.kind = op_kind::loop_end}, span);
     const auto left = frames_.back().reached;
     frames_.pop_back();
+    if (left) {
+      // Every path out of the loop leaves the head's storage (a `while let`
+      // subject) live; it ends here, so an enclosing loop body ends as it
+      // began.
+      for (auto i = head_storage; i > 0; --i) {
+        kill(scopes_.back()[i - 1], span);
+      }
+    }
     scopes_.pop_back();
     terminated_ = !left;
     return {};
@@ -3404,9 +3413,16 @@ private:
     if (!subject.has_value()) {
       return std::unexpected(subject.error());
     }
+    if (subject->held != k_invalid_storage) {
+      open_subjects_.push_back(
+          open_subject{.slot = subject->held, .frames = frames_.size()});
+    }
     auto ok = in_region(node.span, [&] {
       return lower_arms(node, 0, subject->where, dest);
     });
+    if (subject->held != k_invalid_storage) {
+      open_subjects_.pop_back();
+    }
     if (!ok.has_value()) {
       return ok;
     }
@@ -3729,6 +3745,16 @@ private:
                             "construction that holds values needing a drop");
       }
       frame.reached = true;
+      // A computed `match` subject inside the region being left ends here
+      // (`x or else continue`), as it does where the match ends.
+      const auto target_index = frames_.size() - 1 - depth;
+      for (auto it = open_subjects_.rbegin(); it != open_subjects_.rend();
+           ++it) {
+        if (it->frames > target_index &&
+            !env_.needs_drop(out_.slots[it->slot].type)) {
+          kill(it->slot, span);
+        }
+      }
       auto leave = storage_op{.kind = op_kind::exit};
       leave.depth = depth;
       emit(std::move(leave), span);
@@ -4067,6 +4093,13 @@ private:
   /// Temporaries of enclosing expressions, set aside while a nested region
   /// (a branch or a loop) lowers.
   size_t outer_pending_ = 0;
+  /// The computed subjects of the `match`es being lowered, each with the
+  /// number of loop frames open where it was made.
+  struct open_subject {
+    storage_id slot = 0;
+    size_t frames = 0;
+  };
+  std::vector<open_subject> open_subjects_;
   /// The finished parts of aggregates still under construction whose type
   /// needs a drop, oldest first. An exit from inside the construction drops
   /// them, since nothing else owns them yet.

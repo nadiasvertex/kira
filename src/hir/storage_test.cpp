@@ -2822,7 +2822,7 @@ auto test_while_let_and_let_else_lower() -> void {
               "dead s5", "exit 0", "end_if", "block",
               "compute s7 = copy s3.@some.0", "compute s2 = binary + s2, s7",
               "compute s1 = binary - s1, #1", "end_block", "dead s7", "dead s3",
-              "end_loop", "return s2"});
+              "end_loop", "dead s3", "return s2"});
   // The else block leaves, so the code after the statement runs only when the
   // pattern held and reads the payload unconditionally.
   expect_ops(*f, "first_or",
@@ -2998,7 +2998,7 @@ auto test_next_resumes_then_takes_or_publishes_none() -> void {
               "compute s6 = const false", "end_if", "if s6", "dead s6", "else",
               "dead s6", "exit 0", "end_if", "block",
               "compute s8 = copy s3.@some.0", "compute s2 = binary + s2, s8",
-              "end_block", "dead s8", "dead s3", "end_loop",
+              "end_block", "dead s8", "dead s3", "end_loop", "dead s3",
               "compute s9 = copy s2", "drop s1", "return s9"});
   expect_verifies(*f, f->function("sum_to"), "sum_to");
   // Two generators in one function each get their own drop.

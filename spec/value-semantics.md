@@ -492,9 +492,9 @@ measures how ready the codegen stress corpus is for the switch. It runs each pro
 through the storage form on the bytecode VM and compares `main` with `# expect:`, or
 with the legacy VM when a file has no expected value. The programs listed in
 `src/testdata/storage_corpus/baseline.txt` must keep passing. On 2026-11-13, after
-drop flags in the verifier, 163 of 189 programs passed. The failures are
-spread over about twenty causes of one to four programs each: reads before
-initialization, owed drops in coroutines, generic lambda
+cancel points for `crew` waits and `t.get()`, 169 of 189 programs passed. The
+failures are spread over about fifteen causes of one to three programs each:
+reads before initialization, generic lambda
 temporaries, iteration over `str`, `cell` writes, frame offsets past the VM encoding,
 `_` layouts at VM compile time, `crew` errors, and a few checker typing gaps. The
 driver switches when the whole corpus passes, because decision 6 rules out a
