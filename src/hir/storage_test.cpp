@@ -2281,6 +2281,57 @@ auto test_verifier_checks_joins_and_loops() -> void {
                  "a function that can fall off its end after an `if`");
 }
 
+auto test_verifier_follows_drop_flags() -> void {
+  auto f = build(read_program("flow.cn"));
+  // `x` (s2) is moved when `give` holds, and its flag (s3) is cleared there;
+  // after the join it is dropped under the flag.
+  const auto moved = f->function("move_in_branch");
+  expect_ops(*f, "move_in_branch",
+             {"call s2 = make_noisy(s0)", "compute s3 = const true",
+              "compute s4 = const 0", "if s1", "compute s3 = const false",
+              "move s5 <- s2", "call s4 = take_noisy(move s5)", "dead s5",
+              "end_if", "compute s6 = binary + s4, s0", "if s3",
+              "call.drop s7 = noisy::drop(&s2)", "dead s7", "end_if",
+              "return s6"});
+  expect_verifies(*f, moved, "move_in_branch");
+
+  // Without the flag cleared, nothing tells the two paths apart.
+  auto unflagged = moved;
+  erase_op(unflagged, 4);
+  expect_rejects(*f, unflagged, hir::verify_error_kind::join_mismatch,
+                 "a value moved on one path with no flag that says so");
+
+  // A value that may be held is still owed its drop.
+  auto undropped = moved;
+  for (auto i = 0; i < 4; ++i) {
+    erase_op(undropped, 10);
+  }
+  expect_rejects(*f, undropped, hir::verify_error_kind::leaked_value,
+                 "a value that may be held, never dropped", {},
+                 "may still owe its drop");
+
+  // A flag written after the join no longer says anything about the value,
+  // so the drop under it reads storage that may be empty.
+  auto rewritten = moved;
+  rewritten.ops.insert(rewritten.ops.begin() + 10, moved.ops[1]);
+  expect_rejects(*f, rewritten, hir::verify_error_kind::uninitialized,
+                 "a drop under a flag that was overwritten");
+
+  // A value that may have moved cannot be read.
+  auto read = moved;
+  read.ops[9].operands[1] = hir::operand{
+      .kind = hir::operand_kind::read,
+      .where = hir::place{.base = 2,
+                          .steps = {hir::projection{
+                              .kind = hir::projection_kind::member,
+                              .index = 0,
+                              .name = "id"}},
+                          .type = moved.ops[9].operands[1].type},
+      .type = moved.ops[9].operands[1].type};
+  expect_rejects(*f, read, hir::verify_error_kind::uninitialized,
+                 "a read of a value that may have moved");
+}
+
 } // namespace
 
 
@@ -3510,6 +3561,7 @@ auto main() -> int {
     test_never_calls_end_the_path_and_tail_values_return();
     test_drops_inside_branches_and_loops();
     test_verifier_checks_joins_and_loops();
+    test_verifier_follows_drop_flags();
     test_raw_index_is_a_pointer_offset_then_a_dereference();
     test_verifier_checks_the_operands_of_an_offset();
     test_raw_reads_own_the_value_and_raw_writes_drop_nothing();

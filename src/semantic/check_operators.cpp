@@ -1239,14 +1239,34 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
     // know about.
     if (unary.operand != nullptr &&
         unary.operand->kind == ast::node_kind::index_expr) {
+      // A user type (a `list`) hands out its mutable sub-view through its
+      // own `index_mut`, below; only a builtin container is upgraded here.
+      const auto user_object = [&] -> bool {
+        const auto &operand_index = ast::cast<const ast::index_expr>(*unary.operand);
+        if (operand_index.object == nullptr) {
+          return false;
+        }
+        const auto found = session_.node_types_.find(operand_index.object.get());
+        if (found == session_.node_types_.end()) {
+          return false;
+        }
+        const auto &entry = session_.types_.entry(strip_refs(settle(found->second)));
+        return (entry.kind == type_kind::struct_kind ||
+                entry.kind == type_kind::sum_kind ||
+                entry.kind == type_kind::opaque_kind) &&
+               type_has_trait(entry, "index_mut");
+      };
       const auto &stripped_entry = session_.types_.entry(stripped);
       if (stripped_entry.kind == type_kind::builtin_generic_kind &&
-          stripped_entry.name == "slice") {
+          stripped_entry.name == "slice" && !user_object()) {
         const auto element = stripped_entry.args.empty()
                                  ? k_unknown_type
                                  : stripped_entry.args[0];
-        return session_.types_.ref_to(
-            session_.types_.builtin_generic("slice_mut", {element}), true);
+        const auto view = session_.types_.builtin_generic("slice_mut", {element});
+        // The sub-view itself is the mutable one, so lowering builds a
+        // `slice_mut[T]` and lends it.
+        record_expr_type(*unary.operand, view);
+        return session_.types_.ref_to(view, true);
       }
       // `&mut v[i]` on a user type: `v[i]` alone already dispatched to
       // `index`'s `at` (an ordinary read) by the `infer_expr` call above —

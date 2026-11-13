@@ -106,7 +106,8 @@ public:
          const storage_module *callees, const verify_options &options)
       : fn_(function), env_(env), callees_(callees), options_(options),
         state_(function.slots.size()), dropped_(function.slots.size()),
-        dead_(function.slots.size(), false) {}
+        dead_(function.slots.size(), false), known_(function.slots.size()),
+        maybe_(function.slots.size()) {}
 
   [[nodiscard]] auto run() -> std::expected<void, verify_error> {
     if (auto ok = check_slots(); !ok.has_value()) {
@@ -121,6 +122,11 @@ public:
       }
       if (auto ok = apply(op); !ok.has_value()) {
         return ok;
+      }
+      if (reachable_) {
+        if (auto ok = track_flags(op); !ok.has_value()) {
+          return ok;
+        }
       }
     }
     op_index_ = static_cast<size_t>(-1);
@@ -1107,10 +1113,24 @@ private:
   // ------------------------------------------------------------------
 
   /// Everything the replay knows at one point of the function.
+  /// A value moved on some paths and not on others. Its slot reads as empty;
+  /// an `if` on one of `flags` gives the `then` side `live` back.
+  struct maybe_value {
+    init_node live;
+    std::set<std::string> dropped;
+    /// The drop flags that were `true` on every path where the value is
+    /// held and `false` on every other, and have not been written since.
+    std::set<storage_id> flags;
+    auto operator==(const maybe_value &) const -> bool = default;
+  };
+
   struct flow_state {
     std::vector<init_node> state;
     std::vector<std::set<std::string>> dropped;
     std::vector<bool> dead;
+    /// Per drop flag, the constant it holds on this path, when known.
+    std::vector<std::optional<bool>> known;
+    std::vector<std::optional<maybe_value>> maybe;
   };
   using maybe_flow = std::optional<flow_state>;
 
@@ -1128,6 +1148,10 @@ private:
     /// or in a payload or member of one: what each side learns.
     std::optional<place> tested_place;
     std::string tested_variant;
+    /// A branch on a drop flag: the flag, and the values it gives back to the
+    /// `then` side.
+    std::optional<storage_id> tested_flag;
+    std::vector<storage_id> flagged;
   };
 
   [[nodiscard]] static auto continues_dead_path(op_kind kind) -> bool {
@@ -1136,13 +1160,119 @@ private:
   }
 
   [[nodiscard]] auto snapshot() const -> flow_state {
-    return flow_state{state_, dropped_, dead_};
+    return flow_state{state_, dropped_, dead_, known_, maybe_};
   }
 
   auto restore(flow_state from) -> void {
     state_ = std::move(from.state);
     dropped_ = std::move(from.dropped);
     dead_ = std::move(from.dead);
+    known_ = std::move(from.known);
+    maybe_ = std::move(from.maybe);
+  }
+
+  /// Whether slot `id` is a drop flag HIR declared (`<drop flag>`).
+  [[nodiscard]] auto is_drop_flag(size_t id) const -> bool {
+    return id < fn_.slots.size() && fn_.slots[id].name == "<drop flag>" &&
+           fn_.slots[id].cls == storage_class::frame_local;
+  }
+
+  /// After `op`: what each drop flag is known to hold, and that no value that
+  /// may still be held is written over.
+  [[nodiscard]] auto track_flags(const storage_op &op) -> result {
+    if (op.kind == op_kind::compute && op.dest.steps.empty() &&
+        is_drop_flag(op.dest.base)) {
+      const auto flag = op.dest.base;
+      known_[flag] = op.computation == compute_kind::constant &&
+                             (op.text == "true" || op.text == "false")
+                         ? std::optional<bool>{op.text == "true"}
+                         : std::nullopt;
+      for (auto &maybe : maybe_) {
+        if (maybe.has_value()) {
+          maybe->flags.erase(flag);
+        }
+      }
+    }
+    for (size_t i = 0; i < maybe_.size(); ++i) {
+      if (maybe_[i].has_value() && !state_[i].empty()) {
+        return fail(verify_error_kind::join_mismatch,
+                    "s" + std::to_string(i) +
+                        " is written while it may still hold a value that "
+                        "needs its drop");
+      }
+    }
+    return {};
+  }
+
+  /// The drop flags whose known value says which of two paths holds a value:
+  /// `true` where it is held and `false` where it is not.
+  [[nodiscard]] auto telling_flags(const flow_state &held,
+                                   const flow_state &empty) const
+      -> std::set<storage_id> {
+    auto out = std::set<storage_id>{};
+    for (size_t f = 0; f < fn_.slots.size(); ++f) {
+      if (is_drop_flag(f) && held.known[f] == std::optional<bool>{true} &&
+          empty.known[f] == std::optional<bool>{false}) {
+        out.insert(static_cast<storage_id>(f));
+      }
+    }
+    return out;
+  }
+
+  /// Slot `i` where a path that holds it (or may) meets one that does not:
+  /// a value that may be held, told apart by a drop flag, or nothing.
+  [[nodiscard]] auto join_maybe(size_t i, const flow_state &a,
+                                const flow_state &b)
+      -> std::optional<maybe_value> {
+    const auto type = fn_.slots[i].type;
+    const auto empty_on = [&](const flow_state &s) -> bool {
+      return !s.maybe[i].has_value() && normalize(s.state[i], type).empty() &&
+             s.dropped[i].empty();
+    };
+    const auto as_held = [&](const flow_state &held,
+                             const flow_state &empty) -> std::optional<maybe_value> {
+      if (held.maybe[i].has_value()) {
+        auto out = *held.maybe[i];
+        std::erase_if(out.flags, [&](storage_id f) {
+          return empty.known[f] != std::optional<bool>{false};
+        });
+        return out.flags.empty() ? std::nullopt : std::optional{out};
+      }
+      auto out = maybe_value{.live = held.state[i],
+                             .dropped = held.dropped[i],
+                             .flags = telling_flags(held, empty)};
+      return out.flags.empty() ? std::nullopt : std::optional{out};
+    };
+    if (a.maybe[i].has_value() && b.maybe[i].has_value()) {
+      if (normalize(a.maybe[i]->live, type) != normalize(b.maybe[i]->live, type) ||
+          a.maybe[i]->dropped != b.maybe[i]->dropped) {
+        return std::nullopt;
+      }
+      auto out = *a.maybe[i];
+      std::erase_if(out.flags,
+                    [&](storage_id f) { return !b.maybe[i]->flags.contains(f); });
+      return out.flags.empty() ? std::nullopt : std::optional{out};
+    }
+    if (empty_on(b)) {
+      return as_held(a, b);
+    }
+    if (empty_on(a)) {
+      return as_held(b, a);
+    }
+    // A value held on one path and possibly held on the other.
+    const auto &maybe_side = a.maybe[i].has_value() ? a : b;
+    const auto &held_side = a.maybe[i].has_value() ? b : a;
+    if (!maybe_side.maybe[i].has_value() ||
+        normalize(maybe_side.maybe[i]->live, type) !=
+            normalize(held_side.state[i], type) ||
+        maybe_side.maybe[i]->dropped != held_side.dropped[i]) {
+      return std::nullopt;
+    }
+    auto out = *maybe_side.maybe[i];
+    std::erase_if(out.flags, [&](storage_id f) {
+      return held_side.known[f] != std::optional<bool>{true};
+    });
+    return out.flags.empty() ? std::nullopt : std::optional{out};
   }
 
   [[nodiscard]] static auto intersect(const init_node &a, const init_node &b)
@@ -1290,13 +1420,40 @@ private:
       -> std::expected<flow_state, verify_error> {
     auto out = a;
     for (size_t i = 0; i < fn_.slots.size(); ++i) {
+      if (a.known[i] != b.known[i]) {
+        out.known[i] = std::nullopt;
+      }
+    }
+    for (size_t i = 0; i < fn_.slots.size(); ++i) {
       const auto &slot = fn_.slots[i];
       const auto id = static_cast<storage_id>(i);
       const auto state_a = normalize(a.state[i], slot.type);
       const auto state_b = normalize(b.state[i], slot.type);
-      const auto same = state_a == state_b && a.dropped[i] == b.dropped[i];
+      const auto same = state_a == state_b && a.dropped[i] == b.dropped[i] &&
+                        a.maybe[i] == b.maybe[i];
       if (same && a.dead[i] == b.dead[i]) {
         continue;
+      }
+      // A value that owes its drop on one path and is not held on the other.
+      const auto owes = [&](const flow_state &s) -> bool {
+        return first_owed(&s.state[i], slot.type, id, "", s.dropped[i])
+            .has_value();
+      };
+      if (a.dead[i] == b.dead[i] && !a.dead[i] && env_.needs_drop(slot.type) &&
+          (a.maybe[i].has_value() || b.maybe[i].has_value() ||
+           (state_a.empty() && owes(b)) || (state_b.empty() && owes(a)))) {
+        if (auto maybe = join_maybe(i, a, b); maybe.has_value()) {
+          out.state[i] = init_node{};
+          out.dropped[i].clear();
+          out.maybe[i] = std::move(maybe);
+          continue;
+        }
+        if (a.maybe[i].has_value() || b.maybe[i].has_value()) {
+          return fail(verify_error_kind::join_mismatch,
+                      "s" + std::to_string(i) +
+                          " may hold a value on one path, and no drop flag "
+                          "tells the paths apart");
+        }
       }
       if (a.dead[i] != b.dead[i]) {
         const auto &live = a.dead[i] ? state_b : state_a;
@@ -1460,12 +1617,41 @@ private:
     return &regions_.back();
   }
 
+  /// The `else` side of a branch on drop flag `flag`: the flag is `false`,
+  /// and the values it tells about are not held.
+  auto flag_is_false(flow_state &state, storage_id flag,
+                     const std::vector<storage_id> &flagged) const -> void {
+    state.known[flag] = false;
+    for (const auto id : flagged) {
+      state.maybe[id] = std::nullopt;
+      state.state[id] = init_node{};
+      state.dropped[id].clear();
+    }
+  }
+
   [[nodiscard]] auto do_if_begin(const storage_op &op) -> result {
     if (auto ok = check_operand(op.condition); !ok.has_value()) {
       return ok;
     }
     if (auto ok = open_region(region_kind::branch); !ok.has_value()) {
       return ok;
+    }
+    // An `if` on a drop flag: the `then` side holds what the flag tells about.
+    if (op.condition.kind == operand_kind::read &&
+        op.condition.where.steps.empty() &&
+        is_drop_flag(op.condition.where.base)) {
+      const auto flag = op.condition.where.base;
+      auto &reg = regions_.back();
+      reg.tested_flag = flag;
+      for (size_t i = 0; i < maybe_.size(); ++i) {
+        if (maybe_[i].has_value() && maybe_[i]->flags.contains(flag)) {
+          reg.flagged.push_back(static_cast<storage_id>(i));
+          state_[i] = maybe_[i]->live;
+          dropped_[i] = maybe_[i]->dropped;
+          maybe_[i] = std::nullopt;
+        }
+      }
+      known_[flag] = true;
     }
     // `test_variant` on a sum, read at once by this `if`, tells each side
     // which variant the sum holds. The sum may be a payload or member of a
@@ -1557,6 +1743,11 @@ private:
     reg.has_else = true;
     reg.then_end = current();
     resume(reg.entry);
+    if (reg.tested_flag.has_value()) {
+      auto here = snapshot();
+      flag_is_false(here, *reg.tested_flag, reg.flagged);
+      restore(std::move(here));
+    }
     if (reg.tested_place.has_value()) {
       return narrow(*reg.tested_place, reg.tested_variant, false);
     }
@@ -1570,6 +1761,9 @@ private:
     }
     auto reg = std::move(**top);
     regions_.pop_back();
+    if (!reg.has_else && reg.tested_flag.has_value()) {
+      flag_is_false(reg.entry, *reg.tested_flag, reg.flagged);
+    }
     const auto joined = reg.has_else
                             ? join(reg.then_end, current())
                             : join(current(), maybe_flow{reg.entry});
@@ -1598,7 +1792,8 @@ private:
         const auto type = fn_.slots[i].type;
         if (dead_[i] != reg.entry.dead[i] ||
             normalize(state_[i], type) != normalize(reg.entry.state[i], type) ||
-            dropped_[i] != reg.entry.dropped[i]) {
+            dropped_[i] != reg.entry.dropped[i] ||
+            maybe_[i] != reg.entry.maybe[i]) {
           return fail(verify_error_kind::join_mismatch,
                       "s" + std::to_string(i) +
                           " is in a different state at the end of the loop "
@@ -2717,6 +2912,12 @@ private:
                   std::string{"a "} + storage_class_name(slot.cls) +
                       " slot does not end inside the function");
     }
+    if (options_.check_leaks && maybe_[op.slot].has_value()) {
+      return fail(verify_error_kind::leaked_value,
+                  "slot s" + std::to_string(op.slot) +
+                      " ends while it may still hold a value that needs its "
+                      "drop");
+    }
     const auto holds = !state_[op.slot].empty();
     if (slot.cls == storage_class::outgoing_argument && holds) {
       return fail(verify_error_kind::bad_lifetime_end,
@@ -2782,6 +2983,11 @@ private:
       if (dead_[slot.id] || slot.id == fn_.result_slot) {
         continue;
       }
+      if (options_.check_leaks && maybe_[slot.id].has_value()) {
+        return fail(verify_error_kind::leaked_value,
+                    "s" + std::to_string(slot.id) +
+                        " may still owe its drop at return");
+      }
       if (slot.cls == storage_class::outgoing_argument &&
           !state_[slot.id].empty()) {
         return fail(verify_error_kind::bad_lifetime_end,
@@ -2818,6 +3024,8 @@ private:
   /// kept apart from `state_`.
   std::vector<std::set<std::string>> dropped_;
   std::vector<bool> dead_;
+  std::vector<std::optional<bool>> known_;
+  std::vector<std::optional<maybe_value>> maybe_;
   /// A step only: how many suspension points the dispatch names, and the
   /// operation that holds each.
   std::optional<size_t> dispatch_points_;

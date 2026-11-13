@@ -33,6 +33,8 @@
 030_if_let_chain.cn
 031_if_let_try_from.cn
 032_if_let_expression.cn
+033_const_generic_monomorphization.cn
+034_generic_monomorphization.cn
 034_higher_kinded_trait_dispatch.cn
 035_str_slice_element_index.cn
 036_lambda_captures_local_not_global.cn
@@ -69,6 +71,7 @@
 069_multiline_sum_type.cn
 072_lambda_capture_list_move.cn
 073_static_array_global.cn
+074_range_index_general_stride.cn
 075_type_param_reflection.cn
 077_compound_where_bound.cn
 078_impl_const_generic_value_param.cn
@@ -149,6 +152,7 @@
 170_async_borrow_survives_suspension.cn
 172_suspending_value_branches.cn
 174_pattern_subject_across_suspension.cn
+175_io_event_loop.cn
 177_coroutine_borrow_storage.cn
 179_par_race_tasks_freed.cn
 180_value_baseline_slices_n.cn
@@ -157,4 +161,6 @@
 183_value_baseline_tuple_option_10n.cn
 184_value_baseline_generator_next_n.cn
 185_value_baseline_generator_next_10n.cn
+186_value_baseline_pipe_reads_n.cn
+187_value_baseline_pipe_reads_10n.cn
 188_array_element_drops.cn

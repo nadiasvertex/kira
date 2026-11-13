@@ -163,3 +163,14 @@ def tail_if(n: int32) -> pair:
         make_pair(n, 1)
     else:
         make_pair(0, n)
+
+def take_noisy(x: noisy) -> int32:
+    return x.id
+
+# `x` moves on one path only, so a drop flag says whether it is still held.
+def move_in_branch(n: int32, give: bool) -> int32:
+    let x = make_noisy(n)
+    var r: int32 = 0
+    if give:
+        r = take_noisy(x)
+    return r + n

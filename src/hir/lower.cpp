@@ -2421,6 +2421,22 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
       if (!idx.has_value()) {
         return std::unexpected(idx.error());
       }
+      // A view that is not a cell (the `slice_mut[T]` of a range) is a
+      // value, and `&mut` lends it: the call is typed as the view and the
+      // whole expression as the reference to it.
+      if (checked_.types.entry(*type).kind == type_kind::ref_kind) {
+        auto view = checked_type_of(index);
+        if (!view.has_value()) {
+          return std::unexpected(view.error());
+        }
+        auto call = lower_index_dispatch(index.span, *view, found->second,
+                                         std::move(*object), std::move(*idx));
+        if (!call.has_value()) {
+          return std::unexpected(call.error());
+        }
+        return ok_expr(hir::make<hir_unary>(un.span, *type, un.op,
+                                            std::move(*call)));
+      }
       return lower_index_dispatch(index.span, *type, found->second,
                                   std::move(*object), std::move(*idx));
     }

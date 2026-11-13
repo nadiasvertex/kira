@@ -2071,8 +2071,20 @@ private:
     if (yield.awaits) {
       return lower_await_point(yield);
     }
-    const auto item = new_temp(yield.value->type, yield.value->span);
-    if (auto ok = lower_into(*yield.value, whole(item)); !ok.has_value()) {
+    // A task hands over its value, or `result[value, error]` when it can
+    // fail; the failure arm of `?` yields its operand, rebuilt at that type.
+    auto item_type = yield.value->type;
+    const auto &object_entry =
+        types().entry(types().strip_refinement(fn_.generator));
+    if (is_task_type(fn_.generator) &&
+        object_entry.args.size() >= 2) {
+      item_type = types().entry(object_entry.args[1]).name == "never"
+                      ? object_entry.args[0]
+                      : env_.checked.types.builtin_generic(
+                            "result", {object_entry.args[0], object_entry.args[1]});
+    }
+    const auto item = new_temp(item_type, yield.value->span);
+    if (auto ok = lower_returned(*yield.value, whole(item)); !ok.has_value()) {
       return ok;
     }
     auto suspend = storage_op{.kind = op_kind::coroutine_suspend};
@@ -2542,6 +2554,30 @@ private:
     return {};
   }
 
+  /// Argument `i` of `call` as the storage form passes it. The legacy form
+  /// hands a runtime intrinsic a heap value's own pointer where its
+  /// signature says `&T`, so HIR passes `*x` there
+  /// (`make_references_explicit`); in the storage form `T` is inline, and
+  /// the intrinsic is given the reference `x` its signature names.
+  [[nodiscard]] auto call_arg(const hir_call &call, size_t i) const
+      -> const hir_expr & {
+    const auto &arg = *call.args[i];
+    if (call.target == nullptr || !call.target->modifiers.is_intrinsic ||
+        i >= call.target->params.size() ||
+        arg.kind != hir_node_kind::hir_unary ||
+        as<hir_unary>(arg).op != ast::unary_op::deref) {
+      return arg;
+    }
+    const auto &operand = *as<hir_unary>(arg).operand;
+    const auto declared =
+        env_.checked.node_types.find(call.target->params[i].pattern.get());
+    if (declared == env_.checked.node_types.end() ||
+        declared->second != operand.type) {
+      return arg;
+    }
+    return operand;
+  }
+
   [[nodiscard]] auto lower_call(const hir_call &call, const place &dest)
       -> result {
     if (call.callee->kind == hir_node_kind::hir_local_ref &&
@@ -2602,7 +2638,7 @@ private:
       params.push_back(i == 0 && owned_receiver != nullptr ? owned_receiver->type
                        : i == 0 && borrowed_receiver.has_value()
                            ? *borrowed_receiver
-                           : call.args[i]->type);
+                           : call_arg(call, i).type);
     }
     auto signature = classify_signature(env_.layouts, params, call.type);
     if (!signature.has_value()) {
@@ -2641,7 +2677,7 @@ private:
     auto outgoing = std::vector<storage_id>{};
     for (size_t i = 0; i < call.args.size(); ++i) {
       const auto &arg =
-          i == 0 && owned_receiver != nullptr ? *owned_receiver : *call.args[i];
+          i == 0 && owned_receiver != nullptr ? *owned_receiver : call_arg(call, i);
       const auto &param = signature->params[i];
       auto lowered = call_argument{.source_index = i, .cls = param.cls};
       if (i == 0 && borrowed_receiver.has_value()) {

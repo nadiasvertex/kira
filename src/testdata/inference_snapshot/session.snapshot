@@ -1,7 +1,7 @@
 # inference snapshot
-# 2721 interned types
+# 2720 interned types
 
-## node_types (33818)
+## node_types (33841)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -1745,7 +1745,7 @@
 074_range_index_general_stride.cn:41:5 [call] unit
 074_range_index_general_stride.cn:41:14 [unary] &mut slice_mut[int32]
 074_range_index_general_stride.cn:41:19 [ident] array[int32, 4]
-074_range_index_general_stride.cn:41:19 [index] slice[int32]
+074_range_index_general_stride.cn:41:19 [index] slice_mut[int32]
 074_range_index_general_stride.cn:41:23 [literal] usize
 074_range_index_general_stride.cn:41:23 [binary] range[usize]
 074_range_index_general_stride.cn:41:26 [literal] usize
@@ -1753,7 +1753,7 @@
 074_range_index_general_stride.cn:42:5 [call] unit
 074_range_index_general_stride.cn:42:14 [unary] &mut slice_mut[int32]
 074_range_index_general_stride.cn:42:19 [ident] array[int32, 4]
-074_range_index_general_stride.cn:42:19 [index] slice[int32]
+074_range_index_general_stride.cn:42:19 [index] slice_mut[int32]
 074_range_index_general_stride.cn:42:23 [literal] usize
 074_range_index_general_stride.cn:42:23 [binary] range[usize]
 074_range_index_general_stride.cn:42:26 [literal] usize
@@ -1767,7 +1767,7 @@
 074_range_index_general_stride.cn:45:5 [call] unit
 074_range_index_general_stride.cn:45:14 [unary] &mut slice_mut[int32]
 074_range_index_general_stride.cn:45:19 [ident] list[int32]
-074_range_index_general_stride.cn:45:19 [index] slice[int32]
+074_range_index_general_stride.cn:45:19 [index] slice_mut[int32]
 074_range_index_general_stride.cn:45:22 [literal] usize
 074_range_index_general_stride.cn:45:22 [binary] range[usize]
 074_range_index_general_stride.cn:45:25 [literal] usize
@@ -1775,7 +1775,7 @@
 074_range_index_general_stride.cn:46:5 [call] unit
 074_range_index_general_stride.cn:46:14 [unary] &mut slice_mut[int32]
 074_range_index_general_stride.cn:46:19 [ident] list[int32]
-074_range_index_general_stride.cn:46:19 [index] slice[int32]
+074_range_index_general_stride.cn:46:19 [index] slice_mut[int32]
 074_range_index_general_stride.cn:46:22 [literal] usize
 074_range_index_general_stride.cn:46:22 [binary] range[usize]
 074_range_index_general_stride.cn:46:25 [literal] usize
@@ -5635,7 +5635,7 @@ std/algo.cn:1852:9 [ident] fn(&mut slice_mut[T]) -> unit
 std/algo.cn:1852:9 [call] unit
 std/algo.cn:1852:14 [unary] &mut slice_mut[T]
 std/algo.cn:1852:19 [ident] list[T]
-std/algo.cn:1852:19 [index] slice[T]
+std/algo.cn:1852:19 [index] slice_mut[T]
 std/algo.cn:1852:23 [literal] usize
 std/algo.cn:1852:23 [binary] range[usize]
 std/algo.cn:1852:26 [ident] usize
@@ -7721,15 +7721,15 @@ std/intrinsics.cn:217:43 [binding_pat] usize
 std/intrinsics.cn:217:63 [named_type] unit
 std/intrinsics.cn:221:30 [binding_pat] *mut usize
 std/intrinsics.cn:221:45 [binding_pat] usize
-std/intrinsics.cn:221:65 [named_type] task[unit]
+std/intrinsics.cn:221:65 [named_type] task[unit, never, io]
 std/intrinsics.cn:224:28 [binding_pat] *mut usize
 std/intrinsics.cn:224:46 [named_type] unit
 std/intrinsics.cn:236:30 [binding_pat] int64
-std/intrinsics.cn:236:44 [named_type] task[unit]
+std/intrinsics.cn:236:44 [named_type] task[unit, never, io]
 std/intrinsics.cn:240:30 [binding_pat] int64
-std/intrinsics.cn:240:44 [named_type] task[unit]
+std/intrinsics.cn:240:44 [named_type] task[unit, never, io]
 std/intrinsics.cn:243:30 [binding_pat] uint64
-std/intrinsics.cn:243:51 [named_type] task[unit]
+std/intrinsics.cn:243:51 [named_type] task[unit, never, io]
 std/intrinsics.cn:246:37 [named_type] uint64
 std/intrinsics.cn:252:28 [named_type] result[raw_pipe, io_errno]
 std/intrinsics.cn:256:34 [binding_pat] raw_fd
@@ -7796,8 +7796,8 @@ std/io.cn:57:33 [unary] &mut slice_mut[byte]
 std/io.cn:57:33 [unary] &mut slice_mut[byte]
 std/io.cn:57:38 [ident] array[byte, 4096]
 std/io.cn:57:38 [ident] array[byte, 4096]
-std/io.cn:57:38 [index] slice[byte]
-std/io.cn:57:38 [index] slice[byte]
+std/io.cn:57:38 [index] slice_mut[byte]
+std/io.cn:57:38 [index] slice_mut[byte]
 std/io.cn:57:42 [literal] usize
 std/io.cn:57:42 [literal] usize
 std/io.cn:57:42 [binary] range[usize]
@@ -8140,14 +8140,14 @@ std/io.cn:204:39 [ident] io_errno
 std/io.cn:221:24 [binding_pat] &raw_fd
 std/io.cn:221:40 [named_type] unit
 std/io.cn:222:5 [await] unit
-std/io.cn:222:11 [ident] fn(int64) -> task[unit]
-std/io.cn:222:11 [call] task[unit]
+std/io.cn:222:11 [ident] fn(int64) -> task[unit, never, io]
+std/io.cn:222:11 [call] task[unit, never, io]
 std/io.cn:222:26 [module_path] int64
 std/io.cn:226:24 [binding_pat] &raw_fd
 std/io.cn:226:40 [named_type] unit
 std/io.cn:227:5 [await] unit
-std/io.cn:227:11 [ident] fn(int64) -> task[unit]
-std/io.cn:227:11 [call] task[unit]
+std/io.cn:227:11 [ident] fn(int64) -> task[unit, never, io]
+std/io.cn:227:11 [call] task[unit, never, io]
 std/io.cn:227:26 [module_path] int64
 std/io.cn:239:20 [binding_pat] self
 std/io.cn:239:30 [binding_pat] &mut slice_mut[byte]
@@ -8190,8 +8190,8 @@ std/io.cn:251:40 [unary] &mut slice_mut[byte]
 std/io.cn:251:40 [unary] &mut slice_mut[byte]
 std/io.cn:251:45 [ident] array[byte, 4096]
 std/io.cn:251:45 [ident] array[byte, 4096]
-std/io.cn:251:45 [index] slice[byte]
-std/io.cn:251:45 [index] slice[byte]
+std/io.cn:251:45 [index] slice_mut[byte]
+std/io.cn:251:45 [index] slice_mut[byte]
 std/io.cn:251:49 [literal] usize
 std/io.cn:251:49 [literal] usize
 std/io.cn:251:49 [binary] range[usize]
@@ -8523,8 +8523,8 @@ std/io.cn:387:24 [binary] bool
 std/io.cn:387:34 [ident] fn() -> int32
 std/io.cn:387:34 [call] int32
 std/io.cn:388:25 [await] unit
-std/io.cn:388:31 [ident] fn(int64) -> task[unit]
-std/io.cn:388:31 [call] task[unit]
+std/io.cn:388:31 [ident] fn(int64) -> task[unit, never, io]
+std/io.cn:388:31 [call] task[unit, never, io]
 std/io.cn:388:46 [module_path] int64
 std/io.cn:390:29 [binding_pat] io_error
 std/io.cn:390:39 [field] fn(io_errno) -> io_error
@@ -8556,8 +8556,8 @@ std/io.cn:401:24 [binary] bool
 std/io.cn:401:34 [ident] fn() -> int32
 std/io.cn:401:34 [call] int32
 std/io.cn:402:25 [await] unit
-std/io.cn:402:31 [ident] fn(int64) -> task[unit]
-std/io.cn:402:31 [call] task[unit]
+std/io.cn:402:31 [ident] fn(int64) -> task[unit, never, io]
+std/io.cn:402:31 [call] task[unit, never, io]
 std/io.cn:402:46 [module_path] int64
 std/io.cn:404:29 [binding_pat] io_error
 std/io.cn:404:39 [field] fn(io_errno) -> io_error
@@ -10466,27 +10466,50 @@ std/list.cn:228:66 [module_path] usize
 std/list.cn:228:66 [module_path] usize
 std/list.cn:228:66 [module_path] usize
 std/list.cn:235:24 [binding_pat] &mut list[T]
+std/list.cn:235:24 [binding_pat] &mut list[int32]
+std/list.cn:235:34 [binding_pat] range[usize]
 std/list.cn:235:34 [binding_pat] range[usize]
 std/list.cn:235:54 [named_type] slice_mut[T]
+std/list.cn:235:54 [named_type] slice_mut[int32]
+std/list.cn:236:12 [module_path] usize
 std/list.cn:236:12 [module_path] usize
 std/list.cn:236:12 [binary] bool
 std/list.cn:236:12 [binary] bool
+std/list.cn:236:12 [binary] bool
+std/list.cn:236:12 [binary] bool
+std/list.cn:236:20 [module_path] usize
 std/list.cn:236:20 [module_path] usize
 std/list.cn:236:32 [module_path] usize
+std/list.cn:236:32 [module_path] usize
+std/list.cn:236:32 [binary] bool
 std/list.cn:236:32 [binary] bool
 std/list.cn:236:42 [module_path] usize
+std/list.cn:236:42 [module_path] usize
+std/list.cn:237:13 [ident] fn(str) -> never
 std/list.cn:237:13 [ident] fn(str) -> never
 std/list.cn:237:13 [call] never
+std/list.cn:237:13 [call] never
+std/list.cn:237:19 [literal] str
 std/list.cn:237:19 [literal] str
 std/list.cn:238:16 [ident] _
+std/list.cn:238:16 [ident] _
 std/list.cn:238:16 [call] slice_mut[T]
+std/list.cn:238:16 [call] slice_mut[int32]
 std/list.cn:238:41 [unary] *mut T
+std/list.cn:238:41 [unary] *mut int32
 std/list.cn:238:46 [ident] &mut list[T]
+std/list.cn:238:46 [ident] &mut list[int32]
 std/list.cn:238:46 [field] *mut T
+std/list.cn:238:46 [field] *mut int32
 std/list.cn:238:46 [index] T
+std/list.cn:238:46 [index] int32
+std/list.cn:238:56 [module_path] usize
 std/list.cn:238:56 [module_path] usize
 std/list.cn:239:41 [module_path] usize
+std/list.cn:239:41 [module_path] usize
 std/list.cn:239:41 [binary] usize
+std/list.cn:239:41 [binary] usize
+std/list.cn:239:49 [module_path] usize
 std/list.cn:239:49 [module_path] usize
 std/list.cn:244:24 [binding_pat] &mut list[T]
 std/list.cn:244:24 [binding_pat] &mut list[int32]
@@ -13391,8 +13414,8 @@ std/sync.cn:391:13 [ident] fn(*mut usize) -> unit
 std/sync.cn:391:13 [call] unit
 std/sync.cn:391:21 [ident] *mut usize
 std/sync.cn:392:13 [await] unit
-std/sync.cn:392:19 [ident] fn(*mut usize, usize) -> task[unit]
-std/sync.cn:392:19 [call] task[unit]
+std/sync.cn:392:19 [ident] fn(*mut usize, usize) -> task[unit, never, io]
+std/sync.cn:392:19 [call] task[unit, never, io]
 std/sync.cn:392:34 [ident] *mut usize
 std/sync.cn:392:43 [ident] usize
 std/sync.cn:393:16 [call] result[unit, T]
@@ -13589,8 +13612,8 @@ std/sync.cn:441:13 [ident] fn(*mut usize) -> unit
 std/sync.cn:441:13 [call] unit
 std/sync.cn:441:21 [ident] *mut usize
 std/sync.cn:442:13 [await] unit
-std/sync.cn:442:19 [ident] fn(*mut usize, usize) -> task[unit]
-std/sync.cn:442:19 [call] task[unit]
+std/sync.cn:442:19 [ident] fn(*mut usize, usize) -> task[unit, never, io]
+std/sync.cn:442:19 [call] task[unit, never, io]
 std/sync.cn:442:34 [ident] *mut usize
 std/sync.cn:442:43 [ident] usize
 std/sync.cn:443:16 [ident] option[T]
@@ -13801,8 +13824,8 @@ std/sync.cn:531:23 [module_path] usize
 std/sync.cn:532:17 [module_path] usize
 std/sync.cn:532:29 [ident] usize
 std/sync.cn:534:13 [await] unit
-std/sync.cn:534:19 [ident] fn(*mut usize, usize) -> task[unit]
-std/sync.cn:534:19 [call] task[unit]
+std/sync.cn:534:19 [ident] fn(*mut usize, usize) -> task[unit, never, io]
+std/sync.cn:534:19 [call] task[unit, never, io]
 std/sync.cn:534:34 [ident] *mut usize
 std/sync.cn:534:43 [ident] usize
 std/sync.cn:538:23 [binding_pat] &watch_reader[T]
@@ -14231,8 +14254,8 @@ std/time.cn:70:46 [module_path] uint64
 std/time.cn:74:21 [binding_pat] duration
 std/time.cn:74:37 [named_type] unit
 std/time.cn:75:5 [await] unit
-std/time.cn:75:11 [ident] fn(uint64) -> task[unit]
-std/time.cn:75:11 [call] task[unit]
+std/time.cn:75:11 [ident] fn(uint64) -> task[unit, never, io]
+std/time.cn:75:11 [call] task[unit, never, io]
 std/time.cn:75:26 [ident] fn() -> uint64
 std/time.cn:75:26 [call] uint64
 std/time.cn:75:26 [binary] uint64
@@ -14240,8 +14263,8 @@ std/time.cn:75:47 [module_path] uint64
 std/time.cn:79:27 [binding_pat] instant
 std/time.cn:79:42 [named_type] unit
 std/time.cn:80:5 [await] unit
-std/time.cn:80:11 [ident] fn(uint64) -> task[unit]
-std/time.cn:80:11 [call] task[unit]
+std/time.cn:80:11 [ident] fn(uint64) -> task[unit, never, io]
+std/time.cn:80:11 [call] task[unit, never, io]
 std/time.cn:80:26 [module_path] uint64
 std/traits.category.cn:60:37 [named_type] bool
 std/traits.category.cn:61:12 [call] str
@@ -34087,7 +34110,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56596 inner I
 ?:56607 f fn(&T) -> T
 
-## call_argument_mappings (1056)
+## call_argument_mappings (1057)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -34768,6 +34791,7 @@ std/list.cn:227:13 [call] (message=arg)
 std/list.cn:227:13 [call] (message=arg)
 std/list.cn:227:13 [call] (message=arg)
 std/list.cn:237:13 [call] (message=arg)
+std/list.cn:237:13 [call] (message=arg)
 std/list.cn:246:13 [call] (message=arg)
 std/list.cn:246:13 [call] (message=arg)
 std/list.cn:246:13 [call] (message=arg)
@@ -35145,7 +35169,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (593)
+## resolved_callees (594)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -35519,6 +35543,7 @@ std/list.cn:213:13 [call] std.panic::panic
 std/list.cn:227:13 [call] std.panic::panic
 std/list.cn:227:13 [call] std.panic::panic
 std/list.cn:227:13 [call] std.panic::panic
+std/list.cn:237:13 [call] std.panic::panic
 std/list.cn:237:13 [call] std.panic::panic
 std/list.cn:246:13 [call] std.panic::panic
 std/list.cn:246:13 [call] std.panic::panic
@@ -35936,8 +35961,11 @@ std/algo.cn:1762:13 [index] std.list::list::set_at$list_usize_$usize recv
 std/algo.cn:1768:13 [index] std.list::list::set_at recv
 std/algo.cn:1769:13 [index] std.list::list::set_at$list_usize_$usize recv
 
-## index_mut_dispatches (2)
+## index_mut_dispatches (5)
+074_range_index_general_stride.cn:45:19 [index] std.list::list::at_mut$list_int32_$range_usize_ recv
+074_range_index_general_stride.cn:46:19 [index] std.list::list::at_mut$list_int32_$range_usize_ recv
 112_index_borrow_and_write_wait.cn:21:18 [index] std.list::list::at_mut$list_int64_$usize recv
+std/algo.cn:1852:19 [index] std.list::list::at_mut recv
 std/iter.cn:162:27 [index] std.list::list::at_mut recv
 
 ## index_ref_dispatches (66)
@@ -36327,13 +36355,14 @@ std/traits.cn:86:14 [call] *mut T
 std/traits.cn:87:14 [call] *mut T
 std/traits.cn:103:13 [call] *mut T
 
-## slice_from_raw_parts_calls (7)
+## slice_from_raw_parts_calls (8)
 std/algo.cn:1908:16 [call] 
 std/list.cn:176:16 [call] 
 std/list.cn:180:16 [call] 
 std/list.cn:228:16 [call] 
 std/list.cn:228:16 [call] 
 std/list.cn:228:16 [call] 
+std/list.cn:238:16 [call] 
 std/list.cn:238:16 [call] 
 
 ## stack_buffers (15)
@@ -36519,7 +36548,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (833)
+## drop_plans (832)
 array[test_suite, 1] own=- fields=[]
 async_file own=std.io::async_file::drop fields=[]
 async_pipe_ends own=- fields=[reader: async_file, writer: async_file]
@@ -36811,7 +36840,7 @@ fn(*mut uint32, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut uint32, usize, usize) -> *mut uint32 own=- fields=[] glue=fn() -> unit
 fn(*mut usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut usize) -> usize own=- fields=[] glue=fn() -> unit
-fn(*mut usize, usize) -> task[unit] own=- fields=[] glue=fn() -> unit
+fn(*mut usize, usize) -> task[unit, never, io] own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize) -> usize own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize, usize) -> *mut usize own=- fields=[] glue=fn() -> unit
@@ -37101,7 +37130,7 @@ fn(int64) -> int64 own=- fields=[] glue=fn() -> unit
 fn(int64) -> list[int64] own=- fields=[] glue=fn() -> unit
 fn(int64) -> option[int64] own=- fields=[] glue=fn() -> unit
 fn(int64) -> str own=- fields=[] glue=fn() -> unit
-fn(int64) -> task[unit] own=- fields=[] glue=fn() -> unit
+fn(int64) -> task[unit, never, io] own=- fields=[] glue=fn() -> unit
 fn(int64) -> unit own=- fields=[] glue=fn() -> unit
 fn(int64, uint8, bool, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
 fn(io_errno) -> io_error own=- fields=[] glue=fn() -> unit
@@ -37164,7 +37193,7 @@ fn(uint32) -> str own=- fields=[] glue=fn() -> unit
 fn(uint32) -> unit own=- fields=[] glue=fn() -> unit
 fn(uint32, usize) -> str own=- fields=[] glue=fn() -> unit
 fn(uint64) -> duration own=- fields=[] glue=fn() -> unit
-fn(uint64) -> task[unit] own=- fields=[] glue=fn() -> unit
+fn(uint64) -> task[unit, never, io] own=- fields=[] glue=fn() -> unit
 fn(uint64, uint64) -> uint64 own=- fields=[] glue=fn() -> unit
 fn(uint64, uint8, bool) -> str own=- fields=[] glue=fn() -> unit
 fn(uint64, uint8, bool, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
@@ -37336,7 +37365,6 @@ task[option[int32], never, io] own=- fields=[]
 task[unit, _, io] own=- fields=[]
 task[unit, io_error, io] own=- fields=[]
 task[unit, never, io] own=- fields=[]
-task[unit] own=- fields=[]
 task[usize, io_error, io] own=- fields=[]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
@@ -37354,7 +37382,7 @@ write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (2053)
+## borrow_bearing_types (2052)
 &K
 &T
 &T
@@ -38629,7 +38657,7 @@ fn(*mut uint32, usize) -> unit
 fn(*mut uint32, usize, usize) -> *mut uint32
 fn(*mut usize) -> unit
 fn(*mut usize) -> usize
-fn(*mut usize, usize) -> task[unit]
+fn(*mut usize, usize) -> task[unit, never, io]
 fn(*mut usize, usize) -> unit
 fn(*mut usize, usize) -> usize
 fn(*mut usize, usize, usize) -> *mut usize
@@ -38941,7 +38969,7 @@ fn(int64) -> int64
 fn(int64) -> list[int64]
 fn(int64) -> option[int64]
 fn(int64) -> str
-fn(int64) -> task[unit]
+fn(int64) -> task[unit, never, io]
 fn(int64) -> unit
 fn(int64, uint8, bool, str, format_spec) -> str
 fn(io_errno) -> io_error
@@ -39004,7 +39032,7 @@ fn(uint32) -> str
 fn(uint32) -> unit
 fn(uint32, usize) -> str
 fn(uint64) -> duration
-fn(uint64) -> task[unit]
+fn(uint64) -> task[unit, never, io]
 fn(uint64, uint64) -> uint64
 fn(uint64, uint8, bool) -> str
 fn(uint64, uint8, bool, str, format_spec) -> str
@@ -39368,7 +39396,6 @@ task[option[int32], never, io]
 task[unit, _, io]
 task[unit, io_error, io]
 task[unit, never, io]
-task[unit]
 task[usize, io_error, io]
 test_case
 test_suite
@@ -39488,7 +39515,7 @@ std.io::file_handle::read_exact
 std.io::file_handle::read_to_end
 std.io::file_handle::write_all
 
-## const_generic_instances (273)
+## const_generic_instances (274)
 codegen_stress.bound_driven_inference::filter$counter$int32
 codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_
 codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32
@@ -39590,6 +39617,7 @@ std.list::list::at$list_test_case_$usize
 std.list::list::at$list_uint32_$range_usize_
 std.list::list::at$list_uint32_$usize
 std.list::list::at$list_usize_$usize
+std.list::list::at_mut$list_int32_$range_usize_
 std.list::list::at_mut$list_int64_$usize
 std.list::list::at_ref$list__usize__usize__$usize
 std.list::list::at_ref$list_int32_$usize
@@ -39769,7 +39797,7 @@ stress.dependent_types::safe_get$int32$8
 codegen_stress.instances_by_substitution impl@2089
 codegen_stress.instances_by_substitution impl@4283
 
-## synthesized_decls (279)
+## synthesized_decls (280)
 alloc$_int64__int32_
 alloc$_usize__usize_
 alloc$field_info
@@ -39913,6 +39941,7 @@ list::at$list_test_case_$usize
 list::at$list_uint32_$range_usize_
 list::at$list_uint32_$usize
 list::at$list_usize_$usize
+list::at_mut$list_int32_$range_usize_
 list::at_mut$list_int64_$usize
 list::at_ref$list__usize__usize__$usize
 list::at_ref$list_int32_$usize
