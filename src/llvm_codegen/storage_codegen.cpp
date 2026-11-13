@@ -1096,9 +1096,39 @@ private:
     auto *call = call_function(builder_, callee, args);
     const auto direct_result = !op.signature.returns_through_address() &&
                                op.signature.result.cls != pass_class::zero_sized;
+    if (op.tail_call) {
+      return finish_tail_call(callee, call, direct_result);
+    }
     if (direct_result) {
       return store_scalar(*dest, op.dest.type, call);
     }
+    return {};
+  }
+
+  /// Returns a tail call's result at once (`hir::is_safe_tail_call`). It is
+  /// `musttail` when LLVM can guarantee it: the same return type, calling
+  /// convention, and parameter types as this function. Otherwise it is a
+  /// `tail` hint, which is still correct but may use stack.
+  [[nodiscard]] auto finish_tail_call(llvm::Function *callee, llvm::CallInst *call,
+                                      bool direct_result) -> checked<void> {
+    auto same_params = callee->arg_size() == llvm_fn_->arg_size();
+    for (size_t i = 0; same_params && i < callee->arg_size(); ++i) {
+      same_params = callee->getArg(static_cast<unsigned>(i))->getType() ==
+                    llvm_fn_->getArg(static_cast<unsigned>(i))->getType();
+    }
+    const auto must = same_params &&
+                      callee->getReturnType() == llvm_fn_->getReturnType() &&
+                      callee->getCallingConv() == llvm_fn_->getCallingConv() &&
+                      callee->getAttributes().getRetAttrs() ==
+                          llvm_fn_->getAttributes().getRetAttrs();
+    call->setTailCallKind(must ? llvm::CallInst::TCK_MustTail
+                               : llvm::CallInst::TCK_Tail);
+    if (direct_result) {
+      builder_.CreateRet(call);
+    } else {
+      builder_.CreateRetVoid();
+    }
+    start_dead_block();
     return {};
   }
 

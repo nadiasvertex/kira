@@ -2687,6 +2687,8 @@ private:
 
     auto op = storage_op{.kind = op_kind::call_into};
     op.is_drop = call.is_drop;
+    // A candidate only: `confirm_tail_calls` keeps it where it is safe.
+    op.tail_call = call.is_tail_call;
     auto outgoing = std::vector<storage_id>{};
     for (size_t i = 0; i < call.args.size(); ++i) {
       const auto &arg =
@@ -2831,6 +2833,24 @@ private:
   }
 
   [[nodiscard]] auto lower_let(const hir_let &let) -> result {
+    if (let.name == "<let subject>" && let.initializer != nullptr) {
+      // A destructuring `let` reads its parts from the subject, which HIR
+      // never drops: a place is named in place, as a `match` subject is, so
+      // binding `copy` parts of `*r` does not move out of the reference
+      // (ch. 14, Matching).
+      auto named = lower_place(*let.initializer);
+      if (!named.has_value()) {
+        return std::unexpected(named.error());
+      }
+      if (named->has_value()) {
+        if ((*named)->steps.empty()) {
+          locals_[let.symbol] = (*named)->base;
+        } else {
+          subjects_[let.symbol] = **named;
+        }
+        return flush_pending(let.span);
+      }
+    }
     const auto slot = new_slot(storage_class::frame_local, let.type(), let.name,
                                let.symbol, let.span, false);
     if (let.initializer != nullptr) {
@@ -3152,6 +3172,10 @@ private:
       return std::ranges::all_of(
           as<hir_tuple_pattern>(pattern).elements,
           [&](const auto &arg) { return tests_supported_on_droppable(*arg); });
+    case hir_node_kind::hir_array_pattern:
+      return std::ranges::all_of(
+          as<hir_array_pattern>(pattern).elements,
+          [&](const auto &arg) { return tests_supported_on_droppable(*arg); });
     case hir_node_kind::hir_struct_pattern:
       return std::ranges::all_of(
           as<hir_struct_pattern>(pattern).fields, [&](const auto &field) {
@@ -3328,23 +3352,49 @@ private:
           },
           [&] { return emit_tests(todo, success, failure); }, failure);
     }
-    case hir_node_kind::hir_tuple_pattern: {
-      const auto &tuple = as<hir_tuple_pattern>(pattern);
+    case hir_node_kind::hir_tuple_pattern:
+    case hir_node_kind::hir_array_pattern: {
+      const auto &elements =
+          pattern.kind == hir_node_kind::hir_tuple_pattern
+              ? as<hir_tuple_pattern>(pattern).elements
+              : as<hir_array_pattern>(pattern).elements;
       auto object = auto_deref(next.where);
       const auto layout = layout_of(object.type, span);
       if (!layout.has_value()) {
         return std::unexpected(layout.error());
       }
-      const auto &members = (*layout)->members;
-      if (members.size() != tuple.elements.size()) {
-        return malformed(span, "a tuple pattern does not match `" +
-                                   types().display(object.type) + "`");
-      }
+      const auto &found = **layout;
       auto inner = std::vector<obligation>{};
-      for (size_t i = 0; i < members.size(); ++i) {
-        inner.push_back(obligation{
-            .pattern = tuple.elements[i].get(),
-            .where = project(object, member_step(i, ""), members[i].type)});
+      if (found.kind == runtime::value_layout_kind::array) {
+        // A fixed array is matched element by element, by a tuple pattern
+        // or an array pattern of its length.
+        if (found.count != elements.size()) {
+          return malformed(span, "a pattern of " + std::to_string(elements.size()) +
+                                     " elements does not match `" +
+                                     types().display(object.type) + "`");
+        }
+        for (size_t i = 0; i < elements.size(); ++i) {
+          inner.push_back(obligation{
+              .pattern = elements[i].get(),
+              .where = project(object,
+                               projection{.kind = projection_kind::element,
+                                          .index = i},
+                               found.element)});
+        }
+      } else if (pattern.kind == hir_node_kind::hir_array_pattern) {
+        return refuse(span, "an array pattern on `" + types().display(object.type) +
+                                "`, whose length is not part of its type");
+      } else {
+        const auto &members = found.members;
+        if (members.size() != elements.size()) {
+          return malformed(span, "a tuple pattern does not match `" +
+                                     types().display(object.type) + "`");
+        }
+        for (size_t i = 0; i < members.size(); ++i) {
+          inner.push_back(obligation{
+              .pattern = elements[i].get(),
+              .where = project(object, member_step(i, ""), members[i].type)});
+        }
       }
       inner.insert(inner.end(), todo.begin(), todo.end());
       return emit_tests(std::move(inner), success, failure);
@@ -4382,6 +4432,15 @@ auto lower_to_storage(const hir_module &module, storage_env &env,
     for (auto &function : out.module.functions) {
       for (auto &decision : apply_nrvo(function)) {
         out.nrvo.push_back(std::move(decision));
+      }
+    }
+  }
+  // After NRVO, which can change what follows a call.
+  for (auto &function : out.module.functions) {
+    for (size_t i = 0; i < function.ops.size(); ++i) {
+      auto &op = function.ops[i];
+      if (op.kind == op_kind::call_into && op.tail_call) {
+        op.tail_call = is_safe_tail_call(function, i);
       }
     }
   }

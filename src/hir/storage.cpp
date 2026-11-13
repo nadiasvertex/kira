@@ -1,5 +1,6 @@
 #include "src/hir/storage.h"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 
@@ -206,6 +207,48 @@ auto storage_env::needs_drop(semantic::type_id type) -> bool {
   }
 }
 
+auto is_safe_tail_call(const storage_function &function, size_t index) -> bool {
+  if (index >= function.ops.size() || function.coroutine_step ||
+      function.static_init || function.signature.takes_environment ||
+      function.signature.returns_through_address()) {
+    return false;
+  }
+  const auto &call = function.ops[index];
+  if (call.kind != op_kind::call_into || call.is_drop || !call.callee.is_direct() ||
+      call.signature.takes_environment) {
+    return false;
+  }
+  const auto plain = [](pass_class cls) {
+    return cls == pass_class::scalar || cls == pass_class::zero_sized;
+  };
+  if (!plain(call.signature.result.cls) ||
+      !std::ranges::all_of(call.signature.params,
+                           [&](const abi_value &param) { return plain(param.cls); }) ||
+      !std::ranges::all_of(call.args, [&](const call_argument &arg) {
+        return plain(arg.cls) && arg.value.kind != operand_kind::address_of;
+      })) {
+    return false;
+  }
+  if (call.signature.result.cls != function.signature.result.cls) {
+    return false;
+  }
+  for (auto at = index + 1; at < function.ops.size(); ++at) {
+    const auto &op = function.ops[at];
+    if (op.kind == op_kind::storage_dead) {
+      continue;
+    }
+    if (op.kind != op_kind::return_value) {
+      return false;
+    }
+    if (!op.value.has_value()) {
+      return call.signature.result.cls == pass_class::zero_sized;
+    }
+    return op.value->kind == operand_kind::read && op.value->where.steps.empty() &&
+           op.value->where.base == call.dest.base && call.dest.steps.empty();
+  }
+  return false;
+}
+
 auto storage_module::find(std::string_view function_name) const
     -> const storage_function * {
   for (const auto &function : functions) {
@@ -364,7 +407,10 @@ namespace {
   case op_kind::zero_fill:
     return "zero " + render_place(op.dest);
   case op_kind::call_into:
-    return std::string{op.is_drop ? "call.drop " : "call "} + render_call(op);
+    return std::string{op.is_drop     ? "call.drop "
+                       : op.tail_call ? "call.tail "
+                                      : "call "} +
+           render_call(op);
   case op_kind::make_closure:
     return "closure " + render_place(op.dest) + " = " + op.entry + " glue " +
            (op.glue.empty() ? std::string{"-"} : op.glue) + " env " +

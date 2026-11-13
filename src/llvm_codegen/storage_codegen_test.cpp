@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -272,11 +273,15 @@ auto test_no_allocation_symbol_is_declared_or_called() -> void {
 /// A `musttail` call hands the caller's frame back before the callee runs, and
 /// is undefined behavior when the callee can reach it. The storage form's calls
 /// are ordinary calls until a shared plan proves one safe.
-auto test_no_call_is_marked_musttail() -> void {
+/// Only a tail call with scalar operands and result is `musttail`
+/// (`hir::is_safe_tail_call`); one that passes or returns bytes in the frame
+/// is an ordinary call.
+auto test_only_scalar_tail_calls_are_musttail() -> void {
   auto program = cinder::testing::build_storage_program(
       cinder::testing::read_program("bytecode_storage_test", "frames_tail.cn"));
   auto compiled = compile(*program);
   auto calls = size_t{0};
+  auto must = std::map<std::string, size_t>{};
   for (const auto &function : *compiled.module) {
     for (const auto &block : function) {
       for (const auto &instruction : block) {
@@ -285,11 +290,25 @@ auto test_no_call_is_marked_musttail() -> void {
           continue;
         }
         ++calls;
-        expect(!call->isMustTailCall(), "expected no musttail call");
+        must[function.getName().str()] += call->isMustTailCall() ? 1 : 0;
       }
     }
   }
   expect(calls > 0, "expected the fixture to contain calls");
+  const auto must_in = [&](std::string_view name) {
+    auto total = size_t{0};
+    for (const auto &[function, count] : must) {
+      if (function.ends_with(name)) {
+        total += count;
+      }
+    }
+    return total;
+  };
+  expect(must_in("count_down") == 1, "expected count_down's self-call to be musttail");
+  expect(must_in("tail_with_pair") == 0,
+         "expected a call passing a pair built in this frame not to be musttail");
+  expect(must_in("tail_forwarding_result") == 0,
+         "expected a call building the caller's result not to be musttail");
 }
 
 auto test_entry_thunks_are_optional() -> void {
@@ -377,7 +396,7 @@ auto test_every_case_passes_at_each_optimization_level() -> void {
 auto main() -> int {
   test_signatures_follow_the_internal_abi();
   test_no_allocation_symbol_is_declared_or_called();
-  test_no_call_is_marked_musttail();
+  test_only_scalar_tail_calls_are_musttail();
   test_entry_thunks_are_optional();
   test_accesses_through_addresses_claim_only_the_alignment_they_have();
   test_every_case_passes_at_each_optimization_level();

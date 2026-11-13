@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cstddef>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -580,6 +582,55 @@ auto test_frame_plan_counts_the_slots_a_function_owns() -> void {
   expect(frame_of(*f, "make_pair").bytes == 0 ||
              frame_of(*f, "make_pair").bytes < 16,
          "expected a constructor to need almost no frame");
+}
+
+/// The tail-call ops of `function`.
+auto tail_calls_of(const hir::storage_function &function) -> size_t {
+  return static_cast<size_t>(std::ranges::count_if(function.ops, [](const auto &op) {
+    return op.kind == hir::op_kind::call_into && op.tail_call;
+  }));
+}
+
+auto test_only_scalar_tail_calls_replace_the_frame() -> void {
+  auto f = build(read_program("tail_calls.cn"));
+  expect_ops(*f, "count_down",
+             {"compute s1 = binary == s0, #0", "if s1", "dead s1", "return #0",
+              "else", "dead s1", "end_if", "compute s3 = binary - s0, #1",
+              "call.tail s2 = count_down(s3)", "dead s3", "return s2"});
+  expect(tail_calls_of(f->function("is_even")) == 1 &&
+             tail_calls_of(f->function("is_odd")) == 1,
+         "expected mutual recursion to reuse the frame");
+  expect(tail_calls_of(f->function("with_pair")) == 0,
+         "expected a call passing bytes of this frame to keep it");
+  expect(tail_calls_of(f->function("forwards_result")) == 0,
+         "expected a call building the caller's result to keep the frame");
+  for (const auto *name : {"count_down", "is_even", "with_pair", "forwards_result"}) {
+    expect_verifies(*f, f->function(name), name);
+  }
+
+  // Marking the call that passes a pair is refused: its argument is in the
+  // frame the call would release.
+  auto passes = f->function("with_pair");
+  auto marked = false;
+  for (auto &op : passes.ops) {
+    if (op.kind == hir::op_kind::call_into && op.callee.name.ends_with("sum_pair")) {
+      op.tail_call = true;
+      marked = true;
+    }
+  }
+  expect(marked, "expected with_pair to call sum_pair");
+  expect_rejects(*f, passes, hir::verify_error_kind::bad_operation,
+                 "tail call with an aggregate argument", {}, "tail call");
+
+  // So is one with work left after it.
+  auto later = f->function("count_down");
+  const auto call = static_cast<size_t>(std::ranges::find_if(later.ops, [](const auto &op) {
+                      return op.kind == hir::op_kind::call_into && op.tail_call;
+                    }) - later.ops.begin());
+  auto extra = later.ops[call - 1];
+  later.ops.insert(later.ops.begin() + static_cast<std::ptrdiff_t>(call) + 1, extra);
+  expect_rejects(*f, later, hir::verify_error_kind::bad_operation,
+                 "tail call followed by more work", {}, "tail call");
 }
 
 auto test_an_outgoing_argument_is_part_of_the_callers_frame() -> void {
@@ -3095,10 +3146,10 @@ auto test_groups_wait_for_every_task_or_the_first() -> void {
               "cancelled s10 = s1", "if s10", "dead s10", "drop s9.0",
               "drop s9.1", "finish s1", "return #1", "else", "dead s10",
               "end_if", "take s11.0 <- s9.0", "take s11.1 <- s9.1",
-              "drop s9.0", "drop s9.1", "move s12 <- s11",
-              "compute s13 = copy s12.0", "compute s14 = copy s12.1",
-              "compute s15 = binary + s13, s14", "suspend #2 s1 <- s15",
-              "dead s15", "finish s1", "return #1"});
+              "drop s9.0", "drop s9.1",
+              "compute s12 = copy s11.0", "compute s13 = copy s11.1",
+              "compute s14 = binary + s12, s13", "suspend #2 s1 <- s14",
+              "dead s14", "finish s1", "return #1"});
   expect_verifies(*f, f->function("together$step"), "together$step");
 
   const auto &race = f->function("first_wins$step");
@@ -3220,16 +3271,16 @@ auto test_a_crew_waits_for_its_tasks() -> void {
               "move s10.0 <- s5", "move s10.1 <- s7", "await crew #1 s1 <- s4",
               "call s11 = rt_crew_free(s4)", "dead s11", "cancelled s12 = s1",
               "if s12", "dead s12", "drop s10.0", "drop s10.1", "finish s1",
-              "return #1", "else", "dead s12", "end_if", "move s13 <- s10",
-              "move s14 <- s13.0", "move s15 <- s13.1", "move s16 <- s14",
-              "await #2 s1 <- s16", "cancelled s17 = s1", "if s17", "dead s17",
-              "drop s16", "drop s15", "finish s1", "return #1", "else",
-              "dead s17", "end_if", "take s18 <- s16", "drop s16",
-              "move s19 <- s15", "await #3 s1 <- s19", "cancelled s20 = s1",
-              "if s20", "dead s20", "drop s19", "finish s1", "return #1",
-              "else", "dead s20", "end_if", "take s21 <- s19", "drop s19",
-              "compute s22 = binary + s18, s21", "suspend #4 s1 <- s22",
-              "dead s22", "finish s1", "return #1"});
+              "return #1", "else", "dead s12", "end_if",
+              "move s13 <- s10.0", "move s14 <- s10.1", "move s15 <- s13",
+              "await #2 s1 <- s15", "cancelled s16 = s1", "if s16", "dead s16",
+              "drop s15", "drop s14", "finish s1", "return #1", "else",
+              "dead s16", "end_if", "take s17 <- s15", "drop s15",
+              "move s18 <- s14", "await #3 s1 <- s18", "cancelled s19 = s1",
+              "if s19", "dead s19", "drop s18", "finish s1", "return #1",
+              "else", "dead s19", "end_if", "take s20 <- s18", "drop s18",
+              "compute s21 = binary + s17, s20", "suspend #4 s1 <- s21",
+              "dead s21", "finish s1", "return #1"});
   expect_verifies(*f, f->function("in_task$step"), "in_task$step");
   // A handle that is dropped while the crew still runs leaves the task to the
   // crew; the join comes after.
@@ -3567,6 +3618,7 @@ auto main() -> int {
     test_raw_reads_own_the_value_and_raw_writes_drop_nothing();
     test_constant_array_index_is_an_element_projection();
     test_arrays_forget_and_owned_receivers();
+    test_only_scalar_tail_calls_replace_the_frame();
   } catch (const std::exception &e) {
     cinder::testing::fail(e.what());
   }

@@ -70,6 +70,8 @@
 067_lambda_capture_write_only.cn
 068_inline_submodule.cn
 069_multiline_sum_type.cn
+070_tuple_mixed_width_layout.cn
+071_array_destructure_narrow_width_layout.cn
 072_lambda_capture_list_move.cn
 073_static_array_global.cn
 074_range_index_general_stride.cn
@@ -132,6 +134,7 @@
 135_bare_generic_static_literal_arg.cn
 136_deref_operator.cn
 137_nested_generic_struct_literal.cn
+138_mutual_tail_recursion_inlined.cn
 139_lambda_returns_reference.cn
 140_static_for_inline_unrolls.cn
 141_static_def_tail_static_for_inline.cn
@@ -181,3 +184,4 @@
 187_value_baseline_pipe_reads_10n.cn
 188_array_element_drops.cn
 its_for_open_receiver.cn
+r.cn

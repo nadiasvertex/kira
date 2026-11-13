@@ -120,6 +120,12 @@ public:
         return fail(verify_error_kind::code_after_return,
                     "an operation follows a return or an exit");
       }
+      if (op.kind == op_kind::call_into && op.tail_call &&
+          !is_safe_tail_call(fn_, op_index_)) {
+        return fail(verify_error_kind::bad_operation,
+                    "a tail call that could reach the frame it replaces, or "
+                    "that is not followed by the return of its result");
+      }
       if (auto ok = apply(op); !ok.has_value()) {
         return ok;
       }

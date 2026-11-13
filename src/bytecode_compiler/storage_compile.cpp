@@ -1228,6 +1228,15 @@ private:
     if (!block.has_value()) {
       return std::unexpected(block.error());
     }
+    if (op.tail_call) {
+      // The callee takes over this frame; its return is this function's
+      // (`hir::is_safe_tail_call`). The `return_value` after it is not reached.
+      emit_op(opcode::op_tail_call);
+      writer_.emit_u16(found->second);
+      emit_register(*block);
+      writer_.emit_u8(static_cast<uint8_t>(operands.size()));
+      return {};
+    }
     const auto dest = locate(op.dest);
     if (!dest.has_value()) {
       return std::unexpected(dest.error());

@@ -333,6 +333,11 @@ struct storage_op {
   /// argument is the address of the value, which stays in place; the verifier
   /// records that the value's own drop has run.
   bool is_drop = false;
+  /// The call runs in the caller's frame, which it replaces: a direct call
+  /// HIR marked as a tail call (`is_tail_call`) that `is_safe_tail_call`
+  /// admits. Only `storage_dead` ops and the `return_value` of its result
+  /// follow it.
+  bool tail_call = false;
   call_target callee{};
   /// `copy_into` only: a bitwise copy of a value that is not `copy`, out of a
   /// reference, into the receiver of a call whose result owns nothing
@@ -430,6 +435,15 @@ struct storage_module {
 /// A stable, line-per-operation text rendering. Slots are named `s<id>` and
 /// listed first; the rendering depends only on the form, so tests can compare
 /// it exactly.
+/// Whether the call at `ops[index]` may replace `function`'s frame: a direct
+/// call whose operands and result are scalars or nothing, in a function that
+/// is not a coroutine step, a closure body, or the static initializer, and
+/// followed only by `storage_dead` ops and the return of its whole result.
+/// Scalars cannot hold the address of the frame, and nothing is left to run
+/// in it, so no callee can reach the storage the call releases.
+[[nodiscard]] auto is_safe_tail_call(const storage_function &function, size_t index)
+    -> bool;
+
 [[nodiscard]] auto dump(const storage_function &function,
                         const semantic::type_table &types) -> std::string;
 
