@@ -4599,11 +4599,15 @@ auto lowerer::lower_task_function(
   // enclosing local's symbol, which the body already refers to.
   push_scope();
   auto prelude = ptr_vec<hir_node>{};
+  auto owned = std::unordered_set<symbol_id>{};
   for (const auto &capture : captures) {
     if (!capture.moved) {
       continue;
     }
     const auto symbol = lookup_local(capture.name);
+    if (symbol.has_value()) {
+      owned.insert(*symbol);
+    }
     if (!symbol.has_value()) {
       pop_scope();
       restore();
@@ -4659,6 +4663,7 @@ auto lowerer::lower_task_function(
   // Every local of the enclosing function the body reads is a parameter.
   auto params = std::vector<hir_param>{};
   auto args = ptr_vec<hir_expr>{};
+  auto lent_args = std::vector<size_t>{};
   for (const auto symbol : free_variables(**block)) {
     const auto type = local_types_.find(symbol);
     if (type == local_types_.end()) {
@@ -4681,8 +4686,12 @@ auto lowerer::lower_task_function(
         }
       }
     }
-    params.push_back(
-        hir_param{.symbol = symbol, .name = name, .type = type->second});
+    const auto lent = !owned.contains(symbol);
+    if (lent) {
+      lent_args.push_back(args.size());
+    }
+    params.push_back(hir_param{
+        .symbol = symbol, .name = name, .type = type->second, .lent = lent});
     args.push_back(ptr<hir_expr>(
         make<hir_local_ref>(span, type->second, symbol, std::move(name))));
   }
@@ -4697,8 +4706,9 @@ auto lowerer::lower_task_function(
 
   auto callee = ptr<hir_expr>(make<hir_local_ref>(
       span, k_unknown_type, resolve_reference(task_name), task_name));
-  return ok_expr(
-      make<hir_call>(span, task_type, std::move(callee), std::move(args)));
+  auto call = make<hir_call>(span, task_type, std::move(callee), std::move(args));
+  call->lent_args = std::move(lent_args);
+  return ok_expr(std::move(call));
 }
 
 /// `await on(ctx): body` runs `body` as a task on `ctx`'s pool and gives its

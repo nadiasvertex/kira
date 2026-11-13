@@ -490,13 +490,17 @@ lets a generator hand out droppable items). T-10 is partly done and T-11 (NRVO) 
 The driver still uses the pointer-per-aggregate form. `src/storage_corpus_test.cpp`
 measures how ready the codegen stress corpus is for the switch. It runs each program
 through the storage form on the bytecode VM and compares `main` with `# expect:`, or
-with the legacy VM when a file has no expected value. The programs listed in
-`src/testdata/storage_corpus/baseline.txt` must keep passing. On 2026-11-13, after
-cancel points for `crew` waits and `t.get()`, 169 of 189 programs passed. The
-failures are spread over about fifteen causes of one to three programs each:
-reads before initialization, generic lambda
-temporaries, iteration over `str`, `cell` writes, frame offsets past the VM encoding,
-`_` layouts at VM compile time, `crew` errors, and a few checker typing gaps. The
+with the legacy VM when a file has no expected value. A file whose answer depends on
+the representation (`size_of` of a struct) states the inline-layout answer with
+`# storage-expect:`, which replaces `# expect:` when the driver switches. The programs
+listed in `src/testdata/storage_corpus/baseline.txt` must keep passing. On 2026-11-13,
+after lent task captures, `uninit` indexing and `cell_mut.set`, 174 of 189 programs
+passed. The remaining failures: generic lambda temporaries and drops, iteration over
+`str` (needs runtime decode intrinsics on the descriptor), frame offsets past the VM
+encoding and the frame limit, `_` layouts at VM compile time, `crew` errors, a tail
+call that overflows the stack, a tuple pattern on an array, a move out of a
+reference in a tuple destructure, an expression-position lambda push, and the `str`
+address typed `&slice[byte]`. The
 driver switches when the whole corpus passes, because decision 6 rules out a
 program that mixes the two forms.
 

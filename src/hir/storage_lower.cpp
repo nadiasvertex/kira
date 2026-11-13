@@ -621,8 +621,11 @@ private:
       return literal.lit_kind == token_kind::int_lit &&
              std::from_chars(literal.value.data(), end, at).ptr == end;
     }();
+    // An `uninit` buffer's slots are raw memory (ch. 38) at every index, so
+    // even a constant index reaches its slot through the buffer's address.
     if (!constant_index ||
-        (*object_layout)->kind != runtime::value_layout_kind::array) {
+        (*object_layout)->kind != runtime::value_layout_kind::array ||
+        is_uninit(referent_type(index.object->type))) {
       return lower_checked_index(index);
     }
     auto base = container_place(*index.object);
@@ -647,6 +650,13 @@ private:
         std::move(object),
         projection{.kind = projection_kind::element, .index = at},
         found.element)};
+  }
+
+  /// Whether `type` is an `uninit[T, N]` buffer.
+  [[nodiscard]] auto is_uninit(type_id type) const -> bool {
+    const auto &entry = types().entry(types().strip_refinement(type));
+    return entry.kind == semantic::type_kind::builtin_generic_kind &&
+           entry.name == "uninit";
   }
 
   /// `type` behind any references.
@@ -704,8 +714,8 @@ private:
           false);
       view.data = read_of(descriptor_part(object, projection_kind::data, view.pointer),
                           false);
-    } else if (found.kind == runtime::value_layout_kind::array &&
-               entry.name != "uninit") {
+    } else if (found.kind == runtime::value_layout_kind::array) {
+      // An `uninit` buffer's slots are reached the same way, as raw memory.
       view.element = found.element;
       view.pointer = table.ptr_to(view.element, true);
       view.length = word_constant(found.count);
@@ -1129,6 +1139,8 @@ private:
       return lower_generator_next(as<hir_generator_next>(expr), dest);
     case hir_node_kind::hir_coroutine_cancelled:
       return lower_coroutine_cancelled(expr, dest);
+    case hir_node_kind::hir_cell_set:
+      return lower_cell_set(as<hir_cell_set>(expr), dest);
     case hir_node_kind::hir_coroutine_cancel:
       return lower_coroutine_cancel(as<hir_coroutine_cancel>(expr), dest);
     case hir_node_kind::hir_container_len:
@@ -2023,6 +2035,7 @@ private:
     for (const auto &param : *fn_.params) {
       const auto id = new_slot(storage_class::coroutine_frame, param.type,
                                param.name, param.symbol, fn_.span, true);
+      out_.slots[id].owns_nothing = param.lent && !env_.is_copy(param.type);
       locals_[param.symbol] = id;
     }
     emit(storage_op{.kind = op_kind::coroutine_dispatch, .source = whole(resume)},
@@ -2698,6 +2711,37 @@ private:
         copy.source = project(whole(reference),
                               projection{.kind = projection_kind::deref},
                               *borrowed_receiver);
+        copy.shallow = true;
+        emit(std::move(copy), arg.span);
+      } else if (is_indirect(param.cls) && !env_.is_copy(arg.type) &&
+                 std::ranges::contains(call.lent_args, i)) {
+        // A task block only borrows this capture: it gets a bitwise copy
+        // that owns nothing, and the owner keeps the value.
+        auto source = lower_place(arg);
+        if (!source.has_value()) {
+          return std::unexpected(source.error());
+        }
+        if (!source->has_value()) {
+          return refuse(arg.span, "a borrowed task capture that is not a place");
+        }
+        const auto reference_type = env_.checked.types.ref_to(arg.type, false);
+        const auto reference = new_temp(reference_type, arg.span);
+        auto address = storage_op{.kind = op_kind::compute};
+        address.dest = whole(reference);
+        address.computation = compute_kind::copy;
+        address.operands.push_back(operand{.kind = operand_kind::address_of,
+                                           .where = std::move(**source),
+                                           .type = reference_type});
+        emit(std::move(address), arg.span);
+        const auto slot = new_slot(storage_class::outgoing_argument, arg.type,
+                                   "", k_invalid_symbol_id, arg.span, false);
+        outgoing.push_back(slot);
+        lowered.slot = whole(slot);
+        auto copy = storage_op{.kind = op_kind::copy_into};
+        copy.dest = lowered.slot;
+        copy.source = project(whole(reference),
+                              projection{.kind = projection_kind::deref},
+                              arg.type);
         copy.shallow = true;
         emit(std::move(copy), arg.span);
       } else if (param.cls == pass_class::zero_sized) {
@@ -3817,6 +3861,64 @@ private:
     return {};
   }
 
+  /// `c.set(v)` on a `cell_mut[T]`: an assignment through the address `c`
+  /// is. HIR stages no drop of the old value here, so an element that needs
+  /// one is refused.
+  [[nodiscard]] auto lower_cell_set(const hir_cell_set &set,
+                                    const std::optional<place> &dest) -> result {
+    auto cell = lower_place(*set.cell);
+    if (!cell.has_value()) {
+      return std::unexpected(cell.error());
+    }
+    auto address = place{};
+    if (cell->has_value()) {
+      address = std::move(**cell);
+    } else {
+      const auto temp = new_temp(set.cell->type, set.cell->span);
+      if (auto ok = lower_into(*set.cell, whole(temp)); !ok.has_value()) {
+        return ok;
+      }
+      address = whole(temp);
+    }
+    const auto element = env_.pointee(set.cell->type);
+    if (!element.has_value()) {
+      return malformed(set.span, "`set` on a value that is not a cell");
+    }
+    if (env_.needs_drop(*element)) {
+      return refuse(set.span, "`set` on a cell of " + types().display(*element) +
+                                  ", whose old value needs a drop");
+    }
+    const auto target = project(std::move(address),
+                                projection{.kind = projection_kind::deref},
+                                *element);
+    const auto cls = class_of(*element, set.span);
+    if (!cls.has_value()) {
+      return std::unexpected(cls.error());
+    }
+    if (*cls == pass_class::scalar || *cls == pass_class::address) {
+      if (auto ok = lower_into(*set.value, target); !ok.has_value()) {
+        return ok;
+      }
+    } else {
+      // Built apart, because building it may read the cell.
+      const auto replacement = new_temp(*element, set.span);
+      if (auto ok = lower_into(*set.value, whole(replacement)); !ok.has_value()) {
+        return ok;
+      }
+      if (*cls != pass_class::zero_sized) {
+        auto move = storage_op{.kind = op_kind::move_into};
+        move.dest = target;
+        move.source = whole(replacement);
+        emit(std::move(move), set.span);
+      }
+      consumed(replacement);
+    }
+    if (dest.has_value()) {
+      emit(storage_op{.kind = op_kind::init_empty, .dest = *dest}, set.span);
+    }
+    return {};
+  }
+
   /// The operator a compound assignment applies, for the plain arithmetic and
   /// bitwise ones. Wrapping and saturating forms are not lowered yet.
   [[nodiscard]] static auto compound_operator(ast::assign_op op)
@@ -4181,7 +4283,9 @@ namespace {
                                       .symbol = param.symbol,
                                       .span = function.span,
                                       .initially_initialized = true,
-                                      .owner = id});
+                                      .owner = id,
+                                      .owns_nothing =
+                                          param.lent && !env.is_copy(param.type)});
     ctor.param_slots.push_back(id);
     const auto &held = next_state_slot();
     const auto layout = env.layouts.layout(param.type);

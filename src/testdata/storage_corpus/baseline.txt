@@ -80,8 +80,12 @@
 080_fn_typed_struct_field_call.cn
 081_fn_typed_struct_field_list_heterogeneous.cn
 082_default_parameter_values.cn
+083_size_of_and_align_of.cn
 084_raw_pointer_read_write.cn
+085_uninit_stack_buffer.cn
 086_for_over_ref_borrow.cn
+087_list_cell_and_mutable_cell.cn
+088_raw_pointer_addr_of_compound_element.cn
 089_elaboration_snapshot_gaps.cn
 090_empty_literal_inferred_from_use.cn
 091_unannotated_accumulator_in_generic.cn
@@ -94,6 +98,7 @@
 098_for_over_ref_borrow_generic_adapter.cn
 099_generic_and_method_return_inference.cn
 100_inline_call_shapes.cn
+101_uninit_frame_budget.cn
 103_user_type_shadows_prelude_generic.cn
 104_bare_generic_static_call.cn
 105_open_leaf_answered_by_sibling.cn
@@ -152,6 +157,7 @@
 166_int128_layout.cn
 167_int128_traits_and_format.cn
 168_int128_static_globals.cn
+169_task_blocks.cn
 170_async_borrow_survives_suspension.cn
 171_sync_primitives.cn
 172_suspending_value_branches.cn

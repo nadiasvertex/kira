@@ -631,6 +631,11 @@ private:
   /// Marks the first `count` steps of `where` as holding no value.
   [[nodiscard]] auto invalidate(const place &where, const resolved_place &at,
                                 size_t count) -> result {
+    if (at.through_deref) {
+      // Out of raw memory (moves out of a reference are refused before
+      // this): the memory is untracked, and the pointer itself stays.
+      return {};
+    }
     if (count == 0) {
       state_[where.base] = init_node{};
       return {};

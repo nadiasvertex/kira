@@ -205,6 +205,10 @@ struct hir_param {
   symbol_id symbol = k_invalid_symbol_id;
   std::string name;
   type_id type = k_unknown_type;
+  /// A task block's capture that the task only borrows: the enclosing
+  /// function still owns it and the task never drops it. The storage form
+  /// passes a bitwise copy that owns nothing.
+  bool lent = false;
 };
 
 // ==========================================================================
@@ -340,6 +344,9 @@ struct hir_call : hir_expr {
   /// receiver, which a `for` loop over a borrowed collection only borrows.
   /// The callee gets a bitwise copy, and what it returns owns nothing.
   bool receiver_borrowed = false;
+  /// The arguments, by index, that a task block's call only lends to the
+  /// task (`hir_param::lent`).
+  std::vector<size_t> lent_args;
   /// This call is a type's own `drop` that lowering synthesized where a value
   /// goes out of scope or is overwritten (`build_drop_calls`), not one the
   /// source wrote. The storage form reads it to tell a value's end from an

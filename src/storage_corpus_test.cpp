@@ -548,8 +548,14 @@ auto survey(const fs::path &path) -> verdict {
           : outcome{.panicked = true, .panic = run.error()};
 
   auto want = std::optional<outcome>{};
-  if (const auto expected = directive_value(text, "# expect:");
-      expected.has_value()) {
+  // `# storage-expect:` is the answer under the inline layouts where it
+  // differs from the boxed one (`size_of` of a struct); it replaces
+  // `# expect:` when the driver switches.
+  if (const auto storage_expected = directive_value(text, "# storage-expect:");
+      storage_expected.has_value()) {
+    want = outcome{.has_value = true, .value = *storage_expected};
+  } else if (const auto expected = directive_value(text, "# expect:");
+             expected.has_value()) {
     want = outcome{.has_value = true, .value = *expected};
   } else {
     want = legacy_outcome(*p, kind.value_or(bc::numeric_kind::i64));
