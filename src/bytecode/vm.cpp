@@ -2918,6 +2918,16 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         }
         break;
       }
+      case opcode::op_zero_bytes: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst_reg = ops.reg();
+        const auto byte_count = ops.imm32();
+        f.pc = ops.pos();
+        if (byte_count != 0) {
+          std::memset(raw_bytes_of(f.registers[dst_reg]), 0, byte_count);
+        }
+        break;
+      }
       case opcode::op_atomic_fetch_add:
       case opcode::op_atomic_fetch_sub: {
         auto ops = operand_cursor{.code = code, .at = ip};

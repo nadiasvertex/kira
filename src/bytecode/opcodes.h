@@ -524,6 +524,9 @@ enum class opcode : uint8_t {
                         ///< compiler has shown do not overlap, but the copy is
                         ///< a `memmove` so a mistake there cannot corrupt
                         ///< bytes silently. Does nothing for a zero count.
+  op_zero_bytes,        ///< u16 dst_ptr, u32 byte_count — writes `byte_count`
+                        ///< zero bytes at the address in reg[dst_ptr]: an
+                        ///< `uninit[T, N]` buffer each time it is made.
   op_call_intrinsic_into, ///< u8 intrinsic_id, u16 first_arg_reg, u8 argc —
                         ///< calls an intrinsic marked `into` in
                         ///< `src/intrinsics.h`, whose result is built in
@@ -742,6 +745,8 @@ struct operand_signature {
     return sig({reg, reg, reg});
   case opcode::op_copy_bytes:
     return sig({reg, reg, imm32});
+  case opcode::op_zero_bytes:
+    return sig({reg, imm32});
   case opcode::op_call_intrinsic_into:
     return sig({imm8, reg, imm8});
   case opcode::op_call_function:

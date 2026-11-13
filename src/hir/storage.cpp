@@ -73,6 +73,10 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "test";
   case op_kind::drop_in_place:
     return "drop";
+  case op_kind::forget:
+    return "forget";
+  case op_kind::zero_fill:
+    return "zero";
   case op_kind::call_into:
     return "call";
   case op_kind::make_closure:
@@ -137,8 +141,28 @@ auto storage_env::drop_plan(semantic::type_id type) const
   return found == checked.drop.drop_plans.end() ? nullptr : &found->second;
 }
 
+auto storage_env::pointee(semantic::type_id type) const
+    -> std::optional<semantic::type_id> {
+  const auto &entry = checked.types.entry(checked.types.strip_refinement(type));
+  if (entry.kind == semantic::type_kind::ref_kind ||
+      entry.kind == semantic::type_kind::ptr_kind) {
+    return entry.result;
+  }
+  if (entry.kind == semantic::type_kind::builtin_generic_kind &&
+      (entry.name == "cell" || entry.name == "cell_mut") &&
+      entry.args.size() == 1) {
+    return entry.args.front();
+  }
+  return std::nullopt;
+}
+
 auto storage_env::needs_drop(semantic::type_id type) -> bool {
   const auto stripped = checked.types.strip_refinement(type);
+  if (const auto &entry = checked.types.entry(stripped);
+      entry.kind == semantic::type_kind::builtin_generic_kind &&
+      entry.name == "uninit") {
+    return false; // Its slots promise no value, so it owns none.
+  }
   if (checked.drop.drop_plans.contains(stripped)) {
     return true;
   }
@@ -318,6 +342,10 @@ namespace {
            " is @" + op.variant;
   case op_kind::drop_in_place:
     return "drop " + render_place(op.dest);
+  case op_kind::forget:
+    return "forget " + render_place(op.dest);
+  case op_kind::zero_fill:
+    return "zero " + render_place(op.dest);
   case op_kind::call_into:
     return std::string{op.is_drop ? "call.drop " : "call "} + render_call(op);
   case op_kind::make_closure:

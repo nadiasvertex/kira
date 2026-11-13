@@ -66,6 +66,7 @@ Memory behind a raw pointer has no owner the compiler knows about. The code hold
 - A raw read, `p[i]` or `*p`, is a bitwise copy whatever the element type. For a type that is not `copy`, the read gives the caller ownership of the value, and the slot must then be treated as empty.
 - A raw write, `p[i] = v`, takes ownership of `v` and never drops what the slot held before, since the slot may be uninitialized.
 - `std.mem.drop_in_place[T](p: *mut T)` runs `T`'s drop glue on the value at `p` and leaves the slot empty. It does nothing for a type that needs no drop.
+- `std.mem.forget[T](value: T)` takes ownership of `value` and never drops it. A collection that has moved each element out of an `array[T, n]` by raw reads uses it to give up the array, as `list.from_array` does.
 - `needs_drop[T]() -> bool` (a prelude query, like `size_of`) answers whether `T` needs a drop. It folds to a constant, so a loop guarded by it disappears for a type that needs none.
 
 ### Atomic operations

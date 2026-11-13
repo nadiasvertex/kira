@@ -1,0 +1,44 @@
+module sample
+
+# Arrays that drop their elements, a raw write that gives a value up, and an
+# `into_iter` that owns the value its `self` names.
+
+use std.iter.{iter, into_iterator}
+
+type noisy = { pub id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+# Both elements are dropped, in index order, at the end of the scope; the
+# array itself is then given up.
+def pair() -> unit:
+    let xs: array[noisy, 2] = [noisy{id: 1}, noisy{id: 2}]
+    return
+
+# `uninit` storage starts zeroed; the raw write owns `value` and drops nothing.
+machine def keep(value: noisy) -> unit:
+    var slot = uninit[noisy, 1]()
+    let p = slot.as_mut_ptr()
+    p[0] = value
+    return
+
+type bag = { pub item: noisy }
+
+type bag_iter = { pub item: option[noisy] }
+
+impl iter[noisy] for bag_iter:
+    def next(mut self) -> option[noisy]:
+        return @none
+
+# `self` is the bag itself, moved in by the caller.
+impl into_iterator[noisy] for bag:
+    type iter = bag_iter
+    def into_iter(self) -> bag_iter:
+        return bag_iter{item: @some(self.item)}
+
+def walk(b: bag) -> unit:
+    for n in b:
+        let id = n.id
+    return

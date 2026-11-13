@@ -868,6 +868,16 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
     }
   }
 
+  if (trait_name == "into_iterator") {
+    // The same rule as the ownership checker's `receiver_mode`.
+    for (const auto &item : decl.items) {
+      if (item != nullptr && item->kind == ast::node_kind::func_decl &&
+          ast::cast<const ast::func_decl>(*item).name == "into_iter") {
+        consuming_receivers_.insert(&ast::cast<const ast::func_decl>(*item));
+      }
+    }
+  }
+
   auto target_ctx = current_resolve_ctx();
   const auto *hk_param =
       trait_decl != nullptr && !trait_decl->type_params.empty() &&

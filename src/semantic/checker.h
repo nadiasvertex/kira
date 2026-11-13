@@ -2447,6 +2447,8 @@ private:
   /// See `checked_types::instance_templates`.
   std::unordered_map<const ast::func_decl *, const ast::func_decl *>
       instance_templates_;
+  /// See `ownership_results::consuming_receivers`.
+  std::unordered_set<const ast::func_decl *> consuming_receivers_;
 
   /// A body's inferred return type that was still open when the body
   /// ended; the implicit generic's result type if it is open on the

@@ -775,6 +775,25 @@ private:
                                       ptr_vec<hir_node> &out,
                                       const field_paths &moved_paths = {})
       -> std::expected<void, lowering_error>;
+  /// Whether `decl`, or the template it is an instance of, owns the value its
+  /// `self` refers to (`ownership_results::consuming_receivers`).
+  [[nodiscard]] auto owns_receiver(const ast::func_decl *decl) const -> bool {
+    if (decl == nullptr) {
+      return false;
+    }
+    const auto &owners = checked_.ownership.consuming_receivers;
+    if (owners.contains(decl)) {
+      return true;
+    }
+    const auto tmpl = checked_.ownership.instance_templates.find(decl);
+    return tmpl != checked_.ownership.instance_templates.end() &&
+           owners.contains(tmpl->second);
+  }
+  [[nodiscard]] auto build_array_drop(const place_fn &make_receiver,
+                                      const semantic::drop_plan &plan,
+                                      source_span span, ptr_vec<hir_node> &out,
+                                      const field_paths &moved_paths)
+      -> std::expected<void, lowering_error>;
   /// Builds and appends the drop call(s) for one scheduled binding.
   [[nodiscard]] auto emit_one_drop(const pending_drop &drop,
                                    ptr_vec<hir_node> &stmts)
@@ -2953,6 +2972,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
                                     std::move(args), target_decl);
     lowered_call->consumes_receiver =
         consumes_receiver && receiver_ast != nullptr;
+    lowered_call->receiver_by_value =
+        lowered_call->consumes_receiver && owns_receiver(target_decl);
     return ok_expr(std::move(lowered_call));
   }
 
@@ -3296,6 +3317,71 @@ auto lowerer::lower_index_dispatch(source_span span, type_id result,
                              resolved.decl));
 }
 
+/// An array's drop: each element in index order, through a pointer to the
+/// elements, as `std.mem.drop_range` would. Taking the pointer ends the array
+/// (`hir_container_data::takes_elements`), so the elements are its only drops.
+/// The checker moves no single element out of an owned array, so the array is
+/// either whole here or not dropped at all.
+auto lowerer::build_array_drop(const place_fn &make_receiver,
+                               const semantic::drop_plan &plan,
+                               source_span span, ptr_vec<hir_node> &out,
+                               const field_paths &moved_paths)
+    -> std::expected<void, lowering_error> {
+  if (!moved_paths.empty()) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                "internal error: an array drop was scheduled for an array "
+                "that was moved out of in part");
+  }
+  const auto element = *plan.element;
+  const auto length = plan.length;
+  const auto usize_type = checked_.types.usize_type();
+  const auto pointer_type = plan.element_pointer;
+  const auto data_symbol = mint_symbol();
+  const auto index_symbol = mint_symbol();
+  auto data = make<hir_container_data>(span, pointer_type, make_receiver());
+  data->takes_elements = true;
+  out.push_back(ptr<hir_node>(make<hir_let>(span, data_symbol,
+                                            std::string("<drop elements>"),
+                                            ptr<hir_expr>(std::move(data)))));
+  out.push_back(ptr<hir_node>(make<hir_let>(
+      span, index_symbol, std::string("<drop index>"),
+      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
+                                      std::string("0"))),
+      /*mut=*/true)));
+  const place_fn element_place = [span, element, pointer_type, data_symbol,
+                                  usize_type, index_symbol]() -> ptr<hir_expr> {
+    return {make<hir_index>(
+        span, element,
+        ptr<hir_expr>(make<hir_local_ref>(span, pointer_type, data_symbol,
+                                          std::string("<drop elements>"))),
+        ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
+                                          std::string("<drop index>"))))};
+  };
+  auto body = ptr_vec<hir_node>{};
+  if (auto ok = build_drop_calls(element_place, element, span, body);
+      !ok.has_value()) {
+    return ok;
+  }
+  auto step = ptr_vec<hir_node>{};
+  step.push_back(ptr<hir_node>(hir::make<hir_assign>(
+      span, ast::assign_op::add_assign,
+      ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
+                                        std::string("<drop index>"))),
+      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
+                                      std::string("1"))))));
+  auto condition = ptr<hir_expr>(hir::make<hir_binary>(
+      span, checked_.types.bool_type(), ast::binary_op::lt,
+      ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
+                                        std::string("<drop index>"))),
+      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
+                                      std::to_string(length)))));
+  out.push_back(ptr<hir_node>(make<hir_while>(
+      span, std::move(condition),
+      make<hir_block>(span, k_unknown_type, std::move(body)),
+      make<hir_block>(span, k_unknown_type, std::move(step)))));
+  return {};
+}
+
 auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
                                source_span span, ptr_vec<hir_node> &out,
                                const field_paths &moved_paths)
@@ -3319,6 +3405,9 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
         span, ptr<hir_expr>(make<hir_closure_drop>(span, k_unknown_type,
                                                    make_receiver())))));
     return {};
+  }
+  if (plan.element.has_value()) {
+    return build_array_drop(make_receiver, plan, span, out, moved_paths);
   }
   if (plan.own_drop.has_value()) {
     const auto &resolved = *plan.own_drop;
@@ -7544,6 +7633,7 @@ auto lowerer::lower_iterator_loop(
         iterable.span, dispatch.adapter_result_type, std::move(adapter_callee),
         std::move(adapter_args), dispatch.adapter_decl);
     adapter_call->consumes_receiver = true;
+    adapter_call->receiver_by_value = owns_receiver(dispatch.adapter_decl);
     handle_value = ok_expr(std::move(adapter_call));
     handle_type = dispatch.adapter_result_type;
   }
@@ -9101,6 +9191,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
       : decl.modifiers.is_generator ? coroutine_kind::generator
                                     : coroutine_kind::none,
       item_type));
+  function->owns_receiver = !function->params.empty() && owns_receiver(&decl);
   if (auto finished = finish_function(*function); !finished.has_value()) {
     return std::unexpected(finished.error());
   }

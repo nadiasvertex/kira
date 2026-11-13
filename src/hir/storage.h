@@ -58,6 +58,11 @@ struct storage_env {
   [[nodiscard]] auto types() const -> const semantic::type_table & {
     return checked.types;
   }
+  /// What dereferencing a value of `type` reaches: the referent of a
+  /// reference or raw pointer, or the `T` a `cell[T]`/`cell_mut[T]` is the
+  /// address of. None for any other type.
+  [[nodiscard]] auto pointee(semantic::type_id type) const
+      -> std::optional<semantic::type_id>;
 };
 
 /// Index of a `storage_slot` in its function.
@@ -225,6 +230,11 @@ enum class op_kind : uint8_t {
   test_variant,    ///< `dest` (a `bool`) <- whether the sum at `source` holds
                    ///< `variant`. `source` stays initialized.
   drop_in_place,   ///< Runs the drop of the value at `dest`; it is then dead.
+  zero_fill,       ///< `dest` (an `uninit[T, N]` buffer) <- zero bytes. The
+                   ///< buffer promises no value, so this counts as writing it.
+  forget,          ///< The value at `dest` ends without a drop: what it owned
+                   ///< is dropped through a raw pointer instead (an array's
+                   ///< elements). No code; the verifier treats it as a drop.
   call_into,       ///< Calls `callee`; the result is built in `dest`.
   make_closure,    ///< `dest` (a `fn` value) <- `{entry, env, glue}`; see below.
   release_environment, ///< Frees the environment block this closure body or

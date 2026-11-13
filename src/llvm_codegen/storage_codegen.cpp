@@ -708,6 +708,10 @@ private:
       return emit_test_variant(op);
     case op_kind::drop_in_place:
       return emit_drop(op);
+    case op_kind::forget:
+      return {}; // The value's drops run through a raw pointer instead.
+    case op_kind::zero_fill:
+      return emit_zero_fill(op);
     case op_kind::make_closure:
       return emit_make_closure(op);
     case op_kind::release_environment:
@@ -956,6 +960,25 @@ private:
 
   /// Copies element 0 over the rest of the array by doubling the written
   /// prefix: about log2(count) copies, each of a constant size and offset.
+  [[nodiscard]] auto emit_zero_fill(const hir::storage_op &op) -> checked<void> {
+    const auto layout = layout_of(mc_, op.dest.type, op.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    if ((*layout)->size == 0) {
+      return {};
+    }
+    const auto to = locate(op.dest);
+    if (!to.has_value()) {
+      return std::unexpected(to.error());
+    }
+    builder_.CreateMemSet(pointer_at(*to),
+                          llvm::ConstantInt::get(i8(), 0),
+                          constant(i64(), (*layout)->size),
+                          access_align(*to, (*layout)->align));
+    return {};
+  }
+
   [[nodiscard]] auto emit_replicate(const hir::storage_op &op) -> checked<void> {
     const auto layout = layout_of(mc_, op.dest.type, op.span);
     if (!layout.has_value()) {
@@ -1041,6 +1064,10 @@ private:
     }
     const auto target = key(op.callee);
     if (!mc_.functions.contains(target)) {
+      if (const auto which = cinder::inline_intrinsic_of(op.callee.name);
+          which.has_value()) {
+        return emit_inline_intrinsic(op, *which);
+      }
       if (const auto id = hir::runtime_intrinsic_id(op.callee.name);
           id.has_value()) {
         return emit_intrinsic_call(op, *id);
@@ -1679,6 +1706,36 @@ private:
   /// check_intrinsic_signature`). A descriptor or aggregate argument is the
   /// address of the slot holding it; a scalar crosses at its wire kind; a
   /// result built in caller storage is written through the destination.
+  /// An intrinsic that is one instruction (`cinder::inline_intrinsic`): an
+  /// acquire-release atomic add or subtract of a `usize` at a raw pointer,
+  /// giving the old value.
+  [[nodiscard]] auto emit_inline_intrinsic(const hir::storage_op &op,
+                                           cinder::inline_intrinsic which)
+      -> checked<void> {
+    if (op.args.size() != 2) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  "an atomic intrinsic takes a pointer and an amount");
+    }
+    const auto ptr = operand_value(op.args[0].value);
+    if (!ptr.has_value()) {
+      return std::unexpected(ptr.error());
+    }
+    const auto amount = operand_value(op.args[1].value);
+    if (!amount.has_value()) {
+      return std::unexpected(amount.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    const auto rmw = which == cinder::inline_intrinsic::atomic_fetch_add
+                         ? llvm::AtomicRMWInst::Add
+                         : llvm::AtomicRMWInst::Sub;
+    auto *old = builder_.CreateAtomicRMW(rmw, *ptr, *amount, llvm::MaybeAlign(8),
+                                         llvm::AtomicOrdering::AcquireRelease);
+    return store_scalar(*dest, op.dest.type, old);
+  }
+
   [[nodiscard]] auto emit_intrinsic_call(const hir::storage_op &op, size_t id)
       -> checked<void> {
     if (const auto problem = hir::check_intrinsic_signature(op.signature, id);

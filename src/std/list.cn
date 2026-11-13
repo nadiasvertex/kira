@@ -19,7 +19,7 @@ module std.list
 # they remove or overwrite (`std.mem.drop_in_place`). Everything else moves
 # elements with raw reads and writes, so each element has one owner.
 
-use std.mem.{alloc, resize, free as mem_free, copy, drop_in_place, drop_range}
+use std.mem.{alloc, resize, free as mem_free, copy, drop_in_place, drop_range, forget}
 use std.panic.panic
 use std.iter.list_into_iter
 
@@ -269,11 +269,13 @@ impl[T] from_array[T] for list[T]:
         var out = list[T].new()
         out.reserve(n)
         var i: usize = 0
-        # Each element moves out of `items` once, by a raw read.
+        # Each element moves out of `items` once, by a raw read, so `items`
+        # is given up afterwards rather than dropped.
         let src = items.as_ptr()
         while i < n:
             out.push(src[i])
             i = i + 1
+        forget(items)
         return out
 
 #: `vector[T]` is `list[T]` by another name — the spelling

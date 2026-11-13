@@ -552,6 +552,23 @@ auto checker::resolve_drop_plan(type_id id,
     // it, so every `fn` value is dropped through the glue it carries.
     return drop_plan{.closure_glue = session_.closure_glue_type_};
   }
+  if (entry.kind == type_kind::array_kind) {
+    // An array owns its elements, so it needs a drop exactly when they do.
+    if (!entry.array_size.has_value() || *entry.array_size == 0 ||
+        !visiting.insert(id).second) {
+      return std::nullopt;
+    }
+    const auto element = entry.result;
+    const auto length = *entry.array_size;
+    const auto inner = resolve_drop_plan(element, visiting);
+    visiting.erase(id);
+    if (!inner.has_value()) {
+      return std::nullopt;
+    }
+    return drop_plan{.element = element,
+                     .element_pointer = session_.types_.ptr_to(element, true),
+                     .length = length};
+  }
   const auto is_prelude_sum =
       entry.kind == type_kind::builtin_generic_kind &&
       ((entry.name == "option" && entry.args.size() == 1) ||

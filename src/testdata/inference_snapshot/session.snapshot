@@ -1,7 +1,7 @@
 # inference snapshot
-# 2655 interned types
+# 2702 interned types
 
-## node_types (33586)
+## node_types (33811)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -10796,275 +10796,320 @@ std/list.cn:271:24 [literal] usize
 std/list.cn:271:24 [literal] usize
 std/list.cn:271:24 [literal] usize
 std/list.cn:271:24 [literal] usize
-std/list.cn:273:13 [binding_pat] *(int64, int32)
-std/list.cn:273:13 [binding_pat] *(usize, usize)
-std/list.cn:273:13 [binding_pat] *T
-std/list.cn:273:13 [binding_pat] *field_info
-std/list.cn:273:13 [binding_pat] *int32
-std/list.cn:273:13 [binding_pat] *int32
-std/list.cn:273:13 [binding_pat] *int32
-std/list.cn:273:13 [binding_pat] *int32
-std/list.cn:273:13 [binding_pat] *int64
-std/list.cn:273:13 [binding_pat] *int64
-std/list.cn:273:13 [binding_pat] *money
-std/list.cn:273:13 [binding_pat] *str
-std/list.cn:273:13 [binding_pat] *test_suite
-std/list.cn:273:13 [binding_pat] *uint32
-std/list.cn:273:13 [binding_pat] *usize
-std/list.cn:273:19 [ident] array[(int64, int32), 1]
-std/list.cn:273:19 [ident] array[(usize, usize), 0]
-std/list.cn:273:19 [ident] array[T, n]
-std/list.cn:273:19 [ident] array[field_info, 1]
-std/list.cn:273:19 [ident] array[int32, 0]
-std/list.cn:273:19 [ident] array[int32, 3]
-std/list.cn:273:19 [ident] array[int32, 4]
-std/list.cn:273:19 [ident] array[int32, 5]
-std/list.cn:273:19 [ident] array[int64, 0]
-std/list.cn:273:19 [ident] array[int64, 2]
-std/list.cn:273:19 [ident] array[money, 2]
-std/list.cn:273:19 [ident] array[str, 0]
-std/list.cn:273:19 [ident] array[test_suite, 1]
-std/list.cn:273:19 [ident] array[uint32, 0]
-std/list.cn:273:19 [ident] array[usize, 256]
-std/list.cn:273:19 [call] *(int64, int32)
-std/list.cn:273:19 [call] *(usize, usize)
-std/list.cn:273:19 [call] *T
-std/list.cn:273:19 [call] *field_info
-std/list.cn:273:19 [call] *int32
-std/list.cn:273:19 [call] *int32
-std/list.cn:273:19 [call] *int32
-std/list.cn:273:19 [call] *int32
-std/list.cn:273:19 [call] *int64
-std/list.cn:273:19 [call] *int64
-std/list.cn:273:19 [call] *money
-std/list.cn:273:19 [call] *str
-std/list.cn:273:19 [call] *test_suite
-std/list.cn:273:19 [call] *uint32
-std/list.cn:273:19 [call] *usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [ident] usize
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:15 [binary] bool
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [ident] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:274:19 [literal] usize
-std/list.cn:275:13 [ident] list[(int64, int32)]
-std/list.cn:275:13 [ident] list[(usize, usize)]
-std/list.cn:275:13 [ident] list[T]
-std/list.cn:275:13 [ident] list[field_info]
-std/list.cn:275:13 [ident] list[int32]
-std/list.cn:275:13 [ident] list[int32]
-std/list.cn:275:13 [ident] list[int32]
-std/list.cn:275:13 [ident] list[int32]
-std/list.cn:275:13 [ident] list[int64]
-std/list.cn:275:13 [ident] list[int64]
-std/list.cn:275:13 [ident] list[money]
-std/list.cn:275:13 [ident] list[str]
-std/list.cn:275:13 [ident] list[test_suite]
-std/list.cn:275:13 [ident] list[uint32]
-std/list.cn:275:13 [ident] list[usize]
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [field] fn(_, _) -> unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:13 [call] unit
-std/list.cn:275:22 [ident] *(int64, int32)
-std/list.cn:275:22 [ident] *(usize, usize)
-std/list.cn:275:22 [ident] *T
-std/list.cn:275:22 [ident] *field_info
-std/list.cn:275:22 [ident] *int32
-std/list.cn:275:22 [ident] *int32
-std/list.cn:275:22 [ident] *int32
-std/list.cn:275:22 [ident] *int32
-std/list.cn:275:22 [ident] *int64
-std/list.cn:275:22 [ident] *int64
-std/list.cn:275:22 [ident] *money
-std/list.cn:275:22 [ident] *str
-std/list.cn:275:22 [ident] *test_suite
-std/list.cn:275:22 [ident] *uint32
-std/list.cn:275:22 [ident] *usize
-std/list.cn:275:22 [index] (int64, int32)
-std/list.cn:275:22 [index] (usize, usize)
-std/list.cn:275:22 [index] T
-std/list.cn:275:22 [index] field_info
-std/list.cn:275:22 [index] int32
-std/list.cn:275:22 [index] int32
-std/list.cn:275:22 [index] int32
-std/list.cn:275:22 [index] int32
-std/list.cn:275:22 [index] int64
-std/list.cn:275:22 [index] int64
-std/list.cn:275:22 [index] money
-std/list.cn:275:22 [index] str
-std/list.cn:275:22 [index] test_suite
-std/list.cn:275:22 [index] uint32
-std/list.cn:275:22 [index] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:275:26 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:13 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [ident] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:17 [binary] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:276:21 [literal] usize
-std/list.cn:277:16 [ident] list[(int64, int32)]
-std/list.cn:277:16 [ident] list[(usize, usize)]
-std/list.cn:277:16 [ident] list[T]
-std/list.cn:277:16 [ident] list[field_info]
-std/list.cn:277:16 [ident] list[int32]
-std/list.cn:277:16 [ident] list[int32]
-std/list.cn:277:16 [ident] list[int32]
-std/list.cn:277:16 [ident] list[int32]
-std/list.cn:277:16 [ident] list[int64]
-std/list.cn:277:16 [ident] list[int64]
-std/list.cn:277:16 [ident] list[money]
-std/list.cn:277:16 [ident] list[str]
-std/list.cn:277:16 [ident] list[test_suite]
-std/list.cn:277:16 [ident] list[uint32]
-std/list.cn:277:16 [ident] list[usize]
+std/list.cn:274:13 [binding_pat] *(int64, int32)
+std/list.cn:274:13 [binding_pat] *(usize, usize)
+std/list.cn:274:13 [binding_pat] *T
+std/list.cn:274:13 [binding_pat] *field_info
+std/list.cn:274:13 [binding_pat] *int32
+std/list.cn:274:13 [binding_pat] *int32
+std/list.cn:274:13 [binding_pat] *int32
+std/list.cn:274:13 [binding_pat] *int32
+std/list.cn:274:13 [binding_pat] *int64
+std/list.cn:274:13 [binding_pat] *int64
+std/list.cn:274:13 [binding_pat] *money
+std/list.cn:274:13 [binding_pat] *str
+std/list.cn:274:13 [binding_pat] *test_suite
+std/list.cn:274:13 [binding_pat] *uint32
+std/list.cn:274:13 [binding_pat] *usize
+std/list.cn:274:19 [ident] array[(int64, int32), 1]
+std/list.cn:274:19 [ident] array[(usize, usize), 0]
+std/list.cn:274:19 [ident] array[T, n]
+std/list.cn:274:19 [ident] array[field_info, 1]
+std/list.cn:274:19 [ident] array[int32, 0]
+std/list.cn:274:19 [ident] array[int32, 3]
+std/list.cn:274:19 [ident] array[int32, 4]
+std/list.cn:274:19 [ident] array[int32, 5]
+std/list.cn:274:19 [ident] array[int64, 0]
+std/list.cn:274:19 [ident] array[int64, 2]
+std/list.cn:274:19 [ident] array[money, 2]
+std/list.cn:274:19 [ident] array[str, 0]
+std/list.cn:274:19 [ident] array[test_suite, 1]
+std/list.cn:274:19 [ident] array[uint32, 0]
+std/list.cn:274:19 [ident] array[usize, 256]
+std/list.cn:274:19 [call] *(int64, int32)
+std/list.cn:274:19 [call] *(usize, usize)
+std/list.cn:274:19 [call] *T
+std/list.cn:274:19 [call] *field_info
+std/list.cn:274:19 [call] *int32
+std/list.cn:274:19 [call] *int32
+std/list.cn:274:19 [call] *int32
+std/list.cn:274:19 [call] *int32
+std/list.cn:274:19 [call] *int64
+std/list.cn:274:19 [call] *int64
+std/list.cn:274:19 [call] *money
+std/list.cn:274:19 [call] *str
+std/list.cn:274:19 [call] *test_suite
+std/list.cn:274:19 [call] *uint32
+std/list.cn:274:19 [call] *usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [ident] usize
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:15 [binary] bool
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [ident] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:275:19 [literal] usize
+std/list.cn:276:13 [ident] list[(int64, int32)]
+std/list.cn:276:13 [ident] list[(usize, usize)]
+std/list.cn:276:13 [ident] list[T]
+std/list.cn:276:13 [ident] list[field_info]
+std/list.cn:276:13 [ident] list[int32]
+std/list.cn:276:13 [ident] list[int32]
+std/list.cn:276:13 [ident] list[int32]
+std/list.cn:276:13 [ident] list[int32]
+std/list.cn:276:13 [ident] list[int64]
+std/list.cn:276:13 [ident] list[int64]
+std/list.cn:276:13 [ident] list[money]
+std/list.cn:276:13 [ident] list[str]
+std/list.cn:276:13 [ident] list[test_suite]
+std/list.cn:276:13 [ident] list[uint32]
+std/list.cn:276:13 [ident] list[usize]
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [field] fn(_, _) -> unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:13 [call] unit
+std/list.cn:276:22 [ident] *(int64, int32)
+std/list.cn:276:22 [ident] *(usize, usize)
+std/list.cn:276:22 [ident] *T
+std/list.cn:276:22 [ident] *field_info
+std/list.cn:276:22 [ident] *int32
+std/list.cn:276:22 [ident] *int32
+std/list.cn:276:22 [ident] *int32
+std/list.cn:276:22 [ident] *int32
+std/list.cn:276:22 [ident] *int64
+std/list.cn:276:22 [ident] *int64
+std/list.cn:276:22 [ident] *money
+std/list.cn:276:22 [ident] *str
+std/list.cn:276:22 [ident] *test_suite
+std/list.cn:276:22 [ident] *uint32
+std/list.cn:276:22 [ident] *usize
+std/list.cn:276:22 [index] (int64, int32)
+std/list.cn:276:22 [index] (usize, usize)
+std/list.cn:276:22 [index] T
+std/list.cn:276:22 [index] field_info
+std/list.cn:276:22 [index] int32
+std/list.cn:276:22 [index] int32
+std/list.cn:276:22 [index] int32
+std/list.cn:276:22 [index] int32
+std/list.cn:276:22 [index] int64
+std/list.cn:276:22 [index] int64
+std/list.cn:276:22 [index] money
+std/list.cn:276:22 [index] str
+std/list.cn:276:22 [index] test_suite
+std/list.cn:276:22 [index] uint32
+std/list.cn:276:22 [index] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:276:26 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:13 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [ident] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:17 [binary] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:277:21 [literal] usize
+std/list.cn:278:9 [ident] fn(array[(int64, int32), 1]) -> unit
+std/list.cn:278:9 [ident] fn(array[(usize, usize), 0]) -> unit
+std/list.cn:278:9 [ident] fn(array[T, n]) -> unit
+std/list.cn:278:9 [ident] fn(array[field_info, 1]) -> unit
+std/list.cn:278:9 [ident] fn(array[int32, 0]) -> unit
+std/list.cn:278:9 [ident] fn(array[int32, 3]) -> unit
+std/list.cn:278:9 [ident] fn(array[int32, 4]) -> unit
+std/list.cn:278:9 [ident] fn(array[int32, 5]) -> unit
+std/list.cn:278:9 [ident] fn(array[int64, 0]) -> unit
+std/list.cn:278:9 [ident] fn(array[int64, 2]) -> unit
+std/list.cn:278:9 [ident] fn(array[money, 2]) -> unit
+std/list.cn:278:9 [ident] fn(array[str, 0]) -> unit
+std/list.cn:278:9 [ident] fn(array[test_suite, 1]) -> unit
+std/list.cn:278:9 [ident] fn(array[uint32, 0]) -> unit
+std/list.cn:278:9 [ident] fn(array[usize, 256]) -> unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:9 [call] unit
+std/list.cn:278:16 [ident] array[(int64, int32), 1]
+std/list.cn:278:16 [ident] array[(usize, usize), 0]
+std/list.cn:278:16 [ident] array[T, n]
+std/list.cn:278:16 [ident] array[field_info, 1]
+std/list.cn:278:16 [ident] array[int32, 0]
+std/list.cn:278:16 [ident] array[int32, 3]
+std/list.cn:278:16 [ident] array[int32, 4]
+std/list.cn:278:16 [ident] array[int32, 5]
+std/list.cn:278:16 [ident] array[int64, 0]
+std/list.cn:278:16 [ident] array[int64, 2]
+std/list.cn:278:16 [ident] array[money, 2]
+std/list.cn:278:16 [ident] array[str, 0]
+std/list.cn:278:16 [ident] array[test_suite, 1]
+std/list.cn:278:16 [ident] array[uint32, 0]
+std/list.cn:278:16 [ident] array[usize, 256]
+std/list.cn:279:16 [ident] list[(int64, int32)]
+std/list.cn:279:16 [ident] list[(usize, usize)]
+std/list.cn:279:16 [ident] list[T]
+std/list.cn:279:16 [ident] list[field_info]
+std/list.cn:279:16 [ident] list[int32]
+std/list.cn:279:16 [ident] list[int32]
+std/list.cn:279:16 [ident] list[int32]
+std/list.cn:279:16 [ident] list[int32]
+std/list.cn:279:16 [ident] list[int64]
+std/list.cn:279:16 [ident] list[int64]
+std/list.cn:279:16 [ident] list[money]
+std/list.cn:279:16 [ident] list[str]
+std/list.cn:279:16 [ident] list[test_suite]
+std/list.cn:279:16 [ident] list[uint32]
+std/list.cn:279:16 [ident] list[usize]
 std/mem.cn:29:26 [binding_pat] usize
 std/mem.cn:29:26 [binding_pat] usize
 std/mem.cn:29:26 [binding_pat] usize
@@ -11762,300 +11807,480 @@ std/mem.cn:79:16 [literal] usize
 std/mem.cn:79:16 [literal] usize
 std/mem.cn:79:16 [literal] usize
 std/mem.cn:79:16 [literal] usize
-std/mem.cn:85:31 [binding_pat] *mut (int64, int32)
-std/mem.cn:85:31 [binding_pat] *mut (usize, usize)
-std/mem.cn:85:31 [binding_pat] *mut T
-std/mem.cn:85:31 [binding_pat] *mut byte
-std/mem.cn:85:31 [binding_pat] *mut field_info
-std/mem.cn:85:31 [binding_pat] *mut int32
-std/mem.cn:85:31 [binding_pat] *mut int64
-std/mem.cn:85:31 [binding_pat] *mut money
-std/mem.cn:85:31 [binding_pat] *mut str
-std/mem.cn:85:31 [binding_pat] *mut test_case
-std/mem.cn:85:31 [binding_pat] *mut test_suite
-std/mem.cn:85:31 [binding_pat] *mut uint32
-std/mem.cn:85:31 [binding_pat] *mut usize
-std/mem.cn:85:31 [binding_pat] *mut variant_info
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:42 [binding_pat] usize
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:85:59 [named_type] unit
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [ident] _
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:86:8 [call] bool
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:9 [var_stmt] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:87:24 [literal] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [ident] usize
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:15 [binary] bool
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:88:19 [ident] usize
-std/mem.cn:89:13 [ident] fn(*mut (int64, int32)) -> unit
-std/mem.cn:89:13 [ident] fn(*mut (usize, usize)) -> unit
-std/mem.cn:89:13 [ident] fn(*mut T) -> unit
-std/mem.cn:89:13 [ident] fn(*mut byte) -> unit
-std/mem.cn:89:13 [ident] fn(*mut field_info) -> unit
-std/mem.cn:89:13 [ident] fn(*mut int32) -> unit
-std/mem.cn:89:13 [ident] fn(*mut int64) -> unit
-std/mem.cn:89:13 [ident] fn(*mut money) -> unit
-std/mem.cn:89:13 [ident] fn(*mut str) -> unit
-std/mem.cn:89:13 [ident] fn(*mut test_case) -> unit
-std/mem.cn:89:13 [ident] fn(*mut test_suite) -> unit
-std/mem.cn:89:13 [ident] fn(*mut uint32) -> unit
-std/mem.cn:89:13 [ident] fn(*mut usize) -> unit
-std/mem.cn:89:13 [ident] fn(*mut variant_info) -> unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:13 [call] unit
-std/mem.cn:89:27 [unary] *mut (int64, int32)
-std/mem.cn:89:27 [unary] *mut (usize, usize)
-std/mem.cn:89:27 [unary] *mut T
-std/mem.cn:89:27 [unary] *mut byte
-std/mem.cn:89:27 [unary] *mut field_info
-std/mem.cn:89:27 [unary] *mut int32
-std/mem.cn:89:27 [unary] *mut int64
-std/mem.cn:89:27 [unary] *mut money
-std/mem.cn:89:27 [unary] *mut str
-std/mem.cn:89:27 [unary] *mut test_case
-std/mem.cn:89:27 [unary] *mut test_suite
-std/mem.cn:89:27 [unary] *mut uint32
-std/mem.cn:89:27 [unary] *mut usize
-std/mem.cn:89:27 [unary] *mut variant_info
-std/mem.cn:89:32 [ident] *mut (int64, int32)
-std/mem.cn:89:32 [ident] *mut (usize, usize)
-std/mem.cn:89:32 [ident] *mut T
-std/mem.cn:89:32 [ident] *mut byte
-std/mem.cn:89:32 [ident] *mut field_info
-std/mem.cn:89:32 [ident] *mut int32
-std/mem.cn:89:32 [ident] *mut int64
-std/mem.cn:89:32 [ident] *mut money
-std/mem.cn:89:32 [ident] *mut str
-std/mem.cn:89:32 [ident] *mut test_case
-std/mem.cn:89:32 [ident] *mut test_suite
-std/mem.cn:89:32 [ident] *mut uint32
-std/mem.cn:89:32 [ident] *mut usize
-std/mem.cn:89:32 [ident] *mut variant_info
-std/mem.cn:89:32 [index] (int64, int32)
-std/mem.cn:89:32 [index] (usize, usize)
-std/mem.cn:89:32 [index] T
-std/mem.cn:89:32 [index] byte
-std/mem.cn:89:32 [index] field_info
-std/mem.cn:89:32 [index] int32
-std/mem.cn:89:32 [index] int64
-std/mem.cn:89:32 [index] money
-std/mem.cn:89:32 [index] str
-std/mem.cn:89:32 [index] test_case
-std/mem.cn:89:32 [index] test_suite
-std/mem.cn:89:32 [index] uint32
-std/mem.cn:89:32 [index] usize
-std/mem.cn:89:32 [index] variant_info
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:89:34 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:13 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [ident] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:17 [binary] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:90:21 [literal] usize
-std/mem.cn:101:34 [binding_pat] *mut usize
-std/mem.cn:101:49 [binding_pat] usize
-std/mem.cn:101:62 [named_type] usize
-std/mem.cn:102:12 [ident] fn(*mut usize, usize) -> usize
-std/mem.cn:102:12 [call] usize
-std/mem.cn:102:32 [ident] *mut usize
-std/mem.cn:102:35 [ident] usize
-std/mem.cn:109:34 [binding_pat] *mut usize
-std/mem.cn:109:49 [binding_pat] usize
-std/mem.cn:109:62 [named_type] usize
-std/mem.cn:110:12 [ident] fn(*mut usize, usize) -> usize
-std/mem.cn:110:12 [call] usize
-std/mem.cn:110:32 [ident] *mut usize
-std/mem.cn:110:35 [ident] usize
+std/mem.cn:90:27 [binding_pat] T
+std/mem.cn:90:27 [binding_pat] array[(int64, int32), 1]
+std/mem.cn:90:27 [binding_pat] array[(usize, usize), 0]
+std/mem.cn:90:27 [binding_pat] array[field_info, 1]
+std/mem.cn:90:27 [binding_pat] array[int32, 0]
+std/mem.cn:90:27 [binding_pat] array[int32, 3]
+std/mem.cn:90:27 [binding_pat] array[int32, 4]
+std/mem.cn:90:27 [binding_pat] array[int32, 5]
+std/mem.cn:90:27 [binding_pat] array[int64, 0]
+std/mem.cn:90:27 [binding_pat] array[int64, 2]
+std/mem.cn:90:27 [binding_pat] array[money, 2]
+std/mem.cn:90:27 [binding_pat] array[str, 0]
+std/mem.cn:90:27 [binding_pat] array[test_suite, 1]
+std/mem.cn:90:27 [binding_pat] array[uint32, 0]
+std/mem.cn:90:27 [binding_pat] array[usize, 256]
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:90:40 [named_type] unit
+std/mem.cn:91:5 [var_stmt] uninit[T, 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[(int64, int32), 1], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[(usize, usize), 0], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[field_info, 1], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[int32, 0], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[int32, 3], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[int32, 4], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[int32, 5], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[int64, 0], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[int64, 2], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[money, 2], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[str, 0], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[test_suite, 1], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[uint32, 0], 1]
+std/mem.cn:91:5 [var_stmt] uninit[array[usize, 256], 1]
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [ident] _
+std/mem.cn:91:16 [call] uninit[T, 1]
+std/mem.cn:91:16 [call] uninit[array[(int64, int32), 1], 1]
+std/mem.cn:91:16 [call] uninit[array[(usize, usize), 0], 1]
+std/mem.cn:91:16 [call] uninit[array[field_info, 1], 1]
+std/mem.cn:91:16 [call] uninit[array[int32, 0], 1]
+std/mem.cn:91:16 [call] uninit[array[int32, 3], 1]
+std/mem.cn:91:16 [call] uninit[array[int32, 4], 1]
+std/mem.cn:91:16 [call] uninit[array[int32, 5], 1]
+std/mem.cn:91:16 [call] uninit[array[int64, 0], 1]
+std/mem.cn:91:16 [call] uninit[array[int64, 2], 1]
+std/mem.cn:91:16 [call] uninit[array[money, 2], 1]
+std/mem.cn:91:16 [call] uninit[array[str, 0], 1]
+std/mem.cn:91:16 [call] uninit[array[test_suite, 1], 1]
+std/mem.cn:91:16 [call] uninit[array[uint32, 0], 1]
+std/mem.cn:91:16 [call] uninit[array[usize, 256], 1]
+std/mem.cn:92:9 [binding_pat] *mut T
+std/mem.cn:92:9 [binding_pat] *mut array[(int64, int32), 1]
+std/mem.cn:92:9 [binding_pat] *mut array[(usize, usize), 0]
+std/mem.cn:92:9 [binding_pat] *mut array[field_info, 1]
+std/mem.cn:92:9 [binding_pat] *mut array[int32, 0]
+std/mem.cn:92:9 [binding_pat] *mut array[int32, 3]
+std/mem.cn:92:9 [binding_pat] *mut array[int32, 4]
+std/mem.cn:92:9 [binding_pat] *mut array[int32, 5]
+std/mem.cn:92:9 [binding_pat] *mut array[int64, 0]
+std/mem.cn:92:9 [binding_pat] *mut array[int64, 2]
+std/mem.cn:92:9 [binding_pat] *mut array[money, 2]
+std/mem.cn:92:9 [binding_pat] *mut array[str, 0]
+std/mem.cn:92:9 [binding_pat] *mut array[test_suite, 1]
+std/mem.cn:92:9 [binding_pat] *mut array[uint32, 0]
+std/mem.cn:92:9 [binding_pat] *mut array[usize, 256]
+std/mem.cn:92:13 [ident] uninit[T, 1]
+std/mem.cn:92:13 [ident] uninit[array[(int64, int32), 1], 1]
+std/mem.cn:92:13 [ident] uninit[array[(usize, usize), 0], 1]
+std/mem.cn:92:13 [ident] uninit[array[field_info, 1], 1]
+std/mem.cn:92:13 [ident] uninit[array[int32, 0], 1]
+std/mem.cn:92:13 [ident] uninit[array[int32, 3], 1]
+std/mem.cn:92:13 [ident] uninit[array[int32, 4], 1]
+std/mem.cn:92:13 [ident] uninit[array[int32, 5], 1]
+std/mem.cn:92:13 [ident] uninit[array[int64, 0], 1]
+std/mem.cn:92:13 [ident] uninit[array[int64, 2], 1]
+std/mem.cn:92:13 [ident] uninit[array[money, 2], 1]
+std/mem.cn:92:13 [ident] uninit[array[str, 0], 1]
+std/mem.cn:92:13 [ident] uninit[array[test_suite, 1], 1]
+std/mem.cn:92:13 [ident] uninit[array[uint32, 0], 1]
+std/mem.cn:92:13 [ident] uninit[array[usize, 256], 1]
+std/mem.cn:92:13 [call] *mut T
+std/mem.cn:92:13 [call] *mut array[(int64, int32), 1]
+std/mem.cn:92:13 [call] *mut array[(usize, usize), 0]
+std/mem.cn:92:13 [call] *mut array[field_info, 1]
+std/mem.cn:92:13 [call] *mut array[int32, 0]
+std/mem.cn:92:13 [call] *mut array[int32, 3]
+std/mem.cn:92:13 [call] *mut array[int32, 4]
+std/mem.cn:92:13 [call] *mut array[int32, 5]
+std/mem.cn:92:13 [call] *mut array[int64, 0]
+std/mem.cn:92:13 [call] *mut array[int64, 2]
+std/mem.cn:92:13 [call] *mut array[money, 2]
+std/mem.cn:92:13 [call] *mut array[str, 0]
+std/mem.cn:92:13 [call] *mut array[test_suite, 1]
+std/mem.cn:92:13 [call] *mut array[uint32, 0]
+std/mem.cn:92:13 [call] *mut array[usize, 256]
+std/mem.cn:93:5 [ident] *mut T
+std/mem.cn:93:5 [ident] *mut array[(int64, int32), 1]
+std/mem.cn:93:5 [ident] *mut array[(usize, usize), 0]
+std/mem.cn:93:5 [ident] *mut array[field_info, 1]
+std/mem.cn:93:5 [ident] *mut array[int32, 0]
+std/mem.cn:93:5 [ident] *mut array[int32, 3]
+std/mem.cn:93:5 [ident] *mut array[int32, 4]
+std/mem.cn:93:5 [ident] *mut array[int32, 5]
+std/mem.cn:93:5 [ident] *mut array[int64, 0]
+std/mem.cn:93:5 [ident] *mut array[int64, 2]
+std/mem.cn:93:5 [ident] *mut array[money, 2]
+std/mem.cn:93:5 [ident] *mut array[str, 0]
+std/mem.cn:93:5 [ident] *mut array[test_suite, 1]
+std/mem.cn:93:5 [ident] *mut array[uint32, 0]
+std/mem.cn:93:5 [ident] *mut array[usize, 256]
+std/mem.cn:93:5 [index] T
+std/mem.cn:93:5 [index] array[(int64, int32), 1]
+std/mem.cn:93:5 [index] array[(usize, usize), 0]
+std/mem.cn:93:5 [index] array[field_info, 1]
+std/mem.cn:93:5 [index] array[int32, 0]
+std/mem.cn:93:5 [index] array[int32, 3]
+std/mem.cn:93:5 [index] array[int32, 4]
+std/mem.cn:93:5 [index] array[int32, 5]
+std/mem.cn:93:5 [index] array[int64, 0]
+std/mem.cn:93:5 [index] array[int64, 2]
+std/mem.cn:93:5 [index] array[money, 2]
+std/mem.cn:93:5 [index] array[str, 0]
+std/mem.cn:93:5 [index] array[test_suite, 1]
+std/mem.cn:93:5 [index] array[uint32, 0]
+std/mem.cn:93:5 [index] array[usize, 256]
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:7 [literal] usize
+std/mem.cn:93:12 [ident] T
+std/mem.cn:93:12 [ident] array[(int64, int32), 1]
+std/mem.cn:93:12 [ident] array[(usize, usize), 0]
+std/mem.cn:93:12 [ident] array[field_info, 1]
+std/mem.cn:93:12 [ident] array[int32, 0]
+std/mem.cn:93:12 [ident] array[int32, 3]
+std/mem.cn:93:12 [ident] array[int32, 4]
+std/mem.cn:93:12 [ident] array[int32, 5]
+std/mem.cn:93:12 [ident] array[int64, 0]
+std/mem.cn:93:12 [ident] array[int64, 2]
+std/mem.cn:93:12 [ident] array[money, 2]
+std/mem.cn:93:12 [ident] array[str, 0]
+std/mem.cn:93:12 [ident] array[test_suite, 1]
+std/mem.cn:93:12 [ident] array[uint32, 0]
+std/mem.cn:93:12 [ident] array[usize, 256]
+std/mem.cn:99:31 [binding_pat] *mut (int64, int32)
+std/mem.cn:99:31 [binding_pat] *mut (usize, usize)
+std/mem.cn:99:31 [binding_pat] *mut T
+std/mem.cn:99:31 [binding_pat] *mut byte
+std/mem.cn:99:31 [binding_pat] *mut field_info
+std/mem.cn:99:31 [binding_pat] *mut int32
+std/mem.cn:99:31 [binding_pat] *mut int64
+std/mem.cn:99:31 [binding_pat] *mut money
+std/mem.cn:99:31 [binding_pat] *mut str
+std/mem.cn:99:31 [binding_pat] *mut test_case
+std/mem.cn:99:31 [binding_pat] *mut test_suite
+std/mem.cn:99:31 [binding_pat] *mut uint32
+std/mem.cn:99:31 [binding_pat] *mut usize
+std/mem.cn:99:31 [binding_pat] *mut variant_info
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:42 [binding_pat] usize
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:99:59 [named_type] unit
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [ident] _
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:100:8 [call] bool
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:9 [var_stmt] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:101:24 [literal] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [ident] usize
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:15 [binary] bool
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:102:19 [ident] usize
+std/mem.cn:103:13 [ident] fn(*mut (int64, int32)) -> unit
+std/mem.cn:103:13 [ident] fn(*mut (usize, usize)) -> unit
+std/mem.cn:103:13 [ident] fn(*mut T) -> unit
+std/mem.cn:103:13 [ident] fn(*mut byte) -> unit
+std/mem.cn:103:13 [ident] fn(*mut field_info) -> unit
+std/mem.cn:103:13 [ident] fn(*mut int32) -> unit
+std/mem.cn:103:13 [ident] fn(*mut int64) -> unit
+std/mem.cn:103:13 [ident] fn(*mut money) -> unit
+std/mem.cn:103:13 [ident] fn(*mut str) -> unit
+std/mem.cn:103:13 [ident] fn(*mut test_case) -> unit
+std/mem.cn:103:13 [ident] fn(*mut test_suite) -> unit
+std/mem.cn:103:13 [ident] fn(*mut uint32) -> unit
+std/mem.cn:103:13 [ident] fn(*mut usize) -> unit
+std/mem.cn:103:13 [ident] fn(*mut variant_info) -> unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:13 [call] unit
+std/mem.cn:103:27 [unary] *mut (int64, int32)
+std/mem.cn:103:27 [unary] *mut (usize, usize)
+std/mem.cn:103:27 [unary] *mut T
+std/mem.cn:103:27 [unary] *mut byte
+std/mem.cn:103:27 [unary] *mut field_info
+std/mem.cn:103:27 [unary] *mut int32
+std/mem.cn:103:27 [unary] *mut int64
+std/mem.cn:103:27 [unary] *mut money
+std/mem.cn:103:27 [unary] *mut str
+std/mem.cn:103:27 [unary] *mut test_case
+std/mem.cn:103:27 [unary] *mut test_suite
+std/mem.cn:103:27 [unary] *mut uint32
+std/mem.cn:103:27 [unary] *mut usize
+std/mem.cn:103:27 [unary] *mut variant_info
+std/mem.cn:103:32 [ident] *mut (int64, int32)
+std/mem.cn:103:32 [ident] *mut (usize, usize)
+std/mem.cn:103:32 [ident] *mut T
+std/mem.cn:103:32 [ident] *mut byte
+std/mem.cn:103:32 [ident] *mut field_info
+std/mem.cn:103:32 [ident] *mut int32
+std/mem.cn:103:32 [ident] *mut int64
+std/mem.cn:103:32 [ident] *mut money
+std/mem.cn:103:32 [ident] *mut str
+std/mem.cn:103:32 [ident] *mut test_case
+std/mem.cn:103:32 [ident] *mut test_suite
+std/mem.cn:103:32 [ident] *mut uint32
+std/mem.cn:103:32 [ident] *mut usize
+std/mem.cn:103:32 [ident] *mut variant_info
+std/mem.cn:103:32 [index] (int64, int32)
+std/mem.cn:103:32 [index] (usize, usize)
+std/mem.cn:103:32 [index] T
+std/mem.cn:103:32 [index] byte
+std/mem.cn:103:32 [index] field_info
+std/mem.cn:103:32 [index] int32
+std/mem.cn:103:32 [index] int64
+std/mem.cn:103:32 [index] money
+std/mem.cn:103:32 [index] str
+std/mem.cn:103:32 [index] test_case
+std/mem.cn:103:32 [index] test_suite
+std/mem.cn:103:32 [index] uint32
+std/mem.cn:103:32 [index] usize
+std/mem.cn:103:32 [index] variant_info
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:103:34 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:13 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [ident] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:17 [binary] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:104:21 [literal] usize
+std/mem.cn:115:34 [binding_pat] *mut usize
+std/mem.cn:115:49 [binding_pat] usize
+std/mem.cn:115:62 [named_type] usize
+std/mem.cn:116:12 [ident] fn(*mut usize, usize) -> usize
+std/mem.cn:116:12 [call] usize
+std/mem.cn:116:32 [ident] *mut usize
+std/mem.cn:116:35 [ident] usize
+std/mem.cn:123:34 [binding_pat] *mut usize
+std/mem.cn:123:49 [binding_pat] usize
+std/mem.cn:123:62 [named_type] usize
+std/mem.cn:124:12 [ident] fn(*mut usize, usize) -> usize
+std/mem.cn:124:12 [call] usize
+std/mem.cn:124:32 [ident] *mut usize
+std/mem.cn:124:35 [ident] usize
 std/option.cn:22:17 [binding_pat] &option[T]
 std/option.cn:22:26 [named_type] bool
 std/option.cn:23:16 [match] bool
@@ -33607,39 +33832,39 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1514 value T
 ?:1556 inner *mut shared_block[T]
 ?:1565 word *mut usize
-?:1662 len usize
-?:1662 len usize
-?:1662 len usize
-?:1662 len usize
-?:1662 len usize
-?:1662 len usize
-?:1662 len usize
-?:1662 len usize
-?:1662 len usize
-?:1662 len usize
-?:1662 len usize
-?:1670 cap usize
-?:1670 cap usize
-?:1670 cap usize
-?:1670 cap usize
-?:1670 cap usize
-?:1670 cap usize
-?:1670 cap usize
-?:1670 cap usize
-?:1670 cap usize
-?:1670 cap usize
-?:1670 cap usize
-?:1678 data *mut (int64, int32)
-?:1678 data *mut (usize, usize)
-?:1678 data *mut T
-?:1678 data *mut field_info
-?:1678 data *mut int32
-?:1678 data *mut int64
-?:1678 data *mut money
-?:1678 data *mut str
-?:1678 data *mut test_suite
-?:1678 data *mut uint32
-?:1678 data *mut usize
+?:1670 len usize
+?:1670 len usize
+?:1670 len usize
+?:1670 len usize
+?:1670 len usize
+?:1670 len usize
+?:1670 len usize
+?:1670 len usize
+?:1670 len usize
+?:1670 len usize
+?:1670 len usize
+?:1678 cap usize
+?:1678 cap usize
+?:1678 cap usize
+?:1678 cap usize
+?:1678 cap usize
+?:1678 cap usize
+?:1678 cap usize
+?:1678 cap usize
+?:1678 cap usize
+?:1678 cap usize
+?:1678 cap usize
+?:1686 data *mut (int64, int32)
+?:1686 data *mut (usize, usize)
+?:1686 data *mut T
+?:1686 data *mut field_info
+?:1686 data *mut int32
+?:1686 data *mut int64
+?:1686 data *mut money
+?:1686 data *mut str
+?:1686 data *mut test_suite
+?:1686 data *mut uint32
+?:1686 data *mut usize
 ?:1702 nanos uint64
 ?:1730 first U
 ?:1730 first int32
@@ -33769,24 +33994,24 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:7719 inner *mut rwlock_block[T]
 ?:8102 inner *mut rwlock_block[T]
 ?:8192 inner *mut rwlock_block[T]
-?:10872 src &list[(int64, int32)]
-?:10872 src &list[T]
-?:10872 src &list[int32]
-?:10872 src &list[int64]
-?:10872 src &list[money]
-?:10872 src &list[test_suite]
-?:10883 at usize
-?:10883 at usize
-?:10883 at usize
-?:10883 at usize
-?:10883 at usize
-?:10883 at usize
-?:10890 end usize
-?:10890 end usize
-?:10890 end usize
-?:10890 end usize
-?:10890 end usize
-?:10890 end usize
+?:10880 src &list[(int64, int32)]
+?:10880 src &list[T]
+?:10880 src &list[int32]
+?:10880 src &list[int64]
+?:10880 src &list[money]
+?:10880 src &list[test_suite]
+?:10891 at usize
+?:10891 at usize
+?:10891 at usize
+?:10891 at usize
+?:10891 at usize
+?:10891 at usize
+?:10898 end usize
+?:10898 end usize
+?:10898 end usize
+?:10898 end usize
+?:10898 end usize
+?:10898 end usize
 ?:11913 lock usize
 ?:11930 version usize
 ?:11950 closed usize
@@ -33855,7 +34080,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56596 inner I
 ?:56607 f fn(&T) -> T
 
-## call_argument_mappings (1041)
+## call_argument_mappings (1056)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -34574,21 +34799,36 @@ std/list.cn:270:9 [call] (n=arg)
 std/list.cn:270:9 [call] (n=arg)
 std/list.cn:270:9 [call] (n=arg)
 std/list.cn:270:9 [call] (n=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
-std/list.cn:275:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:276:13 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
+std/list.cn:278:9 [call] (value=arg)
 std/mem.cn:30:15 [call] (bytes=arg)
 std/mem.cn:30:15 [call] (bytes=arg)
 std/mem.cn:30:15 [call] (bytes=arg)
@@ -34640,22 +34880,22 @@ std/mem.cn:79:9 [call] (x=arg)
 std/mem.cn:79:9 [call] (x=arg)
 std/mem.cn:79:9 [call] (x=arg)
 std/mem.cn:79:9 [call] (x=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:89:13 [call] (p=arg)
-std/mem.cn:102:12 [call] (p=arg, n=arg)
-std/mem.cn:110:12 [call] (p=arg, n=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:103:13 [call] (p=arg)
+std/mem.cn:116:12 [call] (p=arg, n=arg)
+std/mem.cn:124:12 [call] (p=arg, n=arg)
 std/panic.cn:24:12 [call] (msg=arg)
 std/shared.cn:32:12 [call] (value=arg)
 std/shared.cn:37:21 [call] (count=arg)
@@ -34898,7 +35138,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (578)
+## resolved_callees (593)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -35311,21 +35551,36 @@ std/list.cn:270:9 [call] std.list::list::reserve$list_str_ recv
 std/list.cn:270:9 [call] std.list::list::reserve$list_test_suite_ recv
 std/list.cn:270:9 [call] std.list::list::reserve$list_uint32_ recv
 std/list.cn:270:9 [call] std.list::list::reserve$list_usize_ recv
-std/list.cn:275:13 [call] std.list::list::push recv
-std/list.cn:275:13 [call] std.list::list::push$list__int64__int32__ recv
-std/list.cn:275:13 [call] std.list::list::push$list__usize__usize__ recv
-std/list.cn:275:13 [call] std.list::list::push$list_field_info_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_int32_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_int32_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_int32_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_int32_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_int64_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_int64_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_money_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_str_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_test_suite_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_uint32_ recv
-std/list.cn:275:13 [call] std.list::list::push$list_usize_ recv
+std/list.cn:276:13 [call] std.list::list::push recv
+std/list.cn:276:13 [call] std.list::list::push$list__int64__int32__ recv
+std/list.cn:276:13 [call] std.list::list::push$list__usize__usize__ recv
+std/list.cn:276:13 [call] std.list::list::push$list_field_info_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_int32_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_int32_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_int32_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_int32_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_int64_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_int64_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_money_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_str_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_test_suite_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_uint32_ recv
+std/list.cn:276:13 [call] std.list::list::push$list_usize_ recv
+std/list.cn:278:9 [call] std.mem::forget
+std/list.cn:278:9 [call] std.mem::forget$array__int64__int32___1_
+std/list.cn:278:9 [call] std.mem::forget$array__usize__usize___0_
+std/list.cn:278:9 [call] std.mem::forget$array_field_info__1_
+std/list.cn:278:9 [call] std.mem::forget$array_int32__0_
+std/list.cn:278:9 [call] std.mem::forget$array_int32__3_
+std/list.cn:278:9 [call] std.mem::forget$array_int32__4_
+std/list.cn:278:9 [call] std.mem::forget$array_int32__5_
+std/list.cn:278:9 [call] std.mem::forget$array_int64__0_
+std/list.cn:278:9 [call] std.mem::forget$array_int64__2_
+std/list.cn:278:9 [call] std.mem::forget$array_money__2_
+std/list.cn:278:9 [call] std.mem::forget$array_str__0_
+std/list.cn:278:9 [call] std.mem::forget$array_test_suite__1_
+std/list.cn:278:9 [call] std.mem::forget$array_uint32__0_
+std/list.cn:278:9 [call] std.mem::forget$array_usize__256_
 std/mem.cn:30:15 [call] std.intrinsics::rt_alloc
 std/mem.cn:30:15 [call] std.intrinsics::rt_alloc
 std/mem.cn:30:15 [call] std.intrinsics::rt_alloc
@@ -35377,21 +35632,21 @@ std/mem.cn:79:9 [call] std.traits::drop$test_suite
 std/mem.cn:79:9 [call] std.traits::drop$uint32
 std/mem.cn:79:9 [call] std.traits::drop$usize
 std/mem.cn:79:9 [call] std.traits::drop$variant_info
-std/mem.cn:89:13 [call] std.mem::drop_in_place$_int64__int32_
-std/mem.cn:89:13 [call] std.mem::drop_in_place$_usize__usize_
-std/mem.cn:89:13 [call] std.mem::drop_in_place$byte
-std/mem.cn:89:13 [call] std.mem::drop_in_place$field_info
-std/mem.cn:89:13 [call] std.mem::drop_in_place$int32
-std/mem.cn:89:13 [call] std.mem::drop_in_place$int64
-std/mem.cn:89:13 [call] std.mem::drop_in_place$money
-std/mem.cn:89:13 [call] std.mem::drop_in_place$str
-std/mem.cn:89:13 [call] std.mem::drop_in_place$test_case
-std/mem.cn:89:13 [call] std.mem::drop_in_place$test_suite
-std/mem.cn:89:13 [call] std.mem::drop_in_place$uint32
-std/mem.cn:89:13 [call] std.mem::drop_in_place$usize
-std/mem.cn:89:13 [call] std.mem::drop_in_place$variant_info
-std/mem.cn:102:12 [call] std.intrinsics::rt_atomic_fetch_add
-std/mem.cn:110:12 [call] std.intrinsics::rt_atomic_fetch_sub
+std/mem.cn:103:13 [call] std.mem::drop_in_place$_int64__int32_
+std/mem.cn:103:13 [call] std.mem::drop_in_place$_usize__usize_
+std/mem.cn:103:13 [call] std.mem::drop_in_place$byte
+std/mem.cn:103:13 [call] std.mem::drop_in_place$field_info
+std/mem.cn:103:13 [call] std.mem::drop_in_place$int32
+std/mem.cn:103:13 [call] std.mem::drop_in_place$int64
+std/mem.cn:103:13 [call] std.mem::drop_in_place$money
+std/mem.cn:103:13 [call] std.mem::drop_in_place$str
+std/mem.cn:103:13 [call] std.mem::drop_in_place$test_case
+std/mem.cn:103:13 [call] std.mem::drop_in_place$test_suite
+std/mem.cn:103:13 [call] std.mem::drop_in_place$uint32
+std/mem.cn:103:13 [call] std.mem::drop_in_place$usize
+std/mem.cn:103:13 [call] std.mem::drop_in_place$variant_info
+std/mem.cn:116:12 [call] std.intrinsics::rt_atomic_fetch_add
+std/mem.cn:124:12 [call] std.intrinsics::rt_atomic_fetch_sub
 std/shared.cn:32:12 [call] std.shared::shared[T]::new
 std/shared.cn:48:9 [call] std.mem::atomic_fetch_add
 std/shared.cn:59:22 [call] std.mem::atomic_fetch_sub
@@ -35965,20 +36220,20 @@ std/mem.cn:78:8 [call] needs_drop of test_suite
 std/mem.cn:78:8 [call] needs_drop of uint32
 std/mem.cn:78:8 [call] needs_drop of usize
 std/mem.cn:78:8 [call] needs_drop of variant_info
-std/mem.cn:86:8 [call] needs_drop of (int64, int32)
-std/mem.cn:86:8 [call] needs_drop of (usize, usize)
-std/mem.cn:86:8 [call] needs_drop of T
-std/mem.cn:86:8 [call] needs_drop of byte
-std/mem.cn:86:8 [call] needs_drop of field_info
-std/mem.cn:86:8 [call] needs_drop of int32
-std/mem.cn:86:8 [call] needs_drop of int64
-std/mem.cn:86:8 [call] needs_drop of money
-std/mem.cn:86:8 [call] needs_drop of str
-std/mem.cn:86:8 [call] needs_drop of test_case
-std/mem.cn:86:8 [call] needs_drop of test_suite
-std/mem.cn:86:8 [call] needs_drop of uint32
-std/mem.cn:86:8 [call] needs_drop of usize
-std/mem.cn:86:8 [call] needs_drop of variant_info
+std/mem.cn:100:8 [call] needs_drop of (int64, int32)
+std/mem.cn:100:8 [call] needs_drop of (usize, usize)
+std/mem.cn:100:8 [call] needs_drop of T
+std/mem.cn:100:8 [call] needs_drop of byte
+std/mem.cn:100:8 [call] needs_drop of field_info
+std/mem.cn:100:8 [call] needs_drop of int32
+std/mem.cn:100:8 [call] needs_drop of int64
+std/mem.cn:100:8 [call] needs_drop of money
+std/mem.cn:100:8 [call] needs_drop of str
+std/mem.cn:100:8 [call] needs_drop of test_case
+std/mem.cn:100:8 [call] needs_drop of test_suite
+std/mem.cn:100:8 [call] needs_drop of uint32
+std/mem.cn:100:8 [call] needs_drop of usize
+std/mem.cn:100:8 [call] needs_drop of variant_info
 
 ## ptr_casts (85)
 std/mem.cn:31:12 [call] *mut (int64, int32)
@@ -36076,7 +36331,22 @@ std/list.cn:228:16 [call]
 std/list.cn:228:16 [call] 
 std/list.cn:238:16 [call] 
 
-## stack_buffers (0)
+## stack_buffers (15)
+std/mem.cn:91:16 [call] T x 1
+std/mem.cn:91:16 [call] array[(int64, int32), 1] x 1
+std/mem.cn:91:16 [call] array[(usize, usize), 0] x 1
+std/mem.cn:91:16 [call] array[field_info, 1] x 1
+std/mem.cn:91:16 [call] array[int32, 0] x 1
+std/mem.cn:91:16 [call] array[int32, 3] x 1
+std/mem.cn:91:16 [call] array[int32, 4] x 1
+std/mem.cn:91:16 [call] array[int32, 5] x 1
+std/mem.cn:91:16 [call] array[int64, 0] x 1
+std/mem.cn:91:16 [call] array[int64, 2] x 1
+std/mem.cn:91:16 [call] array[money, 2] x 1
+std/mem.cn:91:16 [call] array[str, 0] x 1
+std/mem.cn:91:16 [call] array[test_suite, 1] x 1
+std/mem.cn:91:16 [call] array[uint32, 0] x 1
+std/mem.cn:91:16 [call] array[usize, 256] x 1
 
 ## proven_in_bounds (16)
 027_dependent_and_refinement_types.cn:62:5 [index] 
@@ -36122,20 +36392,20 @@ std/list.cn:270:21 [ident] 256
 std/list.cn:270:21 [ident] 3
 std/list.cn:270:21 [ident] 4
 std/list.cn:270:21 [ident] 5
-std/list.cn:274:19 [ident] 0
-std/list.cn:274:19 [ident] 0
-std/list.cn:274:19 [ident] 0
-std/list.cn:274:19 [ident] 0
-std/list.cn:274:19 [ident] 0
-std/list.cn:274:19 [ident] 1
-std/list.cn:274:19 [ident] 1
-std/list.cn:274:19 [ident] 1
-std/list.cn:274:19 [ident] 2
-std/list.cn:274:19 [ident] 2
-std/list.cn:274:19 [ident] 256
-std/list.cn:274:19 [ident] 3
-std/list.cn:274:19 [ident] 4
-std/list.cn:274:19 [ident] 5
+std/list.cn:275:19 [ident] 0
+std/list.cn:275:19 [ident] 0
+std/list.cn:275:19 [ident] 0
+std/list.cn:275:19 [ident] 0
+std/list.cn:275:19 [ident] 0
+std/list.cn:275:19 [ident] 1
+std/list.cn:275:19 [ident] 1
+std/list.cn:275:19 [ident] 1
+std/list.cn:275:19 [ident] 2
+std/list.cn:275:19 [ident] 2
+std/list.cn:275:19 [ident] 256
+std/list.cn:275:19 [ident] 3
+std/list.cn:275:19 [ident] 4
+std/list.cn:275:19 [ident] 5
 std/sync.cn:207:25 [ident] 18446744073709551615
 std/sync.cn:208:36 [ident] 18446744073709551615
 std/sync.cn:218:61 [ident] 18446744073709551615
@@ -36244,7 +36514,8 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (815)
+## drop_plans (832)
+array[test_suite, 1] own=- fields=[]
 async_file own=std.io::async_file::drop fields=[]
 async_pipe_ends own=- fields=[reader: async_file, writer: async_file]
 atomic[T] own=std.sync::atomic::drop fields=[]
@@ -36594,6 +36865,7 @@ fn(T) -> str own=- fields=[] glue=fn() -> unit
 fn(T) -> unit own=- fields=[] glue=fn() -> unit
 fn(T) -> unit own=- fields=[] glue=fn() -> unit
 fn(T) -> unit own=- fields=[] glue=fn() -> unit
+fn(T) -> unit own=- fields=[] glue=fn() -> unit
 fn(T, T) -> T own=- fields=[] glue=fn() -> unit
 fn(T, bool) -> usize own=- fields=[] glue=fn() -> unit
 fn(T, bool) -> usize own=- fields=[] glue=fn() -> unit
@@ -36743,15 +37015,23 @@ fn(_, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(_, usize) -> usize own=- fields=[] glue=fn() -> unit
 fn(_, usize, _) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, usize, _) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[(int64, int32), 1]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[(usize, usize), 0]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[T, n]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
 fn(array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
 fn(array[_, n]) -> list[_] own=- fields=[] glue=fn() -> unit
 fn(array[_, n]) -> self own=- fields=[] glue=fn() -> unit
+fn(array[field_info, 1]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[int32, 0]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[int32, 3]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[int32, 3], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, 3], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, 4]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[int32, 4], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, 4], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, 5]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, 5]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[int32, 5], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, 5], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, 8], index[8]) -> int32 own=- fields=[] glue=fn() -> unit
@@ -36762,6 +37042,13 @@ fn(array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int64, 0]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[int64, 2]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[money, 2]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[str, 0]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[test_suite, 1]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[uint32, 0]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[usize, 256]) -> unit own=- fields=[] glue=fn() -> unit
 fn(bag[T]) -> usize own=- fields=[] glue=fn() -> unit
 fn(bag[int32]) -> usize own=- fields=[] glue=fn() -> unit
 fn(bool) -> str own=- fields=[] glue=fn() -> unit
@@ -37061,7 +37348,7 @@ write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (2014)
+## borrow_bearing_types (2035)
 &K
 &T
 &T
@@ -37442,7 +37729,9 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 *mut T
 *mut T
 *mut T
+*mut T
 *mut U
+*mut array[test_suite, 1]
 *mut channel_block[T]
 *mut channel_block[T]
 *mut channel_block[T]
@@ -37637,6 +37926,7 @@ S
 S
 S
 S
+T
 T
 T
 T
@@ -38377,6 +38667,7 @@ fn(T) -> str
 fn(T) -> unit
 fn(T) -> unit
 fn(T) -> unit
+fn(T) -> unit
 fn(T, T) -> T
 fn(T, bool) -> usize
 fn(T, bool) -> usize
@@ -38546,15 +38837,23 @@ fn(_, usize) -> unit
 fn(_, usize) -> usize
 fn(_, usize, _) -> bool
 fn(_, usize, _) -> unit
+fn(array[(int64, int32), 1]) -> unit
+fn(array[(usize, usize), 0]) -> unit
+fn(array[T, n]) -> unit
 fn(array[T, n], index[n]) -> T
 fn(array[T, n], index[n]) -> T
 fn(array[_, n]) -> list[_]
 fn(array[_, n]) -> self
+fn(array[field_info, 1]) -> unit
+fn(array[int32, 0]) -> unit
+fn(array[int32, 3]) -> unit
 fn(array[int32, 3], index[n]) -> int32
 fn(array[int32, 3], usize) -> int32
+fn(array[int32, 4]) -> unit
 fn(array[int32, 4], index[n]) -> int32
 fn(array[int32, 4], usize) -> int32
 fn(array[int32, 5]) -> int32
+fn(array[int32, 5]) -> unit
 fn(array[int32, 5], index[n]) -> int32
 fn(array[int32, 5], usize) -> int32
 fn(array[int32, 8], index[8]) -> int32
@@ -38565,6 +38864,13 @@ fn(array[int32, n], index[n]) -> int32
 fn(array[int32, n], usize) -> int32
 fn(array[int32, n], usize) -> int32
 fn(array[int32, n], usize) -> int32
+fn(array[int64, 0]) -> unit
+fn(array[int64, 2]) -> unit
+fn(array[money, 2]) -> unit
+fn(array[str, 0]) -> unit
+fn(array[test_suite, 1]) -> unit
+fn(array[uint32, 0]) -> unit
+fn(array[usize, 256]) -> unit
 fn(bag[T]) -> usize
 fn(bag[int32]) -> usize
 fn(bool) -> str
@@ -39042,6 +39348,8 @@ task[unit]
 task[usize, io_error, io]
 test_case
 test_suite
+uninit[T, 1]
+uninit[array[test_suite, 1], 1]
 vec[T, 2]
 vec[T, _]
 vec[T, k + 1]
@@ -39156,7 +39464,7 @@ std.io::file_handle::read_exact
 std.io::file_handle::read_to_end
 std.io::file_handle::write_all
 
-## const_generic_instances (259)
+## const_generic_instances (273)
 codegen_stress.bound_driven_inference::filter$counter$int32
 codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_
 codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32
@@ -39377,6 +39685,20 @@ std.mem::drop_range$test_suite
 std.mem::drop_range$uint32
 std.mem::drop_range$usize
 std.mem::drop_range$variant_info
+std.mem::forget$array__int64__int32___1_
+std.mem::forget$array__usize__usize___0_
+std.mem::forget$array_field_info__1_
+std.mem::forget$array_int32__0_
+std.mem::forget$array_int32__3_
+std.mem::forget$array_int32__4_
+std.mem::forget$array_int32__5_
+std.mem::forget$array_int64__0_
+std.mem::forget$array_int64__2_
+std.mem::forget$array_money__2_
+std.mem::forget$array_str__0_
+std.mem::forget$array_test_suite__1_
+std.mem::forget$array_uint32__0_
+std.mem::forget$array_usize__256_
 std.mem::free$_int64__int32_
 std.mem::free$_usize__usize_
 std.mem::free$byte
@@ -39423,7 +39745,7 @@ stress.dependent_types::safe_get$int32$8
 codegen_stress.instances_by_substitution impl@2089
 codegen_stress.instances_by_substitution impl@4283
 
-## synthesized_decls (265)
+## synthesized_decls (279)
 alloc$_int64__int32_
 alloc$_usize__usize_
 alloc$field_info
@@ -39505,6 +39827,20 @@ filled$4$int32
 filter$counter$int32
 filter_iter::next$filter_iter_counter__int32_
 first$4$int32
+forget$array__int64__int32___1_
+forget$array__usize__usize___0_
+forget$array_field_info__1_
+forget$array_int32__0_
+forget$array_int32__3_
+forget$array_int32__4_
+forget$array_int32__5_
+forget$array_int64__0_
+forget$array_int64__2_
+forget$array_money__2_
+forget$array_str__0_
+forget$array_test_suite__1_
+forget$array_uint32__0_
+forget$array_usize__256_
 framed$int32
 framed$int64
 framed$money
@@ -39692,7 +40028,7 @@ zeros$3
 
 ## arena sizes
 synthesized_functor_nodes 0
-synthesized_types 148
+synthesized_types 149
 synthesized_fragments 26
 synthesized_const_literals 70
 elided_contracts 0

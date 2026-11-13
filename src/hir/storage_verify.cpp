@@ -326,9 +326,8 @@ private:
     for (size_t i = 0; i < where.steps.size(); ++i) {
       const auto &step = where.steps[i];
       if (step.kind == projection_kind::deref) {
-        const auto &entry = types().entry(types().strip_refinement(current));
-        if (entry.kind != semantic::type_kind::ref_kind &&
-            entry.kind != semantic::type_kind::ptr_kind) {
+        const auto referent = env_.pointee(current);
+        if (!referent.has_value()) {
           return fail(verify_error_kind::bad_place,
                       "cannot dereference " + name_of(current));
         }
@@ -336,10 +335,11 @@ private:
           out.through_deref = true;
           out.tracked = i;
         }
-        if (entry.kind == semantic::type_kind::ptr_kind) {
+        if (types().entry(types().strip_refinement(current)).kind ==
+            semantic::type_kind::ptr_kind) {
           out.through_raw = true;
         }
-        current = entry.result;
+        current = *referent;
         out.types.push_back(current);
         continue;
       }
@@ -798,7 +798,9 @@ private:
       return found == node->children.end() ? nullptr : &found->second;
     };
     const auto *plan = env_.drop_plan(stripped);
-    if (plan != nullptr) {
+    // An array's plan only says how its elements drop; what it still owes
+    // follows from its layout below.
+    if (plan != nullptr && !plan->element.has_value()) {
       const auto has_own = plan->own_drop.has_value() ||
                            plan->closure_glue.has_value() ||
                            plan->cancels_generator;
@@ -1011,6 +1013,8 @@ private:
       return do_compute(op);
     case op_kind::init_empty:
       return do_init_empty(op);
+    case op_kind::zero_fill:
+      return do_zero_fill(op);
     case op_kind::copy_into:
     case op_kind::move_into:
       return do_transfer(op);
@@ -1021,6 +1025,7 @@ private:
     case op_kind::test_variant:
       return do_test_variant(op);
     case op_kind::drop_in_place:
+    case op_kind::forget:
       return do_drop(op);
     case op_kind::call_into:
       return do_call(op);
@@ -1768,6 +1773,28 @@ private:
     return {};
   }
 
+  /// Zeroing an `uninit` buffer writes it: its bytes promise no value, so
+  /// any bytes are a whole one. No other type may be made this way.
+  [[nodiscard]] auto do_zero_fill(const storage_op &op) -> result {
+    const auto at = resolve(op.dest);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    const auto &entry =
+        env_.checked.types.entry(env_.checked.types.strip_refinement(op.dest.type));
+    if (entry.kind != semantic::type_kind::builtin_generic_kind ||
+        entry.name != "uninit") {
+      return fail(verify_error_kind::type_mismatch,
+                  "zero on " + name_of(op.dest.type) +
+                      ", which is not an `uninit` buffer");
+    }
+    if (auto ok = require_writable(op.dest, *at); !ok.has_value()) {
+      return ok;
+    }
+    commit_write(op.dest, *at);
+    return {};
+  }
+
   [[nodiscard]] auto do_transfer(const storage_op &op) -> result {
     const auto moving = op.kind == op_kind::move_into;
     const auto from = resolve(op.source);
@@ -2063,6 +2090,9 @@ private:
     const auto at = resolve(target);
     if (!at.has_value()) {
       return std::unexpected(at.error());
+    }
+    if (at->through_raw) {
+      return {}; // Raw memory: the program says what it holds.
     }
     if (at->through_deref) {
       return fail(verify_error_kind::move_from_reference,

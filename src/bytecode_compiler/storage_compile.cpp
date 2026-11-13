@@ -759,6 +759,10 @@ private:
       return emit_test_variant(op);
     case op_kind::drop_in_place:
       return emit_drop(op);
+    case op_kind::forget:
+      return {}; // The value's drops run through a raw pointer instead.
+    case op_kind::zero_fill:
+      return emit_zero_fill(op);
     case op_kind::make_closure:
       return emit_make_closure(op);
     case op_kind::release_environment:
@@ -1030,6 +1034,28 @@ private:
     return {};
   }
 
+  [[nodiscard]] auto emit_zero_fill(const hir::storage_op &op) -> checked<void> {
+    const auto value = class_of(op.dest.type, op.span);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    if (value->size == 0) {
+      return {};
+    }
+    const auto to = locate(op.dest);
+    if (!to.has_value()) {
+      return std::unexpected(to.error());
+    }
+    const auto address = address_of(*to);
+    if (!address.has_value()) {
+      return std::unexpected(address.error());
+    }
+    emit_op(opcode::op_zero_bytes);
+    emit_register(*address);
+    writer_.emit_u32(static_cast<uint32_t>(value->size));
+    return {};
+  }
+
   [[nodiscard]] auto emit_transfer(const hir::storage_op &op) -> checked<void> {
     const auto value = class_of(op.dest.type, op.span);
     if (!value.has_value()) {
@@ -1183,6 +1209,10 @@ private:
     }
     const auto target = key(op.callee);
     if (!index_.contains(target)) {
+      if (const auto which = cinder::inline_intrinsic_of(op.callee.name);
+          which.has_value()) {
+        return emit_inline_intrinsic(op, *which);
+      }
       if (const auto id = hir::runtime_intrinsic_id(op.callee.name);
           id.has_value()) {
         return emit_intrinsic_call(op, *id);
@@ -1853,6 +1883,42 @@ private:
     writer_.emit_u8(static_cast<uint8_t>(*id));
     emit_register(block);
     writer_.emit_u8(2);
+    return {};
+  }
+
+  /// An intrinsic the VM runs as one instruction (`cinder::inline_intrinsic`):
+  /// an atomic add or subtract of a `usize` at a raw pointer, giving the old
+  /// value.
+  [[nodiscard]] auto emit_inline_intrinsic(const hir::storage_op &op,
+                                           cinder::inline_intrinsic which)
+      -> checked<void> {
+    if (op.args.size() != 2) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "an atomic intrinsic takes a pointer and an amount");
+    }
+    const auto ptr = operand_value(op.args[0].value);
+    if (!ptr.has_value()) {
+      return std::unexpected(ptr.error());
+    }
+    const auto amount = operand_value(op.args[1].value);
+    if (!amount.has_value()) {
+      return std::unexpected(amount.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    const auto result =
+        dest->where == location::kind::reg ? dest->reg : alloc_register();
+    emit_op(which == cinder::inline_intrinsic::atomic_fetch_add
+                ? opcode::op_atomic_fetch_add
+                : opcode::op_atomic_fetch_sub);
+    emit_register(result);
+    emit_register(*ptr);
+    emit_register(*amount);
+    if (dest->where == location::kind::memory) {
+      return write_location(*dest, op.dest.type, result);
+    }
     return {};
   }
 

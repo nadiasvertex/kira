@@ -203,6 +203,8 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
                                     clone_all(n.args, rename));
     copy->is_tail_call = n.is_tail_call;
     copy->is_drop = n.is_drop;
+    copy->consumes_receiver = n.consumes_receiver;
+    copy->receiver_by_value = n.receiver_by_value;
     return copy;
   }
   case hir_node_kind::hir_field: {
@@ -312,8 +314,10 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
   }
   case hir_node_kind::hir_container_data: {
     const auto &n = dynamic_cast<const hir_container_data &>(node);
-    return hir::make<hir_container_data>(span, type,
-                                         clone_as(*n.object, rename));
+    auto out = hir::make<hir_container_data>(span, type,
+                                             clone_as(*n.object, rename));
+    out->takes_elements = n.takes_elements;
+    return out;
   }
   case hir_node_kind::hir_slice_from_raw_parts: {
     const auto &n = dynamic_cast<const hir_slice_from_raw_parts &>(node);

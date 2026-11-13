@@ -78,6 +78,20 @@ pub machine def drop_in_place[T](p: *mut T) -> unit:
     if needs_drop[T]():
         drop(p[0])
 
+#: Ends `value` without running its drop. Whatever it owned is now the
+#: caller's to drop some other way, or was already taken out of it by raw
+#: reads (`std.list`'s `from_array` does this with its argument).
+#:
+#: The raw write moves `value` into a frame buffer, and a raw write never
+#: drops (`spec/specification/03-advanced/38-machine-layer.md`, Raw memory and
+#: ownership); the buffer owns nothing, so nothing drops it either.
+#: Args:
+#:   value: the value to give up.
+pub machine def forget[T](value: T) -> unit:
+    var slot = uninit[T, 1]()
+    let p = slot.as_mut_ptr()
+    p[0] = value
+
 #: Drops the `count` values starting at `p`, in order.
 #: Args:
 #:   p: the first slot.

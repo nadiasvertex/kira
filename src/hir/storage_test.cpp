@@ -2378,6 +2378,61 @@ auto test_raw_reads_own_the_value_and_raw_writes_drop_nothing() -> void {
   // `test_verifier_rejects_moves_out_of_references_and_sums`).
 }
 
+auto test_arrays_forget_and_owned_receivers() -> void {
+  auto f = build(read_program("arrays.cn"));
+  expect(f->lowering.refused.empty(), "expected every function to lower");
+
+  // An array drops each element through a raw pointer to its first, in index
+  // order, and then gives up the array itself, which owes nothing more.
+  expect_ops(*f, "pair",
+             {"compute s0[0].id = const 1", "compute s0[1].id = const 2",
+              "compute s1 = copy &s0", "forget s0", "compute s2 = const 0",
+              "loop", "compute s3 = binary < s2, #2", "if s3", "dead s3",
+              "else", "dead s3", "exit 0", "end_if", "block",
+              "compute s5 = offset s1, s2 * 4",
+              "call.drop s4 = noisy::drop(&s5.*)", "dead s5", "dead s4",
+              "end_block", "compute s2 = binary + s2, #1", "end_loop",
+              "return"});
+  expect_verifies(*f, f->function("pair"), "pair");
+  auto kept = f->function("pair");
+  kept.ops.erase(kept.ops.begin() +
+                 static_cast<std::ptrdiff_t>(find_op(kept, hir::op_kind::forget)));
+  expect_rejects(*f, kept, hir::verify_error_kind::leaked_value,
+                 "an array whose elements were dropped but is not given up");
+
+  // `uninit` storage is zeroed when it is made; the raw write moves `value`
+  // in and drops nothing.
+  expect_ops(*f, "keep",
+             {"zero s1", "compute s2 = copy &s1",
+              "compute s3 = offset s2, #0 * 4", "move s3.* <- s0", "dead s3",
+              "return"});
+  expect_verifies(*f, f->function("keep"), "keep");
+  auto zeroed = f->function("keep");
+  zeroed.ops[find_op(zeroed, hir::op_kind::zero_fill)].dest =
+      place_at(0, zeroed.slots[0].type);
+  expect_rejects(*f, zeroed, hir::verify_error_kind::type_mismatch,
+                 "zeroing storage that is not `uninit`");
+
+  // `into_iter` owns its receiver: `self` is the bag, passed by address, and
+  // the caller moves the bag in.
+  expect_ops(*f, "bag::into_iter",
+             {"move s0.item.@some.0 <- s1.item", "publish s0.item @some",
+              "return"});
+  const auto into_iter = f->function("bag::into_iter");
+  expect(into_iter.slots[1].type == f->hir_function("walk").params[0].type,
+         "expected the owned receiver to be typed as the bag itself");
+  expect_verifies(*f, into_iter, "bag::into_iter");
+  const auto walk = op_lines(*f, f->function("walk"));
+  expect(walk.size() > 2 && walk[0] == "move s2 <- s0" &&
+             walk[1] == "call s1 = bag::into_iter(move s2)",
+         "expected the caller to move the bag into `into_iter`");
+  expect_verifies(*f, f->function("walk"), "walk");
+  auto borrowed = f->function("walk");
+  borrowed.ops.erase(borrowed.ops.begin());
+  expect_rejects(*f, borrowed, hir::verify_error_kind::uninitialized,
+                 "a receiver moved in before it was filled");
+}
+
 auto test_constant_array_index_is_an_element_projection() -> void {
   auto f = build(read_program("raw.cn"));
   const auto third = f->function("third");
@@ -3372,6 +3427,7 @@ auto main() -> int {
     test_verifier_checks_the_operands_of_an_offset();
     test_raw_reads_own_the_value_and_raw_writes_drop_nothing();
     test_constant_array_index_is_an_element_projection();
+    test_arrays_forget_and_owned_receivers();
   } catch (const std::exception &e) {
     cinder::testing::fail(e.what());
   }

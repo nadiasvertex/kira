@@ -201,6 +201,12 @@ struct drop_plan {
   /// made it, so dropping one runs the drop glue the closure carries, if any.
   /// The glue is a `fn() -> unit` of this type over the same environment.
   std::optional<type_id> closure_glue;
+  /// An `array[T, n]` whose elements need a drop: `T`. Dropping the array
+  /// drops each element in index order, through `element_pointer` (`*mut T`).
+  /// `length` is `n`.
+  std::optional<type_id> element;
+  type_id element_pointer = k_unknown_type;
+  std::uint64_t length = 0;
 };
 
 /// The resolved `list[T]::new`/`list[T]::push` calls a `for ... => yield`
@@ -860,6 +866,10 @@ struct ownership_results {
   /// parameters the instance's has substituted away.
   std::unordered_map<const ast::func_decl *, const ast::func_decl *>
       instance_templates;
+  /// The methods that own the value their `self` refers to: each
+  /// `into_iterator` impl's `into_iter`, the one consuming `self`. An
+  /// instance of one is found through `instance_templates`.
+  std::unordered_set<const ast::func_decl *> consuming_receivers;
   /// Every interned `type_id` whose values can carry a borrow: a view
   /// (`slice`/`mut slice`, `cell`/`mut cell`), a reference (`&T`/`&mut T`),
   /// a callable (`fn(...)`, since a closure may hold `&`/`&mut` captures), or

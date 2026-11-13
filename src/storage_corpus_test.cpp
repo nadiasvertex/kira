@@ -7,6 +7,11 @@
 // `src/testdata/storage_corpus/baseline.txt` must pass; any other file that
 // passes is reported so the list can grow. `CINDER_STORAGE_SURVEY=1` prints
 // every file's status, and `CINDER_CORPUS_FILTER` runs only matching files.
+//
+// A file may bound the heap blocks `main` leaves allocated here with
+// `# storage-max-live-blocks: <integer>`, apart from the
+// `# max-live-blocks:` that `codegen_stress_test` checks on the
+// pointer-per-aggregate tiers, whose struct shells are never freed.
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -41,6 +46,7 @@
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
 #include "src/parser/source_location.h"
+#include "src/runtime/allocator.h"
 #include "src/runtime/scheduler.h"
 #include "src/runtime/value_layout.h"
 #include "src/semantic/analysis.h"
@@ -286,6 +292,9 @@ auto survey(const fs::path &path) -> verdict {
     return {.status = "no compiled `main`"};
   }
 
+  const auto live_bound = directive_value(text, "# storage-max-live-blocks:");
+  cinder::runtime::scheduler::wait_idle();
+  const auto live_before = cinder::runtime::heap_live_block_count();
   const auto hosted = bc::hosted_panic_scope{};
   const auto machine = bc::vm{*compiled};
   for (const auto init : compiled->static_initializers) {
@@ -319,6 +328,14 @@ auto survey(const fs::path &path) -> verdict {
   if (got != *want) {
     return {.status = std::format("main gave {}, expected {}", describe(got),
                                   describe(*want))};
+  }
+  if (live_bound.has_value()) {
+    const auto live = cinder::runtime::heap_live_block_count() - live_before;
+    if (live > *live_bound) {
+      return {.status = std::format("main left {} heap blocks allocated, but "
+                                    "`# storage-max-live-blocks:` allows {}",
+                                    live, *live_bound)};
+    }
   }
   return {.passed = true, .status = "passed"};
 }

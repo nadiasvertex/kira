@@ -332,6 +332,10 @@ struct hir_call : hir_expr {
   /// receives it by reference like every `self`: a receiver stored in a
   /// temporary is not dropped after the call.
   bool consumes_receiver = false;
+  /// The callee is a function that owns its receiver
+  /// (`hir_function::owns_receiver`), so the storage form moves the receiver
+  /// into the call instead of passing its address.
+  bool receiver_by_value = false;
   /// This call is a type's own `drop` that lowering synthesized where a value
   /// goes out of scope or is overwritten (`build_drop_calls`), not one the
   /// source wrote. The storage form reads it to tell a value's end from an
@@ -534,6 +538,10 @@ struct hir_stack_buffer : hir_expr {
 /// receiver is allowed to produce.
 struct hir_container_data : hir_expr {
   ptr<hir_expr> object;
+  /// Set only by an array's drop (`lowerer::build_drop_calls`): the elements
+  /// are dropped through the returned pointer, so the array itself ends here
+  /// without a drop of its own. The storage form records that with `forget`.
+  bool takes_elements = false;
 
   hir_container_data(source_span s, type_id t, ptr<hir_expr> obj)
       : hir_expr(hir_node_kind::hir_container_data, s, t),
@@ -1143,6 +1151,10 @@ enum class coroutine_kind : uint8_t {
 struct hir_function : hir_item {
   std::string name;
   std::vector<hir_param> params;
+  /// The function owns the value its first parameter, `self: &T`, refers to
+  /// (`semantic::ownership_results::consuming_receivers`). The storage form
+  /// takes that parameter as a `T` passed by address, and reads `*self` as it.
+  bool owns_receiver = false;
   type_id return_type = k_unknown_type;
   ptr<hir_block> body;
   /// What kind of suspendable state machine this function compiles into, if

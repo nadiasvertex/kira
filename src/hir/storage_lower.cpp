@@ -131,6 +131,9 @@ struct body_shape {
   bool releases_environment = false;
   /// The module's statics, which this function builds in their own storage.
   const std::vector<hir_static_global> *statics = nullptr;
+  /// The first parameter is `self: &T`, but the function owns the `T`
+  /// (`hir_function::owns_receiver`): it is a `T` passed by address.
+  bool owns_receiver = false;
 };
 
 /// The closure bodies and drop glue that lowering one function produced.
@@ -144,7 +147,8 @@ struct closure_sink {
                     .return_type = function.return_type,
                     .body = function.body.get(),
                     .span = function.span,
-                    .coroutine = function.is_coroutine()};
+                    .coroutine = function.is_coroutine(),
+                    .owns_receiver = function.owns_receiver};
 }
 
 class function_lowerer {
@@ -169,6 +173,13 @@ public:
     for (const auto &param : *fn_.params) {
       param_types.push_back(param.type);
     }
+    if (fn_.owns_receiver && !param_types.empty()) {
+      const auto owned = env_.pointee(param_types.front());
+      if (!owned.has_value()) {
+        return refuse(fn_.span, "a receiver it owns that is not a reference");
+      }
+      param_types.front() = *owned;
+    }
     auto signature =
         classify_signature(env_.layouts, param_types, fn_.return_type);
     if (!signature.has_value()) {
@@ -181,10 +192,15 @@ public:
                                   fn_.return_type, "", k_invalid_symbol_id,
                                   fn_.span, false);
     }
-    for (const auto &param : *fn_.params) {
-      const auto id = new_slot(storage_class::parameter, param.type, param.name,
-                               param.symbol, fn_.span, true);
+    for (size_t i = 0; i < fn_.params->size(); ++i) {
+      const auto &param = (*fn_.params)[i];
+      const auto id = new_slot(storage_class::parameter, param_types[i],
+                               param.name, param.symbol, fn_.span, true);
       out_.param_slots.push_back(id);
+      if (i == 0 && fn_.owns_receiver) {
+        owned_receiver_ = receiver{.symbol = param.symbol, .slot = id};
+        continue;
+      }
       locals_[param.symbol] = id;
     }
     if (fn_.environment != nullptr) {
@@ -540,6 +556,9 @@ private:
       if (unary.op != ast::unary_op::deref) {
         return std::optional<place>{};
       }
+      if (const auto owned = owned_receiver_slot(*unary.operand)) {
+        return std::optional<place>{whole(*owned)};
+      }
       auto base = lower_place(*unary.operand);
       if (!base.has_value()) {
         return std::unexpected(base.error());
@@ -554,16 +573,14 @@ private:
           return std::unexpected(ok.error());
         }
       }
-      const auto &entry =
-          types().entry(types().strip_refinement(pointer.type));
-      if (entry.kind != semantic::type_kind::ref_kind &&
-          entry.kind != semantic::type_kind::ptr_kind) {
+      const auto referent = env_.pointee(pointer.type);
+      if (!referent.has_value()) {
         return malformed(expr.span, "cannot dereference `" +
                                         types().display(pointer.type) + "`");
       }
       return std::optional<place>{project(
           std::move(pointer), projection{.kind = projection_kind::deref},
-          entry.result)};
+          *referent)};
     }
     default:
       return std::optional<place>{};
@@ -940,6 +957,11 @@ private:
   [[nodiscard]] auto lower_operand(const hir_expr &expr, bool later_effects,
                                    bool borrowed = false)
       -> std::expected<operand, storage_lower_error> {
+    if (const auto owned = owned_receiver_slot(expr)) {
+      return operand{.kind = operand_kind::address_of,
+                     .where = whole(*owned),
+                     .type = expr.type};
+    }
     const auto cls = class_of(expr.type, expr.span);
     if (!cls.has_value()) {
       return std::unexpected(cls.error());
@@ -1026,6 +1048,10 @@ private:
     case hir_node_kind::hir_literal:
       return lower_literal(as<hir_literal>(expr), dest);
     case hir_node_kind::hir_local_ref:
+      if (owned_receiver_slot(expr).has_value()) {
+        return lower_receiver_address(expr, dest);
+      }
+      return transfer_from_place(expr, dest);
     case hir_node_kind::hir_global_ref:
     case hir_node_kind::hir_field:
     case hir_node_kind::hir_tuple_index:
@@ -1087,6 +1113,9 @@ private:
       return lower_container_len(as<hir_container_len>(expr), dest);
     case hir_node_kind::hir_container_data:
       return lower_container_data(as<hir_container_data>(expr), dest);
+    case hir_node_kind::hir_stack_buffer:
+      emit(storage_op{.kind = op_kind::zero_fill, .dest = dest}, expr.span);
+      return {};
     case hir_node_kind::hir_slice_from_raw_parts:
       return lower_slice_from_raw_parts(as<hir_slice_from_raw_parts>(expr),
                                         dest);
@@ -1168,6 +1197,33 @@ private:
   /// an array, which is that of its first element. An empty container's
   /// data word is returned as it is, without a bounds check; an empty
   /// array's address is its zero-sized slot's.
+  /// The parameter slot of the receiver this function owns, when `expr` names
+  /// it (`self`, typed `&T` in the HIR, is a `T` here).
+  [[nodiscard]] auto owned_receiver_slot(const hir_expr &expr) const
+      -> std::optional<storage_id> {
+    if (!owned_receiver_.has_value() || expr.kind != hir_node_kind::hir_local_ref ||
+        as<hir_local_ref>(expr).symbol != owned_receiver_->symbol) {
+      return std::nullopt;
+    }
+    return owned_receiver_->slot;
+  }
+
+  /// `self` as a value, in a function that owns its receiver: the address of
+  /// the parameter.
+  [[nodiscard]] auto lower_receiver_address(const hir_expr &expr,
+                                            const place &dest) -> result {
+    auto value = lower_operand(expr, false);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto op = storage_op{.kind = op_kind::compute};
+    op.dest = dest;
+    op.computation = compute_kind::copy;
+    op.operands.push_back(std::move(*value));
+    emit(std::move(op), expr.span);
+    return {};
+  }
+
   [[nodiscard]] auto lower_container_data(const hir_container_data &node,
                                           const place &dest) -> result {
     auto object = container_place(*node.object);
@@ -1184,9 +1240,8 @@ private:
                                       node.type),
                       dest, node.span);
     }
-    const auto &entry = types().entry(types().strip_refinement(object->type));
-    if (found.kind == runtime::value_layout_kind::array &&
-        entry.name != "uninit") {
+    if (found.kind == runtime::value_layout_kind::array) {
+      const auto array = *object;
       auto op = storage_op{.kind = op_kind::compute};
       op.dest = dest;
       op.computation = compute_kind::copy;
@@ -1194,6 +1249,9 @@ private:
                                     .where = std::move(*object),
                                     .type = node.type});
       emit(std::move(op), node.span);
+      if (node.takes_elements) {
+        emit(storage_op{.kind = op_kind::forget, .dest = array}, node.span);
+      }
       return {};
     }
     return refuse(node.span, "the data address of `" +
@@ -2255,7 +2313,8 @@ private:
       }
       return {};
     }
-    if (plan->cancels_generator || plan->closure_glue.has_value()) {
+    if (plan->cancels_generator || plan->closure_glue.has_value() ||
+        plan->element.has_value()) {
       return refuse(span, "the drop of a `" + types().display(where.type) +
                               "` held by a task");
     }
@@ -2415,9 +2474,21 @@ private:
             dest);
       }
     }
+    // A callee that owns its receiver takes the value `&v` names, moved in.
+    const hir_expr *owned_receiver = nullptr;
+    if (call.receiver_by_value && !call.args.empty()) {
+      const auto &first = *call.args.front();
+      if (first.kind != hir_node_kind::hir_unary ||
+          (as<hir_unary>(first).op != ast::unary_op::addr_of &&
+           as<hir_unary>(first).op != ast::unary_op::addr_of_mut)) {
+        return refuse(call.span, "a consumed receiver that is not a place");
+      }
+      owned_receiver = as<hir_unary>(first).operand.get();
+    }
     auto params = std::vector<type_id>{};
-    for (const auto &arg : call.args) {
-      params.push_back(arg->type);
+    for (size_t i = 0; i < call.args.size(); ++i) {
+      params.push_back(i == 0 && owned_receiver != nullptr ? owned_receiver->type
+                                                           : call.args[i]->type);
     }
     auto signature = classify_signature(env_.layouts, params, call.type);
     if (!signature.has_value()) {
@@ -2455,7 +2526,8 @@ private:
     op.is_drop = call.is_drop;
     auto outgoing = std::vector<storage_id>{};
     for (size_t i = 0; i < call.args.size(); ++i) {
-      const auto &arg = *call.args[i];
+      const auto &arg =
+          i == 0 && owned_receiver != nullptr ? *owned_receiver : *call.args[i];
       const auto &param = signature->params[i];
       auto lowered = call_argument{.source_index = i, .cls = param.cls};
       if (param.cls == pass_class::zero_sized) {
@@ -3734,6 +3806,22 @@ private:
     if (terminated_) {
       return {};
     }
+    // A `*mut T` returned as a `*T` is the same address, retyped.
+    const auto is_raw_pointer = [this](type_id id) -> bool {
+      return types().entry(types().strip_refinement(id)).kind ==
+             semantic::type_kind::ptr_kind;
+    };
+    if (types().strip_refinement(value->type) !=
+            types().strip_refinement(signature.result.type) &&
+        is_raw_pointer(value->type) && is_raw_pointer(signature.result.type)) {
+      const auto temp = new_temp(signature.result.type, expr.span);
+      auto op = storage_op{.kind = op_kind::compute};
+      op.dest = whole(temp);
+      op.computation = compute_kind::copy;
+      op.operands.push_back(std::move(*value));
+      emit(std::move(op), expr.span);
+      value = read_of(whole(temp), false);
+    }
     // The value must outlive the statement's temporaries, which end first.
     // A scalar temporary that is itself the value is simply kept; a value read
     // from inside a temporary (through a reference it holds) is copied out.
@@ -3787,6 +3875,13 @@ private:
   size_t state_align_ = 1;
   storage_function out_;
   std::unordered_map<symbol_id, storage_id> locals_;
+  /// The `self` this function owns (`body_shape::owns_receiver`): its symbol,
+  /// which is not in `locals_`, and its parameter slot, which holds the `T`.
+  struct receiver {
+    symbol_id symbol = k_invalid_symbol_id;
+    storage_id slot = 0;
+  };
+  std::optional<receiver> owned_receiver_;
   /// A pattern subject that is a part of a value: the place it names.
   std::unordered_map<symbol_id, place> subjects_;
   std::unordered_map<std::string, storage_id> globals_;
