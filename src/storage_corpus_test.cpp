@@ -482,7 +482,24 @@ auto survey(const fs::path &path) -> verdict {
   auto compiled = cinder::bytecode_compiler::compile_storage_module(program_span,
                                                                      *p->env);
   if (!compiled.has_value()) {
-    return {.status = "VM compile: " + compiled.error().message};
+    // `CINDER_STORAGE_DUMP=1` prints the function the VM compiler rejected.
+    if (std::getenv("CINDER_STORAGE_DUMP") != nullptr) {
+      for (const auto *module : modules) {
+        for (const auto &function : module->functions) {
+          if (compiled.error().message.contains(
+                  std::format("in `{}.{}`:", module->name, function.name))) {
+            std::println(stderr, "{}", hir::dump(function, p->checked.types));
+          }
+        }
+      }
+    }
+    auto where = std::string{};
+    const auto span = compiled.error().span;
+    if (span.end > span.start && span.end <= text.size()) {
+      where = std::format(" (at `{}`)", text.substr(span.start, std::min<size_t>(
+                                                                 span.end - span.start, 60)));
+    }
+    return {.status = "VM compile: " + compiled.error().message + where};
   }
   auto index = uint16_t{0};
   while (index < compiled->functions.size() &&

@@ -567,7 +567,7 @@ private:
         auto *pointer = builder_.CreateAlignedLoad(
             ptr_type(), pointer_at(loc), access_align(loc, runtime::k_word_size));
         loc = location{.base = pointer, .offset = 0, .align = 1};
-        current = types().entry(types().strip_refinement(current)).result;
+        current = mc_.env.pointee(current).value_or(semantic::k_unknown_type);
         continue;
       }
       const auto layout = layout_of(mc_, current, slot.span);

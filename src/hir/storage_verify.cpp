@@ -171,6 +171,22 @@ private:
     return types().strip_refinement(a) == types().strip_refinement(b);
   }
 
+  /// `a` and `b` are the same type, or one is `str` and the other
+  /// `slice[byte]`: one descriptor, which `s.as_bytes()` views as the other.
+  [[nodiscard]] auto same_bytes(type_id a, type_id b) const -> bool {
+    if (same_type(a, b)) {
+      return true;
+    }
+    const auto is_str = [&](type_id t) { return is_builtin(t, "str"); };
+    const auto is_byte_slice = [&](type_id t) {
+      const auto &entry = types().entry(types().strip_refinement(t));
+      return entry.kind == semantic::type_kind::builtin_generic_kind &&
+             entry.name == "slice" && entry.args.size() == 1 &&
+             is_builtin(entry.args.front(), "byte");
+    };
+    return (is_str(a) && is_byte_slice(b)) || (is_byte_slice(a) && is_str(b));
+  }
+
   [[nodiscard]] auto is_builtin(type_id id, std::string_view name) const
       -> bool {
     const auto &entry = types().entry(types().strip_refinement(id));
@@ -966,7 +982,7 @@ private:
       }
       if ((entry.kind != semantic::type_kind::ref_kind &&
            entry.kind != semantic::type_kind::ptr_kind) ||
-          (!same_type(entry.result, value.where.type) && !element_pointer)) {
+          (!same_bytes(entry.result, value.where.type) && !element_pointer)) {
         return fail(verify_error_kind::type_mismatch,
                     "the address of " + name_of(value.where.type) +
                         " is typed " + name_of(value.type));
@@ -2007,7 +2023,7 @@ private:
     if (!to.has_value()) {
       return std::unexpected(to.error());
     }
-    if (!same_type(op.source.type, op.dest.type)) {
+    if (!same_bytes(op.source.type, op.dest.type)) {
       return fail(verify_error_kind::type_mismatch,
                   std::string{moving ? "move" : "copy"} + " joins " +
                       name_of(op.source.type) + " and " +

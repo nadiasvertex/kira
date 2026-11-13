@@ -543,7 +543,7 @@ private:
       // Only a dereference can follow a value held in a register: the value
       // is the address of what comes next.
       loc = location{.where = location::kind::memory, .reg = here.reg};
-      current = types().entry(types().strip_refinement(current)).result;
+      current = env_.pointee(current).value_or(semantic::k_unknown_type);
       step = 1;
       break;
     case home::kind::frame:
@@ -564,7 +564,7 @@ private:
           return std::unexpected(ok.error());
         }
         loc = location{.where = location::kind::memory, .reg = pointer};
-        current = types().entry(types().strip_refinement(current)).result;
+        current = env_.pointee(current).value_or(semantic::k_unknown_type);
         continue;
       }
       const auto layout = layout_of(current, slot.span);
@@ -2314,7 +2314,10 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
           function_emitter(entry, *module, function, env, index, statics)
               .compile();
       if (!compiled.has_value()) {
-        return std::unexpected(compiled.error());
+        auto error = compiled.error();
+        error.message = std::format("in `{}.{}`: {}", module->name, function.name,
+                                    error.message);
+        return std::unexpected(std::move(error));
       }
       out.functions.push_back(std::move(*compiled));
     }
