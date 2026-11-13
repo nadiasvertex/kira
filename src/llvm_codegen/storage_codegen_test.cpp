@@ -95,8 +95,12 @@ public:
 
   [[nodiscard]] auto panics(std::string_view name, std::span<const int64_t> args)
       -> std::optional<bytecode::panic_reason> override {
-    auto raw = std::array<std::byte, 8>{};
-    const auto ran = jit_->run_storage(name, slots(args), raw.data());
+    // A fatal panic, such as an index out of bounds, ends the process unless
+    // the host has said it will handle it. The buffer is large enough for a
+    // result written through an address.
+    const auto hosted = bytecode::hosted_panic_scope{};
+    auto out = cases::result_bytes{};
+    const auto ran = jit_->run_storage(name, slots(args), out.bytes.data());
     if (ran.has_value()) {
       return std::nullopt;
     }

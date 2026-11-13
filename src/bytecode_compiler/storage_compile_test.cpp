@@ -90,6 +90,20 @@ public:
 
   [[nodiscard]] auto panics(std::string_view name, std::span<const int64_t> args)
       -> std::optional<bytecode::panic_reason> override {
+    const auto &fn = function(name);
+    if (fn.abi.has_value() && fn.abi->returns_through_address) {
+      // A function that writes its result through an address needs somewhere
+      // to write it even when it is expected to panic first.
+      auto out = cases::result_bytes{};
+      const auto result = machine->run_hosted_into(
+          find(name),
+          std::span<std::byte>(out.bytes.data(), fn.abi->result.size),
+          registers(args), {});
+      if (result.has_value()) {
+        return std::nullopt;
+      }
+      return result.error().reason;
+    }
     const auto result = machine->run_hosted(find(name), registers(args), {});
     if (result.has_value()) {
       return std::nullopt;

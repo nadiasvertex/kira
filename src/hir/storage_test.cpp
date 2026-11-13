@@ -1660,6 +1660,38 @@ auto test_descriptor_words_are_parts() -> void {
                  "the address of");
 }
 
+auto test_indexes_are_checked() -> void {
+  auto f = build(read_program("forms.cn"));
+  expect_ops(*f, "text_at", {"compute s2 = index s1 < s0.len",
+                             "compute s3 = offset s0.data, s2 * 1",
+                             "compute s4 = copy s3.*", "dead s3", "dead s2",
+                             "return s4"});
+  expect_ops(*f, "text_part",
+             {"compute s4 = bound s3 <= s1.len", "compute s5 = bound s2 <= s4",
+              "compute s0.data = offset s1.data, s5 * 1",
+              "compute s0.len = binary - s4, s5", "dead s5", "dead s4",
+              "return"});
+
+  // A bounds check on a signed index would let a negative one through.
+  auto signed_index = f->function("text_at");
+  signed_index.slots[2].type = f->builtin("int64");
+  signed_index.ops.front().dest.type = f->builtin("int64");
+  expect_rejects(*f, signed_index, hir::verify_error_kind::type_mismatch,
+                 "a bounds check into an int64", {}, "compares `usize`");
+
+  auto signed_result = f->function("text_part");
+  signed_result.slots[4].type = f->builtin("int64");
+  signed_result.ops.front().dest.type = f->builtin("int64");
+  expect_rejects(*f, signed_result, hir::verify_error_kind::type_mismatch,
+                 "a range bound checked into an int64", {}, "compares `usize`");
+
+  // An offset whose stride is not the element's size lands inside an element.
+  auto wide = f->function("text_at");
+  wide.ops[1].stride = 8;
+  expect_rejects(*f, wide, hir::verify_error_kind::type_mismatch,
+                 "a byte offset stepping a word at a time", {}, "steps 8 bytes");
+}
+
 auto test_verifier_checks_call_signatures() -> void {
   auto f = build(read_program("forms.cn"));
   // The caller's view of `make_pair` disagrees with the callee's.
@@ -3168,6 +3200,7 @@ auto main() -> int {
     test_unsupported_constructs_are_refused_by_name();
     test_string_literals_are_descriptors_over_static_bytes();
     test_descriptor_words_are_parts();
+    test_indexes_are_checked();
     test_every_lowered_function_verifies();
     test_dump_is_stable();
     test_droppable_values_lower_and_verify();

@@ -249,6 +249,12 @@ namespace {
   case compute_kind::pointer_offset:
     return "offset " + render_operand(op.operands.at(0)) + ", " +
            render_operand(op.operands.at(1)) + " * " + std::to_string(op.stride);
+  case compute_kind::checked_index:
+    return "index " + render_operand(op.operands.at(0)) + " < " +
+           render_operand(op.operands.at(1));
+  case compute_kind::checked_end:
+    return "bound " + render_operand(op.operands.at(0)) + " <= " +
+           render_operand(op.operands.at(1));
   }
   return "?";
 }

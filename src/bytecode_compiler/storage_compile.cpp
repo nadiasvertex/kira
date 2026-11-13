@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "src/bytecode/opcodes.h"
+#include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
 #include "src/bytecode_compiler/register_alloc.h"
 #include "src/bytecode_compiler/scalar_encoding.h"
@@ -840,6 +841,13 @@ private:
       }
       break;
     }
+    case hir::compute_kind::checked_index:
+    case hir::compute_kind::checked_end: {
+      if (auto ok = emit_bounds_check(op, target); !ok.has_value()) {
+        return ok;
+      }
+      break;
+    }
     case hir::compute_kind::cast: {
       const auto from = kind_of(op.operands[0].type, op.span);
       const auto to = kind_of(op.dest.type, op.span);
@@ -898,6 +906,33 @@ private:
     emit_register(*base);
     emit_register(index);
     writer_.emit_u8(static_cast<uint8_t>(scale));
+    return {};
+  }
+
+  /// `checked_index` panics when the value is at or past the limit,
+  /// `checked_end` when it is past it; otherwise the value is the result.
+  [[nodiscard]] auto emit_bounds_check(const hir::storage_op &op,
+                                       virtual_reg target) -> checked<void> {
+    const auto value = operand_value(op.operands[0]);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    const auto limit = operand_value(op.operands[1]);
+    if (!limit.has_value()) {
+      return std::unexpected(limit.error());
+    }
+    const auto outside = alloc_register();
+    emit_op(op.computation == hir::compute_kind::checked_index ? opcode::op_ge
+                                                               : opcode::op_gt);
+    emit_register(outside);
+    emit_register(*value);
+    emit_register(*limit);
+    writer_.emit_numeric_kind(numeric_kind::u64);
+    emit_op(opcode::op_panic_if);
+    emit_register(outside);
+    writer_.emit_u8(
+        static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
+    emit_move(target, *value);
     return {};
   }
 

@@ -146,3 +146,11 @@ machine def array_data(a: array[int64, 2]) -> *int64:
 
 machine def view_of(p: *int64, n: usize) -> slice[int64]:
     return slice_from_raw_parts(p, n)
+
+# A run-time index is checked against the length, then offset by the stride.
+def text_at(s: str, i: usize) -> byte:
+    return s[i]
+
+# A range is checked end first, then start against end.
+def text_part(s: str, a: usize, b: usize) -> str:
+    return s[a..b]

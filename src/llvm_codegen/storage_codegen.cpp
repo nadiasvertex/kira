@@ -776,6 +776,10 @@ private:
     case hir::compute_kind::pointer_offset:
       computed = emit_pointer_offset(op);
       break;
+    case hir::compute_kind::checked_index:
+    case hir::compute_kind::checked_end:
+      computed = emit_bounds_check(op);
+      break;
     }
     if (!computed.has_value()) {
       return std::unexpected(computed.error());
@@ -879,6 +883,25 @@ private:
     }
     auto *bytes = builder_.CreateMul(index, constant(i64(), op.stride));
     return builder_.CreateGEP(i8(), *base, {bytes});
+  }
+
+  /// `checked_index` panics when the value is at or past the limit,
+  /// `checked_end` when it is past it; otherwise the value is the result.
+  [[nodiscard]] auto emit_bounds_check(const hir::storage_op &op)
+      -> checked<llvm::Value *> {
+    const auto value = operand_value(op.operands[0]);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    const auto limit = operand_value(op.operands[1]);
+    if (!limit.has_value()) {
+      return std::unexpected(limit.error());
+    }
+    auto *outside = op.computation == hir::compute_kind::checked_index
+                        ? builder_.CreateICmpUGE(*value, *limit)
+                        : builder_.CreateICmpUGT(*value, *limit);
+    scalars_.guard_panic(outside, bytecode::panic_reason::index_out_of_bounds);
+    return *value;
   }
 
   [[nodiscard]] auto emit_transfer(const hir::storage_op &op) -> checked<void> {

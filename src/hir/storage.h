@@ -165,6 +165,13 @@ enum class compute_kind : uint8_t {
   /// `operands[0]` (a raw pointer) advanced by `operands[1]` elements of
   /// `stride` bytes each: the address of `p[i]`.
   pointer_offset,
+  /// `operands[0]` when it is below `operands[1]`, and otherwise a panic
+  /// with `index_out_of_bounds`: an index checked against a length. All
+  /// three are `usize`.
+  checked_index,
+  /// `operands[0]` when it is at most `operands[1]`, and otherwise the same
+  /// panic: a range bound checked against the length or the other bound.
+  checked_end,
 };
 
 /// The target of a call.

@@ -546,22 +546,35 @@ private:
     }
   }
 
-  /// `x[i]`: a slot of a raw pointer, or an element of an array at a constant
-  /// index. Any other indexing is not a place the form names yet.
+  /// `x[i]`: a slot of a raw pointer, an element of an array at a constant
+  /// index, or an element of an array, `str`, or `slice` at an index checked
+  /// at run time. A range index is a value, not a place.
   [[nodiscard]] auto lower_index(const hir_index &index)
       -> std::expected<std::optional<place>, storage_lower_error> {
     if (indexes_raw_pointer(index)) {
       return lower_raw_index(index);
     }
-    if (index.index->kind != hir_node_kind::hir_literal) {
+    if (range_of(index) != nullptr) {
       return std::optional<place>{};
     }
-    const auto &literal = as<hir_literal>(*index.index);
+    const auto object_layout =
+        layout_of(referent_type(index.object->type), index.span);
+    if (!object_layout.has_value()) {
+      return std::unexpected(object_layout.error());
+    }
     auto at = size_t{0};
-    const auto *end = literal.value.data() + literal.value.size();
-    if (literal.lit_kind != token_kind::int_lit ||
-        std::from_chars(literal.value.data(), end, at).ptr != end) {
-      return std::optional<place>{};
+    const auto constant_index = [&] {
+      if (index.index->kind != hir_node_kind::hir_literal) {
+        return false;
+      }
+      const auto &literal = as<hir_literal>(*index.index);
+      const auto *end = literal.value.data() + literal.value.size();
+      return literal.lit_kind == token_kind::int_lit &&
+             std::from_chars(literal.value.data(), end, at).ptr == end;
+    }();
+    if (!constant_index ||
+        (*object_layout)->kind != runtime::value_layout_kind::array) {
+      return lower_checked_index(index);
     }
     auto base = lower_place(*index.object);
     if (!base.has_value()) {
@@ -588,6 +601,202 @@ private:
         std::move(object),
         projection{.kind = projection_kind::element, .index = at},
         found.element)};
+  }
+
+  /// `type` behind any references.
+  [[nodiscard]] auto referent_type(type_id type) const -> type_id {
+    for (;;) {
+      const auto &entry = types().entry(types().strip_refinement(type));
+      if (entry.kind != semantic::type_kind::ref_kind) {
+        return type;
+      }
+      type = entry.result;
+    }
+  }
+
+  /// The `a..b` or `a..=b` that `index` indexes by, or null.
+  [[nodiscard]] static auto range_of(const hir_index &index)
+      -> const hir_binary * {
+    if (index.index == nullptr || index.index->kind != hir_node_kind::hir_binary) {
+      return nullptr;
+    }
+    const auto &range = as<hir_binary>(*index.index);
+    return range.op == ast::binary_op::range ||
+                   range.op == ast::binary_op::range_inclusive
+               ? &range
+               : nullptr;
+  }
+
+  /// What indexing a container reads: its length, a pointer to its first
+  /// element, and the element's type and stride.
+  struct container_view {
+    operand length;
+    operand data;
+    type_id element = semantic::k_unknown_type;
+    type_id pointer = semantic::k_unknown_type;
+    size_t stride = 0;
+  };
+
+  /// The view of the array, `str`, or `slice` at `object`, or nullopt for any
+  /// other type. The data pointer is `*mut T` for a `slice_mut` or an array,
+  /// `*T` otherwise.
+  [[nodiscard]] auto view_of(const place &object, const source_span &span)
+      -> std::expected<std::optional<container_view>, storage_lower_error> {
+    const auto layout = layout_of(object.type, span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto &found = **layout;
+    const auto &entry = types().entry(types().strip_refinement(object.type));
+    auto &table = env_.checked.types;
+    auto view = container_view{};
+    if (found.kind == runtime::value_layout_kind::descriptor) {
+      view.element = entry.name == "str" ? table.builtin("byte") : entry.args.at(0);
+      view.pointer = table.ptr_to(view.element, entry.name == "slice_mut");
+      view.length = read_of(
+          descriptor_part(object, projection_kind::length, types().usize_type()),
+          false);
+      view.data = read_of(descriptor_part(object, projection_kind::data, view.pointer),
+                          false);
+    } else if (found.kind == runtime::value_layout_kind::array &&
+               entry.name != "uninit") {
+      view.element = found.element;
+      view.pointer = table.ptr_to(view.element, true);
+      view.length = word_constant(found.count);
+      view.data = operand{.kind = operand_kind::address_of,
+                          .where = object,
+                          .type = view.pointer};
+    } else {
+      return std::optional<container_view>{};
+    }
+    const auto size = env_.layouts.size_of(view.element);
+    if (!size.has_value()) {
+      return layout_failure(span, size.error());
+    }
+    view.stride = *size;
+    return std::optional<container_view>{std::move(view)};
+  }
+
+  /// A `usize` temporary holding `value` checked against `limit`.
+  [[nodiscard]] auto checked_word(compute_kind check, operand value,
+                                  operand limit, const source_span &span)
+      -> storage_id {
+    const auto temp = new_temp(types().usize_type(), span);
+    auto op = storage_op{.kind = op_kind::compute};
+    op.dest = whole(temp);
+    op.computation = check;
+    op.operands.push_back(std::move(value));
+    op.operands.push_back(std::move(limit));
+    emit(std::move(op), span);
+    return temp;
+  }
+
+  /// `xs[i]` at an index known only at run time: the index is checked against
+  /// the length, and the element is the slot that many strides past the data
+  /// pointer. An element that needs a drop is refused, since a write through
+  /// this place would not drop the value it replaces.
+  [[nodiscard]] auto lower_checked_index(const hir_index &index)
+      -> std::expected<std::optional<place>, storage_lower_error> {
+    auto object = container_place(*index.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto view = view_of(*object, index.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
+    }
+    if (!view->has_value()) {
+      return std::optional<place>{};
+    }
+    auto &found = **view;
+    if (env_.needs_drop(found.element)) {
+      return refuse(index.span, "an element of `" + types().display(object->type) +
+                                    "` at a run-time index, whose elements "
+                                    "need a drop");
+    }
+    auto at = lower_operand(*index.index, false);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    const auto checked = checked_word(compute_kind::checked_index, std::move(*at),
+                                      std::move(found.length), index.span);
+    const auto moved = new_temp(found.pointer, index.span);
+    auto op = storage_op{.kind = op_kind::compute};
+    op.dest = whole(moved);
+    op.computation = compute_kind::pointer_offset;
+    op.stride = found.stride;
+    op.operands.push_back(std::move(found.data));
+    op.operands.push_back(read_of(whole(checked), false));
+    emit(std::move(op), index.span);
+    return std::optional<place>{project(
+        whole(moved), projection{.kind = projection_kind::deref}, found.element)};
+  }
+
+  /// `xs[a..b]` (or `a..=b`) into `dest`, a `str` or `slice`: `b <= len` and
+  /// then `a <= b` are checked, in that order, and the view's words are
+  /// `b - a` and the data pointer advanced by `a`.
+  [[nodiscard]] auto lower_range_index(const hir_index &index,
+                                       const hir_binary &range,
+                                       const place &dest) -> result {
+    if (range.lhs == nullptr || range.rhs == nullptr) {
+      return refuse(index.span, "a range index without both bounds");
+    }
+    auto object = container_place(*index.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto view = view_of(*object, index.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
+    }
+    if (!view->has_value()) {
+      return refuse(index.span, "a range index into `" +
+                                    types().display(object->type) + "`");
+    }
+    auto &found = **view;
+    auto start = lower_operand(*range.lhs, !is_pure(*range.rhs));
+    if (!start.has_value()) {
+      return std::unexpected(start.error());
+    }
+    auto end = lower_operand(*range.rhs, false);
+    if (!end.has_value()) {
+      return std::unexpected(end.error());
+    }
+    const auto usize = types().usize_type();
+    if (range.op == ast::binary_op::range_inclusive) {
+      const auto past = new_temp(usize, index.span);
+      auto add = storage_op{.kind = op_kind::compute};
+      add.dest = whole(past);
+      add.computation = compute_kind::binary;
+      add.binary = ast::binary_op::add;
+      add.operands.push_back(std::move(*end));
+      add.operands.push_back(word_constant(1));
+      emit(std::move(add), index.span);
+      end = read_of(whole(past), false);
+    }
+    const auto last = checked_word(compute_kind::checked_end, std::move(*end),
+                                   std::move(found.length), index.span);
+    const auto first =
+        checked_word(compute_kind::checked_end, std::move(*start),
+                     read_of(whole(last), false), index.span);
+    const auto &dest_entry = types().entry(types().strip_refinement(dest.type));
+    const auto data_type =
+        env_.checked.types.ptr_to(found.element, dest_entry.name == "slice_mut");
+    auto data = storage_op{.kind = op_kind::compute};
+    data.dest = descriptor_part(dest, projection_kind::data, data_type);
+    data.computation = compute_kind::pointer_offset;
+    data.stride = found.stride;
+    data.operands.push_back(std::move(found.data));
+    data.operands.push_back(read_of(whole(first), false));
+    emit(std::move(data), index.span);
+    auto length = storage_op{.kind = op_kind::compute};
+    length.dest = descriptor_part(dest, projection_kind::length, usize);
+    length.computation = compute_kind::binary;
+    length.binary = ast::binary_op::sub;
+    length.operands.push_back(read_of(whole(last), false));
+    length.operands.push_back(read_of(whole(first), false));
+    emit(std::move(length), index.span);
+    return {};
   }
 
   /// Whether `index` indexes a raw pointer.
@@ -782,14 +991,20 @@ private:
     case hir_node_kind::hir_match:
       return lower_match(as<hir_match>(expr), dest);
     case hir_node_kind::hir_index: {
+      const auto &index = as<hir_index>(expr);
+      if (const auto *range = range_of(index); range != nullptr) {
+        return lower_range_index(index, *range, dest);
+      }
       auto where = lower_place(expr);
       if (!where.has_value()) {
         return std::unexpected(where.error());
       }
       if (!where->has_value()) {
         return refuse(expr.span,
-                      "indexing other than a raw pointer or an array at a "
-                      "constant index");
+                      "indexing `" +
+                          types().display(referent_type(index.object->type)) +
+                          "`, which is not a raw pointer, an array, a `str`, "
+                          "or a `slice`");
       }
       return transfer(**where, dest, expr.span);
     }

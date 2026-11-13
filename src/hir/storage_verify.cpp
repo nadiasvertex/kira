@@ -1549,7 +1549,9 @@ private:
     const auto expected_operands =
         op.computation == compute_kind::constant ? 0U
         : op.computation == compute_kind::binary ||
-                  op.computation == compute_kind::pointer_offset
+                  op.computation == compute_kind::pointer_offset ||
+                  op.computation == compute_kind::checked_index ||
+                  op.computation == compute_kind::checked_end
             ? 2U
             : 1U;
     if (op.operands.size() != expected_operands) {
@@ -1578,6 +1580,30 @@ private:
                         name_of(op.operands[0].type) + " to " +
                         name_of(op.dest.type));
       }
+      // The stride is the size of what the result points at, so an offset of
+      // n lands on element n and not inside the one before it.
+      const auto element =
+          types().entry(types().strip_refinement(op.dest.type)).result;
+      const auto size = env_.layouts.size_of(element);
+      if (!size.has_value()) {
+        return fail(verify_error_kind::layout_failed, size.error().message);
+      }
+      if (op.stride != *size) {
+        return fail(verify_error_kind::type_mismatch,
+                    "an offset steps " + std::to_string(op.stride) +
+                        " bytes at a time over " + name_of(element) +
+                        ", which is " + std::to_string(*size) + " bytes");
+      }
+    }
+    if ((op.computation == compute_kind::checked_index ||
+         op.computation == compute_kind::checked_end) &&
+        !(is_builtin(op.dest.type, "usize") &&
+          is_builtin(op.operands[0].type, "usize") &&
+          is_builtin(op.operands[1].type, "usize"))) {
+      return fail(verify_error_kind::type_mismatch,
+                  "a bounds check compares `usize` values, not " +
+                      name_of(op.operands[0].type) + " and " +
+                      name_of(op.operands[1].type));
     }
     if (auto ok = require_writable(op.dest, *at); !ok.has_value()) {
       return ok;

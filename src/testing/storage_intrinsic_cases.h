@@ -376,6 +376,47 @@ inline auto descriptor_words_are_read_and_written(case_backend &backend)
                "view_sum(1)");
 }
 
+/// An index known only at run time is checked against the length; a range
+/// index checks its end against the length and its start against its end.
+inline auto run_time_indexes_are_checked(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "indexing.cn");
+  const auto oob = [&](std::string_view name, std::vector<int64_t> args) {
+    const auto failure = p->panics(name, args);
+    expect(failure.has_value() &&
+               *failure == bytecode::panic_reason::index_out_of_bounds,
+           "expected " + std::string{name} + " to panic out of bounds");
+  };
+  using args = std::vector<int64_t>;
+  expect_equal(p->scalar("nth", args{0}), 10, "nth(0)");
+  expect_equal(p->scalar("nth", args{3}), 40, "nth(3)");
+  oob("nth", args{4});
+  expect_equal(p->scalar("set_nth", args{1, 7}), 173, "set_nth(1, 7)");
+  oob("set_nth", args{3, 7});
+  expect_equal(p->scalar("pair_second", args{2}), 30, "pair_second(2)");
+  expect_equal(p->scalar("pair_second", args{1}), 20, "pair_second(1)");
+  const auto word = text_view("banana");
+  expect_equal(p->scalar("byte_at", args{as_argument(word), 2}), 'n',
+               "byte_at(banana, 2)");
+  oob("byte_at", args{as_argument(word), 6});
+  expect_equal(p->scalar("count_byte", args{as_argument(word), 'a'}), 3,
+               "count_byte(banana, a)");
+  expect(peek_text(p->into("middle", args{as_argument(word), 1, 4})) == "ana",
+         "expected middle(banana, 1, 4) to view `ana`");
+  expect(peek_text(p->into("middle", args{as_argument(word), 6, 6})).empty(),
+         "expected middle(banana, 6, 6) to be empty");
+  oob("middle", args{as_argument(word), 0, 7});
+  expect_equal(p->scalar("middle_len", args{2, 5}), 3, "middle_len(2, 5)");
+  oob("middle_len", args{4, 2});
+  oob("middle_len", args{0, 7});
+  expect_equal(p->scalar("inclusive_first", args{3, 4}), 'd',
+               "inclusive_first(3, 4)");
+  expect_equal(p->scalar("inclusive_len", args{0, 5}), 6, "inclusive_len(0, 5)");
+  oob("inclusive_len", args{0, 6});
+  expect_equal(p->scalar("window_sum", args{1, 4}), 234, "window_sum(1, 4)");
+  expect_equal(p->scalar("window_sum", args{2, 2}), 0, "window_sum(2, 2)");
+  oob("window_sum", args{3, 6});
+}
+
 inline auto intrinsic_cases(case_backend &backend) -> void {
   io_results_are_written_in_place(backend);
   repeated_io_allocates_nothing(backend);
@@ -383,6 +424,7 @@ inline auto intrinsic_cases(case_backend &backend) -> void {
   string_results_allocate_only_their_bytes(backend);
   string_literals_are_static_descriptors(backend);
   descriptor_words_are_read_and_written(backend);
+  run_time_indexes_are_checked(backend);
 }
 
 } // namespace cinder::testing::storage_cases
