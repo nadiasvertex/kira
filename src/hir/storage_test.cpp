@@ -633,6 +633,31 @@ auto test_only_scalar_tail_calls_replace_the_frame() -> void {
                  "tail call followed by more work", {}, "tail call");
 }
 
+/// A literal of one repeated constant is built once and replicated; a literal
+/// of thousands of distinct elements is built one element at a time and still
+/// verifies as complete.
+auto test_large_array_literals() -> void {
+  auto f = build(cinder::testing::read_program("bytecode_storage_test",
+                                               "far_offsets.cn"));
+  const auto &init = f->function(hir::k_static_init_name);
+  const auto replicates = std::ranges::count_if(init.ops, [](const auto &op) {
+    return op.kind == hir::op_kind::replicate;
+  });
+  expect(replicates == 1 && init.ops.size() < 8,
+         "expected the reified `[5; 9000]` static to be one store and a "
+         "replicate, got " + std::to_string(init.ops.size()) + " ops");
+  expect_verifies(*f, init, "static init");
+  const auto &counted = f->function("counted");
+  const auto element_writes = std::ranges::count_if(counted.ops, [](const auto &op) {
+    return op.kind == hir::op_kind::compute && !op.dest.steps.empty() &&
+           op.dest.steps.back().kind == hir::projection_kind::element;
+  });
+  expect(element_writes == 8200,
+         "expected the 8200 distinct elements to be written one at a time, got " +
+             std::to_string(element_writes));
+  expect_verifies(*f, counted, "counted");
+}
+
 auto test_an_outgoing_argument_is_part_of_the_callers_frame() -> void {
   auto f = build(read_program("frames.cn"));
   const auto &function = f->function("passes_pair");
@@ -3619,6 +3644,7 @@ auto main() -> int {
     test_constant_array_index_is_an_element_projection();
     test_arrays_forget_and_owned_receivers();
     test_only_scalar_tail_calls_replace_the_frame();
+    test_large_array_literals();
   } catch (const std::exception &e) {
     cinder::testing::fail(e.what());
   }

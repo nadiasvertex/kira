@@ -495,10 +495,13 @@ the representation (`size_of` of a struct) states the inline-layout answer with
 `# storage-expect:`, which replaces `# expect:` when the driver switches. The programs
 listed in `src/testdata/storage_corpus/baseline.txt` must keep passing. On 2026-11-13,
 after scalar tail calls, `cell[T]` dereference in both backends, destructuring `let`
-subjects read in place, and tuple and array patterns on fixed arrays, 182 of 189
-programs passed. The remaining failures: generic lambda temporaries and drops (129,
+subjects read in place, tuple and array patterns on fixed arrays, and values more
+than 64 KiB into one slot, 183 of 189 programs passed. Corpus 102 kept its purpose
+but now declares 90000 rather than 100000 `int64`s in `filled`, because its two fill
+arrays are inline frame storage and the original pair needed about 1.08 MB, over the
+1 MiB frame limit. The remaining failures: generic lambda temporaries and drops (129,
 130), iteration over `str` (076; needs runtime decode intrinsics on the descriptor),
-a frame over the 1 MiB limit (102), `crew` errors (158, 173), and a closure that
+`crew` errors (158, 173), and a closure that
 pushes onto a captured `list` (071). The last is a language gap rather than a
 storage one: implicit capture is always a bitwise copy, while chapter 16 says a
 closure that does not escape captures by borrow. The legacy form shares the list's

@@ -101,6 +101,7 @@
 099_generic_and_method_return_inference.cn
 100_inline_call_shapes.cn
 101_uninit_frame_budget.cn
+102_heap_alloc_past_64k.cn
 103_user_type_shadows_prelude_generic.cn
 104_bare_generic_static_call.cn
 105_open_leaf_answered_by_sibling.cn

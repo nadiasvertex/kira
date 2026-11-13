@@ -16,10 +16,6 @@ namespace {
 
 using semantic::type_id;
 
-/// Largest array whose elements the replay tracks one by one. A bigger array
-/// must be initialized as a whole.
-constexpr uint64_t k_max_tracked_elements = 4096;
-
 /// Which parts of one slot hold a value. A node is either a whole value or a
 /// set of initialized children; an absent child is uninitialized.
 struct init_node {
@@ -490,7 +486,10 @@ private:
       }
       return true;
     case runtime::value_layout_kind::array:
-      if (found.count == 0 || found.count > k_max_tracked_elements) {
+      // Each element written is one child, so an array with fewer children
+      // than elements is incomplete without looking at them; a literal of
+      // many thousands of elements stays cheap to track while it is built.
+      if (found.count == 0 || node.children.size() < found.count) {
         return false;
       }
       for (size_t i = 0; i < found.count; ++i) {
@@ -547,13 +546,10 @@ private:
           child->second = normalize(child->second, found.members[i].type);
         }
       }
-    } else if (found.kind == runtime::value_layout_kind::array &&
-               found.count <= k_max_tracked_elements) {
-      for (size_t i = 0; i < found.count; ++i) {
-        const auto child = node.children.find(element_key(i));
-        if (child != node.children.end()) {
-          child->second = normalize(child->second, found.element);
-        }
+    } else if (found.kind == runtime::value_layout_kind::array) {
+      // Every child of an array is an element.
+      for (auto &entry : node.children) {
+        entry.second = normalize(entry.second, found.element);
       }
     }
     return node;

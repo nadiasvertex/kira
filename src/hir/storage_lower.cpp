@@ -1674,6 +1674,22 @@ private:
     if (init.elements.empty()) {
       return empty_value(dest, init.span);
     }
+    if (init.elements.size() > 1 && env_.is_copy(found.element) &&
+        all_same_literal(init.elements)) {
+      // Every element is one constant (a reified `[x; N]` static is spelled
+      // out this way): build it once and copy it over the rest.
+      const auto first = project(
+          dest, projection{.kind = projection_kind::element, .index = 0},
+          found.element);
+      if (auto ok = lower_into(*init.elements[0], first); !ok.has_value()) {
+        return ok;
+      }
+      auto op = storage_op{.kind = op_kind::replicate};
+      op.dest = dest;
+      op.source = first;
+      emit(std::move(op), init.span);
+      return {};
+    }
     const auto mark = partials_.size();
     for (size_t i = 0; i < init.elements.size(); ++i) {
       const auto part = project(
@@ -1686,6 +1702,26 @@ private:
     }
     forget_built(mark);
     return {};
+  }
+
+  /// Whether every element is the same literal (same kind, spelling, and
+  /// type), so building the first and replicating it builds them all.
+  [[nodiscard]] static auto all_same_literal(
+      const ptr_vec<hir_expr> &elements) -> bool {
+    const auto *first = elements.front().get();
+    if (first->kind != hir_node_kind::hir_literal ||
+        as<hir_literal>(*first).question.has_value()) {
+      return false;
+    }
+    const auto &want = as<hir_literal>(*first);
+    return std::ranges::all_of(elements, [&](const auto &element) {
+      if (element->kind != hir_node_kind::hir_literal) {
+        return false;
+      }
+      const auto &have = as<hir_literal>(*element);
+      return !have.question.has_value() && have.lit_kind == want.lit_kind &&
+             have.value == want.value && have.type == want.type;
+    });
   }
 
   /// `[value; count]`: the value is built once, into element 0, and copied

@@ -315,6 +315,14 @@ auto test_only_scalar_tail_calls_reuse_the_frame() -> void {
   expect_equal(p->scalar("tail_with_pair", three), 3 + 4, "tail_with_pair");
 }
 
+/// Loads, stores and addresses more than 64 KiB into one slot, past the 16-bit
+/// operand offset, reach the right bytes.
+auto test_offsets_past_64k_reach_their_bytes() -> void {
+  auto p = bytecode_backend::build("bytecode_storage_test", "far_offsets.cn");
+  expect_equal(p->scalar("spread", {}), 5 + 5, "spread");
+  expect_equal(p->scalar("counted", {}), 8199 + 8192 + 7 + 0, "counted");
+}
+
 /// The language's frame limit comes first; the compiler's own encoding limit is
 /// a separate line of defense, reached only when the first is lifted.
 auto test_frame_offsets_that_do_not_fit_are_refused() -> void {
@@ -355,6 +363,7 @@ auto main() -> int {
   test_entry_points_check_the_result_storage();
   test_frame_offsets_that_do_not_fit_are_refused();
   test_only_scalar_tail_calls_reuse_the_frame();
+  test_offsets_past_64k_reach_their_bytes();
   std::cout << "storage_compile_test: ok\n";
   return 0;
 }

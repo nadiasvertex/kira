@@ -184,39 +184,59 @@ private:
 
   [[nodiscard]] auto emit_load(virtual_reg dst, virtual_reg base, size_t offset,
                                size_t size) -> checked<void> {
-    if (auto ok = fits_offset(offset); !ok.has_value()) {
-      return ok;
-    }
+    const auto [near, low] = near_base(base, offset);
     emit_op(opcode::op_load_slot);
     emit_register(dst);
-    emit_register(base);
-    writer_.emit_u16(static_cast<uint16_t>(offset));
+    emit_register(near);
+    writer_.emit_u16(low);
     writer_.emit_u8(static_cast<uint8_t>(size));
     return {};
   }
 
   [[nodiscard]] auto emit_store(virtual_reg base, size_t offset, virtual_reg src,
                                 size_t size) -> checked<void> {
-    if (auto ok = fits_offset(offset); !ok.has_value()) {
-      return ok;
-    }
+    const auto [near, low] = near_base(base, offset);
     emit_op(opcode::op_store_slot);
-    emit_register(base);
-    writer_.emit_u16(static_cast<uint16_t>(offset));
+    emit_register(near);
+    writer_.emit_u16(low);
     emit_register(src);
     writer_.emit_u8(static_cast<uint8_t>(size));
     return {};
   }
 
-  [[nodiscard]] auto fits_offset(size_t offset) const -> checked<void> {
-    if (offset > UINT16_MAX) {
-      return fail(compile_error_kind::encoding_limit_exceeded, current_span_,
-                  std::format("a value part {} bytes into its storage is past "
-                              "what a load, store or address operand encodes "
-                              "({} bytes)",
-                              offset, UINT16_MAX));
+  /// `base + offset` as a register and an offset that fits the 16-bit operand
+  /// of a load, store or address instruction. A larger offset moves its high
+  /// part into a new register, so a slot or block past 64 KiB is reached at
+  /// any byte.
+  [[nodiscard]] auto near_base(virtual_reg base, size_t offset)
+      -> std::pair<virtual_reg, uint16_t> {
+    if (offset <= UINT16_MAX) {
+      return {base, static_cast<uint16_t>(offset)};
     }
-    return {};
+    const auto high = offset & ~size_t{UINT16_MAX};
+    const auto step = alloc_register();
+    emit_const(step, slot_value{uint64_t{high}});
+    const auto near = alloc_register();
+    emit_op(opcode::op_addr_indexed);
+    emit_register(near);
+    emit_register(base);
+    emit_register(step);
+    writer_.emit_u8(1);
+    return {near, static_cast<uint16_t>(offset - high)};
+  }
+
+  /// A register holding `base + offset`.
+  [[nodiscard]] auto offset_address(virtual_reg base, size_t offset) -> virtual_reg {
+    const auto [near, low] = near_base(base, offset);
+    if (low == 0) {
+      return near;
+    }
+    const auto out = alloc_register();
+    emit_op(opcode::op_addr_slot);
+    emit_register(out);
+    emit_register(near);
+    writer_.emit_u16(low);
+    return out;
   }
 
   auto emit_jump_back_to(size_t target) -> void {
@@ -619,18 +639,7 @@ private:
                   "the address of a value that lives in a register was "
                   "taken");
     }
-    if (loc.offset == 0) {
-      return loc.reg;
-    }
-    if (auto ok = fits_offset(loc.offset); !ok.has_value()) {
-      return std::unexpected(ok.error());
-    }
-    const auto out = alloc_register();
-    emit_op(opcode::op_addr_slot);
-    emit_register(out);
-    emit_register(loc.reg);
-    writer_.emit_u16(static_cast<uint16_t>(loc.offset));
-    return out;
+    return offset_address(loc.reg, loc.offset);
   }
 
   /// The scalar-class value at `loc`, in `into` when a register is needed.
@@ -1390,17 +1399,7 @@ private:
     if (!from.has_value()) {
       return std::unexpected(from.error());
     }
-    auto to = environment;
-    if (capture.offset != 0) {
-      if (auto ok = fits_offset(capture.offset); !ok.has_value()) {
-        return ok;
-      }
-      to = alloc_register();
-      emit_op(opcode::op_addr_slot);
-      emit_register(to);
-      emit_register(environment);
-      writer_.emit_u16(static_cast<uint16_t>(capture.offset));
-    }
+    const auto to = offset_address(environment, capture.offset);
     emit_op(opcode::op_copy_bytes);
     emit_register(to);
     emit_register(*from);
