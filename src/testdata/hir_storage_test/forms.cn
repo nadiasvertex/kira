@@ -112,6 +112,21 @@ async def collecting() -> int32:
         total = total + e
     return total
 
+type failure = {
+    code: int32,
+}
+
+async def fails_owning(n: int32) -> result[int32, failure]:
+    return @err(failure { code: n })
+
+# A struct always moves, so its errors would be owned by the task and the list
+# at once.
+async def collecting_owned() -> int32:
+    let errs = crew c(on_error: collect):
+        let _ = c.spawn(fails_owning(1))
+        c.errors()
+    return 0
+
 # Waiting on a set of tasks is.
 async def racing() -> int32:
     return await race:

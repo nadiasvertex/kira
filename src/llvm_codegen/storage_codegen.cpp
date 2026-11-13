@@ -144,11 +144,11 @@ struct module_context {
   const auto &types = mc.env.types();
   const auto kind =
       bytecode::numeric_kind_of(types, types.strip_refinement(type));
-  if (!kind.has_value() || bytecode::is_wide_integer(*kind)) {
+  if (!kind.has_value()) {
     return fail(codegen_error_kind::unsupported_type, span,
                 std::format("type `{}` has no numeric llvm_codegen "
-                            "representation yet — 128-bit integer and float "
-                            "types are not supported yet",
+                            "representation yet — 128-bit floats are not "
+                            "supported yet",
                             types.display(type)));
   }
   return *kind;
@@ -1468,8 +1468,11 @@ private:
       return std::unexpected(object.error());
     }
     auto *item = load_word(ptr_type(), *object, co::k_value_slot);
-    // The item is now the taker's: the coroutine no longer holds one.
-    store_word(*object, co::k_value_slot, constant(i64(), 0));
+    // A take makes the item the taker's: the coroutine no longer holds one.
+    // A shallow read of a `copy` item leaves it there.
+    if (!op.shallow) {
+      store_word(*object, co::k_value_slot, constant(i64(), 0));
+    }
     auto dest = locate(op.dest);
     if (!dest.has_value()) {
       return std::unexpected(dest.error());

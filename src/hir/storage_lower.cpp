@@ -2254,9 +2254,12 @@ private:
       block.dest = whole(new_temp(unit_type(), next.span));
       emit(std::move(block), next.span);
     }
+    // A finished task keeps a `copy` result, so `get()` reads it as often as
+    // it is called and `c.errors()` leaves the `ok` results for it.
     emit(storage_op{.kind = op_kind::generator_take,
                     .dest = dest,
-                    .source = std::move(*task)},
+                    .source = std::move(*task),
+                    .shallow = env_.is_copy(dest.type)},
          next.span);
     return {};
   }
@@ -2627,15 +2630,41 @@ private:
     return operand;
   }
 
+  /// `rt_crew_task(c, i)`, which `c.errors()` lowers to, names a task the
+  /// crew still owns: it goes into a local that owns nothing, and the task's
+  /// result is read in place, which leaves it there only for a `copy` result.
+  [[nodiscard]] auto check_crew_task_read(const hir_call &call, const place &dest)
+      -> result {
+    if (dest.base == k_invalid_storage || !dest.steps.empty() ||
+        (out_.slots[dest.base].cls != storage_class::frame_local &&
+         out_.slots[dest.base].cls != storage_class::coroutine_frame)) {
+      return malformed(call.span, "a crew's task read into anything but a local");
+    }
+    const auto &task = types().entry(types().strip_refinement(dest.type));
+    if (!is_task_type(dest.type) || task.args.size() < 2) {
+      return malformed(call.span, "a crew's task that is not a `task`");
+    }
+    const auto outcome =
+        env_.checked.types.builtin_generic("result", {task.args[0], task.args[1]});
+    if (!env_.is_copy(outcome)) {
+      return refuse(call.span,
+                    "`errors()` on a crew whose tasks finish with `" +
+                        types().display(outcome) +
+                        "`, which is not `copy`: reading the errors out would "
+                        "leave the crew's tasks without them");
+    }
+    return {};
+  }
+
   [[nodiscard]] auto lower_call(const hir_call &call, const place &dest)
       -> result {
     if (call.callee->kind == hir_node_kind::hir_local_ref &&
         !locals_.contains(as<hir_local_ref>(*call.callee).symbol)) {
       const auto &name = as<hir_local_ref>(*call.callee).name;
       if (name == "rt_crew_task") {
-        return refuse(call.span,
-                      "`errors()` on a crew, which reads tasks the crew still "
-                      "owns");
+        if (auto ok = check_crew_task_read(call, dest); !ok.has_value()) {
+          return ok;
+        }
       }
       if (name == "rt_task_block_on_all" || name == "rt_task_block_on_any") {
         return lower_group_block(
@@ -2813,10 +2842,15 @@ private:
       }
       op.args.push_back(std::move(lowered));
     }
+    const auto crew_task = target.name == "rt_crew_task";
     op.callee = std::move(target);
     op.signature = std::move(*signature);
     op.dest = dest;
     emit(std::move(op), call.span);
+    if (crew_task) {
+      // The crew owns the task; this local only names it.
+      out_.slots[dest.base].owns_nothing = true;
+    }
     if (borrowed_receiver.has_value()) {
       if (!dest.steps.empty() ||
           out_.slots[dest.base].cls != storage_class::frame_local) {

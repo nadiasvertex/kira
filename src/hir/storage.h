@@ -339,9 +339,11 @@ struct storage_op {
   /// follow it.
   bool tail_call = false;
   call_target callee{};
-  /// `copy_into` only: a bitwise copy of a value that is not `copy`, out of a
+  /// `copy_into`: a bitwise copy of a value that is not `copy`, out of a
   /// reference, into the receiver of a call whose result owns nothing
-  /// (`storage_slot::owns_nothing`).
+  /// (`storage_slot::owns_nothing`). `generator_take`: a read of a `copy` item
+  /// that leaves it in the coroutine, so a finished task's result can be read
+  /// again (`get()`, `c.errors()`).
   bool shallow = false;
   abi_signature signature{};
   std::vector<call_argument> args{};

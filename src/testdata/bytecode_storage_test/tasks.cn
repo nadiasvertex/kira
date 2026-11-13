@@ -401,3 +401,42 @@ async def main() -> int64:
         double(7)
     let c = await chain(1)
     return a + c + p + q * 100 + w * 10000
+
+# `c.errors()` on a collecting crew: the errors in spawn order, and the `ok`
+# results left in their tasks for `get()`, which reads them more than once.
+async def fails_on_threes(n: int64) -> result[int64, int64]:
+    if n % 3 == 0:
+        return @err(n)
+    return @ok(n * 10)
+
+async def errors_in_task(n: int64) -> int64:
+    let errs = crew c(on_error: collect):
+        var i: int64 = 1
+        while i <= n:
+            let _ = c.spawn(fails_on_threes(i))
+            i = i + 1
+        c.errors()
+    var total: int64 = 0
+    for e in errs:
+        total = total * 100 + e
+    return total
+
+def run_errors_in_task(n: int64) -> int64:
+    let t = errors_in_task(n)
+    return t.get()
+
+def errors_then_get() -> int64:
+    let (errs, kept) = crew c(on_error: collect):
+        let a = c.spawn(fails_on_threes(4))
+        let _ = c.spawn(fails_on_threes(9))
+        (c.errors(), a)
+    var sum: int64 = 0
+    for e in errs:
+        sum = sum + e
+    let first = match kept.get():
+        @ok(v) => v
+        @err(_) => 0
+    let again = match kept.get():
+        @ok(v) => v
+        @err(_) => 0
+    return sum * 10000 + first * 100 + again

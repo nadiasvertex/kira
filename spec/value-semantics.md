@@ -490,18 +490,26 @@ lets a generator hand out droppable items). T-10 is partly done and T-11 (NRVO) 
 The driver still uses the pointer-per-aggregate form. `src/storage_corpus_test.cpp`
 measures how ready the codegen stress corpus is for the switch. It runs each program
 through the storage form on the bytecode VM and compares `main` with `# expect:`, or
-with the legacy VM when a file has no expected value. A file whose answer depends on
+with the legacy VM when a file has no expected value. Each program that passes on the
+VM is then compiled to LLVM from the same storage form and run in the JIT, against
+the same answer; a program whose answer is a panic is compiled there but not run. A file whose answer depends on
 the representation (`size_of` of a struct) states the inline-layout answer with
 `# storage-expect:`, which replaces `# expect:` when the driver switches. The programs
-listed in `src/testdata/storage_corpus/baseline.txt` must keep passing. On 2026-11-13,
+listed in `src/testdata/storage_corpus/baseline.txt` must keep passing on the VM, and
+those in `llvm_baseline.txt` on LLVM. On 2026-11-13,
 after scalar tail calls, `cell[T]` dereference in both backends, destructuring `let`
 subjects read in place, tuple and array patterns on fixed arrays, and values more
 than 64 KiB into one slot, 183 of 189 programs passed. Corpus 102 kept its purpose
 but now declares 90000 rather than 100000 `int64`s in `filled`, because its two fill
 arrays are inline frame storage and the original pair needed about 1.08 MB, over the
-1 MiB frame limit. The remaining failures: generic lambda temporaries and drops (129,
-130), iteration over `str` (076; needs runtime decode intrinsics on the descriptor),
-`crew` errors (158, 173), and a closure that
+1 MiB frame limit. `c.errors()` then lowered (158, 173): a finished task keeps a
+`copy` result, so `get()` and the error list read it in place, which also lets `get()`
+be called twice. With that, 185 of 189 programs pass on the VM, and all 185 also pass
+on LLVM. Corpus 156 was rewritten so its loser waits on a channel instead of a short
+`on(cpu)` spin, because on LLVM the spin could end before the race cancelled it,
+which is a legal interleaving. The remaining failures: generic lambda temporaries and
+drops (129, 130), iteration over `str` (076; needs runtime decode intrinsics on the
+descriptor), and a closure that
 pushes onto a captured `list` (071). The last is a language gap rather than a
 storage one: implicit capture is always a bitwise copy, while chapter 16 says a
 closure that does not escape captures by borrow. The legacy form shares the list's

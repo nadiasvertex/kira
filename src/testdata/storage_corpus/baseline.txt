@@ -155,6 +155,7 @@
 155_on_cpu_pool.cn
 156_race_cancels_losers.cn
 157_crew_spawn_and_get.cn
+158_crew_collects_errors.cn
 159_crew_every_exit_joins.cn
 160_qualified_static_index.cn
 161_for_over_mut_borrow.cn
@@ -169,6 +170,7 @@
 170_async_borrow_survives_suspension.cn
 171_sync_primitives.cn
 172_suspending_value_branches.cn
+173_generic_async_and_crew_errors.cn
 174_pattern_subject_across_suspension.cn
 175_io_event_loop.cn
 176_or_else.cn
@@ -184,5 +186,3 @@
 186_value_baseline_pipe_reads_n.cn
 187_value_baseline_pipe_reads_10n.cn
 188_array_element_drops.cn
-its_for_open_receiver.cn
-r.cn

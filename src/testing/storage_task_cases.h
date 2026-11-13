@@ -124,6 +124,11 @@ inline auto tasks_join_a_crew(case_backend &backend) -> void {
   expect_equal(run("crew_waits_in_task", {}), 71, "crew_waits_in_task()");
   expect_equal(run("crew_waits_on_return", {}), 59, "crew_waits_on_return()");
   expect_equal(run("crew_waits_in_function", {}), 3, "crew_waits_in_function()");
+  // `c.errors()`: the errors of 3, 6 and 9 in spawn order, from inside a task.
+  expect_equal(run("run_errors_in_task", {10}), 30609, "run_errors_in_task(10)");
+  expect_equal(run("run_errors_in_task", {2}), 0, "run_errors_in_task(2)");
+  // The error 9, then the `ok` 40 read by `get()` twice after `errors()`.
+  expect_equal(run("errors_then_get", {}), 94040, "errors_then_get()");
 }
 
 /// Runs the task cases.

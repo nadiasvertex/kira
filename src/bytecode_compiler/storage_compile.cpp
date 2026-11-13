@@ -280,8 +280,8 @@ private:
     if (!kind.has_value()) {
       return fail(compile_error_kind::unsupported_type, span,
                   std::format("type `{}` has no numeric bytecode "
-                              "representation yet — 128-bit integer and float "
-                              "types are not supported by the bytecode VM yet",
+                              "representation yet — 128-bit floats are not "
+                              "supported by the bytecode VM yet",
                               types().display(type)));
     }
     return *kind;
@@ -1560,13 +1560,16 @@ private:
         !ok.has_value()) {
       return ok;
     }
-    // The item is now the taker's: the coroutine no longer holds one.
-    const auto none = alloc_register();
-    emit_const(none, slot_value{uint64_t{0}});
-    if (auto ok = emit_store(*object, word_at(co::k_value_slot), none,
-                             runtime::k_word_size);
-        !ok.has_value()) {
-      return ok;
+    // A take makes the item the taker's: the coroutine no longer holds one.
+    // A shallow read of a `copy` item leaves it there.
+    if (!op.shallow) {
+      const auto none = alloc_register();
+      emit_const(none, slot_value{uint64_t{0}});
+      if (auto ok = emit_store(*object, word_at(co::k_value_slot), none,
+                               runtime::k_word_size);
+          !ok.has_value()) {
+        return ok;
+      }
     }
     const auto dest = locate(op.dest);
     if (!dest.has_value()) {

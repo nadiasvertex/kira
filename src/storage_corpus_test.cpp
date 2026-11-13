@@ -48,6 +48,8 @@
 #include "src/hir/storage.h"
 #include "src/hir/storage_lower.h"
 #include "src/hir/storage_verify.h"
+#include "src/llvm_codegen/jit_support.h"
+#include "src/llvm_codegen/storage_codegen.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
@@ -69,6 +71,7 @@ namespace fs = std::filesystem;
 namespace bc = cinder::bytecode;
 namespace hir = cinder::hir;
 namespace semantic = cinder::semantic;
+namespace llvm_codegen = cinder::llvm_codegen;
 using cinder::testing::expect;
 using cinder::testing::fail;
 
@@ -423,7 +426,83 @@ auto legacy_outcome(const program &p, bc::numeric_kind kind)
 struct verdict {
   bool passed = false;
   std::string status;
+  /// The LLVM tier, tried once the VM tier passes.
+  bool llvm_passed = false;
+  std::string llvm_status = "not run (the VM tier failed)";
 };
+
+/// What `main` must give: a rendering of an aggregate result, or an outcome.
+struct reference {
+  std::optional<std::string> rendering;
+  outcome result;
+  bool panics = false;
+};
+
+/// The source a span names, when it is in the corpus file.
+auto quote_span(const std::string &text, const cinder::source_span &span)
+    -> std::string {
+  if (span.end > span.start && span.end <= text.size()) {
+    return std::format(" (at `{}`)",
+                       text.substr(span.start, std::min<size_t>(span.end - span.start, 60)));
+  }
+  return {};
+}
+
+/// The LLVM tier: the same storage form compiled to LLVM and run in the JIT,
+/// which runs the static inits as it loads the module. A program whose answer
+/// is a panic is compiled but not run, because an explicit panic ends the
+/// process in the JIT.
+auto llvm_tier(program &p, std::span<const hir::storage_module *const> modules,
+               const std::string &text, const reference &want)
+    -> std::pair<bool, std::string> {
+  auto compiled = llvm_codegen::compile_storage_module(
+      modules, *p.env, llvm_codegen::storage_codegen_options{.entry_thunks = true});
+  if (!compiled.has_value()) {
+    return {false, "LLVM compile: " + compiled.error().message +
+                       quote_span(text, compiled.error().span)};
+  }
+  auto jit = llvm_codegen::jit_module::create(std::move(*compiled));
+  if (!jit.has_value()) {
+    return {false, "LLVM load: " + jit.error()};
+  }
+  if (want.panics) {
+    return {true, "passed (compiled; a panic is not run in the JIT)"};
+  }
+  const auto *main_fn = modules.front()->find("main");
+  if (main_fn == nullptr) {
+    return {false, "no storage `main`"};
+  }
+  const auto &result_abi = main_fn->signature.result;
+  auto result = cinder::runtime::aligned_buffer(std::max<size_t>(result_abi.size, 16),
+                                                std::max<size_t>(result_abi.align, 16));
+  const auto hosted = bc::hosted_panic_scope{};
+  const auto ran = jit->run_storage("main", std::span<const uint64_t>{}, result.data());
+  cinder::runtime::scheduler::wait_idle();
+  if (want.rendering.has_value()) {
+    const auto got = ran.has_value()
+                         ? render_inline(p, p.main_fn->return_type, result.data())
+                         : describe(outcome{.panicked = true, .panic = ran.error()});
+    if (got != want.rendering) {
+      return {false, std::format("LLVM main gave {}, expected {}", got.value_or("?"),
+                                 *want.rendering)};
+    }
+    return {true, "passed"};
+  }
+  const auto &types = p.checked.types;
+  const auto kind = bc::numeric_kind_of(types, p.main_fn->return_type);
+  const auto got =
+      !ran.has_value()
+          ? outcome{.panicked = true, .panic = ran.error()}
+          : outcome{.has_value = want.result.has_value,
+                    .value = want.result.has_value && kind.has_value()
+                                 ? widen(*kind, load_bits(result.data(), result_abi.size))
+                                 : 0};
+  if (got != want.result) {
+    return {false, std::format("LLVM main gave {}, expected {}", describe(got),
+                               describe(want.result))};
+  }
+  return {true, "passed"};
+}
 
 auto survey(const fs::path &path) -> verdict {
   const auto text = read_file(path);
@@ -552,7 +631,12 @@ auto survey(const fs::path &path) -> verdict {
       return {.status = std::format("main gave {}, expected {}", *got,
                                     want.value_or("?"))};
     }
-    return {.passed = true, .status = "passed"};
+    const auto [llvm_passed, llvm_status] =
+        llvm_tier(*p, program_span, text, reference{.rendering = want});
+    return {.passed = true,
+            .status = "passed",
+            .llvm_passed = llvm_passed,
+            .llvm_status = llvm_status};
   }
   const auto run = machine.run(index, std::span<const bc::slot_value>{});
   cinder::runtime::scheduler::wait_idle();
@@ -595,7 +679,12 @@ auto survey(const fs::path &path) -> verdict {
                                     live, *live_bound)};
     }
   }
-  return {.passed = true, .status = "passed"};
+  const auto [llvm_passed, llvm_status] = llvm_tier(
+      *p, program_span, text, reference{.result = got, .panics = got.panicked});
+  return {.passed = true,
+          .status = "passed",
+          .llvm_passed = llvm_passed,
+          .llvm_status = llvm_status};
 }
 
 auto read_baseline(const fs::path &file) -> std::set<std::string> {
@@ -617,6 +706,8 @@ auto main() -> int {
   const auto baseline_file =
       cinder::testing::find_test_data_dir("storage_corpus") / "baseline.txt";
   const auto baseline = read_baseline(baseline_file);
+  const auto llvm_baseline = read_baseline(
+      cinder::testing::find_test_data_dir("storage_corpus") / "llvm_baseline.txt");
   const auto *filter = std::getenv("CINDER_CORPUS_FILTER");
   const auto *verbose = std::getenv("CINDER_STORAGE_SURVEY");
 
@@ -629,9 +720,12 @@ auto main() -> int {
   std::ranges::sort(files);
 
   auto passed = size_t{0};
+  auto llvm_passed = size_t{0};
   auto regressions = std::vector<std::string>{};
   auto newly = std::vector<std::string>{};
+  auto llvm_newly = std::vector<std::string>{};
   auto reasons = std::map<std::string, size_t>{};
+  auto llvm_reasons = std::map<std::string, size_t>{};
   for (const auto &file : files) {
     const auto name = file.filename().string();
     if (filter != nullptr && *filter != '\0' && !name.contains(filter)) {
@@ -640,6 +734,20 @@ auto main() -> int {
     const auto result = survey(file);
     if (verbose != nullptr) {
       std::cout << name << ": " << result.status << "\n";
+      if (result.passed) {
+        std::cout << name << " [llvm]: " << result.llvm_status << "\n";
+      }
+    }
+    if (result.llvm_passed) {
+      ++llvm_passed;
+      if (!llvm_baseline.contains(name)) {
+        llvm_newly.push_back(name);
+      }
+    } else {
+      llvm_reasons[result.llvm_status.substr(0, result.llvm_status.find(':'))] += 1;
+      if (llvm_baseline.contains(name)) {
+        regressions.push_back(name + " [llvm]: " + result.llvm_status);
+      }
     }
     if (result.passed) {
       ++passed;
@@ -660,6 +768,14 @@ auto main() -> int {
   }
   for (const auto &name : newly) {
     std::cout << "  now passing (add to the baseline): " << name << "\n";
+  }
+  std::cout << "storage_corpus_test: " << llvm_passed << " of " << files.size()
+            << " also ran correctly on the LLVM tier\n";
+  for (const auto &[reason, count] : llvm_reasons) {
+    std::cout << "  " << count << " x " << reason << "\n";
+  }
+  for (const auto &name : llvm_newly) {
+    std::cout << "  now passing on LLVM (add to the LLVM baseline): " << name << "\n";
   }
   if (!regressions.empty()) {
     for (const auto &line : regressions) {

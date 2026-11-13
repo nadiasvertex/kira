@@ -1048,11 +1048,18 @@ auto test_unsupported_constructs_are_refused_by_name() -> void {
   expect(f->refusal("shout") == nullptr, "expected a string literal to lower");
   expect_ops(*f, "shout", {"string s0 = \"hello\"", "return"});
   expect(f->refusal("crewed") == nullptr, "expected a crew to lower");
-  const auto *collecting = f->refusal("collecting");
+  // A crew's error list reads `copy` results in place; results that need a
+  // drop are refused by name.
+  expect(f->refusal("collecting") == nullptr,
+         "expected a crew's list of `copy` errors to lower");
+  const auto *collecting = f->refusal("collecting_owned");
   expect(collecting != nullptr &&
              collecting->message.find("`errors()` on a crew") !=
-                 std::string::npos,
-         "expected a crew's error list to be refused by name");
+                 std::string::npos &&
+             collecting->message.find("not `copy`") != std::string::npos,
+         "expected a crew's list of owned errors to be refused by name, got " +
+             (collecting == nullptr ? std::string("no refusal")
+                                    : collecting->message));
   expect(f->refusal("racing") == nullptr,
          "expected waiting on a set of tasks to lower");
   expect(f->refusal("triple") == nullptr,
@@ -3170,7 +3177,7 @@ auto test_groups_wait_for_every_task_or_the_first() -> void {
               "move s9.0 <- s4", "move s9.1 <- s5", "await all #1 s1 <- s9",
               "cancelled s10 = s1", "if s10", "dead s10", "drop s9.0",
               "drop s9.1", "finish s1", "return #1", "else", "dead s10",
-              "end_if", "take s11.0 <- s9.0", "take s11.1 <- s9.1",
+              "end_if", "read s11.0 <- s9.0", "read s11.1 <- s9.1",
               "drop s9.0", "drop s9.1",
               "compute s12 = copy s11.0", "compute s13 = copy s11.1",
               "compute s14 = binary + s12, s13", "suspend #2 s1 <- s14",
@@ -3216,7 +3223,7 @@ auto test_await_is_a_resume_point_that_may_return_pending() -> void {
   auto f = build(read_program("tasks.cn"));
   // The awaited task is a local of the state block. After the wait the step
   // checks for a cancel, which drops the awaited task first; past it the
-  // result is moved out and the task dropped.
+  // `copy` result is read and the task dropped.
   expect_ops(*f, "sum_doubles$step",
              {"dispatch s0 of 2", "cancelled s3 = s1", "if s3", "dead s3",
               "finish s1", "return #1", "else", "dead s3", "end_if",
@@ -3225,7 +3232,7 @@ auto test_await_is_a_resume_point_that_may_return_pending() -> void {
               "dead s6", "exit 0", "end_if", "block", "call s7 = double(s5)",
               "await #1 s1 <- s7", "cancelled s8 = s1", "if s8", "dead s8",
               "drop s7", "finish s1", "return #1", "else", "dead s8", "end_if",
-              "take s9 <- s7", "drop s7", "compute s4 = binary + s4, s9",
+              "read s9 <- s7", "drop s7", "compute s4 = binary + s4, s9",
               "compute s5 = binary + s5, #1", "end_block", "dead s9", "dead s7",
               "end_loop", "compute s10 = copy s4", "suspend #2 s1 <- s10",
               "dead s10", "finish s1", "return #1"});
@@ -3239,17 +3246,57 @@ auto test_await_is_a_resume_point_that_may_return_pending() -> void {
          "expected the awaited task to be held in the state block");
 }
 
+/// A finished task keeps a `copy` result, so `get()` and `c.errors()` read it
+/// in place; a result that needs a drop is taken, and leaving one in place is
+/// refused, since the task would still own it.
+auto test_copy_task_results_are_read_in_place() -> void {
+  auto f = build(cinder::testing::read_program("bytecode_storage_test", "tasks.cn"));
+  const auto shallow_takes = [](const hir::storage_function &function) {
+    auto reads = size_t{0};
+    auto takes = size_t{0};
+    for (const auto &op : function.ops) {
+      if (op.kind == hir::op_kind::generator_take) {
+        (op.shallow ? reads : takes) += 1;
+      }
+    }
+    return std::pair{reads, takes};
+  };
+  const auto &errors = f->function("errors_then_get");
+  const auto [reads, takes] = shallow_takes(errors);
+  expect(reads == 3 && takes == 0,
+         "expected errors() and both get()s to read in place, got " +
+             std::to_string(reads) + " reads and " + std::to_string(takes) +
+             " takes");
+  const auto crew_tasks = std::ranges::count_if(errors.slots, [](const auto &slot) {
+    return slot.name == "<errors task>" && slot.owns_nothing;
+  });
+  expect(crew_tasks == 1, "expected the crew's task to be named, not owned");
+  expect_verifies(*f, errors, "errors_then_get");
+  expect_verifies(*f, f->function("errors_in_task$step"), "errors_in_task$step");
+
+  auto noisy = f->function("get_noisy");
+  const auto [noisy_reads, noisy_takes] = shallow_takes(noisy);
+  expect(noisy_reads == 0 && noisy_takes >= 1,
+         "expected a result that needs a drop to be taken, got " +
+             std::to_string(noisy_reads) + " reads and " +
+             std::to_string(noisy_takes) + " takes");
+  noisy.ops[find_op(noisy, hir::op_kind::generator_take, 0)].shallow = true;
+  expect_rejects(*f, noisy, hir::verify_error_kind::bad_operation,
+                 "a result that needs a drop left in its task", {},
+                 "second owner");
+}
+
 auto test_plain_functions_block_on_the_task() -> void {
   auto f = build(read_program("tasks.cn"));
-  // No suspension to make: the thread waits, then the result is moved out.
+  // No suspension to make: the thread waits, then the `copy` result is read.
   expect_ops(*f, "run_double",
              {"call s1 = double(s0)", "call s3 = rt_task_block_on(s1, #0)",
-              "take s2 <- s1", "dead s3", "drop s1", "return s2"});
+              "read s2 <- s1", "dead s3", "drop s1", "return s2"});
   expect_verifies(*f, f->function("run_double"), "run_double");
   // Spawning looks at the handle without taking it, so it can be read after.
   expect_ops(*f, "run_spawned",
              {"call s1 = double(s0)", "call s2 = rt_task_spawn(s1, #0)",
-              "dead s2", "call s4 = rt_task_block_on(s1, #0)", "take s3 <- s1",
+              "dead s2", "call s4 = rt_task_block_on(s1, #0)", "read s3 <- s1",
               "dead s4", "drop s1", "return s3"});
   expect_verifies(*f, f->function("run_spawned"), "run_spawned");
   // The entry `async def main` is an ordinary function that awaits this way.
@@ -3259,8 +3306,8 @@ auto test_plain_functions_block_on_the_task() -> void {
        "call s3 = rt_task_spawn(s1, #0)", "dead s3",
        "call s4 = rt_task_spawn(s2, #0)", "dead s4", "move s5.0 <- s1",
        "move s5.1 <- s2", "block_on_group all s5", "init_empty s6", "dead s6",
-       "call s8 = rt_task_block_on(s5.0, #0)", "take s7.0 <- s5.0",
-       "call s9 = rt_task_block_on(s5.1, #0)", "take s7.1 <- s5.1", "dead s9",
+       "call s8 = rt_task_block_on(s5.0, #0)", "read s7.0 <- s5.0",
+       "call s9 = rt_task_block_on(s5.1, #0)", "read s7.1 <- s5.1", "dead s9",
        "dead s8", "drop s5.0", "drop s5.1", "move s0 <- s7",
        "compute s10 = copy s0.0", "compute s11 = copy s0.1",
        "call s13 = double(#6)", "call s14 = double(#7)",
@@ -3268,9 +3315,9 @@ auto test_plain_functions_block_on_the_task() -> void {
        "call s16 = rt_task_spawn(s14, #0)", "dead s16", "move s17.0 <- s13",
        "move s17.1 <- s14", "block_on_group any s17", "init_empty s18",
        "dead s18", "call s20 = rt_task_is_finished(s17.0)", "if s20", "dead s20",
-       "call s21 = rt_task_block_on(s17.0, #0)", "take s19 <- s17.0", "dead s21",
+       "call s21 = rt_task_block_on(s17.0, #0)", "read s19 <- s17.0", "dead s21",
        "else", "dead s20", "call s22 = rt_task_block_on(s17.1, #0)",
-       "take s19 <- s17.1", "dead s22", "end_if", "call s23 = rt_task_cancel(s17.0)",
+       "read s19 <- s17.1", "dead s22", "end_if", "call s23 = rt_task_cancel(s17.0)",
        "dead s23", "call s24 = rt_task_cancel(s17.1)", "dead s24",
        "drop s17.0", "drop s17.1", "compute s12 = copy s19",
        "compute s26 = binary + s10, s11", "compute s25 = binary + s26, s12",
@@ -3300,10 +3347,10 @@ auto test_a_crew_waits_for_its_tasks() -> void {
               "move s13 <- s10.0", "move s14 <- s10.1", "move s15 <- s13",
               "await #2 s1 <- s15", "cancelled s16 = s1", "if s16", "dead s16",
               "drop s15", "drop s14", "finish s1", "return #1", "else",
-              "dead s16", "end_if", "take s17 <- s15", "drop s15",
+              "dead s16", "end_if", "read s17 <- s15", "drop s15",
               "move s18 <- s14", "await #3 s1 <- s18", "cancelled s19 = s1",
               "if s19", "dead s19", "drop s18", "finish s1", "return #1",
-              "else", "dead s19", "end_if", "take s20 <- s18", "drop s18",
+              "else", "dead s19", "end_if", "read s20 <- s18", "drop s18",
               "compute s21 = binary + s17, s20", "suspend #4 s1 <- s21",
               "dead s21", "finish s1", "return #1"});
   expect_verifies(*f, f->function("in_task$step"), "in_task$step");
@@ -3329,8 +3376,8 @@ auto test_a_crew_waits_for_its_tasks() -> void {
               "move s3.0 <- s4", "move s3.1 <- s6", "call s9 = rt_crew_join(s2)",
               "dead s9", "call s10 = rt_crew_free(s2)", "dead s10",
               "move s1 <- s3", "move s11 <- s1.0", "move s12 <- s1.1",
-              "call s15 = rt_task_block_on(s11, #0)", "take s14 <- s11",
-              "call s17 = rt_task_block_on(s12, #0)", "take s16 <- s12",
+              "call s15 = rt_task_block_on(s11, #0)", "read s14 <- s11",
+              "call s17 = rt_task_block_on(s12, #0)", "read s16 <- s12",
               "compute s13 = binary + s14, s16", "dead s17", "dead s16",
               "dead s15", "dead s14", "drop s12", "drop s11", "return s13"});
   expect_verifies(*f, f->function("in_function"), "in_function");
@@ -3541,6 +3588,7 @@ auto main() -> int {
     test_task_constructor_and_step_hand_over_the_result();
     test_await_is_a_resume_point_that_may_return_pending();
     test_plain_functions_block_on_the_task();
+    test_copy_task_results_are_read_in_place();
     test_a_crew_waits_for_its_tasks();
     test_dropping_a_task_drops_its_unread_result();
     test_verifier_checks_tasks();

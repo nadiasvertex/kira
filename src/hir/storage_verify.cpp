@@ -2731,6 +2731,11 @@ private:
       return fail(verify_error_kind::type_mismatch,
                   name_of(*handle) + " yields no " + name_of(op.dest.type));
     }
+    if (op.shallow && !env_.is_copy(op.dest.type)) {
+      return fail(verify_error_kind::bad_operation,
+                  "a read that leaves " + name_of(op.dest.type) +
+                      " in its coroutine would give it a second owner");
+    }
     const auto to = resolve(op.dest);
     if (!to.has_value()) {
       return std::unexpected(to.error());

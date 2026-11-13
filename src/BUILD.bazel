@@ -291,7 +291,10 @@ cc_test(
 
 filegroup(
     name = "storage_corpus_baseline",
-    srcs = ["testdata/storage_corpus/baseline.txt"],
+    srcs = [
+        "testdata/storage_corpus/baseline.txt",
+        "testdata/storage_corpus/llvm_baseline.txt",
+    ],
 )
 
 cc_test(
@@ -310,6 +313,8 @@ cc_test(
         "//src/bytecode:vm",
         "//src/bytecode_compiler:bytecode_compiler",
         "//src/hir:hir",
+        "//src/llvm_codegen:jit_support",
+        "//src/llvm_codegen:storage_codegen",
         "//src/parser:parser",
         "//src/runtime:runtime",
         "//src/semantic:semantic",
@@ -321,6 +326,9 @@ cc_test(
 cc_test(
     name = "codegen_stress_test",
     size = "medium",
+    # The corpus takes close to five minutes on both tiers; under a full
+    # `bazelisk test //...` it can pass the medium timeout.
+    timeout = "long",
     srcs = ["codegen_stress_test.cpp"],
     data = [
         ":codegen_stress_corpus",

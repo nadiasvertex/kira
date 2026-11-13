@@ -831,9 +831,11 @@ private:
       -> std::expected<void, lowering_error>;
   /// The check a task makes after each suspension: when it was cancelled,
   /// drop what it owns and return. `awaited`, if given, are the tasks it was
-  /// waiting for, which have stopped by then and are dropped first.
+  /// waiting for, which have stopped by then and are dropped first; `drops`
+  /// are other values the scope's drop records do not know of.
   [[nodiscard]] auto coroutine_cancel_check(const void *key, source_span span,
-                                            ptr_vec<hir_expr> awaited = {})
+                                            ptr_vec<hir_expr> awaited = {},
+                                            ptr_vec<hir_node> drops = {})
       -> std::expected<ptr<hir_node>, lowering_error>;
   /// The type table, for the few types lowering interns that checking never
   /// had occasion to (`unit` results of runtime calls, `option[T]`, the tuple
@@ -3733,13 +3735,17 @@ auto lowerer::emit_crew_exits(jump_exit kind, source_span span,
 }
 
 auto lowerer::coroutine_cancel_check(const void *key, source_span span,
-                                     ptr_vec<hir_expr> awaited)
+                                     ptr_vec<hir_expr> awaited,
+                                     ptr_vec<hir_node> drops)
     -> std::expected<ptr<hir_node>, lowering_error> {
   auto exit = ptr_vec<hir_node>{};
   for (auto &task : awaited) {
     exit.push_back(ptr<hir_node>(make<hir_expr_stmt>(
         span, ptr<hir_expr>(make<hir_coroutine_cancel>(
                   span, k_unknown_type, std::move(task))))));
+  }
+  for (auto &drop : drops) {
+    exit.push_back(std::move(drop));
   }
   if (auto dropped = emit_exit_drops(key, jump_exit::function, span, exit);
       !dropped.has_value()) {
@@ -4940,8 +4946,9 @@ auto lowerer::lower_crew(std::string_view name,
   emit_crew_end(crew_symbol, span, nodes);
   if (in_task_body_) {
     // The block's value is not bound to a name yet, so a cancellation here
-    // has to release the tasks it hands back.
+    // has to release the tasks it hands back and drop the rest of it.
     auto held = ptr_vec<hir_expr>{};
+    auto drops = ptr_vec<hir_node>{};
     if (result != nullptr) {
       const auto &local = static_cast<const hir_local_ref &>(*result);
       const auto result_ref = [&]() -> ptr<hir_expr> {
@@ -4953,18 +4960,35 @@ auto lowerer::lower_crew(std::string_view name,
         const auto &m = checked_.types.entry(member);
         return m.kind == type_kind::builtin_generic_kind && m.name == "task";
       };
+      // A part that is not a task drops by its plan; one with no plan owns
+      // nothing to drop.
+      const auto drop_part = [&](const place_fn &part, type_id part_type)
+          -> std::expected<void, lowering_error> {
+        if (!checked_.drop.drop_plans.contains(part_type)) {
+          return {};
+        }
+        return build_drop_calls(part, part_type, span, drops);
+      };
       if (is_task(result_type)) {
         held.push_back(result_ref());
       } else if (entry.kind == type_kind::tuple_kind) {
         for (size_t i = 0; i < entry.args.size(); ++i) {
-          if (is_task(entry.args[i])) {
-            held.push_back(ptr<hir_expr>(make<hir_tuple_index>(
-                span, entry.args[i], result_ref(), i)));
+          const auto member = entry.args[i];
+          const auto member_ref = [&, member, i]() -> ptr<hir_expr> {
+            return {make<hir_tuple_index>(span, member, result_ref(), i)};
+          };
+          if (is_task(member)) {
+            held.push_back(member_ref());
+          } else if (auto ok = drop_part(member_ref, member); !ok.has_value()) {
+            return std::unexpected(ok.error());
           }
         }
+      } else if (auto ok = drop_part(result_ref, result_type); !ok.has_value()) {
+        return std::unexpected(ok.error());
       }
     }
-    auto cancel = coroutine_cancel_check(key, span, std::move(held));
+    auto cancel =
+        coroutine_cancel_check(key, span, std::move(held), std::move(drops));
     if (!cancel.has_value()) {
       return std::unexpected(cancel.error());
     }
@@ -5013,21 +5037,28 @@ auto lowerer::lower_crew_errors(const ast::call_expr &call,
   if (!crew_value.has_value()) {
     return std::unexpected(crew_value.error());
   }
-  const auto crew_symbol = mint_symbol();
   const auto crew_type = checked_type_of(crew);
   if (!crew_type.has_value()) {
     return std::unexpected(crew_type.error());
   }
+  // The crew's own name is used where it stands: binding it to a second name
+  // would be a second owner of the handle, which the crew's join still uses.
+  const auto *named = (*crew_value)->kind == hir_node_kind::hir_local_ref
+                          ? &static_cast<const hir_local_ref &>(**crew_value)
+                          : nullptr;
+  const auto crew_symbol = named != nullptr ? named->symbol : mint_symbol();
+  const auto crew_name =
+      named != nullptr ? named->name : std::string("<errors crew>");
   const auto crew_ref = [&]() -> ptr<hir_expr> {
-    return {make<hir_local_ref>(span, *crew_type, crew_symbol,
-                                std::string("<errors crew>"))};
+    return {make<hir_local_ref>(span, *crew_type, crew_symbol, crew_name)};
   };
 
   auto stmts = ptr_vec<hir_node>{};
   auto &prologue = in_task ? *await_hoist_ : stmts;
-  prologue.push_back(ptr<hir_node>(make<hir_let>(span, crew_symbol,
-                                                 std::string("<errors crew>"),
-                                                 std::move(*crew_value))));
+  if (named == nullptr) {
+    prologue.push_back(ptr<hir_node>(make<hir_let>(
+        span, crew_symbol, crew_name, std::move(*crew_value))));
+  }
   if (in_task) {
     if (auto waited = emit_task_wait(prologue, crew_ref(), &call, span);
         !waited.has_value()) {

@@ -421,7 +421,8 @@ namespace {
   case op_kind::generator_resume:
     return "resume " + render_place(op.dest) + " = " + render_place(op.source);
   case op_kind::generator_take:
-    return "take " + render_place(op.dest) + " <- " + render_place(op.source);
+    return std::string(op.shallow ? "read " : "take ") + render_place(op.dest) +
+           " <- " + render_place(op.source);
   case op_kind::coroutine_has_item:
     return "has_item " + render_place(op.dest) + " = " +
            render_place(op.source);
