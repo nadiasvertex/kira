@@ -29,11 +29,11 @@ type replace_failure = {
 }
 
 def suitable(item: inspect[resource]) -> bool
-    writes {}:
+    writes nothing:
     return item.usable
 
 def current(slot: inspect[resource_slot]) -> inspect[resource] from slot
-    writes {}:
+    writes nothing:
     return &slot.item
 
 def try_replace(
@@ -100,9 +100,11 @@ owned field is structurally disposed when the local goes out of scope.
    value; it is not an ordinary function that accepts an arbitrary place by value.
 
 The header clauses describe guarantees. They do not execute transfers or grant permissions.
-In particular, `writes {}` is a checked bound over pre-existing storage, not an effect-free
+In particular, `writes nothing` is a checked bound over pre-existing storage, not an effect-free
 or termination annotation. `suitable` and `current` also have checked summaries with no
 storage-changing transitions; an empty write bound alone would not establish that property.
+Omission requests inference. The empty-brace spelling `writes {}` is rejected; it cannot
+serve as either an empty assertion or an inference request.
 
 ### Contract meaning
 
@@ -186,7 +188,7 @@ Omitted clauses request sound, conservative inference from checked bodies, for p
 well as private definitions. The annotations above demonstrate optional programmer-written
 constraints; none is mandatory merely because its function is public. The unconstrained
 `try_replace` definition can omit all four contract lines and retain the same body. Likewise,
-`suitable` can omit `writes {}`, and `current` can omit both its `from` and `writes` clauses.
+`suitable` can omit `writes nothing`, and `current` can omit both its `from` and `writes` clauses.
 The compiler still establishes and exports complete checked summaries for callers.
 
 Explicit constraints pin desired guarantees. Inferred guarantees can change with a body
@@ -458,3 +460,167 @@ invalid text boundaries must be rejected or checked before the retained result i
 Final release must reclaim backing storage and release frozen outgoing edges exactly once,
 without mutable cleanup or thawing. Library bodies and intrinsic contracts remain subject
 to verification; method names alone confer no retention authority.
+
+## Worked example: callback result origins
+
+This is experimental design syntax, not an implemented or runnable language example.
+Optional parameter names in callable types let a result-origin bound name the argument
+supplying a borrowed result:
+
+```cinder
+def first_three(input: slice[int32]) -> slice[int32]:
+    return input[0 .. min(3, input.len())]
+
+def select(
+    input: slice[int32],
+    choose: fn(part: slice[int32]) -> slice[int32] from part,
+) -> slice[int32]:
+    return choose(input)
+
+# items: own[list[int32]]
+let selected = select(items[0 .. items.len()], first_three)
+```
+
+The checked summary inferred for `first_three` bounds the result's scoped dependencies by
+`input`. That satisfies the expected callback contract after binding its argument to `part`;
+the implementation parameter need not have the same name. The summary inferred for `select`
+likewise bounds its result by its own `input`. Either declaration may explicitly constrain
+that relationship with `from input`; neither needs the annotation to establish this example.
+
+The bound applies separately to every invocation, including calls with different source
+allocations. It is not a dependency on whichever argument the callback most recently saw.
+An implementation may not substitute captured storage or an earlier call's input unless
+those dependencies are permitted by its checked interface.
+
+The ownership and loan trace is:
+
+1. Range indexing creates a scoped observation of `items`, with checked bounds and backing
+   provenance. No elements or owners are copied.
+2. `select` passes its observation to the callback under the ordinary parameter rules.
+   The callback result retains the required input backing, grant-chain, and lifetime
+   dependencies, whether it duplicates an incoming observation or creates a dependent view.
+3. The result carrier receives those dependencies before intermediate argument carriers
+   retire. Forwarding the result through `select` preserves them.
+4. While `selected` remains live, conflicting mutation, relocation, or destruction of
+   `items` is rejected. The result acquires no scoped dependency on the local callback
+   carrier merely because it was produced by a callback.
+
+A captured scalar can influence the range without supplying its storage:
+
+```cinder
+let limit: usize = 2
+let limited = part => part[0 .. min(limit, part.len())]
+let selected = select(items[0 .. items.len()], limited)
+```
+
+The inferred result still depends only on that call's `part`. This choice does not settle
+how `limit` is captured or the callable's environment call mode; those remain separate Q2
+choices. In contrast, this callback cannot satisfy the input-only origin bound:
+
+```cinder
+# elsewhere: slice[int32], from an unrelated source
+let choose_elsewhere = part => elsewhere
+let selected = select(items[0 .. items.len()], choose_elsewhere)
+```
+
+A teaching diagnostic should point to the returned capture and the callback requirement:
+
+```text
+callback result borrows captured `elsewhere`
+required contract permits result dependencies only through `part`
+
+return a view derived from `part`, or change the callback
+contract to account for the captured dependency
+```
+
+Changing the contract must retain the real lifetime dependency and satisfy the caller's
+uses; an annotation cannot hide it. Capture-origin contract spellings remain open.
+
+No `writes nothing` promise follows from this result-origin bound. The complete inferred or
+explicit interface still accounts for effects, transitions, capture dependencies, and
+cleanup. Unnamed `fn(...)` parameter types remain available; omitted origin clauses must
+preserve sufficient checked summaries or use sound conservative interface defaults.
+Unavailable bodies cannot justify an inferred input-only promise.
+
+Required validation includes consistent binder renaming, unnamed forms, independently
+instantiated calls, forwarding without dependency loss, compatible computation-only
+captures, capture-backed result rejection, and preservation through stored callable values
+and exported metadata. Formal validation and implementation remain pending.
+
+## Worked example: callback write bounds
+
+This example uses accepted experimental write-bound spellings. It does not settle closure
+call modes or the affine mapping of capture-list syntax, and is not an implemented fixture.
+An explicit counter argument keeps the two relationships visible:
+
+```cinder
+def counted_prefix(
+    input: slice[int32],
+    count: edit[usize],
+) -> slice[int32]:
+    *count += 1
+    return input[0 .. min(3, input.len())]
+```
+
+Assume the increment is within range under the chosen arithmetic rules. The compiler infers
+`from input` and `writes {count}`. A compatible callback constraint is:
+
+```cinder
+fn(part: slice[int32], count: edit[usize]) -> slice[int32] from part
+    writes {count}
+```
+
+The counter edit is reborrowed for the call. The returned slice carries input dependencies,
+not a counter dependency; the counter can be reused once its other loans permit. The
+argument capabilities must still be compatible: these clauses cannot authorize a counter
+edit that conflicts with the input observation.
+
+Alternatively, capture the counter. Using the existing capture-list syntax provisionally:
+
+```cinder
+var calls: usize = 0
+let choose = [&mut calls] part => counted_prefix(part, &mut calls)
+let selected = select(items[0 .. items.len()], choose)
+```
+
+The callback still satisfies `from part`, but writes through its captured edit of `calls`.
+The original `select` example omitted a write constraint, so its complete checked summary
+must include that effect. To pin a bound allowing writes through captured authority, use:
+
+```cinder
+fn(part: slice[int32]) -> slice[int32] from part
+    writes {self}
+```
+
+Here `self` is the callable environment root. Its footprint follows the edit to the actual
+counter; it is not limited to the environment's own bytes. At `select`'s boundary, a bound
+`writes {choose}` includes this authority through its callback parameter. These bounds do
+not expose private capture fields, grant authority, or select an environment call mode.
+The counter loan stays live while the closure or another carrier retains it. The returned
+slice does not inherit that loan merely because the callback incremented the counter.
+
+To prohibit writes to pre-existing storage, spell the constraint explicitly:
+
+```cinder
+fn(part: slice[int32]) -> slice[int32] from part
+    writes nothing
+```
+
+`first_three` satisfies this constraint; both counter-updating forms fail it. A diagnostic
+should identify the counter write (including any helper or cleanup responsible) and the
+`writes nothing` constraint it violates. Omission instead requests inference or a sound
+conservative bound. The spelling `writes {}` is rejected with guidance:
+
+```text
+use `writes nothing` to prohibit writes to pre-existing storage,
+or omit the clause to infer a sound write bound
+```
+
+The no-write constraint still permits fresh allocation and writes to fresh internal storage.
+Transitions, ownership changes, and cleanup have their own checked summaries; no purity,
+termination, rollback, or unchanged-availability guarantee follows from `writes nothing`.
+
+Required validation covers declaration and callable parsing, rejected empty-brace syntax,
+omitted versus explicit constraints, writes through captured edits, transitive helper and
+cleanup effects, compatibility of result origins with independent counter writes, and
+propagation of actual region footprints through higher-order calls and metadata.

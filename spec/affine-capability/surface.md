@@ -2,10 +2,12 @@
 
 Status: accepted experimental-subset spellings for declarations, receivers, loans, transfer,
 freeze, copying, the `copy` constraint, single-element and scoped/retained range views,
-the library `.slice()` API, and local bindings.
+the library `.slice()` API, local bindings, callable parameter names/result-origin bounds,
+and write bounds including `writes nothing` and the callable environment root `self`.
 Contract inference and optional programmer constraints are accepted policies; the worked contract
-clauses remain syntax candidates. This document does not amend
-the implemented grammar or establish T08 completion. See [Q2 decisions](decisions.md#q2--ownership-default-and-explicit-copying)
+clauses beyond the accepted result-origin and write-bound forms remain syntax candidates.
+This document does not amend the implemented grammar or establish T08 completion.
+See [Q2 decisions](decisions.md#q2--ownership-default-and-explicit-copying)
 and the [worked translation](translations.md).
 
 ## Types and parameter modes
@@ -313,10 +315,81 @@ does not remove current library code. Reusing the shorter `shared[T]` spelling f
 sharing is a possible adoption-time naming decision, requiring explicit migration. Neither
 spelling alone establishes thread-transfer safety.
 
+## Callable parameter names and result origins
+
+Allow optional parameter names in `fn(...)` types so contracts can refer to their arguments:
+
+```cinder
+fn(part: slice[int32]) -> slice[int32] from part
+```
+
+Reuse the declaration result-origin form: `from part`, or `from {left, right}` for multiple
+permitted origins. It bounds scoped dependencies throughout the result; it does not grant
+authority or permit a loan of dead storage. For each invocation, substitute that call's
+actual arguments into the contract. An input-only bound cannot hide a dependency on a
+capture, an unrelated source, or an argument retained from an earlier invocation.
+
+Parameter names are local contract binders. Consistently renaming a binder and its uses
+does not change the contract, and the implementation's parameter names need not match.
+Existing unnamed parameter types remain available when no contract needs to name them.
+
+Infer checked contracts for source functions and closures, and preserve sufficient summaries
+when passing or storing callable values. An expected callable contract is a checked
+requirement on the supplied implementation. Omitting `from` neither asserts an input-only
+origin nor erases captured dependencies; opaque boundaries need sufficient explicit contracts
+or sound conservative interface defaults. Request only the information needed to establish
+a useful relationship.
+
+An input-only result bound permits captures used for computation, such as a scalar length
+limit. It rejects a result borrowed from captured storage. Result origins do not constrain
+writes: effects, transitions, captures, and cleanup still require complete checked summaries.
+Closure call/capture modes and capture-origin spellings remain open. See the
+[callback translation](translations.md#worked-example-callback-result-origins).
+
+## Write bounds and callable environments
+
+Use `writes nothing` for a checked guarantee of no writes to pre-existing storage. Omit the
+clause to request a sound inferred or conservative bound. Use a nonempty root set, such as
+`writes {count}`, to constrain writes through named authority. Reject `writes {}` with a
+diagnostic suggesting `writes nothing` for an explicit prohibition or omission for inference.
+`writes none` is not an alternative spelling.
+
+Write bounds apply to function declarations and callable types, independently of result
+origins. A callback can modify a counter while returning a slice borrowed only from its input:
+
+```cinder
+fn(part: slice[int32], count: edit[usize]) -> slice[int32] from part
+    writes {count}
+```
+
+In a callable type's contract, `self` denotes the callable environment, allowing a captured
+counter instead of an explicit counter parameter:
+
+```cinder
+fn(part: slice[int32]) -> slice[int32] from part
+    writes {self}
+```
+
+The bound includes storage reached through captured capabilities, such as a counter targeted
+by a captured edit; it is not limited to the environment's own storage or ownership subtree.
+At an enclosing function boundary, `writes {choose}` names the corresponding authority
+reachable through the callback parameter `choose`. Checked summaries retain actual region
+identities without exposing private capture field names. This environment root grants no
+authority and does not choose an observing, editing, or consuming call mode. In method
+declarations, `self` continues to denote the receiver; nested callable types have their own
+contract scope.
+
+Bounds include transitive calls and cleanup, and accept implementations that write less.
+`writes nothing` is not a purity or termination guarantee: fresh allocation, writes to fresh
+internal storage, and declared transitions remain possible. Complete transition and output
+summaries still account for changes to availability, ownership, and cleanup. An omitted
+clause never silently establishes `writes nothing`, and a `from` clause never implies it.
+See the [counter callback translation](translations.md#worked-example-callback-write-bounds).
+
 ## Remaining Q2 choices
 
-- Callable contract spellings, closure call-mode and capture spellings, and contract forms
-  beyond the worked examples.
+- Capture-origin contract spellings, closure call-mode and capture spellings, and contract
+  forms beyond the worked examples.
 - Complete translations and grammar integration for the advertised experimental subset.
 
 Q2 remains partially resolved. This surface mapping changes no normative or implemented

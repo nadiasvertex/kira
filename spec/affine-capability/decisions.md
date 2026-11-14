@@ -62,9 +62,10 @@ it does not promise termination or eventual cleanup for diverging programs.
 ## Q2 — Ownership default and explicit copying
 
 Status: ownership-default, contract-inference, basic surface-spelling, `copy`/`copy_owned`
-operation names, the `copy` constraint name, single-element view consolidation, and scoped
-range-view construction and passing, and retained frozen ranges with library `.slice()`
-accepted on 2026-11-14. Q2 remains partially resolved;
+operation names, the `copy` constraint name, single-element view consolidation, scoped
+range-view construction and passing, retained frozen ranges with library `.slice()`,
+callable parameter names/result-origin bounds, and write bounds including `writes nothing`
+and the callable environment root `self` accepted on 2026-11-14. Q2 remains partially resolved;
 further mappings and contract spellings are pending.
 Owning task: T08. Dependent tasks: T30–T36 and the affected library migrations.
 
@@ -278,10 +279,60 @@ records returned ranges, subranges, text boundaries, and the scoped-escape diagn
 Formal and implementation validation remain pending. This choice fixes surface types and
 semantic retention, not Q4's concrete ABI, the intrinsic's name, or Q5's failure policy.
 
+### Callable parameter names and result origins
+
+Accept optional parameter names in `fn(...)` types and the result-origin form
+`fn(part: slice[int32]) -> slice[int32] from part`. Multiple permitted origins use
+`from {left, right}`. Names bind arguments within the callable contract; consistent renaming
+preserves its meaning and implementation parameter names need not match. Existing unnamed
+parameter types remain available when the contract does not need to refer to them.
+
+Instantiate the origin bound separately for each call. An input-only bound excludes scoped
+dependencies on captured storage, unrelated sources, and earlier calls' arguments. Captures
+used only for computation remain permitted. Preserve all backing, grant-chain, and lifetime
+dependencies through the result and forwarding helpers; the bound grants no new authority.
+
+Infer source callable summaries and check them against optional expected constraints.
+Passing or storing a callable must preserve sufficient checked contracts. Omission does
+not assert an input-only origin or discard dependencies; opaque boundaries require enough
+explicit information or sound conservative defaults. Report the missing relationship or
+actual incompatible source when a callback cannot satisfy the requested contract.
+
+The [callback translation](translations.md#worked-example-callback-result-origins) records
+inferred implementation and forwarding contracts, compatible scalar captures, and rejection
+of a result borrowed from a capture. This accepts the result-origin spelling provisionally
+for the experiment; capture-origin spellings and closure call modes
+remain open. Formal validation and implementation remain pending.
+
+### Write bounds and the no-write spelling
+
+Accept `writes nothing` as the explicit no-write constraint for declarations and callable
+types. Omission requests inference or a sound conservative bound; a nonempty root set such
+as `writes {count}` bounds permitted writes. Reject `writes {}` and suggest either
+`writes nothing` or omission according to intent. Do not introduce `writes none` as an alias.
+The explicit words distinguish a checked prohibition from the absence of a constraint and
+fit the existing phrase-like contract forms such as `transfers ... to ...`.
+
+Accept `self` as the callable environment root inside callable-type contracts. A callback
+with `from part` and `writes {self}` may modify a captured counter while returning a view
+derived only from its input. The environment footprint follows captured authority to its
+targets, including edit loans; an enclosing function can bound these writes with
+`writes {choose}` for its callback parameter. Actual region dependencies remain in complete
+checked summaries without exposing capture layout. Result origins, write authority, and
+environment call modes remain distinct; no write clause grants authority or chooses a mode.
+
+All bounds cover helpers and cleanup. `writes nothing` forbids writes to pre-existing
+storage; it permits fresh allocation and does not establish purity, termination, unchanged
+ownership, or absence of transitions. Omitted clauses infer those components under the
+existing policy. The [counter callback translation](translations.md#worked-example-callback-write-bounds)
+records explicit and captured counters. These are experimental design choices; parser,
+contract verification, and runtime validation remain pending.
+
 ### Remaining scope and obligations
 
-Q2 still needs callable and capture spellings and remaining contract forms. The worked
-`from`, `writes`, `outcome`, `entry`,
+Q2 still needs capture-origin contracts, closure call/capture spellings, and remaining
+contract forms. Beyond the accepted callable result-origin and write-bound forms, the worked
+`from`, `outcome`, `entry`,
 `transfers`, and `preserves` clauses remain syntax candidates with the accepted inference
 policy. The legacy implicit-duplication
 classification and the structural independent-copy witness must remain distinct despite

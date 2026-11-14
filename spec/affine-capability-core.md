@@ -942,8 +942,12 @@ summary before the group is accepted. If inference cannot establish a sufficient
 request only the missing information. Native or opaque boundaries need sufficient explicit
 contracts or sound interface defaults; unavailable bodies cannot justify extra precision.
 
-An omitted write annotation is not an unchecked `writes {}` promise. When no narrower checked
-summary is available, the conservative write bound covers all mutable storage reachable
+The accepted surface spelling for an explicit empty write bound is `writes nothing`.
+Reject `writes {}`; omission requests inference, not an empty constraint. This spelling
+does not alter the internal finite-set representation of the may-write footprint.
+
+An omitted write annotation is not an unchecked `writes nothing` promise. When no narrower
+checked summary is available, the conservative write bound covers all mutable storage reachable
 through authority the call may exercise, including authority
 inside captures, stored edit loans, and sealed tokens. Such reachability follows those
 capabilities' targets as well as ownership edges; it is not just the ownership tree of the
@@ -951,6 +955,25 @@ outer argument. A call whose permitted mutable reach cannot be bounded by its in
 rejected in this core. Mutable global or external state requires an explicit capability and
 effect contract; it cannot be an undeclared source of mutation. External-state facts need
 their own stability contract and are not covered by heap-version preservation alone.
+
+Callable result-origin bounds bind formal arguments and are instantiated independently for
+each invocation. An input-only bound excludes dependencies supplied only by captures,
+unrelated storage, or arguments from earlier calls. It still permits captures used solely
+for computation. Forwarding or storing callable values preserves sufficient checked
+summaries; the result acquires all backing, granting, and lifetime dependencies before
+argument carriers retire. Consistently renaming formal binders does not change a contract.
+Omitted origin annotations do not establish an input-only bound or erase dependencies.
+See the accepted [callable surface mapping](affine-capability/surface.md#callable-parameter-names-and-result-origins)
+and [callback translation](affine-capability/translations.md#worked-example-callback-result-origins).
+
+In a callable-type contract, the surface root `self` denotes the environment and authority
+reachable through its captures. A bound such as `writes {self}` therefore includes targets
+of captured edit capabilities, not only owned descendants or environment bytes. An enclosing
+contract may refer to this footprint through its callable parameter, such as `writes {choose}`.
+Instantiation preserves actual region identities without exposing private capture layout.
+An input-derived result need not retain a counter loan merely because the callback wrote
+the counter; any environment or other carrier retaining that edit still keeps its loan live.
+The write bound neither grants authority nor chooses an environment call mode.
 
 Diagnostics explain the inferred bound or missing relationship, its source operations, and
 why it prevents the requested use. Show the smallest relevant annotation or code change and
@@ -1199,6 +1222,10 @@ and `mutate_then_inspect` mutates an edit parameter and returns a derived inspec
 | Move a container holding an inspection, then mutate before using the destination | Rejected: moving preserves the stored loan dependency |
 | Evaluate `observe_pair(&x, mutate_then_inspect(&mut x))` from left to right | Rejected: the first argument keeps its inspection active when the second requests editing |
 | Bind the result of `return_view(&x)`, then mutate before using that result | Rejected: returning transfers the dependency before argument retirement |
+| Invoke an input-derived callback on different source slices | Instantiate each call's origin bound against its own argument; preserve each returned view's dependencies |
+| Supply a callback returning captured storage to an input-only result-origin contract | Rejected: the captured dependency is outside the permitted bound |
+| Supply a callback using a captured scalar to select a subrange of its input | Accepted when its complete checked contract is compatible; the scalar need not supply a result loan |
+| Rename callable contract binders consistently or use different implementation parameter names | Preserve the same contract meaning |
 | Return a loan of an unretained temporary owner | Rejected: the return carrier outlives its origin |
 | End an inspection after loading a scalar snapshot, then use the snapshot | Accepted; the scalar is not a loan carrier |
 | Retire a binding on one branch, then use it after the join | Rejected: availability is not restored by merging contexts |
@@ -1233,10 +1260,10 @@ are versioned snapshot facts, not permission to keep using a retired inspection:
 | Prove an index in bounds, call a function that may shrink the same buffer, then index with the old proof | Rejected without a new current-version proof |
 | Mutate a separately allocated child through a call, then reuse a fact about its ancestor's contents | Rejected: ancestor versions are invalidated |
 | Call a mutator on a provably disjoint tree, then reuse a fact about an unchanged tree | Accepted if its other dependencies remain valid |
-| Call an edit-taking function with checked `writes {}`, then reuse a bounds fact | Accepted if transitions and cleanup also preserve its dependencies |
+| Call an edit-taking function with checked `writes nothing`, then reuse a bounds fact | Accepted if transitions and cleanup also preserve its dependencies |
 | Call a function with an imprecise edit effect and no explicit write annotation | Conservatively invalidate its entire permitted mutable footprint |
 | Call a closure or token operation that mutates storage hidden in its representation | Its exposed effect summary must invalidate that storage's facts |
-| Claim `writes {}` while a callback or cleanup writes pre-existing storage | Contract rejected |
+| Claim `writes nothing` while a callback or cleanup writes pre-existing storage | Contract rejected |
 | Mutate a copied argument with no separately carried mutable capability | Facts about the original storage remain valid |
 | Mutate while evaluating a later argument, then use an earlier proof to satisfy the callee's precondition | Rejected if the mutation invalidated that proof's storage dependencies |
 | Use a checked postcondition to derive a bounds fact about the output version | Accepted when the kernel verifies the derivation |
