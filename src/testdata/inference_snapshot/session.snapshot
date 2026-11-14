@@ -1,7 +1,7 @@
 # inference snapshot
-# 2726 interned types
+# 2875 interned types
 
-## node_types (33849)
+## node_types (34407)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -15980,6 +15980,564 @@ std/traits.show.cn:30:15 [binding_pat] self
 std/traits.show.cn:30:24 [named_type] str
 std/traits.show.cn:37:16 [binding_pat] self
 std/traits.show.cn:37:25 [named_type] str
+std/traits.structural.cn:8:12 [binding_pat] &option[T]
+std/traits.structural.cn:8:18 [binding_pat] &option[T]
+std/traits.structural.cn:8:40 [named_type] bool
+std/traits.structural.cn:9:16 [match] bool
+std/traits.structural.cn:9:22 [ident] &option[T]
+std/traits.structural.cn:10:13 [option_pat] option[T]
+std/traits.structural.cn:10:19 [binding_pat] T
+std/traits.structural.cn:10:25 [match] bool
+std/traits.structural.cn:10:31 [ident] &option[T]
+std/traits.structural.cn:11:17 [option_pat] option[T]
+std/traits.structural.cn:11:23 [binding_pat] T
+std/traits.structural.cn:11:29 [ident] T
+std/traits.structural.cn:11:29 [binary] bool
+std/traits.structural.cn:11:34 [ident] T
+std/traits.structural.cn:12:17 [ctor_pat] option[T]
+std/traits.structural.cn:12:26 [literal] bool
+std/traits.structural.cn:13:13 [ctor_pat] option[T]
+std/traits.structural.cn:13:22 [match] bool
+std/traits.structural.cn:13:28 [ident] &option[T]
+std/traits.structural.cn:14:17 [option_pat] option[T]
+std/traits.structural.cn:14:23 [wildcard_pat] T
+std/traits.structural.cn:14:29 [literal] bool
+std/traits.structural.cn:15:17 [ctor_pat] option[T]
+std/traits.structural.cn:15:26 [literal] bool
+std/traits.structural.cn:18:12 [binding_pat] &result[T, E]
+std/traits.structural.cn:18:18 [binding_pat] &result[T, E]
+std/traits.structural.cn:18:43 [named_type] bool
+std/traits.structural.cn:19:16 [match] bool
+std/traits.structural.cn:19:22 [ident] &result[T, E]
+std/traits.structural.cn:20:13 [result_pat] result[T, E]
+std/traits.structural.cn:20:17 [binding_pat] T
+std/traits.structural.cn:20:23 [match] bool
+std/traits.structural.cn:20:29 [ident] &result[T, E]
+std/traits.structural.cn:21:17 [result_pat] result[T, E]
+std/traits.structural.cn:21:21 [binding_pat] T
+std/traits.structural.cn:21:27 [ident] T
+std/traits.structural.cn:21:27 [binary] bool
+std/traits.structural.cn:21:32 [ident] T
+std/traits.structural.cn:22:17 [result_pat] result[T, E]
+std/traits.structural.cn:22:22 [wildcard_pat] E
+std/traits.structural.cn:22:28 [literal] bool
+std/traits.structural.cn:23:13 [result_pat] result[T, E]
+std/traits.structural.cn:23:18 [binding_pat] E
+std/traits.structural.cn:23:24 [match] bool
+std/traits.structural.cn:23:30 [ident] &result[T, E]
+std/traits.structural.cn:24:17 [result_pat] result[T, E]
+std/traits.structural.cn:24:21 [wildcard_pat] T
+std/traits.structural.cn:24:27 [literal] bool
+std/traits.structural.cn:25:17 [result_pat] result[T, E]
+std/traits.structural.cn:25:22 [binding_pat] E
+std/traits.structural.cn:25:28 [ident] E
+std/traits.structural.cn:25:28 [binary] bool
+std/traits.structural.cn:25:33 [ident] E
+std/traits.structural.cn:28:12 [binding_pat] &array[T, n]
+std/traits.structural.cn:28:18 [binding_pat] &array[T, n]
+std/traits.structural.cn:28:42 [named_type] bool
+std/traits.structural.cn:29:9 [var_stmt] usize
+std/traits.structural.cn:29:24 [literal] usize
+std/traits.structural.cn:30:15 [ident] usize
+std/traits.structural.cn:30:15 [binary] bool
+std/traits.structural.cn:30:19 [ident] usize
+std/traits.structural.cn:31:16 [ident] &array[T, n]
+std/traits.structural.cn:31:16 [index] T
+std/traits.structural.cn:31:16 [binary] bool
+std/traits.structural.cn:31:21 [ident] usize
+std/traits.structural.cn:31:27 [ident] &array[T, n]
+std/traits.structural.cn:31:27 [index] T
+std/traits.structural.cn:31:33 [ident] usize
+std/traits.structural.cn:32:24 [literal] bool
+std/traits.structural.cn:33:13 [ident] usize
+std/traits.structural.cn:33:17 [ident] usize
+std/traits.structural.cn:33:17 [binary] usize
+std/traits.structural.cn:33:21 [literal] usize
+std/traits.structural.cn:34:16 [literal] bool
+std/traits.structural.cn:37:12 [binding_pat] &(T0, T1)
+std/traits.structural.cn:37:18 [binding_pat] &(T0, T1)
+std/traits.structural.cn:37:39 [named_type] bool
+std/traits.structural.cn:38:16 [ident] &(T0, T1)
+std/traits.structural.cn:38:16 [field] T0
+std/traits.structural.cn:38:16 [binary] bool
+std/traits.structural.cn:38:16 [binary] bool
+std/traits.structural.cn:38:26 [ident] &(T0, T1)
+std/traits.structural.cn:38:26 [field] T0
+std/traits.structural.cn:38:38 [ident] &(T0, T1)
+std/traits.structural.cn:38:38 [field] T1
+std/traits.structural.cn:38:38 [binary] bool
+std/traits.structural.cn:38:48 [ident] &(T0, T1)
+std/traits.structural.cn:38:48 [field] T1
+std/traits.structural.cn:41:12 [binding_pat] &(T0, T1, T2)
+std/traits.structural.cn:41:18 [binding_pat] &(T0, T1, T2)
+std/traits.structural.cn:41:43 [named_type] bool
+std/traits.structural.cn:42:16 [ident] &(T0, T1, T2)
+std/traits.structural.cn:42:16 [field] T0
+std/traits.structural.cn:42:16 [binary] bool
+std/traits.structural.cn:42:16 [binary] bool
+std/traits.structural.cn:42:16 [binary] bool
+std/traits.structural.cn:42:26 [ident] &(T0, T1, T2)
+std/traits.structural.cn:42:26 [field] T0
+std/traits.structural.cn:42:38 [ident] &(T0, T1, T2)
+std/traits.structural.cn:42:38 [field] T1
+std/traits.structural.cn:42:38 [binary] bool
+std/traits.structural.cn:42:48 [ident] &(T0, T1, T2)
+std/traits.structural.cn:42:48 [field] T1
+std/traits.structural.cn:42:60 [ident] &(T0, T1, T2)
+std/traits.structural.cn:42:60 [field] T2
+std/traits.structural.cn:42:60 [binary] bool
+std/traits.structural.cn:42:70 [ident] &(T0, T1, T2)
+std/traits.structural.cn:42:70 [field] T2
+std/traits.structural.cn:45:12 [binding_pat] &(T0, T1, T2, T3)
+std/traits.structural.cn:45:18 [binding_pat] &(T0, T1, T2, T3)
+std/traits.structural.cn:45:47 [named_type] bool
+std/traits.structural.cn:46:16 [ident] &(T0, T1, T2, T3)
+std/traits.structural.cn:46:16 [field] T0
+std/traits.structural.cn:46:16 [binary] bool
+std/traits.structural.cn:46:16 [binary] bool
+std/traits.structural.cn:46:16 [binary] bool
+std/traits.structural.cn:46:16 [binary] bool
+std/traits.structural.cn:46:26 [ident] &(T0, T1, T2, T3)
+std/traits.structural.cn:46:26 [field] T0
+std/traits.structural.cn:46:38 [ident] &(T0, T1, T2, T3)
+std/traits.structural.cn:46:38 [field] T1
+std/traits.structural.cn:46:38 [binary] bool
+std/traits.structural.cn:46:48 [ident] &(T0, T1, T2, T3)
+std/traits.structural.cn:46:48 [field] T1
+std/traits.structural.cn:46:60 [ident] &(T0, T1, T2, T3)
+std/traits.structural.cn:46:60 [field] T2
+std/traits.structural.cn:46:60 [binary] bool
+std/traits.structural.cn:46:70 [ident] &(T0, T1, T2, T3)
+std/traits.structural.cn:46:70 [field] T2
+std/traits.structural.cn:46:82 [ident] &(T0, T1, T2, T3)
+std/traits.structural.cn:46:82 [field] T3
+std/traits.structural.cn:46:82 [binary] bool
+std/traits.structural.cn:46:92 [ident] &(T0, T1, T2, T3)
+std/traits.structural.cn:46:92 [field] T3
+std/traits.structural.cn:49:12 [binding_pat] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:49:18 [binding_pat] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:49:51 [named_type] bool
+std/traits.structural.cn:50:16 [ident] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:50:16 [field] T0
+std/traits.structural.cn:50:16 [binary] bool
+std/traits.structural.cn:50:16 [binary] bool
+std/traits.structural.cn:50:16 [binary] bool
+std/traits.structural.cn:50:16 [binary] bool
+std/traits.structural.cn:50:16 [binary] bool
+std/traits.structural.cn:50:26 [ident] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:50:26 [field] T0
+std/traits.structural.cn:50:38 [ident] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:50:38 [field] T1
+std/traits.structural.cn:50:38 [binary] bool
+std/traits.structural.cn:50:48 [ident] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:50:48 [field] T1
+std/traits.structural.cn:50:60 [ident] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:50:60 [field] T2
+std/traits.structural.cn:50:60 [binary] bool
+std/traits.structural.cn:50:70 [ident] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:50:70 [field] T2
+std/traits.structural.cn:50:82 [ident] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:50:82 [field] T3
+std/traits.structural.cn:50:82 [binary] bool
+std/traits.structural.cn:50:92 [ident] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:50:92 [field] T3
+std/traits.structural.cn:50:104 [ident] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:50:104 [field] T4
+std/traits.structural.cn:50:104 [binary] bool
+std/traits.structural.cn:50:114 [ident] &(T0, T1, T2, T3, T4)
+std/traits.structural.cn:50:114 [field] T4
+std/traits.structural.cn:53:12 [binding_pat] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:53:18 [binding_pat] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:53:55 [named_type] bool
+std/traits.structural.cn:54:16 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:16 [field] T0
+std/traits.structural.cn:54:16 [binary] bool
+std/traits.structural.cn:54:16 [binary] bool
+std/traits.structural.cn:54:16 [binary] bool
+std/traits.structural.cn:54:16 [binary] bool
+std/traits.structural.cn:54:16 [binary] bool
+std/traits.structural.cn:54:16 [binary] bool
+std/traits.structural.cn:54:26 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:26 [field] T0
+std/traits.structural.cn:54:38 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:38 [field] T1
+std/traits.structural.cn:54:38 [binary] bool
+std/traits.structural.cn:54:48 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:48 [field] T1
+std/traits.structural.cn:54:60 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:60 [field] T2
+std/traits.structural.cn:54:60 [binary] bool
+std/traits.structural.cn:54:70 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:70 [field] T2
+std/traits.structural.cn:54:82 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:82 [field] T3
+std/traits.structural.cn:54:82 [binary] bool
+std/traits.structural.cn:54:92 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:92 [field] T3
+std/traits.structural.cn:54:104 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:104 [field] T4
+std/traits.structural.cn:54:104 [binary] bool
+std/traits.structural.cn:54:114 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:114 [field] T4
+std/traits.structural.cn:54:126 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:126 [field] T5
+std/traits.structural.cn:54:126 [binary] bool
+std/traits.structural.cn:54:136 [ident] &(T0, T1, T2, T3, T4, T5)
+std/traits.structural.cn:54:136 [field] T5
+std/traits.structural.cn:57:12 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:57:18 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:57:59 [named_type] bool
+std/traits.structural.cn:58:16 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:16 [field] T0
+std/traits.structural.cn:58:16 [binary] bool
+std/traits.structural.cn:58:16 [binary] bool
+std/traits.structural.cn:58:16 [binary] bool
+std/traits.structural.cn:58:16 [binary] bool
+std/traits.structural.cn:58:16 [binary] bool
+std/traits.structural.cn:58:16 [binary] bool
+std/traits.structural.cn:58:16 [binary] bool
+std/traits.structural.cn:58:26 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:26 [field] T0
+std/traits.structural.cn:58:38 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:38 [field] T1
+std/traits.structural.cn:58:38 [binary] bool
+std/traits.structural.cn:58:48 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:48 [field] T1
+std/traits.structural.cn:58:60 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:60 [field] T2
+std/traits.structural.cn:58:60 [binary] bool
+std/traits.structural.cn:58:70 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:70 [field] T2
+std/traits.structural.cn:58:82 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:82 [field] T3
+std/traits.structural.cn:58:82 [binary] bool
+std/traits.structural.cn:58:92 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:92 [field] T3
+std/traits.structural.cn:58:104 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:104 [field] T4
+std/traits.structural.cn:58:104 [binary] bool
+std/traits.structural.cn:58:114 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:114 [field] T4
+std/traits.structural.cn:58:126 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:126 [field] T5
+std/traits.structural.cn:58:126 [binary] bool
+std/traits.structural.cn:58:136 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:136 [field] T5
+std/traits.structural.cn:58:148 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:148 [field] T6
+std/traits.structural.cn:58:148 [binary] bool
+std/traits.structural.cn:58:158 [ident] &(T0, T1, T2, T3, T4, T5, T6)
+std/traits.structural.cn:58:158 [field] T6
+std/traits.structural.cn:61:12 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:61:18 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:61:63 [named_type] bool
+std/traits.structural.cn:62:16 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:16 [field] T0
+std/traits.structural.cn:62:16 [binary] bool
+std/traits.structural.cn:62:16 [binary] bool
+std/traits.structural.cn:62:16 [binary] bool
+std/traits.structural.cn:62:16 [binary] bool
+std/traits.structural.cn:62:16 [binary] bool
+std/traits.structural.cn:62:16 [binary] bool
+std/traits.structural.cn:62:16 [binary] bool
+std/traits.structural.cn:62:16 [binary] bool
+std/traits.structural.cn:62:26 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:26 [field] T0
+std/traits.structural.cn:62:38 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:38 [field] T1
+std/traits.structural.cn:62:38 [binary] bool
+std/traits.structural.cn:62:48 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:48 [field] T1
+std/traits.structural.cn:62:60 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:60 [field] T2
+std/traits.structural.cn:62:60 [binary] bool
+std/traits.structural.cn:62:70 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:70 [field] T2
+std/traits.structural.cn:62:82 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:82 [field] T3
+std/traits.structural.cn:62:82 [binary] bool
+std/traits.structural.cn:62:92 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:92 [field] T3
+std/traits.structural.cn:62:104 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:104 [field] T4
+std/traits.structural.cn:62:104 [binary] bool
+std/traits.structural.cn:62:114 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:114 [field] T4
+std/traits.structural.cn:62:126 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:126 [field] T5
+std/traits.structural.cn:62:126 [binary] bool
+std/traits.structural.cn:62:136 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:136 [field] T5
+std/traits.structural.cn:62:148 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:148 [field] T6
+std/traits.structural.cn:62:148 [binary] bool
+std/traits.structural.cn:62:158 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:158 [field] T6
+std/traits.structural.cn:62:170 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:170 [field] T7
+std/traits.structural.cn:62:170 [binary] bool
+std/traits.structural.cn:62:180 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7)
+std/traits.structural.cn:62:180 [field] T7
+std/traits.structural.cn:65:12 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:65:18 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:65:67 [named_type] bool
+std/traits.structural.cn:66:16 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:16 [field] T0
+std/traits.structural.cn:66:16 [binary] bool
+std/traits.structural.cn:66:16 [binary] bool
+std/traits.structural.cn:66:16 [binary] bool
+std/traits.structural.cn:66:16 [binary] bool
+std/traits.structural.cn:66:16 [binary] bool
+std/traits.structural.cn:66:16 [binary] bool
+std/traits.structural.cn:66:16 [binary] bool
+std/traits.structural.cn:66:16 [binary] bool
+std/traits.structural.cn:66:16 [binary] bool
+std/traits.structural.cn:66:26 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:26 [field] T0
+std/traits.structural.cn:66:38 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:38 [field] T1
+std/traits.structural.cn:66:38 [binary] bool
+std/traits.structural.cn:66:48 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:48 [field] T1
+std/traits.structural.cn:66:60 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:60 [field] T2
+std/traits.structural.cn:66:60 [binary] bool
+std/traits.structural.cn:66:70 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:70 [field] T2
+std/traits.structural.cn:66:82 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:82 [field] T3
+std/traits.structural.cn:66:82 [binary] bool
+std/traits.structural.cn:66:92 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:92 [field] T3
+std/traits.structural.cn:66:104 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:104 [field] T4
+std/traits.structural.cn:66:104 [binary] bool
+std/traits.structural.cn:66:114 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:114 [field] T4
+std/traits.structural.cn:66:126 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:126 [field] T5
+std/traits.structural.cn:66:126 [binary] bool
+std/traits.structural.cn:66:136 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:136 [field] T5
+std/traits.structural.cn:66:148 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:148 [field] T6
+std/traits.structural.cn:66:148 [binary] bool
+std/traits.structural.cn:66:158 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:158 [field] T6
+std/traits.structural.cn:66:170 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:170 [field] T7
+std/traits.structural.cn:66:170 [binary] bool
+std/traits.structural.cn:66:180 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:180 [field] T7
+std/traits.structural.cn:66:192 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:192 [field] T8
+std/traits.structural.cn:66:192 [binary] bool
+std/traits.structural.cn:66:202 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+std/traits.structural.cn:66:202 [field] T8
+std/traits.structural.cn:69:12 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:69:18 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:69:71 [named_type] bool
+std/traits.structural.cn:70:16 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:16 [field] T0
+std/traits.structural.cn:70:16 [binary] bool
+std/traits.structural.cn:70:16 [binary] bool
+std/traits.structural.cn:70:16 [binary] bool
+std/traits.structural.cn:70:16 [binary] bool
+std/traits.structural.cn:70:16 [binary] bool
+std/traits.structural.cn:70:16 [binary] bool
+std/traits.structural.cn:70:16 [binary] bool
+std/traits.structural.cn:70:16 [binary] bool
+std/traits.structural.cn:70:16 [binary] bool
+std/traits.structural.cn:70:16 [binary] bool
+std/traits.structural.cn:70:26 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:26 [field] T0
+std/traits.structural.cn:70:38 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:38 [field] T1
+std/traits.structural.cn:70:38 [binary] bool
+std/traits.structural.cn:70:48 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:48 [field] T1
+std/traits.structural.cn:70:60 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:60 [field] T2
+std/traits.structural.cn:70:60 [binary] bool
+std/traits.structural.cn:70:70 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:70 [field] T2
+std/traits.structural.cn:70:82 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:82 [field] T3
+std/traits.structural.cn:70:82 [binary] bool
+std/traits.structural.cn:70:92 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:92 [field] T3
+std/traits.structural.cn:70:104 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:104 [field] T4
+std/traits.structural.cn:70:104 [binary] bool
+std/traits.structural.cn:70:114 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:114 [field] T4
+std/traits.structural.cn:70:126 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:126 [field] T5
+std/traits.structural.cn:70:126 [binary] bool
+std/traits.structural.cn:70:136 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:136 [field] T5
+std/traits.structural.cn:70:148 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:148 [field] T6
+std/traits.structural.cn:70:148 [binary] bool
+std/traits.structural.cn:70:158 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:158 [field] T6
+std/traits.structural.cn:70:170 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:170 [field] T7
+std/traits.structural.cn:70:170 [binary] bool
+std/traits.structural.cn:70:180 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:180 [field] T7
+std/traits.structural.cn:70:192 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:192 [field] T8
+std/traits.structural.cn:70:192 [binary] bool
+std/traits.structural.cn:70:202 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:202 [field] T8
+std/traits.structural.cn:70:214 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:214 [field] T9
+std/traits.structural.cn:70:214 [binary] bool
+std/traits.structural.cn:70:224 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+std/traits.structural.cn:70:224 [field] T9
+std/traits.structural.cn:73:12 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:73:18 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:73:76 [named_type] bool
+std/traits.structural.cn:74:16 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:16 [field] T0
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:16 [binary] bool
+std/traits.structural.cn:74:26 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:26 [field] T0
+std/traits.structural.cn:74:38 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:38 [field] T1
+std/traits.structural.cn:74:38 [binary] bool
+std/traits.structural.cn:74:48 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:48 [field] T1
+std/traits.structural.cn:74:60 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:60 [field] T2
+std/traits.structural.cn:74:60 [binary] bool
+std/traits.structural.cn:74:70 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:70 [field] T2
+std/traits.structural.cn:74:82 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:82 [field] T3
+std/traits.structural.cn:74:82 [binary] bool
+std/traits.structural.cn:74:92 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:92 [field] T3
+std/traits.structural.cn:74:104 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:104 [field] T4
+std/traits.structural.cn:74:104 [binary] bool
+std/traits.structural.cn:74:114 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:114 [field] T4
+std/traits.structural.cn:74:126 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:126 [field] T5
+std/traits.structural.cn:74:126 [binary] bool
+std/traits.structural.cn:74:136 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:136 [field] T5
+std/traits.structural.cn:74:148 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:148 [field] T6
+std/traits.structural.cn:74:148 [binary] bool
+std/traits.structural.cn:74:158 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:158 [field] T6
+std/traits.structural.cn:74:170 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:170 [field] T7
+std/traits.structural.cn:74:170 [binary] bool
+std/traits.structural.cn:74:180 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:180 [field] T7
+std/traits.structural.cn:74:192 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:192 [field] T8
+std/traits.structural.cn:74:192 [binary] bool
+std/traits.structural.cn:74:202 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:202 [field] T8
+std/traits.structural.cn:74:214 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:214 [field] T9
+std/traits.structural.cn:74:214 [binary] bool
+std/traits.structural.cn:74:224 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:224 [field] T9
+std/traits.structural.cn:74:236 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:236 [field] T10
+std/traits.structural.cn:74:236 [binary] bool
+std/traits.structural.cn:74:247 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+std/traits.structural.cn:74:247 [field] T10
+std/traits.structural.cn:77:12 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:77:18 [binding_pat] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:77:81 [named_type] bool
+std/traits.structural.cn:78:16 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:16 [field] T0
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:16 [binary] bool
+std/traits.structural.cn:78:26 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:26 [field] T0
+std/traits.structural.cn:78:38 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:38 [field] T1
+std/traits.structural.cn:78:38 [binary] bool
+std/traits.structural.cn:78:48 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:48 [field] T1
+std/traits.structural.cn:78:60 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:60 [field] T2
+std/traits.structural.cn:78:60 [binary] bool
+std/traits.structural.cn:78:70 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:70 [field] T2
+std/traits.structural.cn:78:82 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:82 [field] T3
+std/traits.structural.cn:78:82 [binary] bool
+std/traits.structural.cn:78:92 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:92 [field] T3
+std/traits.structural.cn:78:104 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:104 [field] T4
+std/traits.structural.cn:78:104 [binary] bool
+std/traits.structural.cn:78:114 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:114 [field] T4
+std/traits.structural.cn:78:126 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:126 [field] T5
+std/traits.structural.cn:78:126 [binary] bool
+std/traits.structural.cn:78:136 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:136 [field] T5
+std/traits.structural.cn:78:148 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:148 [field] T6
+std/traits.structural.cn:78:148 [binary] bool
+std/traits.structural.cn:78:158 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:158 [field] T6
+std/traits.structural.cn:78:170 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:170 [field] T7
+std/traits.structural.cn:78:170 [binary] bool
+std/traits.structural.cn:78:180 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:180 [field] T7
+std/traits.structural.cn:78:192 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:192 [field] T8
+std/traits.structural.cn:78:192 [binary] bool
+std/traits.structural.cn:78:202 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:202 [field] T8
+std/traits.structural.cn:78:214 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:214 [field] T9
+std/traits.structural.cn:78:214 [binary] bool
+std/traits.structural.cn:78:224 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:224 [field] T9
+std/traits.structural.cn:78:236 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:236 [field] T10
+std/traits.structural.cn:78:236 [binary] bool
+std/traits.structural.cn:78:247 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:247 [field] T10
+std/traits.structural.cn:78:260 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:260 [field] T11
+std/traits.structural.cn:78:260 [binary] bool
+std/traits.structural.cn:78:271 [ident] &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+std/traits.structural.cn:78:271 [field] T11
 std/unicode.cn:36:42 [binding_pat] uint32
 std/unicode.cn:36:57 [named_type] str
 std/unicode.cn:47:15 [binding_pat] uint32
@@ -36556,7 +37114,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (835)
+## drop_plans (849)
 (list[T], list[T]) own=- fields=[0: list[T], 1: list[T]]
 (sender[T], receiver[T]) own=- fields=[0: sender[T], 1: receiver[T]]
 (watch_writer[T], watch_reader[T]) own=- fields=[0: watch_writer[T], 1: watch_reader[T]]
@@ -36976,8 +37534,20 @@ fn(_) -> unit own=- fields=[] glue=fn() -> unit
 fn(_) -> usize own=- fields=[] glue=fn() -> unit
 fn(_) -> watch_reader[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> write_guard[_] own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _)) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _, _)) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _, _, _)) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _, _, _, _)) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _, _, _, _, _)) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _, _, _, _, _, _)) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _, _, _, _, _, _, _)) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _, _, _, _, _, _, _, _)) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _, _, _, _, _, _, _, _, _)) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _, _, _, _, _, _, _, _, _, _)) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &(_, _, _, _, _, _, _, _, _, _, _, _)) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
 fn(_, &array[T, n], usize) -> T own=- fields=[] glue=fn() -> unit
+fn(_, &array[_, _]) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
 fn(_, &array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(_, &bool) -> bool own=- fields=[] glue=fn() -> unit
@@ -37011,6 +37581,8 @@ fn(_, &mut slice_mut[byte]) -> result[unit, io_error] own=- fields=[] glue=fn() 
 fn(_, &mut slice_mut[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
 fn(_, &mut slice_mut[byte]) -> task[unit, io_error, io] own=- fields=[] glue=fn() -> unit
 fn(_, &mut slice_mut[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() -> unit
+fn(_, &option[_]) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &result[_, _]) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &self) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &self) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &slice[byte]) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
@@ -37393,7 +37965,29 @@ write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (2054)
+## borrow_bearing_types (2192)
+&(T0, T1)
+&(T0, T1, T2)
+&(T0, T1, T2, T3)
+&(T0, T1, T2, T3, T4)
+&(T0, T1, T2, T3, T4, T5)
+&(T0, T1, T2, T3, T4, T5, T6)
+&(T0, T1, T2, T3, T4, T5, T6, T7)
+&(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+&(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+&(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+&(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
+&(_, _)
+&(_, _, _)
+&(_, _, _, _)
+&(_, _, _, _, _)
+&(_, _, _, _, _, _)
+&(_, _, _, _, _, _, _)
+&(_, _, _, _, _, _, _, _)
+&(_, _, _, _, _, _, _, _, _)
+&(_, _, _, _, _, _, _, _, _, _)
+&(_, _, _, _, _, _, _, _, _, _, _)
+&(_, _, _, _, _, _, _, _, _, _, _, _)
 &K
 &T
 &T
@@ -37451,6 +38045,8 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &_
 &array[T, n]
 &array[T, n]
+&array[T, n]
+&array[_, _]
 &array[_, n]
 &array[_, n]
 &array[int32, 2]
@@ -37670,6 +38266,8 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &option[T]
 &option[T]
 &option[T]
+&option[T]
+&option[_]
 &option[fn() -> result[unit, test_failure]]
 &ordering
 &peekable_iter[I, T]
@@ -37678,6 +38276,8 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &read_guard[T]
 &receiver[T]
 &result[T, E]
+&result[T, E]
+&result[_, _]
 &rev_iter[I, T]
 &rwlock[T]
 &self
@@ -37717,6 +38317,17 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &write_guard[T]
 &zip_iter[I, J, T, U]
 (T, U)
+(T0, T1)
+(T0, T1, T2)
+(T0, T1, T2, T3)
+(T0, T1, T2, T3, T4)
+(T0, T1, T2, T3, T4, T5)
+(T0, T1, T2, T3, T4, T5, T6)
+(T0, T1, T2, T3, T4, T5, T6, T7)
+(T0, T1, T2, T3, T4, T5, T6, T7, T8)
+(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)
+(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)
+(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)
 (list[T], list[T])
 (sender[T], receiver[T])
 (usize, T)
@@ -37862,6 +38473,7 @@ B
 B
 C
 C
+E
 E
 F
 F
@@ -38284,6 +38896,86 @@ T
 T
 T
 T
+T
+T
+T
+T0
+T0
+T0
+T0
+T0
+T0
+T0
+T0
+T0
+T0
+T0
+T1
+T1
+T1
+T1
+T1
+T1
+T1
+T1
+T1
+T1
+T1
+T10
+T10
+T11
+T2
+T2
+T2
+T2
+T2
+T2
+T2
+T2
+T2
+T2
+T3
+T3
+T3
+T3
+T3
+T3
+T3
+T3
+T3
+T4
+T4
+T4
+T4
+T4
+T4
+T4
+T4
+T5
+T5
+T5
+T5
+T5
+T5
+T5
+T6
+T6
+T6
+T6
+T6
+T6
+T7
+T7
+T7
+T7
+T7
+T8
+T8
+T8
+T8
+T9
+T9
+T9
 To
 U
 U
@@ -38323,6 +39015,7 @@ array[T, m + n]
 array[T, m]
 array[T, m]
 array[T, n + 1]
+array[T, n]
 array[T, n]
 array[T, n]
 array[T, n]
@@ -38816,8 +39509,20 @@ fn(_) -> unit
 fn(_) -> usize
 fn(_) -> watch_reader[_]
 fn(_) -> write_guard[_]
+fn(_, &(_, _)) -> bool
+fn(_, &(_, _, _)) -> bool
+fn(_, &(_, _, _, _)) -> bool
+fn(_, &(_, _, _, _, _)) -> bool
+fn(_, &(_, _, _, _, _, _)) -> bool
+fn(_, &(_, _, _, _, _, _, _)) -> bool
+fn(_, &(_, _, _, _, _, _, _, _)) -> bool
+fn(_, &(_, _, _, _, _, _, _, _, _)) -> bool
+fn(_, &(_, _, _, _, _, _, _, _, _, _)) -> bool
+fn(_, &(_, _, _, _, _, _, _, _, _, _, _)) -> bool
+fn(_, &(_, _, _, _, _, _, _, _, _, _, _, _)) -> bool
 fn(_, &array[T, n], index[n]) -> T
 fn(_, &array[T, n], usize) -> T
+fn(_, &array[_, _]) -> bool
 fn(_, &array[int32, n], index[n]) -> int32
 fn(_, &array[int32, n], usize) -> int32
 fn(_, &bool) -> bool
@@ -38851,6 +39556,8 @@ fn(_, &mut slice_mut[byte]) -> result[unit, io_error]
 fn(_, &mut slice_mut[byte]) -> result[usize, io_error]
 fn(_, &mut slice_mut[byte]) -> task[unit, io_error, io]
 fn(_, &mut slice_mut[byte]) -> task[usize, io_error, io]
+fn(_, &option[_]) -> bool
+fn(_, &result[_, _]) -> bool
 fn(_, &self) -> bool
 fn(_, &self) -> ordering
 fn(_, &slice[byte]) -> result[unit, io_error]
@@ -39196,6 +39903,7 @@ n
 n
 n
 n
+n
 option[&T]
 option[&T]
 option[&_]
@@ -39218,6 +39926,7 @@ option[J]
 option[J]
 option[J]
 option[S]
+option[T]
 option[T]
 option[T]
 option[T]
@@ -39310,6 +40019,7 @@ read_guard[T]
 receiver[T]
 receiver[T]
 receiver[T]
+result[T, E]
 result[T, E]
 result[T, T]
 result[unit, T]

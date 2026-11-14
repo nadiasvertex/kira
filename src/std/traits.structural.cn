@@ -1,0 +1,78 @@
+module std.traits
+
+# GENERATED FILE -- do not hand-edit.
+# Produced by tools/std/gen_structural_impls.py; see its doc comment
+# for the rule these impls state.
+
+impl[T: eq] eq for option[T]:
+    def eq(self, other: &option[T]) -> bool:
+        return match self:
+            @some(x) => match other:
+                @some(y) => x == y
+                @none => false
+            @none => match other:
+                @some(_) => false
+                @none => true
+
+impl[T: eq, E: eq] eq for result[T, E]:
+    def eq(self, other: &result[T, E]) -> bool:
+        return match self:
+            @ok(x) => match other:
+                @ok(y) => x == y
+                @err(_) => false
+            @err(x) => match other:
+                @ok(_) => false
+                @err(y) => x == y
+
+impl[T: eq, n: usize] eq for array[T, n]:
+    def eq(self, other: &array[T, n]) -> bool:
+        var i: usize = 0
+        while i < n:
+            if self[i] != other[i]:
+                return false
+            i = i + 1
+        return true
+
+impl[T0: eq, T1: eq] eq for (T0, T1):
+    def eq(self, other: &(T0, T1)) -> bool:
+        return self.0 == other.0 and self.1 == other.1
+
+impl[T0: eq, T1: eq, T2: eq] eq for (T0, T1, T2):
+    def eq(self, other: &(T0, T1, T2)) -> bool:
+        return self.0 == other.0 and self.1 == other.1 and self.2 == other.2
+
+impl[T0: eq, T1: eq, T2: eq, T3: eq] eq for (T0, T1, T2, T3):
+    def eq(self, other: &(T0, T1, T2, T3)) -> bool:
+        return self.0 == other.0 and self.1 == other.1 and self.2 == other.2 and self.3 == other.3
+
+impl[T0: eq, T1: eq, T2: eq, T3: eq, T4: eq] eq for (T0, T1, T2, T3, T4):
+    def eq(self, other: &(T0, T1, T2, T3, T4)) -> bool:
+        return self.0 == other.0 and self.1 == other.1 and self.2 == other.2 and self.3 == other.3 and self.4 == other.4
+
+impl[T0: eq, T1: eq, T2: eq, T3: eq, T4: eq, T5: eq] eq for (T0, T1, T2, T3, T4, T5):
+    def eq(self, other: &(T0, T1, T2, T3, T4, T5)) -> bool:
+        return self.0 == other.0 and self.1 == other.1 and self.2 == other.2 and self.3 == other.3 and self.4 == other.4 and self.5 == other.5
+
+impl[T0: eq, T1: eq, T2: eq, T3: eq, T4: eq, T5: eq, T6: eq] eq for (T0, T1, T2, T3, T4, T5, T6):
+    def eq(self, other: &(T0, T1, T2, T3, T4, T5, T6)) -> bool:
+        return self.0 == other.0 and self.1 == other.1 and self.2 == other.2 and self.3 == other.3 and self.4 == other.4 and self.5 == other.5 and self.6 == other.6
+
+impl[T0: eq, T1: eq, T2: eq, T3: eq, T4: eq, T5: eq, T6: eq, T7: eq] eq for (T0, T1, T2, T3, T4, T5, T6, T7):
+    def eq(self, other: &(T0, T1, T2, T3, T4, T5, T6, T7)) -> bool:
+        return self.0 == other.0 and self.1 == other.1 and self.2 == other.2 and self.3 == other.3 and self.4 == other.4 and self.5 == other.5 and self.6 == other.6 and self.7 == other.7
+
+impl[T0: eq, T1: eq, T2: eq, T3: eq, T4: eq, T5: eq, T6: eq, T7: eq, T8: eq] eq for (T0, T1, T2, T3, T4, T5, T6, T7, T8):
+    def eq(self, other: &(T0, T1, T2, T3, T4, T5, T6, T7, T8)) -> bool:
+        return self.0 == other.0 and self.1 == other.1 and self.2 == other.2 and self.3 == other.3 and self.4 == other.4 and self.5 == other.5 and self.6 == other.6 and self.7 == other.7 and self.8 == other.8
+
+impl[T0: eq, T1: eq, T2: eq, T3: eq, T4: eq, T5: eq, T6: eq, T7: eq, T8: eq, T9: eq] eq for (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9):
+    def eq(self, other: &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9)) -> bool:
+        return self.0 == other.0 and self.1 == other.1 and self.2 == other.2 and self.3 == other.3 and self.4 == other.4 and self.5 == other.5 and self.6 == other.6 and self.7 == other.7 and self.8 == other.8 and self.9 == other.9
+
+impl[T0: eq, T1: eq, T2: eq, T3: eq, T4: eq, T5: eq, T6: eq, T7: eq, T8: eq, T9: eq, T10: eq] eq for (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10):
+    def eq(self, other: &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)) -> bool:
+        return self.0 == other.0 and self.1 == other.1 and self.2 == other.2 and self.3 == other.3 and self.4 == other.4 and self.5 == other.5 and self.6 == other.6 and self.7 == other.7 and self.8 == other.8 and self.9 == other.9 and self.10 == other.10
+
+impl[T0: eq, T1: eq, T2: eq, T3: eq, T4: eq, T5: eq, T6: eq, T7: eq, T8: eq, T9: eq, T10: eq, T11: eq] eq for (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11):
+    def eq(self, other: &(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11)) -> bool:
+        return self.0 == other.0 and self.1 == other.1 and self.2 == other.2 and self.3 == other.3 and self.4 == other.4 and self.5 == other.5 and self.6 == other.6 and self.7 == other.7 and self.8 == other.8 and self.9 == other.9 and self.10 == other.10 and self.11 == other.11

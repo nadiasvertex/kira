@@ -72,7 +72,7 @@ auto method_resolver::resolve(const type_entry &entry, type_id instance,
   // the name itself, because a caller that wants a declaration to read
   // (a static call's signature, a receiver's `deref`) is not asking which
   // one a method call would dispatch to.
-  const auto *impl = resolve_builtin_impl(entry, name);
+  const auto *impl = resolve_builtin_impl(entry, instance, name);
   const auto *extend =
       impl == nullptr ? resolve_builtin_extend(entry, name) : nullptr;
   const auto *declared = impl != nullptr ? impl : extend;
@@ -163,10 +163,37 @@ auto method_resolver::resolve_declared(const type_entry &entry,
 
 /// An impl-written method wins over a monomorphized trait default, the same
 /// priority rule as `resolve_declared`.
+///
+/// Every tuple shares the table name `tuple`, so `impl[A, B] eq for (A, B)`
+/// and `impl[A, B, C] eq for (A, B, C)` sit side by side, and a receiver
+/// takes only an impl whose target has its shape. An impl on a bare
+/// constructor (`impl monad for option`) has no shape to compare and
+/// covers every application.
 auto method_resolver::resolve_builtin_impl(const type_entry &entry,
+                                           type_id instance,
                                            std::string_view name) const
     -> const method_entry * {
-  return constructor_method(entry.name, name);
+  const auto it = tables_->impl_by_builtin.find(entry.name);
+  if (it == tables_->impl_by_builtin.end()) {
+    return nullptr;
+  }
+  const method_entry *trait_fallback = nullptr;
+  for (const auto &method : it->second) {
+    if (method.decl->name != name) {
+      continue;
+    }
+    if (!types_->is_unknown(instance) &&
+        !target_pattern_matches(method.impl_target_pattern, instance)) {
+      continue;
+    }
+    if (method.from_trait == nullptr) {
+      return &method;
+    }
+    if (trait_fallback == nullptr) {
+      trait_fallback = &method;
+    }
+  }
+  return trait_fallback;
 }
 
 auto method_resolver::constructor_method(std::string_view constructor,

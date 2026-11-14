@@ -1266,6 +1266,60 @@ auto checker::builtin_has_trait(type_id member, const ast::trait_decl &trait)
          trait.name == "debug";
 }
 
+auto checker::unmet_impl_bound(const method_entry &method, type_id target)
+    -> std::optional<std::pair<type_id, std::string>> {
+  if (method.block_type_params == nullptr) {
+    return std::nullopt;
+  }
+  auto bindings = param_subst{};
+  match_params(method.impl_target_pattern, target, bindings);
+  solve_impl_value_params(method, target, bindings);
+  auto scope = method.fixed_type_params;
+  scope.merge(bindings_by_name(bindings));
+  const auto ctx = resolve_ctx{.module = method.owner,
+                               .param_bindings = &scope,
+                               .use_type_param_stack = false,
+                               .quiet = true};
+  auto unmet = std::optional<std::pair<type_id, std::string>>{};
+  in_scope_of(method.owner, method.file_id, [&] -> void {
+    for (const auto &param : *method.block_type_params) {
+      if (param.name.empty() || param.is_value_param ||
+          param.bound_or_type == nullptr) {
+        continue;
+      }
+      const auto solved = scope.find(param.name);
+      if (solved == scope.end()) {
+        continue;
+      }
+      auto missing = bound_holds(solved->second, *param.bound_or_type, ctx);
+      if (!missing.empty()) {
+        unmet.emplace(solved->second, std::move(missing.front()));
+        return;
+      }
+    }
+  });
+  return unmet;
+}
+
+auto checker::structural_missing_element(type_id subject,
+                                         std::string_view trait_name)
+    -> std::optional<std::string> {
+  const auto stripped = strip_refs(subject);
+  const auto entry = session_.types_.entry(stripped);
+  if (!is_structural_comparand(entry)) {
+    return std::nullopt;
+  }
+  const auto *method = structural_impl_of(stripped, trait_name);
+  if (method == nullptr) {
+    return std::nullopt;
+  }
+  const auto unmet = unmet_impl_bound(*method, stripped);
+  if (!unmet.has_value()) {
+    return std::nullopt;
+  }
+  return structural_unmet_help(entry, unmet->first, unmet->second);
+}
+
 /// Whether `subject` implements `trait[args]` where a call needs it to:
 /// through its own bounds if it is the caller's type parameter, through an
 /// `impl` (or being a builtin number) if it is concrete.
@@ -1311,6 +1365,15 @@ auto checker::satisfies_trait(type_id subject, const ast::trait_decl &trait,
   const auto entry = session_.types_.entry(stripped);
   if (!type_has_trait(entry, trait.name)) {
     return false;
+  }
+  // A tuple, array, `option` or `result` has its trait only when the
+  // impl's own bounds hold for its elements: `(int32, str)` is `eq`, and
+  // `(int32, fn() -> int32)` is not.
+  if (is_structural_comparand(entry)) {
+    const auto *method = structural_impl_of(stripped, trait.name);
+    if (method == nullptr || unmet_impl_bound(*method, stripped).has_value()) {
+      return false;
+    }
   }
   if (args.empty()) {
     return true;
@@ -1553,6 +1616,12 @@ auto checker::check_call_bounds(const ast::call_expr &call,
         has_lambda ? " — in a lambda that returns its parameter, write "
                      "`x => *x` rather than `x => x`"
                    : ""));
+  } else if (const auto structural =
+                 structural_missing_element(failed->subject,
+                                            failed->missing.front())) {
+    // `(int64, fn() -> int64)` for `T: eq`: the tuple's `eq` comes from
+    // `std.traits`, and what keeps it from applying is an element.
+    diag.with_help(*structural);
   } else {
     diag.with_help(std::format(
         "Pass a type that implements {}, or implement it for `{}` — `impl "

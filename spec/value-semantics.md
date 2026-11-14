@@ -1369,10 +1369,12 @@ The older notes' open items were closed as follows:
 
 Found and recorded:
 
-- Todo item 28: `==` on a tuple, fixed array, or `option` type-checks and then
-  fails as an internal verifier error. The pointer form compared two heap
-  pointers, so it was never right. The specification does not say whether these
-  types compare element-wise; that decision comes before a fix.
+- Todo item 28: `==` on a tuple, fixed array, or `option` type-checked and then
+  failed as an internal verifier error. The pointer form compared two heap
+  pointers, so it was never right. Resolved the same day: the specification
+  now defines structural equality for tuples, arrays, `option` and `result`
+  (chapter 20), implemented as bounded `eq` impls in `std.traits` (corpus
+  205).
 - Todo item 29: the zero-sized capture with a drop, above.
 
 Verification: `bazelisk test //...` passes all 54 targets, including the corpus

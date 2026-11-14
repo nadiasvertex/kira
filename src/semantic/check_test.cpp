@@ -252,6 +252,47 @@ auto test_reports_arithmetic_on_task() -> void {
                     "expected `+` on a task operand to be rejected");
 }
 
+/// `==` on a tuple, an array, an `option` or a `result` goes through
+/// `std.traits`' structural `eq` impls; each refusal names the part that
+/// keeps it from applying, at the operator or the call, and never inside
+/// the standard library.
+auto expect_structural_refusal(std::string_view file,
+                               std::initializer_list<std::string_view> needles,
+                               std::string_view message) -> void {
+  const auto analyzed = analyze_test_data_file(file);
+  for (const auto needle : needles) {
+    expect_diagnostic(analyzed, needle, message);
+  }
+  expect(analyzed.diagnostics.find("traits.structural.cn") ==
+             std::string::npos,
+         "expected the structural-equality refusal to point at user code");
+}
+
+auto test_reports_structural_equality_refusals() -> void {
+  expect_structural_refusal(
+      "reject_eq_tuple_with_fn.cn",
+      {"operator `==` is not defined for `(int64, fn() -> int64)`",
+       "`fn() -> int64` has no `eq`", "compares element by element"},
+      "expected `==` on a tuple holding a function to be refused");
+  expect_structural_refusal(
+      "reject_eq_long_tuple.cn",
+      {"this tuple has 13 elements", "defined for up to 12 elements"},
+      "expected `==` on a 13-element tuple to be refused");
+  expect_structural_refusal("reject_order_on_tuple.cn",
+                            {"operator `<` is not defined for `(int32, int32)`",
+                             "a tuple has no order"},
+                            "expected `<` on a tuple to be refused");
+  expect_structural_refusal(
+      "reject_eq_option_of_plain_struct.cn",
+      {"operator `==` is not defined for `option[thing]`",
+       "Add `deriving eq` to `thing`"},
+      "expected `==` on an option of a type without `eq` to be refused");
+  expect_structural_refusal(
+      "reject_generic_eq_tuple_with_fn.cn",
+      {"`same` needs `T: eq`", "A tuple has `eq` when what it holds does"},
+      "expected `T: eq` to refuse a tuple holding a function");
+}
+
 auto test_accepts_try_from_conversion() -> void {
   const auto analyzed = analyze_test_data_file("accept_try_from_conversion.cn");
   expect_clean(
@@ -4038,6 +4079,7 @@ auto test_rejects_non_task_spawned() -> void {
 auto main() -> int {
   try {
     test_accepts_typed_core_program();
+    test_reports_structural_equality_refusals();
     test_accepts_async_task_types();
     test_reports_async_call_used_as_value();
     test_reports_await_outside_async();

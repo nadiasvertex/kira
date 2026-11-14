@@ -37,6 +37,8 @@ let zeros: array[float64, 4] = [0.0; 4]    # four zeros
 let rgb:   array[uint8,   3] = [255, 0, 0] # red
 ```
 
+Two arrays of the same type are equal when their elements are, compared in order ([Equality on tuples, arrays, `option` and `result`](../02-intermediate/20-operator-overloading.md#equality-on-tuples-arrays-option-and-result)).
+
 ## `list` vs. `array`
 
 `list` is heap-allocated and growable; its length is a runtime property. `array` is fixed-size; its length is part of the type (`array[T, n]` is a distinct type per `n`) and requires no heap allocation. For general-purpose code, `list` is the default choice; `array` is for when the size is fixed and known at compile time.

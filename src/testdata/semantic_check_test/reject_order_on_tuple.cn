@@ -1,0 +1,10 @@
+module reject_order_on_tuple
+
+# Tuples compare for equality only; no order is defined on them.
+
+def main() -> int64:
+    let a = (1, 2)
+    let b = (1, 3)
+    if a < b:
+        return 1
+    return 0

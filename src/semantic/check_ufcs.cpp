@@ -848,6 +848,19 @@ auto checker::infer_method_call(const ast::call_expr &call,
         return check_receiver_call(call, *method, entry.name, *field.object,
                                    object, explicit_args);
       }
+      // A generic impl on a prelude generic or a structural type
+      // (`impl[T] eq for option[T]`, `impl[A, B] eq for (A, B)`) is
+      // compiled once per receiver type, the same ladder as the
+      // `extend` arm below.
+      if (const auto instantiated = check_generic_instance_method_call(
+              call, *method, entry.name, *field.object, object,
+              explicit_args)) {
+        return *instantiated;
+      }
+      if (const auto instantiated = check_impl_generic_method_call(
+              call, *method, entry, *field.object, object)) {
+        return *instantiated;
+      }
       record_instance_method_callee(call, *method, entry.name, *field.object);
       return check_call_against_decl(call, *method->decl, method->owner,
                                      file_.file_id_, /*skip_self=*/true);

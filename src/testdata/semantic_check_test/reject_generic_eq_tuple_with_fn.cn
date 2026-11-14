@@ -1,0 +1,14 @@
+module reject_generic_eq_tuple_with_fn
+
+# A bound `T: eq` refuses a tuple holding a function value at the call.
+
+def one() -> int64:
+    return 1
+
+def same[T: eq](a: T, b: T) -> bool:
+    return a == b
+
+def main() -> int64:
+    if same((int64(1), one), (int64(1), one)):
+        return 1
+    return 0

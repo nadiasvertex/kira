@@ -2910,6 +2910,57 @@ private:
                              std::string_view op_name, bool wire_dispatch)
       -> type_id;
 
+  /// `==`/`!=` on a tuple, an array, an `option` or a `result`: element by
+  /// element, through the `eq` impl `std.traits` writes for each
+  /// (`traits.structural.cn`). Reports a missing impl, or an element type
+  /// without `eq`, at the operator; wires the dispatch to the impl's
+  /// instance for the operand type. These types have no order, so `<` and
+  /// friends are reported.
+  auto require_structural_operator(const ast::binary_expr &binary,
+                                   type_id target, std::string_view trait_name,
+                                   std::string_view op_name,
+                                   bool wire_dispatch) -> type_id;
+
+  /// Whether `entry` is one of the types whose comparisons go through an
+  /// impl on its structure rather than a declaration or a primitive:
+  /// tuples, arrays, `option` and `result`.
+  [[nodiscard]] static auto is_structural_comparand(const type_entry &entry)
+      -> bool;
+
+  /// The method of `trait_name`'s impl that applies to `target`, a type with
+  /// no declaration of its own (a tuple, an array, a prelude generic), or
+  /// null. `method_name` picks one method when given; otherwise any of the
+  /// impl's methods stands for the impl.
+  auto structural_impl_of(type_id target, std::string_view trait_name,
+                          std::string_view method_name = {})
+      -> const method_entry *;
+
+  /// The help for a bound `subject: trait_name` that fails because
+  /// `subject` is a structural type holding something without the trait;
+  /// nothing when it fails for another reason.
+  auto structural_missing_element(type_id subject, std::string_view trait_name)
+      -> std::optional<std::string>;
+
+  /// "a tuple", "an array", "an `option`", "a `result`", for a diagnostic.
+  [[nodiscard]] static auto structural_noun(const type_entry &entry)
+      -> std::string;
+
+  /// What `==` on one compares: "element by element" for a tuple or an
+  /// array, "the values inside" for an `option` or a `result`.
+  [[nodiscard]] static auto structural_parts(const type_entry &entry)
+      -> std::string_view;
+
+  /// The help for a structural type without `trait_name` because `element`,
+  /// something it holds, lacks it.
+  auto structural_unmet_help(const type_entry &entry, type_id element,
+                             std::string_view trait_name) -> std::string;
+
+  /// The first bound on `method`'s impl block (`impl[A: eq, B: eq] ...`)
+  /// that `target` breaks once the block's parameters are solved from it:
+  /// the parameter's type and the trait it lacks.
+  auto unmet_impl_bound(const method_entry &method, type_id target)
+      -> std::optional<std::pair<type_id, std::string>>;
+
   auto report_non_numeric_arithmetic(const ast::binary_expr &binary,
                                      std::string_view op_name, type_id operand)
       -> void;

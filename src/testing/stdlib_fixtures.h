@@ -87,6 +87,7 @@ inline auto stdlib_filenames() -> std::span<const char *const> {
       "traits.index.cn",
       "traits.hash.cn",
       "traits.scalar.cn",
+      "traits.structural.cn",
       "limits.cn",
       "iter.cn",
       "prelude.cn",

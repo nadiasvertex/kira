@@ -13,6 +13,8 @@ type option[T] = @some(T) | @none
 type result[T, E] = @ok(T) | @err(E)
 ```
 
+Both compare with `==` when what they hold does: two `@none`s are equal, and two `@some`s, or two values of the same `result` variant, are equal when their payloads are ([Equality on tuples, arrays, `option` and `result`](../02-intermediate/20-operator-overloading.md#equality-on-tuples-arrays-option-and-result)).
+
 Inspect them with `match`:
 
 ```cinder

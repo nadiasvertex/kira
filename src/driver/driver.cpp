@@ -277,6 +277,7 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
                                "traits.index.cn",
                                "traits.hash.cn",
                                "traits.scalar.cn",
+                               "traits.structural.cn",
                                "limits.cn",
                                "iter.cn",
                                "prelude.cn",

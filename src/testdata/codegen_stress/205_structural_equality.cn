@@ -1,0 +1,73 @@
+module codegen_stress.structural_equality
+
+# `==` and `!=` on a tuple, an array, an `option` and a `result` compare
+# element by element with each element type's own `==`. The impls live in
+# `std.traits` (`traits.structural.cn`); each check below adds a distinct
+# power of two when it holds, so a wrong answer names the check.
+
+type point = { x: int64, y: int64 } deriving eq
+
+def same[T: eq](a: T, b: T) -> bool:
+    return a == b
+
+def bit(cond: bool, value: int64) -> int64:
+    if cond:
+        return value
+    return 0
+
+def main() -> int64:
+    var r: int64 = 0
+    # Tuples, including ones built from literals and a nested one.
+    let a = (int64(1), int64(2))
+    let b = (int64(1), int64(2))
+    let c = (int64(1), int64(3))
+    r = r + bit(a == b, 1)
+    r = r + bit(not (a == c), 2)
+    r = r + bit(a != c, 4)
+    r = r + bit((1, 2) == (1, 2), 8)
+    r = r + bit(((1, 2), 3) != ((1, 2), 4), 16)
+    # Elements with an `==` of their own: `str` and a derived struct.
+    let named = ("ab", point{x: 1, y: 2})
+    let same_named = ("ab", point{x: 1, y: 2})
+    let other_point = ("ab", point{x: 1, y: 9})
+    r = r + bit(named == same_named, 32)
+    r = r + bit(named != other_point, 64)
+    # Arrays: equal, unequal only in the last element, and of tuples.
+    let xs: array[int64, 4] = [1, 2, 3, 4]
+    let ys: array[int64, 4] = [1, 2, 3, 4]
+    let zs: array[int64, 4] = [1, 2, 3, 5]
+    r = r + bit(xs == ys, 128)
+    r = r + bit(xs != zs, 256)
+    let ps: array[(int64, str), 2] = [(1, "a"), (2, "b")]
+    let qs: array[(int64, str), 2] = [(1, "a"), (2, "c")]
+    r = r + bit(ps != qs, 512)
+    # Options: every pairing of present and absent.
+    let s3: option[int64] = @some(3)
+    let s3b: option[int64] = @some(3)
+    let s4: option[int64] = @some(4)
+    let n1: option[int64] = @none
+    let n2: option[int64] = @none
+    r = r + bit(s3 == s3b, 1024)
+    r = r + bit(s3 != s4, 2048)
+    r = r + bit(s3 != n1, 4096)
+    r = r + bit(n1 == n2, 8192)
+    let os: option[str] = @some("hi")
+    let ot: option[str] = @some("hi")
+    r = r + bit(os == ot, 16384)
+    # Results: the same variant compares payloads; different variants differ.
+    let ok1: result[int64, str] = @ok(1)
+    let ok2: result[int64, str] = @ok(1)
+    let err1: result[int64, str] = @err("no")
+    r = r + bit(ok1 == ok2, 32768)
+    r = r + bit(ok1 != err1, 65536)
+    # Through a bound: a generic body's `==` reaches the tuple's impl.
+    r = r + bit(same((int64(5), "x"), (int64(5), "x")), 131072)
+    r = r + bit(not same(@some((int64(1), int64(2))), @some((int64(1), int64(3)))), 262144)
+    # The longest tuple with an `==`.
+    let wide = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+    let wider = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13)
+    r = r + bit(wide != wider, 524288)
+    return r
+
+# Every check holds: 2^20 - 1.
+# expect: 1048575

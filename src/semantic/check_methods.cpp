@@ -29,6 +29,11 @@ auto checker::type_key_of(const type_entry &entry) -> std::string {
   if (entry.decl != nullptr) {
     return std::format("u:{}", static_cast<const void *>(entry.decl));
   }
+  // Tuples of different lengths are different type constructors: a pair's
+  // `eq` is not a triple's.
+  if (entry.kind == type_kind::tuple_kind) {
+    return std::format("n:tuple/{}", entry.args.size());
+  }
   return std::format("n:{}", entry.name);
 }
 
@@ -496,12 +501,20 @@ auto checker::register_impl_methods(
   const auto is_builtin_scalar_target =
       target_entry.kind == type_kind::builtin_kind &&
       target_entry.decl == nullptr && !target_entry.name.empty();
+  // An impl for a tuple or an array (`impl[A, B] eq for (A, B)`): a
+  // structural type, with no declaration either. Its methods share the
+  // table of every tuple, or every array; lookup keeps the ones whose
+  // target has the receiver's shape (`resolve_builtin_impl`).
+  const auto is_structural_target =
+      target_entry.kind == type_kind::tuple_kind ||
+      target_entry.kind == type_kind::array_kind;
   if (target_entry.decl == nullptr && !is_builtin_ctor_target &&
-      !is_builtin_applied_target && !is_builtin_scalar_target) {
+      !is_builtin_applied_target && !is_builtin_scalar_target &&
+      !is_structural_target) {
     return;
   }
   auto &methods = (is_builtin_ctor_target || is_builtin_applied_target ||
-                   is_builtin_scalar_target)
+                   is_builtin_scalar_target || is_structural_target)
                       ? cache_.method_tables_.impl_by_builtin[target_entry.name]
                       : cache_.method_tables_.declared[target_entry.decl];
   auto overridden_names = std::unordered_set<std::string>{};
