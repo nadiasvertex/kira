@@ -1,0 +1,31 @@
+module main
+
+# Compile-time values cross into compile-time runs as inline bytes. Each
+# `static for` element is a struct holding a string, a nested struct and an
+# int64 after an int32 (so the fields have distinct offsets); a `static if`
+# passes it to a compile-time call that reads every part.
+
+type span2 = { lo: int32, hi: int32 }
+type item = { tag: str, at: span2, small: int32, weight: int64 }
+
+static let items: list[item] = [
+    item { tag: "a", at: span2 { lo: 1, hi: 2 }, small: 5, weight: 3 },
+    item { tag: "bcd", at: span2 { lo: 4, hi: 5 }, small: 6, weight: 7 },
+    item { tag: "ef", at: span2 { lo: 8, hi: 9 }, small: 7, weight: 1 },
+]
+
+static def score(it: item) -> int32:
+    let head = it.tag.len() as int32 * 10000 + it.at.lo * 1000 + it.at.hi * 100
+    return head + it.small * 10 + it.weight as int32
+
+def main() -> int32:
+    # Each `static if` condition is a compile-time run that is passed `it`.
+    var total = 0
+    static for it in items:
+        static if score(it) == 11253:
+            total = total + 1
+        static if score(it) == 34567:
+            total = total + 10
+        static if score(it) == 28971:
+            total = total + 100
+    return total

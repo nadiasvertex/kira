@@ -1256,6 +1256,8 @@ private:
       return lower_binary(as<hir_binary>(expr), dest);
     case hir_node_kind::hir_cast:
       return lower_cast(as<hir_cast>(expr), dest);
+    case hir_node_kind::hir_host_call:
+      return lower_host_call(as<hir_host_call>(expr), dest);
     case hir_node_kind::hir_call:
       if (env_.cell_reads_as_reference(expr.type, dest.type)) {
         // A `cell[T]` result read as a `&T`: the same address, retyped.
@@ -3081,6 +3083,65 @@ private:
       }
       out_.slots[dest.base].owns_nothing = true;
     }
+    for (const auto slot : outgoing) {
+      auto dead = storage_op{.kind = op_kind::storage_dead};
+      dead.slot = slot;
+      emit(std::move(dead), call.span);
+    }
+    return {};
+  }
+
+  /// A compile-time operation on quoted syntax: a call the host answers,
+  /// passing each argument and the result as an ordinary call would.
+  [[nodiscard]] auto lower_host_call(const hir_host_call &call,
+                                     const place &dest) -> result {
+    auto params = std::vector<type_id>{};
+    for (const auto &arg : call.args) {
+      params.push_back(arg->type);
+    }
+    auto signature = classify_signature(env_.layouts, params, call.type);
+    if (!signature.has_value()) {
+      return layout_failure(call.span, signature.error());
+    }
+    auto op = storage_op{.kind = op_kind::call_into};
+    auto outgoing = std::vector<storage_id>{};
+    for (size_t i = 0; i < call.args.size(); ++i) {
+      const auto &arg = *call.args[i];
+      const auto &param = signature->params[i];
+      auto lowered = call_argument{.source_index = i, .cls = param.cls};
+      if (param.cls == pass_class::zero_sized) {
+        const auto temp = new_temp(arg.type, arg.span);
+        if (auto ok = lower_into(arg, whole(temp)); !ok.has_value()) {
+          return ok;
+        }
+        consumed(temp);
+      } else if (is_indirect(param.cls)) {
+        const auto slot = new_slot(storage_class::outgoing_argument, arg.type,
+                                   "", k_invalid_symbol_id, arg.span, false);
+        outgoing.push_back(slot);
+        lowered.slot = whole(slot);
+        if (auto ok = lower_into(arg, lowered.slot); !ok.has_value()) {
+          return ok;
+        }
+      } else {
+        auto later_effects = false;
+        for (size_t j = i + 1; j < call.args.size(); ++j) {
+          later_effects = later_effects || !is_pure(*call.args[j]);
+        }
+        auto value = lower_operand(arg, later_effects, false);
+        if (!value.has_value()) {
+          return std::unexpected(value.error());
+        }
+        lowered.value = std::move(*value);
+      }
+      op.args.push_back(std::move(lowered));
+    }
+    op.callee = call_target{.name = call.operation,
+                            .host = true,
+                            .host_subject = call.subject};
+    op.signature = std::move(*signature);
+    op.dest = dest;
+    emit(std::move(op), call.span);
     for (const auto slot : outgoing) {
       auto dead = storage_op{.kind = op_kind::storage_dead};
       dead.slot = slot;

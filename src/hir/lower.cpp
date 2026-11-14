@@ -615,7 +615,7 @@ private:
   [[nodiscard]] auto lower_static_global_ref(const ast::expr &ref, type_id type,
                                              const std::string &name)
       -> std::expected<ptr<hir_expr>, lowering_error> {
-    if (drop_schedule_.owned_static_reads.contains(&ref)) {
+    if (owns_static_reads_ || drop_schedule_.owned_static_reads.contains(&ref)) {
       for (const auto &[decl, def] : checked_.lowering.static_global_defs) {
         if (def.name == name) {
           return lower_static_global_value(
@@ -1581,6 +1581,10 @@ private:
   /// See `drop_schedule`'s doc comment (`src/hir/drop_schedule.h`) for why
   /// this needs no new plumbing through `lower_block`'s parameters.
   drop_schedule drop_schedule_;
+  /// A compile-time expression has no drop schedule to say which static
+  /// reads it owns, so each gets a fresh value: a static never changes, so
+  /// a fresh value reads the same as the global would.
+  bool owns_static_reads_ = false;
   /// The local each drop flag of `drop_schedule_` is declared as, once its
   /// binding has been lowered.
   std::vector<symbol_id> flag_symbols_;
@@ -9339,6 +9343,7 @@ auto lowerer::lower_expression_function(
     std::string name) -> std::expected<ptr<hir_function>, lowering_error> {
   // Nothing it owns is dropped: it runs once, at compile time.
   drop_schedule_ = {};
+  owns_static_reads_ = true;
   flag_symbols_.clear();
   auto return_type = checked_type_of(expr);
   if (!return_type.has_value()) {

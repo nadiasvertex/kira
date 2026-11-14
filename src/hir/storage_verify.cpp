@@ -2670,7 +2670,9 @@ private:
                       " arguments to a signature of " +
                       std::to_string(sig.params.size()));
     }
-    if (op.callee.is_direct()) {
+    if (op.callee.host) {
+      // Answered by the host running compile-time code; nothing to look up.
+    } else if (op.callee.is_direct()) {
       // The callee is looked up in the module that owns it: this one when
       // the call names no other, since modules may share a function's name.
       const auto *target = find_callee(op.callee);

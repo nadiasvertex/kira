@@ -1019,9 +1019,7 @@ Not done: `std.mem`, `vec[T]`, and `list[T]` themselves (calls across modules
 compile since 2026-11-12, but their bodies use `uninit`, generics, and strings
 the storage form does not express); `uninit` stack buffers; `drop_in_place` as
 a storage operation (the machine-layer function `drop_in_place` is ordinary
-code);
-`src/comptime_vm` (`values.cpp`, hosted calls, `backend.cpp`)
-and `CINDER_COMPTIME_VERIFY`. A field assignment through a `&mut` binding
+code). A field assignment through a `&mut` binding
 (`r.b = 50`) does not lower to HIR yet ("no concrete checked type"); the
 fixture writes the whole value instead.
 
@@ -1037,6 +1035,45 @@ fixture writes the whole value instead.
    `src/comptime_vm/backend.cpp` to use typed storage and explicit lifetime owners.
 6. Test nested generics, aggregates larger than a register, and compile-time/runtime
    result agreement. Run `CINDER_COMPTIME_VERIFY=1` on the relevant driver tests.
+
+**Status of items 5 and 6: done (2026-11-14).** Compile-time code runs through the
+storage form, so a program and the compile-time code that built it use one
+representation (decision 6).
+
+- Pipeline: `src/comptime_vm/program.cpp` prepares the lowered functions with
+  `hir::prepare_storage_program` (moved from the driver into `src/hir/`) and
+  compiles them with `compile_storage_module`.
+- Values: `values.cpp` writes and reads inline bytes under the program's
+  `value_layouts` (`write_inline`, `read_inline`, and `to_register` and
+  `from_register` for values passed in registers). `backend.cpp` passes each
+  argument and takes the result as the entry's calling convention says: in a
+  register, or as the address of a buffer the run owns.
+- Host calls: `hir_host_call` lowers to a `call_into` whose target is the
+  operation. The VM compiler emits `op_host_call` with operands in call order
+  (the result address first when the result is built by address, then each
+  argument that is not zero-sized), and `host_site` records how each travels.
+  The LLVM storage backend refuses a host call by name; quoted syntax exists
+  only while compiling.
+- Checker records the lowering reads mid-check:
+  - Aggregate shapes are added as soon as their field types are settled
+    (`add_aggregate_shapes`).
+  - Consuming receivers (`into_iter`) are recorded when impl methods are
+    registered, not when the impl is checked. Before this, a `for` loop in
+    compile-time code passed its collection by reference, and the collection
+    was never dropped; the pointer form hid the difference.
+  - Instance templates are copied whole into the view.
+  - A compile-time expression rebuilds each static it reads as a fresh value,
+    since it has no drop schedule to say which reads it owns.
+- Tests: `cli_test`'s `comptime_vm_aggregate_arguments` passes structs with
+  strings and nested structs into compile-time runs as bytes.
+  `comptime_vm_values`, `comptime_str_methods`, and 141 cover the receiver
+  and static-read fixes. Mutation checks: fields written at offset 0 and host
+  operands decoded one place late each failed a test. `cli_test` and
+  `std_test` pass under `CINDER_COMPTIME_VERIFY=1`.
+- Gaps found and recorded in [todo.md](todo.md) items 25–27 (all predate this
+  change): `static for` over values containing user sums,
+  compile-time reads of a struct static's non-scalar field, and a
+  `static def` call inside a block `static for` that is not folded.
 
 ### T-09 — Migrate captures, generators, and task results
 

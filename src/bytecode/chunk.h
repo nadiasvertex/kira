@@ -51,6 +51,15 @@ struct host_site {
   std::vector<semantic::type_id> arg_types;
   semantic::type_id result_type = semantic::k_unknown_type;
   source_span span;
+  /// Set by the storage-form compiler, where the operands follow the call
+  /// ABI (`function_abi`): the address of the result's bytes first when
+  /// `result_by_address`, then each argument that is not zero-sized, as its
+  /// value or (`arg_by_address[i]`) the address of its bytes. The host then
+  /// writes a result built by address and returns nothing.
+  bool storage_form = false;
+  bool result_by_address = false;
+  std::vector<bool> arg_by_address;
+  std::vector<bool> arg_zero_sized;
 };
 
 /// How one value crosses a call boundary in the inline-value representation.

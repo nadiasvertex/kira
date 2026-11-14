@@ -194,6 +194,11 @@ struct call_target {
   std::string name{};
   std::optional<std::string> owner_module{};
   std::optional<place> callable{};
+  /// A compile-time operation on quoted syntax (`hir_host_call`), answered by
+  /// the host running the code rather than by a function of the program.
+  /// `name` is then the operation.
+  bool host = false;
+  const void *host_subject = nullptr;
 
   [[nodiscard]] auto is_direct() const -> bool { return !callable.has_value(); }
 };

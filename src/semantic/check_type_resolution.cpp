@@ -747,8 +747,17 @@ auto checker::resolve_drop_plans_from(std::size_t first) -> void {
 /// reported as an unresolved type rather than answered from a template.
 auto checker::compute_aggregate_shapes() -> aggregate_shapes {
   auto shapes = aggregate_shapes{};
+  add_aggregate_shapes(shapes, /*settled_only=*/false);
+  return shapes;
+}
+
+auto checker::add_aggregate_shapes(aggregate_shapes &shapes, bool settled_only)
+    -> void {
   for (std::size_t raw = 0; raw < session_.types_.count(); ++raw) {
     const auto id = static_cast<type_id>(raw);
+    if (shapes.contains(id)) {
+      continue;
+    }
     const auto entry = session_.types_.entry(id); // copy: resolving may intern
     const auto is_prelude_sum =
         entry.kind == type_kind::builtin_generic_kind &&
@@ -802,9 +811,22 @@ auto checker::compute_aggregate_shapes() -> aggregate_shapes {
                                                .payload = std::move(payload)});
       }
     }
+    if (settled_only) {
+      const auto open = [&](type_id type) {
+        return session_.types_.is_unknown(type);
+      };
+      const auto open_field =
+          std::ranges::any_of(shape.fields, open, &field_shape::type);
+      const auto open_variant = std::ranges::any_of(
+          shape.variants, [&](const variant_shape &variant) {
+            return std::ranges::any_of(variant.payload, open);
+          });
+      if (open_field || open_variant) {
+        continue;
+      }
+    }
     shapes.emplace(id, std::move(shape));
   }
-  return shapes;
 }
 
 // ==========================================================================

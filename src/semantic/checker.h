@@ -1947,6 +1947,12 @@ private:
   /// after the table is settled and before it is moved out.
   [[nodiscard]] auto compute_aggregate_shapes() -> aggregate_shapes;
 
+  /// Adds to `into` the shape of every closed struct and sum instance it does
+  /// not have yet. With `settled_only`, a shape that still names an unknown
+  /// type is left out, so a later call can add it once the type is settled:
+  /// compile-time code lays its values out while checking is under way.
+  auto add_aggregate_shapes(aggregate_shapes &into, bool settled_only) -> void;
+
   auto param_name_of(const ast::param &param) -> std::string;
 
   auto param_types_for(const ast::func_decl &decl, const module_members *owner)

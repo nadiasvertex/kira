@@ -1246,6 +1246,9 @@ private:
   }
 
   [[nodiscard]] auto emit_call(const hir::storage_op &op) -> checked<void> {
+    if (op.callee.host) {
+      return emit_host_call(op);
+    }
     if (!op.callee.is_direct()) {
       return emit_call_function(op);
     }
@@ -1995,6 +1998,52 @@ private:
     emit_op(opcode::op_call_intrinsic);
     emit_register(result);
     writer_.emit_u8(static_cast<uint8_t>(id));
+    emit_register(*block);
+    writer_.emit_u8(static_cast<uint8_t>(operand_count));
+    if (direct_result && dest->where == location::kind::memory) {
+      return write_location(*dest, op.dest.type, result);
+    }
+    return {};
+  }
+
+  /// A compile-time operation on quoted syntax (`op_host_call`). The operands
+  /// follow the call ABI, and the site records how each one travels, so the
+  /// host can read the arguments and write a result built by address.
+  [[nodiscard]] auto emit_host_call(const hir::storage_op &op)
+      -> checked<void> {
+    const auto operand_count = op.signature.operands().size();
+    const auto block = fill_call_block(op, operand_count);
+    if (!block.has_value()) {
+      return std::unexpected(block.error());
+    }
+    auto site = bytecode::host_site{.operation = op.callee.name,
+                                    .subject = op.callee.host_subject,
+                                    .arg_types = {},
+                                    .result_type = op.dest.type,
+                                    .span = op.span,
+                                    .storage_form = true,
+                                    .result_by_address =
+                                        op.signature.returns_through_address(),
+                                    .arg_by_address = {},
+                                    .arg_zero_sized = {}};
+    for (const auto &param : op.signature.params) {
+      site.arg_types.push_back(param.type);
+      site.arg_by_address.push_back(hir::is_indirect(param.cls));
+      site.arg_zero_sized.push_back(param.cls == pass_class::zero_sized);
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    const auto direct_result = !site.result_by_address &&
+                               op.signature.result.cls != pass_class::zero_sized;
+    const auto result =
+        direct_result && dest->where == location::kind::reg ? dest->reg
+                                                            : alloc_register();
+    const auto index = writer_.add_host_site(std::move(site));
+    emit_op(opcode::op_host_call);
+    emit_register(result);
+    writer_.emit_u16(index);
     emit_register(*block);
     writer_.emit_u8(static_cast<uint8_t>(operand_count));
     if (direct_result && dest->where == location::kind::memory) {

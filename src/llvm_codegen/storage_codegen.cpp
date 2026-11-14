@@ -1076,6 +1076,12 @@ private:
   }
 
   [[nodiscard]] auto emit_call(const hir::storage_op &op) -> checked<void> {
+    if (op.callee.host) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  std::format("`{}` works on quoted syntax, which exists only "
+                              "while compiling",
+                              op.callee.name));
+    }
     if (!op.callee.is_direct()) {
       return emit_call_function(op);
     }

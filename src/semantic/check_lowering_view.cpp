@@ -81,6 +81,14 @@ public:
     return owner_.session_.lowering_view_;
   }
 
+  [[nodiscard]] auto records() -> checked_types & override {
+    // Values are laid out from the shapes, which the checker otherwise
+    // records only once checking is over.
+    owner_.add_aggregate_shapes(owner_.session_.lowering_view_.shapes,
+                                /*settled_only=*/true);
+    return owner_.session_.lowering_view_;
+  }
+
   [[nodiscard]] auto prepare(const ast::func_decl &fn)
       -> std::expected<void, std::string> override {
     return owner_.prepare_for_lowering(fn);
@@ -756,6 +764,12 @@ auto checker::project_node(const ast::node &node) -> void {
   copy_entry(session_.comprehension_iterator_dispatches_,
              view.comprehension_iterator_dispatches, &node, fix_iterator);
   copy_entry(session_.static_global_refs_, view.static_global_refs, &node);
+  // The static's value too: a read compile-time code owns is rebuilt from it
+  // (`lower_static_global_ref`).
+  if (const auto ref = session_.static_global_refs_.find(&node);
+      ref != session_.static_global_refs_.end()) {
+    static_cast<void>(project_static_global(ref->second));
+  }
   copy_entry(session_.unreadable_static_refs_, lowered.unreadable_static_refs,
              &node);
   copy_entry(session_.static_fragment_refs_, lowered.static_fragment_refs,
@@ -1178,6 +1192,17 @@ auto checker::refresh_lowering_view_tables() -> void {
     }
   }
   view.ownership.copy_type_params = copy_type_params_;
+  // Which methods take `self` by value: a call to one moves its receiver
+  // (`for x in xs` moves `xs` into `into_iter`), and an instance is looked
+  // up through its template, which a caller can need before the instance
+  // itself is projected. Both only grow.
+  if (view.ownership.consuming_receivers.size() !=
+      consuming_receivers_.size()) {
+    view.ownership.consuming_receivers = consuming_receivers_;
+  }
+  if (view.ownership.instance_templates.size() != instance_templates_.size()) {
+    view.ownership.instance_templates = instance_templates_;
+  }
   if (lowering_view_state_.derived_type_count == session_.types_.count()) {
     return;
   }

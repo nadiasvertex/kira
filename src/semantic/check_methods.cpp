@@ -452,6 +452,22 @@ auto checker::build_method_table() -> void {
 auto checker::register_impl_methods(
     const module_members &members, const impl_ref &impl,
     std::vector<deferred_trait_default> &deferred_defaults) -> void {
+  // `into_iterator`'s `into_iter` takes `self` by value: the same rule as the
+  // ownership checker's `receiver_mode`. Recorded with the method rather
+  // than when the impl's bodies are checked, since compile-time code can
+  // call it (through a `for` loop) before then.
+  if (impl.decl->trait_type != nullptr &&
+      impl.decl->trait_type->kind == ast::node_kind::named_type) {
+    const auto &trait = ast::cast<const ast::named_type>(*impl.decl->trait_type);
+    if (!trait.path.empty() && trait.path.back() == "into_iterator") {
+      for (const auto &item : impl.decl->items) {
+        if (item != nullptr && item->kind == ast::node_kind::func_decl &&
+            ast::cast<const ast::func_decl>(*item).name == "into_iter") {
+          consuming_receivers_.insert(&ast::cast<const ast::func_decl>(*item));
+        }
+      }
+    }
+  }
   const auto target = strip_refs(resolve_impl_target(impl));
   const auto &target_entry = session_.types_.entry(target);
   // An impl of a higher-kinded trait for a *prelude* constructor

@@ -224,6 +224,7 @@ auto is_safe_tail_call(const storage_function &function, size_t index) -> bool {
   }
   const auto &call = function.ops[index];
   if (call.kind != op_kind::call_into || call.is_drop || !call.callee.is_direct() ||
+      call.callee.host ||
       call.signature.takes_environment) {
     return false;
   }
@@ -355,8 +356,9 @@ namespace {
 
 [[nodiscard]] auto render_call(const storage_op &op) -> std::string {
   auto out = render_place(op.dest) + " = ";
-  out += op.callee.is_direct() ? op.callee.name
-                               : "(" + render_place(*op.callee.callable) + ")";
+  out += op.callee.host        ? "host " + op.callee.name
+         : op.callee.is_direct() ? op.callee.name
+                                 : "(" + render_place(*op.callee.callable) + ")";
   out += "(";
   auto first = true;
   for (const auto &arg : op.args) {

@@ -6,6 +6,7 @@
 
 #include "src/bytecode/value.h"
 #include "src/comptime/value.h"
+#include "src/runtime/value_layout.h"
 #include "src/semantic/comptime_backend.h"
 
 namespace cinder::comptime_vm {
@@ -39,6 +40,42 @@ struct handle_table {
                          handle_table &handles, semantic::type_id type,
                          const comptime::value &value)
     -> std::expected<bytecode::slot_value, std::string>;
+
+/// Storage form: writes `value` as the inline bytes of a `type` at `at`,
+/// which has room for its layout (`layouts`). Data behind an address (a
+/// `str`'s bytes, a `list`'s elements, a reference's referent) is allocated
+/// on the heap. A value held by handle is added to `handles`.
+[[nodiscard]] auto write_inline(semantic::comptime_program &program,
+                                handle_table &handles,
+                                runtime::value_layouts &layouts,
+                                semantic::type_id type,
+                                const comptime::value &value, std::byte *at)
+    -> std::expected<void, std::string>;
+
+/// Storage form: the `type` whose inline bytes are at `at`.
+[[nodiscard]] auto read_inline(semantic::comptime_program &program,
+                               const handle_table &handles,
+                               runtime::value_layouts &layouts,
+                               semantic::type_id type, const std::byte *at)
+    -> std::expected<comptime::value, std::string>;
+
+/// Storage form: `value` as the register a `type` that travels by value (a
+/// scalar, address or handle) is passed in.
+[[nodiscard]] auto to_register(semantic::comptime_program &program,
+                               handle_table &handles,
+                               runtime::value_layouts &layouts,
+                               semantic::type_id type,
+                               const comptime::value &value)
+    -> std::expected<bytecode::slot_value, std::string>;
+
+/// Storage form: the register `slot` holding a `type`, as a compile-time
+/// value.
+[[nodiscard]] auto from_register(semantic::comptime_program &program,
+                                 const handle_table &handles,
+                                 runtime::value_layouts &layouts,
+                                 semantic::type_id type,
+                                 bytecode::slot_value slot)
+    -> std::expected<comptime::value, std::string>;
 
 /// The VM value `slot` of `type` as a compile-time value.
 [[nodiscard]] auto from_vm(semantic::comptime_program &program,

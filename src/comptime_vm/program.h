@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -9,6 +10,7 @@
 
 #include "src/bytecode/chunk.h"
 #include "src/hir/nodes.h"
+#include "src/hir/storage_program.h"
 #include "src/semantic/comptime_backend.h"
 
 namespace cinder::comptime_vm {
@@ -16,6 +18,11 @@ namespace cinder::comptime_vm {
 /// A compile-time call's callee and everything it reaches, lowered on demand
 /// and compiled into one bytecode module.
 struct compiled_program {
+  /// The lowered functions, and their storage form (with the layouts the
+  /// values passed in and out are read with), which `module` was compiled
+  /// from.
+  hir::ptr_vec<hir::hir_module> lowered;
+  std::unique_ptr<hir::storage_program> storage;
   bytecode::bytecode_module module;
   /// Index of the called function in `module.functions`.
   std::uint16_t entry_index = 0;

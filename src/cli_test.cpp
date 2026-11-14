@@ -1905,6 +1905,32 @@ auto test_comptime_vm_values_round_trip() -> void {
                      report->run.has_value() ? report->run->exit_code : -1));
 }
 
+/// A struct value (string, nested struct, fields at distinct offsets) is
+/// written into a compile-time run as inline bytes: each `static for`
+/// element is passed to the `static if` condition that reads it.
+auto test_comptime_vm_aggregate_arguments() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  write_file(main_source, read_program("comptime_vm_aggregate_arguments.cn"));
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected the compile-time calls to run: " + report->diagnostics);
+  expect(report->run.has_value() && report->run->exit_code == 111,
+         std::format("expected each item to match its own score (111), got {}",
+                     report->run.has_value() ? report->run->exit_code : -1));
+}
+
 /// A quote whose splice reads a value computed on the VM is built there, and
 /// the syntax it builds is spliced into run-time code.
 auto test_comptime_vm_quote() -> void {
@@ -5334,6 +5360,7 @@ auto main() -> int {
     test_comptime_error_names_call_site();
     test_comptime_list_method_runs();
     test_comptime_vm_values_round_trip();
+    test_comptime_vm_aggregate_arguments();
     test_comptime_vm_overflow_points_into_callee();
     test_comptime_vm_expression_overflow();
     test_comptime_vm_quote();
