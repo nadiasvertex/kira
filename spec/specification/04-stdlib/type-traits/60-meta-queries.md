@@ -1,6 +1,6 @@
 # 60. Meta Queries
 
-**Status:** Implemented
+**Status:** Partial
 
 A single `type_kind` classification primitive and a small set of member-enumeration queries over Cinder's existing reflection surface.
 
@@ -70,11 +70,13 @@ Trait.requires() -> list[str]     # names of traits a trait's own `requires` cla
 
 ## Implementation status
 
-Nothing in this chapter exists yet.
+`T.kind()` and the `is_data_member` descriptor field work. `member.type_of()`, `T.traits()`, and `Trait.requires()` do not.
 
-- `T.kind()` requires one addition to `src/comptime/reflect.cpp`: given a resolved type declaration, return `@struct_kind`/`@sum_kind` for a user `type` (already distinguished internally by `decl.definition->kind`, the same check `T.fields()`/`T.variants()` use to gate themselves), `@scalar_kind` for a builtin name, and so on for the remaining variants — no new subsystem, just a new query alongside the four that already exist there.
-- `member.type_of()` requires extending `make_field_descriptor` to carry the field's `type_expr` node (not just its rendered `type_name` string) into the returned descriptor, and extending the `struct_instance` value representation to hold an AST-fragment field the way a `type_expr` quote value already does.
-- `T.traits()`/`Trait.requires()` require exposing `check.cpp`'s coherence table and trait-declaration `requires` list to the comptime evaluator, which today has no view into semantic-analysis-phase data structures at all — this is the same missing linkage [`std.traits`](58-std-traits.md)'s `implements[T, Trait]` needs, and should land once, shared by both.
+- `T.kind()` works on concrete types and on type parameters in generic bodies, on both backends. The checker computes the answer and lowering emits it as a constant (`fold_type_reflection` in `src/semantic/check_reflection.cpp`). `match` on the result works. `==` against a `type_kind` variant does not, because `type_kind` has no `eq` impl.
+- `is_data_member` exists as a `field_info` field (`f.is_data_member`), always `true`, not as the method `is_data_member()` this chapter specifies. Calling it as a method type-checks and then fails in lowering.
+- `member.type_of()` does not exist. `field_info` carries only the rendered `type_name` string.
+- `T.traits()` type-checks but cannot be lowered, so it fails at compile time. It needs a checker-side fold over the trait-impl table (`traits_by_type_key_`), as `implements[T, Trait]` now has (`fold_implements`).
+- `Trait.requires()` does not parse. `requires` is a keyword, and the parser rejects it as a name after `.`.
 
 ## See also
 
