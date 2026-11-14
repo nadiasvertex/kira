@@ -403,13 +403,43 @@ initial whole-allocation conflict model. Element-slot projection from a mutable 
 `own[T]` yields an edit of the stored owner slot, not ownership extraction or child-only authority.
 
 A scoped range over frozen backing preserves its source lifetime obligation. It cannot
-implicitly become independently retained; persistent frozen-range representation and an
-explicit checked operation remain surface-design questions. Existing retained single-value
-projection rules do not erase the dependencies of a scoped range.
+implicitly become independently retained. Existing retained single-value projection rules
+do not erase the dependencies of a scoped range.
 
 Single-element capabilities hide collection representation while keeping `T` known; sums
 or a separately checked trait-object abstraction provide heterogeneous element types.
 Legacy cell semantics remain confined to legacy mode during migration.
+
+## Retained frozen ranges
+
+The surface types `shared_slice[T]` and `shared_str` are range-shaped retained frozen
+projections, distinct from scoped `slice[T]` and `str`. Their descriptors identify checked
+backing storage and a valid range; text additionally requires UTF-8 boundaries. They retain
+the storage needed to keep that range live without inventing a fresh semantic region.
+Concrete descriptor and control-block layout remain subject to the runtime ABI design.
+
+The ordinary library method `.slice(range)` on a suitable persistent frozen source produces
+an independently retained range through an explicitly contracted intrinsic. The intrinsic
+requires live persistent frozen authority, checked backing provenance, valid bounds, and
+initialized storage, plus text-boundary validity where applicable. Checked library code
+establishes the public range checks and invokes the primitive with its preconditions
+discharged. The primitive establishes retention before exposing the result; a bare address
+and count are insufficient. The result preserves frozen storage identity but has no loan on
+the source handle, so releasing that handle or returning from a helper does not invalidate
+the result. Retained subranges use the same rules and stay within the source's visible range.
+
+Creation preserves the source and copies no elements. Duplication retains the same range
+under the frozen-handle rules and does not require an element-copy witness. Element
+projection never exposes mutable or owning authority, including for represented owner
+edges in frozen storage. Final release uses the frozen release recipe and waits for every
+retaining handle/projection and scoped lifetime dependency; a small range can keep a whole
+backing allocation alive. Scoped indexing of a retained range still produces a scoped loan.
+
+This is a library API over checked retained projection, not a universal `retain_range`
+builtin. Scoped observation or edit authority cannot invoke it to acquire persistent
+retention, even when the target is known to be frozen. A stored existing frozen capability
+may still be loaded under the normal projection rules. Neither this operation nor its
+library wrapper implicitly freezes, thaws, copies elements, or materializes an owner.
 
 ## Checked value copying
 
@@ -1252,6 +1282,12 @@ Range-view validation must exercise shape, authority, and surviving dependencies
 | Borrow an element slot from a mutable range of owners | Yield edit authority over the stored owner slot; checked replacement requires no copy witness |
 | Form an out-of-bounds range, invalid UTF-8 boundary, or range over uninitialized elements | Require discharge or runtime enforcement of the corresponding validity obligations |
 | Treat a scoped range over frozen backing as independently retained | Rejected: scoped source dependencies remain in force |
+| Return a frozen source's library `.slice()` result, then release the source handle | Accepted: the result independently retains its checked frozen backing without a loan on the source handle |
+| Create a retained subrange and release its source range | Accepted within the source's visible bounds; preserve backing identity and independent retention |
+| Duplicate a retained range over elements without an independent-copy witness | Retain the same frozen storage; do not copy elements or expose owner tokens |
+| Call a retained-projection intrinsic with only a scoped view or a raw pointer/count | Rejected: persistent frozen authority and checked backing provenance are required |
+| Retain a tiny inline range, release the parent, then release the final range | Backing storage remains live until the final retention and lifetime obligations end; release frozen outgoing edges once |
+| Retain an invalid subrange or split a UTF-8 scalar | Reject or enforce the required validity checks before exposing the retained result |
 
 Cleanup validation must cover both resource accounting and the authority used by disposal:
 

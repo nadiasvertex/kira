@@ -63,7 +63,8 @@ it does not promise termination or eventual cleanup for diverging programs.
 
 Status: ownership-default, contract-inference, basic surface-spelling, `copy`/`copy_owned`
 operation names, the `copy` constraint name, single-element view consolidation, and scoped
-range-view construction and passing accepted on 2026-11-14. Q2 remains partially resolved;
+range-view construction and passing, and retained frozen ranges with library `.slice()`
+accepted on 2026-11-14. Q2 remains partially resolved;
 further mappings and contract spellings are pending.
 Owning task: T08. Dependent tasks: T30–T36 and the affected library migrations.
 
@@ -245,16 +246,42 @@ subranges keep their source borrowed; conflicting authority remains suspended as
 Different subrange bounds do not establish disjoint edits under the initial whole-allocation
 model. A mutable range of owners lends owner slots, preserving the distinction between
 `edit[own[T]]` and child `edit[T]`. Frozen backing permits scoped observation, but does not
-implicitly make the range independently retained. Persistent frozen-range representation
-and explicit operations remain open. The
+implicitly make the range independently retained. The
 [range translation](translations.md#worked-example-range-views-and-reborrowing)
 records the accepted construction, passing, and rejection cases. Formal validation and
 implementation remain pending.
 
+### Retained frozen ranges and library slicing
+
+Accept `shared_slice[T]` and `shared_str` for independently retained frozen collection and
+UTF-8 text ranges. Keep `slice[T]` and `str` scoped; wrapping either scoped descriptor in
+`shared_read[...]` is not a loan-to-retention conversion. Frozen-source range indexing still
+creates a scoped view. An ordinary library method `.slice(start .. end)` explicitly creates
+a retained range; retained ranges support the same method for independently retained
+subranges. It validates bounds, initialized storage, and text boundaries as applicable,
+preserves the source, and copies no elements. Small ranges may retain whole backing
+allocations. Handle duplication independently retains the same frozen storage and requires
+no structural witness for copying elements; frozen projection and release rules still apply.
+
+Implement the library API over an explicitly contracted intrinsic for retained frozen
+projection. There is no universal source-level `retain_range` builtin or new call syntax.
+The intrinsic requires existing persistent frozen authority, checked provenance, and range
+validity; it establishes independent backing retention before exposing the result. Library
+wrappers perform the public validation and compose this primitive. Neither an ordinary
+scoped view nor a raw pointer can acquire retention by appearing read-only. Returning the
+result does not keep a loan on the local source handle, but does preserve the identity of the
+frozen backing storage. Copying elements, freezing, thawing, and owner materialization are
+separate operations.
+
+The [retained-range translation](translations.md#worked-example-retained-frozen-ranges)
+records returned ranges, subranges, text boundaries, and the scoped-escape diagnostic.
+Formal and implementation validation remain pending. This choice fixes surface types and
+semantic retention, not Q4's concrete ABI, the intrinsic's name, or Q5's failure policy.
+
 ### Remaining scope and obligations
 
-Q2 still needs persistent frozen-range representation and operations, callable and capture
-spellings, and remaining contract forms. The worked `from`, `writes`, `outcome`, `entry`,
+Q2 still needs callable and capture spellings and remaining contract forms. The worked
+`from`, `writes`, `outcome`, `entry`,
 `transfers`, and `preserves` clauses remain syntax candidates with the accepted inference
 policy. The legacy implicit-duplication
 classification and the structural independent-copy witness must remain distinct despite

@@ -1,7 +1,8 @@
 # Affine capability surface mapping
 
 Status: accepted experimental-subset spellings for declarations, receivers, loans, transfer,
-freeze, copying, the `copy` constraint, single-element and range views, and local bindings.
+freeze, copying, the `copy` constraint, single-element and scoped/retained range views,
+the library `.slice()` API, and local bindings.
 Contract inference and optional programmer constraints are accepted policies; the worked contract
 clauses remain syntax candidates. This document does not amend
 the implemented grammar or establish T08 completion. See [Q2 decisions](decisions.md#q2--ownership-default-and-explicit-copying)
@@ -16,6 +17,8 @@ and the [worked translation](translations.md).
 | Scoped observation | `inspect[T]` | `&T` |
 | Scoped editing | `edit[T]` | `&mut T` |
 | Retained, permanently frozen sharing | `shared_read[T]` | — |
+| Retained, permanently frozen contiguous range | `shared_slice[T]` | — |
+| Retained, permanently frozen UTF-8 text range | `shared_str` | — |
 
 An ordinary `T` and `own[T]` remain distinct types; no owner wrapper is silently added or
 removed. Ordinary by-value uses transfer affine values and duplicate values that have checked
@@ -113,9 +116,49 @@ For `mut slice[own[T]]`, borrowing an element slot yields `edit[own[T]]`; replac
 uses the checked slot rules rather than extracting ownership through a load.
 
 Slicing frozen storage can produce a scoped observation view, subject to the source lifetime
-obligation. It does not implicitly produce an independently retained range. The representation
-and explicit operation for persistent frozen ranges remain open. See the
+obligation. It does not implicitly produce an independently retained range. See the
 [range translation](translations.md#worked-example-range-views-and-reborrowing).
+
+## Retained frozen ranges
+
+Use `shared_slice[T]` for an independently retained contiguous range of frozen elements and
+`shared_str` for an independently retained UTF-8 text range. These types carry bounds and
+backing-storage provenance plus their own retention obligation. They are distinct from
+scoped `slice[T]` and `str`, and are not spelled `shared_read[slice[T]]` or `shared_read[str]`:
+wrapping a scoped descriptor must not erase its loan dependencies.
+
+Expose creation as the ordinary library method `.slice(range)`, using the existing
+`range[usize]` value and method-call syntax:
+
+| Expression on a suitable frozen source | Result |
+|---|---|
+| `frozen[start .. end]` | Scoped `slice[T]`, or `str` for text |
+| `frozen.slice(start .. end)` | Retained `shared_slice[T]`, or `shared_str` for text |
+
+The library provides `.slice()` on suitable frozen collection/text capabilities and on
+retained ranges themselves. It preserves the source, validates bounds relative to that
+source's range and initialized storage, and checks UTF-8 boundaries for text. It copies no
+elements and does not freeze, thaw, or materialize owned storage. A retained subrange has
+independent retention and can survive release of the source handle; a scoped subrange keeps
+its source lifetime obligation. All element access remains subject to frozen projection
+rules, including when stored element representations contain owner handles.
+
+Retained range handles duplicate under the checked frozen-handle rules, independently
+retaining the same storage without an element-copy witness. Final release follows the frozen
+release recipe; a small range may keep the whole backing allocation alive. This specifies
+semantic provenance and retention, not a concrete ABI or control-block layout.
+
+The public method is library code over an explicitly contracted compiler/runtime intrinsic
+for retained frozen projection. It introduces no new expression syntax or universal
+`retain_range` builtin. The intrinsic requires an existing persistent frozen capability,
+valid projection provenance, and established range validity; it retains the correct backing
+storage before exposing the result. A raw pointer and a reference-count increment are not
+authority, and scoped observation/edit views cannot be promoted by this operation. The
+intrinsic's exact name and ABI remain implementation details. Checked library code handles
+the public bounds/text validation and API, while the intrinsic contract enforces its required
+preconditions and retention guarantees. The failure policy remains subject to Q5.
+
+See the [retained-range translation](translations.md#worked-example-retained-frozen-ranges).
 
 ## Receivers
 
@@ -272,8 +315,8 @@ spelling alone establishes thread-transfer safety.
 
 ## Remaining Q2 choices
 
-- Persistent frozen-range representation and operations, callable contract spellings,
-  closure call-mode and capture spellings, and contract forms beyond the worked examples.
+- Callable contract spellings, closure call-mode and capture spellings, and contract forms
+  beyond the worked examples.
 - Complete translations and grammar integration for the advertised experimental subset.
 
 Q2 remains partially resolved. This surface mapping changes no normative or implemented

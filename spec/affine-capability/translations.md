@@ -380,6 +380,81 @@ so the preceding slot-replacement example applies without a copy witness.
 - Treat a scoped range over frozen storage as independently retained and release a source
   handle required by its loan: frozen contents do not erase source lifetime dependencies.
 
-An independently retained frozen range still needs an explicit operation and a suitable
-representation; this example does not select either. Scoped loans also do not permit freezing
-the backing collection through the view or implicitly materializing an owned copy.
+The library `.slice()` method creates an independently retained frozen range as shown below.
+Scoped loans do not permit freezing the backing collection through the view or implicitly
+materializing an owned copy.
+
+## Worked example: retained frozen ranges
+
+This example uses the accepted `shared_slice[T]` and `shared_str` types and ordinary library
+`.slice(range)` method over a checked retained-projection intrinsic. These are experimental
+design translations, not implemented grammar or runnable fixtures. The intrinsic's exact
+name and ABI are not selected here; there is no universal `retain_range` builtin.
+
+```cinder
+def frozen_middle(items: own[list[int32]]) -> shared_slice[int32]:
+    let frozen = &!items
+    return frozen.slice(1 .. frozen.len() - 1)
+
+def retained_prefix(window: shared_slice[int32]) -> shared_slice[int32]:
+    return window.slice(0 .. 2)
+
+def text_prefix(text: shared_str) -> shared_str:
+    return text.slice(0 .. 5)
+```
+
+The normal-return trace assumes at least two list elements for `frozen_middle`, at least two
+visible elements for `retained_prefix`, and at least five bytes with a UTF-8 boundary at byte
+five for `text_prefix`. These assumptions do not remove checks or select Q5's failure policy.
+Contracts are inferred; an independently retained result does not need a scoped origin
+annotation tying it to the lifetime of a local source handle. It still denotes the same
+frozen backing storage, not a fresh independent copy.
+
+For `frozen_middle`, the authority and cleanup trace is:
+
+1. The incoming list owner moves into `items`. Freezing consumes it and yields
+   `shared_read[list[int32]]`, subject to the structural freeze and release requirements.
+2. The library method validates bounds and initialized elements. Its checked intrinsic
+   receives existing persistent frozen authority and valid backing provenance, and retains
+   the storage required by the selected range before exposing a `shared_slice[int32]`.
+3. The result moves into the return slot. Temporary receiver borrows end; the local `frozen`
+   handle can be released because the result has its own retention obligation.
+4. The caller can read the returned range after the helper has returned. No elements were
+   copied. The last retaining handle/projection and any scoped lifetime dependencies govern
+   reclamation; even a small range may retain the entire backing allocation.
+
+The method on retained collection and text ranges follows the same rules. Subrange bounds
+are relative to the visible source range. A text range validates UTF-8 boundaries as well as
+byte bounds. Neither operation copies elements or grants mutable authority. Duplicating a
+retained handle retains the same frozen storage without an element-copy witness.
+
+Ordinary indexing keeps its scoped meaning:
+
+```cinder
+let borrowed = window[0 .. 2]        # slice[int32]; depends on window
+let retained = window.slice(0 .. 2)  # shared_slice[int32]; independent retention
+```
+
+`retained` can survive release of `window`; a live `borrowed` prevents release of the source
+handle on which its loan depends. An unrelated retaining handle does not erase that loan.
+Likewise, this helper is rejected:
+
+```cinder
+def borrowed_middle(items: own[list[int32]]) -> slice[int32]:
+    let frozen = &!items
+    return frozen[1 .. frozen.len() - 1]
+```
+
+The result would keep a loan on local `frozen`, blocking the cleanup required to leave the
+function. A teaching diagnostic should identify the local source and return, explain the
+release conflict, and suggest `.slice()` with a retained result type, or keeping the source
+handle in the caller and returning a scoped view of that caller-provided source.
+
+Required validation also rejects creating retention from an ordinary scoped view or a raw
+pointer/count without persistent frozen authority, treating `shared_read[slice[T]]` as a
+conversion that sheds a scoped loan, accessing outside a retained subrange, and exposing
+stored owner tokens through frozen elements. Invalid bounds, uninitialized elements, and
+invalid text boundaries must be rejected or checked before the retained result is exposed.
+Final release must reclaim backing storage and release frozen outgoing edges exactly once,
+without mutable cleanup or thawing. Library bodies and intrinsic contracts remain subject
+to verification; method names alone confer no retention authority.
