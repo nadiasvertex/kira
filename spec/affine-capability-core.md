@@ -6,7 +6,23 @@ for a future formalization, not established metatheorems.
 
 ## Intent and choices
 
-Function parameters use copy semantics by default. `Copy` means semantic independence, not necessarily duplication of every byte. Primitive values are copied directly; copying mutable composite data must produce independent mutable storage. Immutable strings and frozen subobjects may share backing storage when lifetime management is preserved. Composite values require a checked copy operation that satisfies these conditions. A function can instead request a capability such as `own[T]`, `shared_read[T]`, `inspect[T]`, or `edit[T]`.
+Surface value passing moves owned values by default. An ordinary by-value parameter receives
+the argument's value and cleanup obligations; transferring an affine value makes its source
+unavailable. Scalars and other values with checked duplication rules, including retained
+frozen handles, may duplicate. A structural copy witness does not make an owner duplicable
+or enable implicit independent copying. A function can request a capability such as `own[T]`,
+`shared_read[T]`, `inspect[T]`, or `edit[T]`; inspection and edit parameters borrow or reborrow
+according to the conversion table below.
+
+Independent copying and freezing are explicit requests. `copy_value` constructs an equivalent
+value with independent mutable storage; `clone` materializes represented contents in a fresh
+owned root. Both require structural copy witnesses. Immutable strings and frozen subobjects
+may share backing storage when lifetime management is preserved. Freezing consumes an owner
+and permanently removes mutable authority over its region and owned descendants.
+
+Move-by-default is a surface elaboration policy. The formal core records transfer, duplication,
+copy construction, loans, and freeze explicitly; checking never chooses an implicit deep copy
+because a witness exists. See the [Q2 ownership decision](affine-capability/decisions.md#q2--ownership-default-and-explicit-copying).
 
 Capability names are verbs describing what the holder may do. Proposed conversion annotations are `&x` for a loan, `&>x` for transfer of an owner or edit handle, and `&!x` for freezing. Unadorned `x` uses the parameter capability and conversion rules below.
 
@@ -44,7 +60,11 @@ An `own(r,T)` carries exclusive authority to read, write, transfer, freeze, or d
 Neither kind of loan owns storage. Loads of nonduplicable contents produce observations or
 require an explicit move; reading must not silently duplicate ownership.
 
-Parameters default to copy semantics. Literal immutable values need no mutable allocation first. Explicit local builders may start with `own` authority.
+Ordinary by-value uses in bindings, assignment, arguments, returns, and ownership captures
+transfer affine values; duplicable values follow their checked duplication rules. Parameter
+capability requests can instead select borrowing or reborrowing. Fresh expression results
+can initialize their destinations directly without an independent copy. Literal immutable
+values need no mutable allocation first. Explicit local builders may start with `own` authority.
 
 ## Checking judgment
 
@@ -328,7 +348,8 @@ obeys that capability's retention or loan rules. Transferring `own` moves its ex
 authority. An affine owner can support copying its contents into fresh storage without
 becoming a duplicable owner; copying never produces a second owner of the original region.
 
-Default argument conversion requires a structural copy witness for `T`. The initial core
+Explicit independent copying or materialization requires a structural copy witness for `T`.
+Ordinary ownership transfer does not require one, including for generic parameters. The initial core
 derives this witness from the type's representation and checked component operations; a
 user function named `copy` or `clone` does not supply one by declaration alone. The witness
 specifies a value relation `equiv_T` and a construction recipe with these obligations on
@@ -393,7 +414,7 @@ resource. Such values use their explicit operations or capability passing modes.
 Scoped handles still follow their explicit capability rules: inspection duplication keeps
 the same loan dependencies, and editing requires transfer or reborrowing. Aggregates or
 closures containing scoped loans may be duplicable when their components permit it, but
-are not eligible for the default independent value-copy route. A caller can explicitly
+are not eligible for independent value copying in this initial core. A caller can explicitly
 observe a referent and copy its represented data when that data has a witness; the resulting
 type and authority are for the new data, not a duplicated or extended loan. Likewise, proof
 data mentioning concrete regions or versions cannot be silently retargeted to copied
@@ -408,24 +429,32 @@ This creates new mutable authority from allocation, not by extracting or thawing
 authority. In contrast, copying a `shared_read` handle as a value only duplicates the
 handle; it does not invoke this materialization operation.
 
-The default `copy[T]` route uses `copy_value`; the implicit `own[T]` route materializes fresh
-owned storage under these obligations. The copy-then-freeze route first constructs the
-independent copy and then separately checks freezing. An arbitrary user-defined cloning
-function remains an ordinary explicit call with its own effect and result contract; it is
-not substituted for any of these conversions. The formalization must establish that the
+Explicit `copy_value` and `clone` requests use these obligations. Preserving an owner while
+sharing its contents requires explicitly constructing an independent copy and then checking
+freezing on that copy. Neither an owning parameter nor a sharing parameter implicitly selects
+such construction. An arbitrary user-defined cloning function remains an ordinary explicit
+call with its own effect and result contract; its name does not authorize a structural recipe.
+The formalization must establish that the
 structural recipe preserves `equiv_T` and mutable separation. The bounded arithmetic proof
 kernel alone does not establish those heap properties.
 
 ## Capability requests and conversions
 
-A prototype declares each requested parameter capability; otherwise it requests a copy. Callers may write `&`, `&>`, or `&!` to request a loan, transfer, or freeze. An incompatible explicit annotation is an error.
+A prototype declares each requested parameter capability; otherwise its parameter is an
+ordinary by-value parameter. Callers may write `&`, `&>`, or `&!` to request a loan, transfer,
+or freeze. Unannotated owners transfer to owning parameters; `&>` can state that transfer
+explicitly and is required to transfer an existing edit handle instead of reborrowing it
+for an edit parameter. An incompatible explicit annotation is an error. These spellings and
+the operation names below remain schematic pending the rest of Q2; there is no default
+`copy[T]` parameter mode.
 
 | Requested capability | Available value | Conversion |
 |---|---|---|
-| `copy[T]` (default) | Copyable value | Copy with semantic independence; mutable composite storage is independent, while immutable backing storage may be shared when lifetime-safe |
-| `own[T]` | Copyable value | Semantically independent copy into fresh owned storage; immutable backing storage may be shared when lifetime-safe |
-| `own[T]` | `own(r,T)` with `&>` | Transfer; consume source |
-| `shared_read[T]` | `own(r,T)` | Copy, then freeze the copy; source remains owned |
+| Ordinary by-value `T` | Affine value of the matching type | Transfer its carrier contents and cleanup obligations; consume source; no copy witness required |
+| Ordinary by-value `T` | Value with a checked duplication rule | Duplicate under that rule; retain frozen storage and preserve any loan dependencies; never independently deep-copy mutable storage |
+| `own[T]` | `own(r,T)`, unannotated or with `&>` | Transfer; consume source; no copy witness required |
+| `own[T]` | Explicit `clone(h)` result | Transfer the fresh owner produced by checked materialization; preserve `h` |
+| `shared_read[T]` | `own(r,T)`, unannotated or with `&>` | Rejected: sharing requires explicit freezing; transfer alone does not freeze |
 | `shared_read[T]` | `own(r,T)` with `&!` | Freeze original; consume source |
 | `shared_read[T]` | Existing `shared_read(r,T)` | Duplicate shared handle |
 | `inspect[T]` | Owner or shared handle | Begin scoped observation loan |
@@ -436,12 +465,20 @@ A prototype declares each requested parameter capability; otherwise it requests 
 | `edit[T]` | Existing `edit(l,r,T)`, unannotated or with `&` | Begin a fresh edit reborrow; suspend conflicting access through `l` |
 | `edit[T]` | Existing `edit(l,r,T)` with `&>` | Transfer the existing edit handle and its dependencies; invalidate the source binding |
 
-All conversions require their relevant conditions: copying must be supported, freezing must be valid, and loans must not conflict. `&x` begins a fresh loan in the mode requested by the prototype, or a fresh dependent reborrow when `x` is already a scoped handle; `&>x` transfers only; `&!x` freezes owned storage. Thus `publish(x)` may copy and freeze while preserving `x`, while `publish(&!x)` consumes and freezes the original. A composite containing an uncopyable resource cannot use the default copy route; its caller must transfer ownership with `&>` or lend it to a suitable `inspect` or `edit` parameter.
+All conversions require their relevant conditions: explicit copying must be supported,
+freezing must be valid, and loans must not conflict. `&x` begins a fresh loan in the mode
+requested by the prototype, or a fresh dependent reborrow when `x` is already a scoped
+handle; `&>x` transfers only; `&!x` freezes owned storage. For a sharing parameter,
+`publish(x)` is rejected when `x` is an owner, `publish(&!x)` consumes and freezes the original,
+and `publish(&!clone(x))` explicitly materializes and freezes a copy while preserving `x`.
+Neither freezing nor independent copy construction is inferred from the requested type.
+A composite containing an uncopyable resource can transfer to an owning parameter without
+an annotation or a copy witness, or be lent to a suitable `inspect` or `edit` parameter.
 
 An inspection cannot satisfy an edit parameter, regardless of annotation. These conversions
 do not promote scoped handles to ownership or persistent sharing, and do not provide a
 structural value-copy witness for a scoped handle. Duplication of an unannotated inspection
-is its explicit parameter capability's conversion, not the default `copy[T]` route.
+uses its capability duplication rule and preserves the same loan dependencies.
 
 Reborrowing preserves the caller's handle and creates a dependent argument loan under the
 forest conflict rules. The caller regains only permissions no longer suspended after every
@@ -469,7 +506,9 @@ abstract token transitions, and the storage-effect contract below. Its body is c
 against that contract once. Call checking uses the contract without inspecting the
 implementation.
 
-Parameter conversions follow the capability conversion table. The default copy route never consumes or freezes the caller value.
+Parameter conversions follow the capability conversion table. Ordinary owning arguments
+transfer without copying; preserving their source requires an explicit copy or a loan-taking
+interface. Freeze is explicit, and duplication preserves the relevant retention or loan rules.
 An explicit scoped observation parameter accepts `inspect` without freezing. Any returned
 loan names its originating parameter region in the core signature; the surface language may
 infer this information. Its dependency description distinguishes carrying the incoming loan
@@ -566,9 +605,9 @@ remove_last(edit xs: sequence[T]) -> option[T]
 ```
 
 These are core carrier operations: `incoming` and the returned values transfer their stored
-components and cleanup obligations, rather than invoking default argument copying. Neither
-operation requires `T` to be copyable. A surface call must explicitly transfer an affine
-replacement according to its capability; an owner can supply the edit through the usual
+components and cleanup obligations, following move-by-default value passing. Neither
+operation requires `T` to be copyable. An affine replacement transfers by default, with
+`&>` available to state the transfer explicitly; an owner can supply the edit through the usual
 loan conversion. Inspection and shared authority cannot authorize either operation.
 
 The destination slot of `exchange(h,p,x)` is selected by a checked path `p` relative to the
@@ -777,8 +816,10 @@ not rule out allocation, divergence, or other effects. An `inspect` parameter al
 not make a function read-only if it also receives
 an edit capability or invokes a mutating closure. Conversely, an edit parameter may have a
 checked empty write summary; acquiring its exclusive loan still requires the usual conflict
-checks. Writing a default argument's independent copy affects that copy's regions, not the
-original mutable regions; any separately carried capabilities retain their own effects.
+checks. Writing an explicitly constructed independent argument copy affects that copy's
+regions, not the original mutable regions; any separately carried capabilities retain their
+own effects. Passing an owner by move preserves its region identity, so callee writes and
+cleanup must be tracked against that incoming region even though the source binding is gone.
 
 For fact checking, `version(r)` identifies the current observable contents of `r` and its
 exclusively owned subtree. A write conservatively refreshes versions for its whole permitted
@@ -930,10 +971,10 @@ pop[T](xs: edit[sequence[T]]) -> option[T]:
 
 resource = new_resource()        // own(r, Resource), no copy witness
 xs = new_sequence[own[Resource]]()
-push(edit xs, &>resource)
+push(edit xs, resource)          // owning parameter: move; resource is unavailable
 
 match pop(edit xs):
-    @some(item) => use_resource(&>item)
+    @some(item) => use_resource(item)  // move the extracted owner
     @none       => ()
 
 drop(xs)                        // clean only elements still present
@@ -948,11 +989,17 @@ x = new_buffer()                 // own(r, buffer)
 push(edit x, 1)                  // accepted; temporary exclusive loan
 n = length(inspect x)            // accepted; observation ends after call
 push(edit x, 2)                  // accepted
-publish(x)                      // shared_read parameter: copy, then freeze copy
+publish(&!clone(x))             // explicitly copy, then freeze; preserve x
 push(edit x, 3)                  // accepted: x still owns mutable r
 y = clone(x)                    // new region s, if buffer supports cloning
 push(edit y, 3)                  // accepted; r is unchanged
+consume(y)                      // own parameter: move; y is unavailable afterward
+publish(&!x)                    // freeze original; x is unavailable afterward
 ```
+
+Here `clone` observes its source and requires a structural witness; `consume` requests
+ownership and needs no copy witness. Passing `x` directly to `publish` would be rejected
+because an owning argument is not implicitly frozen or copied.
 
 ```text
 v = inspect x                   // scoped view into mutable x
@@ -1012,6 +1059,12 @@ Argument-conversion validation must include existing scoped handles:
 
 | Situation | Expected result |
 |---|---|
+| Pass an owner bare to an owning parameter, including an uncopyable resource or unconstrained generic value | Accepted by transfer without a structural copy witness; source becomes unavailable |
+| Pass an owner whose contents have a structural copy witness, then use its source binding | Rejected: witness availability does not change the transfer into an implicit copy |
+| Pass a scalar or retained frozen handle by value, then reuse the source | Accepted under its duplication rule; the new frozen handle retains storage independently |
+| Pass an owner bare or with `&>` to a `shared_read` parameter | Rejected: neither form requests freezing or independent copy construction |
+| Pass an owner with `&!` to a `shared_read` parameter, then reuse the owner binding | Rejected: freezing consumes the owner |
+| Explicitly clone an owner and freeze the clone for a sharing parameter, then mutate the original | Accepted when copying, freezing, and loans are valid; the original remains owned |
 | Pass an existing inspection unannotated to an inspection parameter | Accepted by duplicating the same loan and dependencies; the source remains available |
 | Pass an existing inspection with `&` to an inspection parameter | Accepted by creating a fresh dependent observation loan |
 | Pass an existing edit to an inspection helper, then reuse the edit after all derived carriers retire | Accepted after the observation reborrow ends and no other loan suspends the requested access |
@@ -1055,7 +1108,7 @@ Copy validation must distinguish equivalent contents from independent storage:
 | Copy a value with a retained frozen child, then release the source | Accepted: the copy independently retains the frozen child |
 | Copy an owned record, mutate the copy, then observe the source | Accepted; the source retains its original contents and versions |
 | Duplicate an inspection explicitly | Accepted with the same loan dependencies; this is not an independent value copy |
-| Implicitly value-copy a record or closure containing a scoped loan | Rejected in the initial core |
+| Request an independent value copy of a record or closure containing a scoped loan | Rejected in the initial core; capability duplication is a separate operation |
 | Copy a protocol token's backing bytes into a fresh allocation | Rejected: external authority has not been duplicated legitimately |
 | Use a user-defined clone that mutates the source as an implicit copy | Rejected even if it returns equivalent contents in fresh storage |
 | Materialize a frozen record with an owned child using `clone` | Accepted when both root and reconstructed owned child are fresh and contents are equivalent |
@@ -1099,9 +1152,11 @@ Exchange, removal, and consuming-match validation must include noncopyable eleme
 
 ## Relationship to Cinder and next validation
 
-This proposal changes ordinary argument passing: immutable sharing becomes a permanent state
-transition for mutable inputs. It also separates duplication of a shared handle from deep
-copying. These are observable language choices requiring review against Cinder's value
+This proposal retains move-by-default passing for owned values and makes borrowing depend
+on declared parameter capabilities. Independent copying and conversion of owned mutable data
+to persistent frozen sharing are explicit. A structural copy witness never enables implicit
+deep copying or duplication of an owner. These choices, including the separation of retained
+handle duplication from independent copying, require review against Cinder's value
 semantics and existing APIs; this document does not silently amend those specifications.
 
 The current borrowing analysis and bounded refinement reasoning are useful implementation
