@@ -166,3 +166,18 @@ cc_test(
         "//src/testing:storage_fixtures",
     ],
 )
+
+# JIT code is instrumented for the host's sanitizer (`--config=asan` or
+# `--config=tsan`) and still runs.
+cc_test(
+    name = "jit_sanitizer_test",
+    srcs = ["jit_sanitizer_test.cpp"],
+    tags = ["no-sandbox"],
+    deps = [
+        ":codegen",
+        ":jit_support",
+        "//src/bytecode:bytecode",
+        "//src/testing",
+        "@llvm//:llvm",
+    ],
+)

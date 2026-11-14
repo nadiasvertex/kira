@@ -1154,152 +1154,152 @@
 050_bound_driven_inference.cn:52:13 [ctor_pat] option[int32]
 050_bound_driven_inference.cn:52:29 [ident] option[U]
 050_bound_driven_inference.cn:52:29 [ident] option[int32]
-050_bound_driven_inference.cn:57:14 [binding_pat] &mut filter_iter[I, T]
-050_bound_driven_inference.cn:57:14 [binding_pat] &mut filter_iter[counter, int32]
-050_bound_driven_inference.cn:57:27 [named_type] option[T]
-050_bound_driven_inference.cn:57:27 [named_type] option[int32]
-050_bound_driven_inference.cn:58:19 [option_pat] option[T]
-050_bound_driven_inference.cn:58:19 [option_pat] option[int32]
-050_bound_driven_inference.cn:58:25 [binding_pat] T
-050_bound_driven_inference.cn:58:25 [binding_pat] int32
-050_bound_driven_inference.cn:58:30 [module_path] I
-050_bound_driven_inference.cn:58:30 [module_path] counter
-050_bound_driven_inference.cn:58:30 [field] fn() -> option[T]
-050_bound_driven_inference.cn:58:30 [field] fn() -> option[int32]
-050_bound_driven_inference.cn:58:30 [call] option[T]
-050_bound_driven_inference.cn:58:30 [call] option[int32]
-050_bound_driven_inference.cn:59:16 [group] fn(T) -> bool
-050_bound_driven_inference.cn:59:16 [group] fn(int32) -> bool
-050_bound_driven_inference.cn:59:16 [call] bool
-050_bound_driven_inference.cn:59:16 [call] bool
-050_bound_driven_inference.cn:59:17 [module_path] fn(T) -> bool
-050_bound_driven_inference.cn:59:17 [module_path] fn(int32) -> bool
-050_bound_driven_inference.cn:59:28 [ident] T
-050_bound_driven_inference.cn:59:28 [ident] int32
-050_bound_driven_inference.cn:60:24 [call] option[T]
-050_bound_driven_inference.cn:60:24 [call] option[int32]
-050_bound_driven_inference.cn:60:30 [ident] T
-050_bound_driven_inference.cn:60:30 [ident] int32
-050_bound_driven_inference.cn:61:16 [ident] option[T]
-050_bound_driven_inference.cn:61:16 [ident] option[int32]
-050_bound_driven_inference.cn:63:18 [binding_pat] I
-050_bound_driven_inference.cn:63:18 [binding_pat] filter_iter[counter, int32]
-050_bound_driven_inference.cn:63:25 [binding_pat] fn(T) -> U
-050_bound_driven_inference.cn:63:25 [binding_pat] fn(int32) -> int32
-050_bound_driven_inference.cn:63:43 [named_type] map_iter[I, T, U]
-050_bound_driven_inference.cn:63:43 [named_type] map_iter[filter_iter[counter, int32], int32, int32]
-050_bound_driven_inference.cn:64:12 [struct_literal] map_iter[I, T, U]
-050_bound_driven_inference.cn:64:12 [struct_literal] map_iter[filter_iter[counter, int32], int32, int32]
-050_bound_driven_inference.cn:64:30 [ident] I
-050_bound_driven_inference.cn:64:30 [ident] filter_iter[counter, int32]
-050_bound_driven_inference.cn:64:37 [ident] fn(T) -> U
-050_bound_driven_inference.cn:64:37 [ident] fn(int32) -> int32
-050_bound_driven_inference.cn:66:18 [binding_pat] I
-050_bound_driven_inference.cn:66:18 [binding_pat] counter
-050_bound_driven_inference.cn:66:25 [binding_pat] fn(T) -> bool
-050_bound_driven_inference.cn:66:25 [binding_pat] fn(int32) -> bool
-050_bound_driven_inference.cn:66:49 [named_type] filter_iter[I, T]
-050_bound_driven_inference.cn:66:49 [named_type] filter_iter[counter, int32]
-050_bound_driven_inference.cn:67:12 [struct_literal] filter_iter[I, T]
-050_bound_driven_inference.cn:67:12 [struct_literal] filter_iter[counter, int32]
-050_bound_driven_inference.cn:67:33 [ident] I
-050_bound_driven_inference.cn:67:33 [ident] counter
-050_bound_driven_inference.cn:67:43 [ident] fn(T) -> bool
-050_bound_driven_inference.cn:67:43 [ident] fn(int32) -> bool
-050_bound_driven_inference.cn:71:15 [binding_pat] I
-050_bound_driven_inference.cn:71:15 [binding_pat] map_iter[filter_iter[counter, int32], int32, int32]
-050_bound_driven_inference.cn:71:25 [named_type] T
-050_bound_driven_inference.cn:71:25 [named_type] int32
-050_bound_driven_inference.cn:72:5 [var_stmt] I
-050_bound_driven_inference.cn:72:5 [var_stmt] map_iter[filter_iter[counter, int32], int32, int32]
-050_bound_driven_inference.cn:72:18 [ident] I
-050_bound_driven_inference.cn:72:18 [ident] map_iter[filter_iter[counter, int32], int32, int32]
-050_bound_driven_inference.cn:73:5 [var_stmt] T
-050_bound_driven_inference.cn:73:5 [var_stmt] int32
-050_bound_driven_inference.cn:73:20 [literal] T
-050_bound_driven_inference.cn:73:20 [literal] int32
-050_bound_driven_inference.cn:74:15 [option_pat] option[T]
-050_bound_driven_inference.cn:74:15 [option_pat] option[int32]
-050_bound_driven_inference.cn:74:21 [binding_pat] T
-050_bound_driven_inference.cn:74:21 [binding_pat] int32
-050_bound_driven_inference.cn:74:26 [ident] I
-050_bound_driven_inference.cn:74:26 [ident] map_iter[filter_iter[counter, int32], int32, int32]
-050_bound_driven_inference.cn:74:26 [field] fn() -> option[T]
-050_bound_driven_inference.cn:74:26 [field] fn() -> option[int32]
-050_bound_driven_inference.cn:74:26 [call] option[T]
-050_bound_driven_inference.cn:74:26 [call] option[int32]
-050_bound_driven_inference.cn:75:9 [ident] T
-050_bound_driven_inference.cn:75:9 [ident] int32
-050_bound_driven_inference.cn:75:17 [ident] T
-050_bound_driven_inference.cn:75:17 [ident] int32
-050_bound_driven_inference.cn:75:17 [binary] T
-050_bound_driven_inference.cn:75:17 [binary] int32
-050_bound_driven_inference.cn:75:25 [ident] T
-050_bound_driven_inference.cn:75:25 [ident] int32
-050_bound_driven_inference.cn:76:12 [ident] T
-050_bound_driven_inference.cn:76:12 [ident] int32
-050_bound_driven_inference.cn:79:17 [binding_pat] I
-050_bound_driven_inference.cn:79:17 [binding_pat] counter
-050_bound_driven_inference.cn:79:27 [named_type] T
-050_bound_driven_inference.cn:79:27 [named_type] int32
-050_bound_driven_inference.cn:80:5 [var_stmt] I
-050_bound_driven_inference.cn:80:5 [var_stmt] counter
-050_bound_driven_inference.cn:80:18 [ident] I
-050_bound_driven_inference.cn:80:18 [ident] counter
-050_bound_driven_inference.cn:81:5 [var_stmt] T
-050_bound_driven_inference.cn:81:5 [var_stmt] int32
-050_bound_driven_inference.cn:81:20 [literal] T
-050_bound_driven_inference.cn:81:20 [literal] int32
-050_bound_driven_inference.cn:82:15 [option_pat] option[T]
-050_bound_driven_inference.cn:82:15 [option_pat] option[int32]
-050_bound_driven_inference.cn:82:21 [binding_pat] T
-050_bound_driven_inference.cn:82:21 [binding_pat] int32
-050_bound_driven_inference.cn:82:26 [ident] I
-050_bound_driven_inference.cn:82:26 [ident] counter
-050_bound_driven_inference.cn:82:26 [field] fn() -> option[T]
-050_bound_driven_inference.cn:82:26 [field] fn() -> option[int32]
-050_bound_driven_inference.cn:82:26 [call] option[T]
-050_bound_driven_inference.cn:82:26 [call] option[int32]
-050_bound_driven_inference.cn:83:9 [ident] T
-050_bound_driven_inference.cn:83:9 [ident] int32
-050_bound_driven_inference.cn:83:17 [ident] T
-050_bound_driven_inference.cn:83:17 [ident] int32
-050_bound_driven_inference.cn:83:17 [binary] T
-050_bound_driven_inference.cn:83:17 [binary] int32
-050_bound_driven_inference.cn:83:25 [ident] T
-050_bound_driven_inference.cn:83:25 [ident] int32
-050_bound_driven_inference.cn:84:12 [ident] T
-050_bound_driven_inference.cn:84:12 [ident] int32
-050_bound_driven_inference.cn:86:15 [named_type] int32
-050_bound_driven_inference.cn:87:9 [binding_pat] counter
-050_bound_driven_inference.cn:87:18 [struct_literal] counter
-050_bound_driven_inference.cn:87:32 [literal] int32
-050_bound_driven_inference.cn:87:41 [literal] int32
-050_bound_driven_inference.cn:88:9 [binding_pat] int32
-050_bound_driven_inference.cn:88:19 [ident] counter
-050_bound_driven_inference.cn:88:19 [field] fn(counter, fn(int32) -> bool) -> filter_iter[counter, int32]
-050_bound_driven_inference.cn:88:19 [call] filter_iter[counter, int32]
-050_bound_driven_inference.cn:88:19 [field] fn(filter_iter[counter, int32], fn(int32) -> int32) -> map_iter[filter_iter[counter, int32], int32, int32]
-050_bound_driven_inference.cn:88:19 [call] map_iter[filter_iter[counter, int32], int32, int32]
-050_bound_driven_inference.cn:88:19 [field] fn(map_iter[filter_iter[counter, int32], int32, int32]) -> int32
-050_bound_driven_inference.cn:88:19 [call] int32
-050_bound_driven_inference.cn:88:33 [lambda] fn(int32) -> bool
-050_bound_driven_inference.cn:88:38 [ident] int32
-050_bound_driven_inference.cn:88:38 [binary] bool
-050_bound_driven_inference.cn:88:42 [literal] int32
-050_bound_driven_inference.cn:88:50 [lambda] fn(int32) -> int32
-050_bound_driven_inference.cn:88:55 [ident] int32
-050_bound_driven_inference.cn:88:55 [binary] int32
-050_bound_driven_inference.cn:88:59 [literal] int32
-050_bound_driven_inference.cn:89:9 [binding_pat] int32
-050_bound_driven_inference.cn:89:18 [ident] fn(counter) -> int32
-050_bound_driven_inference.cn:89:18 [call] int32
-050_bound_driven_inference.cn:89:24 [struct_literal] counter
-050_bound_driven_inference.cn:89:38 [literal] int32
-050_bound_driven_inference.cn:89:47 [literal] int32
-050_bound_driven_inference.cn:90:12 [ident] int32
-050_bound_driven_inference.cn:90:12 [binary] int32
-050_bound_driven_inference.cn:90:22 [ident] int32
+050_bound_driven_inference.cn:59:14 [binding_pat] &mut filter_iter[I, T]
+050_bound_driven_inference.cn:59:14 [binding_pat] &mut filter_iter[counter, int32]
+050_bound_driven_inference.cn:59:27 [named_type] option[T]
+050_bound_driven_inference.cn:59:27 [named_type] option[int32]
+050_bound_driven_inference.cn:60:19 [option_pat] option[T]
+050_bound_driven_inference.cn:60:19 [option_pat] option[int32]
+050_bound_driven_inference.cn:60:25 [binding_pat] T
+050_bound_driven_inference.cn:60:25 [binding_pat] int32
+050_bound_driven_inference.cn:60:30 [module_path] I
+050_bound_driven_inference.cn:60:30 [module_path] counter
+050_bound_driven_inference.cn:60:30 [field] fn() -> option[T]
+050_bound_driven_inference.cn:60:30 [field] fn() -> option[int32]
+050_bound_driven_inference.cn:60:30 [call] option[T]
+050_bound_driven_inference.cn:60:30 [call] option[int32]
+050_bound_driven_inference.cn:61:16 [group] fn(T) -> bool
+050_bound_driven_inference.cn:61:16 [group] fn(int32) -> bool
+050_bound_driven_inference.cn:61:16 [call] bool
+050_bound_driven_inference.cn:61:16 [call] bool
+050_bound_driven_inference.cn:61:17 [module_path] fn(T) -> bool
+050_bound_driven_inference.cn:61:17 [module_path] fn(int32) -> bool
+050_bound_driven_inference.cn:61:28 [ident] T
+050_bound_driven_inference.cn:61:28 [ident] int32
+050_bound_driven_inference.cn:62:24 [call] option[T]
+050_bound_driven_inference.cn:62:24 [call] option[int32]
+050_bound_driven_inference.cn:62:30 [ident] T
+050_bound_driven_inference.cn:62:30 [ident] int32
+050_bound_driven_inference.cn:63:16 [ident] option[T]
+050_bound_driven_inference.cn:63:16 [ident] option[int32]
+050_bound_driven_inference.cn:65:18 [binding_pat] I
+050_bound_driven_inference.cn:65:18 [binding_pat] filter_iter[counter, int32]
+050_bound_driven_inference.cn:65:25 [binding_pat] fn(T) -> U
+050_bound_driven_inference.cn:65:25 [binding_pat] fn(int32) -> int32
+050_bound_driven_inference.cn:65:43 [named_type] map_iter[I, T, U]
+050_bound_driven_inference.cn:65:43 [named_type] map_iter[filter_iter[counter, int32], int32, int32]
+050_bound_driven_inference.cn:66:12 [struct_literal] map_iter[I, T, U]
+050_bound_driven_inference.cn:66:12 [struct_literal] map_iter[filter_iter[counter, int32], int32, int32]
+050_bound_driven_inference.cn:66:30 [ident] I
+050_bound_driven_inference.cn:66:30 [ident] filter_iter[counter, int32]
+050_bound_driven_inference.cn:66:37 [ident] fn(T) -> U
+050_bound_driven_inference.cn:66:37 [ident] fn(int32) -> int32
+050_bound_driven_inference.cn:68:18 [binding_pat] I
+050_bound_driven_inference.cn:68:18 [binding_pat] counter
+050_bound_driven_inference.cn:68:25 [binding_pat] fn(T) -> bool
+050_bound_driven_inference.cn:68:25 [binding_pat] fn(int32) -> bool
+050_bound_driven_inference.cn:68:49 [named_type] filter_iter[I, T]
+050_bound_driven_inference.cn:68:49 [named_type] filter_iter[counter, int32]
+050_bound_driven_inference.cn:69:12 [struct_literal] filter_iter[I, T]
+050_bound_driven_inference.cn:69:12 [struct_literal] filter_iter[counter, int32]
+050_bound_driven_inference.cn:69:33 [ident] I
+050_bound_driven_inference.cn:69:33 [ident] counter
+050_bound_driven_inference.cn:69:43 [ident] fn(T) -> bool
+050_bound_driven_inference.cn:69:43 [ident] fn(int32) -> bool
+050_bound_driven_inference.cn:73:15 [binding_pat] I
+050_bound_driven_inference.cn:73:15 [binding_pat] map_iter[filter_iter[counter, int32], int32, int32]
+050_bound_driven_inference.cn:73:25 [named_type] T
+050_bound_driven_inference.cn:73:25 [named_type] int32
+050_bound_driven_inference.cn:74:5 [var_stmt] I
+050_bound_driven_inference.cn:74:5 [var_stmt] map_iter[filter_iter[counter, int32], int32, int32]
+050_bound_driven_inference.cn:74:18 [ident] I
+050_bound_driven_inference.cn:74:18 [ident] map_iter[filter_iter[counter, int32], int32, int32]
+050_bound_driven_inference.cn:75:5 [var_stmt] T
+050_bound_driven_inference.cn:75:5 [var_stmt] int32
+050_bound_driven_inference.cn:75:20 [literal] T
+050_bound_driven_inference.cn:75:20 [literal] int32
+050_bound_driven_inference.cn:76:15 [option_pat] option[T]
+050_bound_driven_inference.cn:76:15 [option_pat] option[int32]
+050_bound_driven_inference.cn:76:21 [binding_pat] T
+050_bound_driven_inference.cn:76:21 [binding_pat] int32
+050_bound_driven_inference.cn:76:26 [ident] I
+050_bound_driven_inference.cn:76:26 [ident] map_iter[filter_iter[counter, int32], int32, int32]
+050_bound_driven_inference.cn:76:26 [field] fn() -> option[T]
+050_bound_driven_inference.cn:76:26 [field] fn() -> option[int32]
+050_bound_driven_inference.cn:76:26 [call] option[T]
+050_bound_driven_inference.cn:76:26 [call] option[int32]
+050_bound_driven_inference.cn:77:9 [ident] T
+050_bound_driven_inference.cn:77:9 [ident] int32
+050_bound_driven_inference.cn:77:17 [ident] T
+050_bound_driven_inference.cn:77:17 [ident] int32
+050_bound_driven_inference.cn:77:17 [binary] T
+050_bound_driven_inference.cn:77:17 [binary] int32
+050_bound_driven_inference.cn:77:25 [ident] T
+050_bound_driven_inference.cn:77:25 [ident] int32
+050_bound_driven_inference.cn:78:12 [ident] T
+050_bound_driven_inference.cn:78:12 [ident] int32
+050_bound_driven_inference.cn:81:17 [binding_pat] I
+050_bound_driven_inference.cn:81:17 [binding_pat] counter
+050_bound_driven_inference.cn:81:27 [named_type] T
+050_bound_driven_inference.cn:81:27 [named_type] int32
+050_bound_driven_inference.cn:82:5 [var_stmt] I
+050_bound_driven_inference.cn:82:5 [var_stmt] counter
+050_bound_driven_inference.cn:82:18 [ident] I
+050_bound_driven_inference.cn:82:18 [ident] counter
+050_bound_driven_inference.cn:83:5 [var_stmt] T
+050_bound_driven_inference.cn:83:5 [var_stmt] int32
+050_bound_driven_inference.cn:83:20 [literal] T
+050_bound_driven_inference.cn:83:20 [literal] int32
+050_bound_driven_inference.cn:84:15 [option_pat] option[T]
+050_bound_driven_inference.cn:84:15 [option_pat] option[int32]
+050_bound_driven_inference.cn:84:21 [binding_pat] T
+050_bound_driven_inference.cn:84:21 [binding_pat] int32
+050_bound_driven_inference.cn:84:26 [ident] I
+050_bound_driven_inference.cn:84:26 [ident] counter
+050_bound_driven_inference.cn:84:26 [field] fn() -> option[T]
+050_bound_driven_inference.cn:84:26 [field] fn() -> option[int32]
+050_bound_driven_inference.cn:84:26 [call] option[T]
+050_bound_driven_inference.cn:84:26 [call] option[int32]
+050_bound_driven_inference.cn:85:9 [ident] T
+050_bound_driven_inference.cn:85:9 [ident] int32
+050_bound_driven_inference.cn:85:17 [ident] T
+050_bound_driven_inference.cn:85:17 [ident] int32
+050_bound_driven_inference.cn:85:17 [binary] T
+050_bound_driven_inference.cn:85:17 [binary] int32
+050_bound_driven_inference.cn:85:25 [ident] T
+050_bound_driven_inference.cn:85:25 [ident] int32
+050_bound_driven_inference.cn:86:12 [ident] T
+050_bound_driven_inference.cn:86:12 [ident] int32
+050_bound_driven_inference.cn:88:15 [named_type] int32
+050_bound_driven_inference.cn:89:9 [binding_pat] counter
+050_bound_driven_inference.cn:89:18 [struct_literal] counter
+050_bound_driven_inference.cn:89:32 [literal] int32
+050_bound_driven_inference.cn:89:41 [literal] int32
+050_bound_driven_inference.cn:90:9 [binding_pat] int32
+050_bound_driven_inference.cn:90:19 [ident] counter
+050_bound_driven_inference.cn:90:19 [field] fn(counter, fn(int32) -> bool) -> filter_iter[counter, int32]
+050_bound_driven_inference.cn:90:19 [call] filter_iter[counter, int32]
+050_bound_driven_inference.cn:90:19 [field] fn(filter_iter[counter, int32], fn(int32) -> int32) -> map_iter[filter_iter[counter, int32], int32, int32]
+050_bound_driven_inference.cn:90:19 [call] map_iter[filter_iter[counter, int32], int32, int32]
+050_bound_driven_inference.cn:90:19 [field] fn(map_iter[filter_iter[counter, int32], int32, int32]) -> int32
+050_bound_driven_inference.cn:90:19 [call] int32
+050_bound_driven_inference.cn:90:33 [lambda] fn(int32) -> bool
+050_bound_driven_inference.cn:90:38 [ident] int32
+050_bound_driven_inference.cn:90:38 [binary] bool
+050_bound_driven_inference.cn:90:42 [literal] int32
+050_bound_driven_inference.cn:90:50 [lambda] fn(int32) -> int32
+050_bound_driven_inference.cn:90:55 [ident] int32
+050_bound_driven_inference.cn:90:55 [binary] int32
+050_bound_driven_inference.cn:90:59 [literal] int32
+050_bound_driven_inference.cn:91:9 [binding_pat] int32
+050_bound_driven_inference.cn:91:18 [ident] fn(counter) -> int32
+050_bound_driven_inference.cn:91:18 [call] int32
+050_bound_driven_inference.cn:91:24 [struct_literal] counter
+050_bound_driven_inference.cn:91:38 [literal] int32
+050_bound_driven_inference.cn:91:47 [literal] int32
+050_bound_driven_inference.cn:92:12 [ident] int32
+050_bound_driven_inference.cn:92:12 [binary] int32
+050_bound_driven_inference.cn:92:22 [ident] int32
 052_element_assignment.cn:39:11 [binding_pat] &mut list[int32]
 052_element_assignment.cn:39:33 [binding_pat] int32
 052_element_assignment.cn:39:47 [named_type] unit
@@ -33928,21 +33928,21 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:2405 inner counter
 ?:2416 f fn(T) -> U
 ?:2416 f fn(int32) -> int32
-?:2661 inner I
-?:2661 inner filter_iter[counter, int32]
-?:2672 f fn(T) -> U
-?:2672 f fn(int32) -> int32
-?:2724 value int32
-?:2759 value int64
-?:2793 inner I
-?:2793 inner counter
-?:2802 item int32
-?:2804 pred fn(T) -> bool
-?:2804 pred fn(int32) -> bool
-?:2835 item int64
+?:2738 value int32
+?:2762 inner I
+?:2762 inner filter_iter[counter, int32]
+?:2773 f fn(T) -> U
+?:2773 f fn(int32) -> int32
+?:2773 value int64
+?:2816 item int32
 ?:2843 total int32
+?:2849 item int64
 ?:2873 at int32
 ?:2880 stop int32
+?:2894 inner I
+?:2894 inner counter
+?:2905 pred fn(T) -> bool
+?:2905 pred fn(int32) -> bool
 ?:3069 remaining int32
 ?:3110 at int32
 ?:3117 stop int32
@@ -33953,10 +33953,10 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:3228 inner map_iter[counter, int32, int32]
 ?:3252 before_each option[fn() -> result[unit, test_failure]]
 ?:3286 after_each option[fn() -> result[unit, test_failure]]
-?:3435 at int32
-?:3442 stop int32
-?:3553 at int32
-?:3560 stop int32
+?:3536 at int32
+?:3543 stop int32
+?:3654 at int32
+?:3661 stop int32
 ?:3674 cents int64
 ?:3695 cents int64
 ?:3974 cents int64
@@ -34195,16 +34195,16 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 049_generic_impl_iterator_adapter.cn:86:28 [call] ()
 050_bound_driven_inference.cn:50:15 [call] ()
 050_bound_driven_inference.cn:50:15 [call] ()
-050_bound_driven_inference.cn:58:30 [call] ()
-050_bound_driven_inference.cn:58:30 [call] ()
-050_bound_driven_inference.cn:74:26 [call] ()
-050_bound_driven_inference.cn:74:26 [call] ()
-050_bound_driven_inference.cn:82:26 [call] ()
-050_bound_driven_inference.cn:82:26 [call] ()
-050_bound_driven_inference.cn:88:19 [call] (pred=arg)
-050_bound_driven_inference.cn:88:19 [call] (f=arg)
-050_bound_driven_inference.cn:88:19 [call] ()
-050_bound_driven_inference.cn:89:18 [call] (it=arg)
+050_bound_driven_inference.cn:60:30 [call] ()
+050_bound_driven_inference.cn:60:30 [call] ()
+050_bound_driven_inference.cn:76:26 [call] ()
+050_bound_driven_inference.cn:76:26 [call] ()
+050_bound_driven_inference.cn:84:26 [call] ()
+050_bound_driven_inference.cn:84:26 [call] ()
+050_bound_driven_inference.cn:90:19 [call] (pred=arg)
+050_bound_driven_inference.cn:90:19 [call] (f=arg)
+050_bound_driven_inference.cn:90:19 [call] ()
+050_bound_driven_inference.cn:91:18 [call] (it=arg)
 052_element_assignment.cn:41:15 [call] ()
 052_element_assignment.cn:56:21 [call] ()
 052_element_assignment.cn:72:5 [call] (xs=arg, by=arg)
@@ -35223,13 +35223,13 @@ std/unicode.cn:288:29 [call] (cp=arg)
 049_generic_impl_iterator_adapter.cn:70:19 [call] codegen_stress.generic_impl_iterator_adapter::map$counter$int32$int32
 049_generic_impl_iterator_adapter.cn:78:19 [call] codegen_stress.generic_impl_iterator_adapter::map$counter$int32$int32
 050_bound_driven_inference.cn:50:15 [call] codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_ trait=iterator recv
-050_bound_driven_inference.cn:58:30 [call] codegen_stress.bound_driven_inference::counter::next trait=iterator recv
-050_bound_driven_inference.cn:74:26 [call] codegen_stress.bound_driven_inference::map_iter::next$map_iter_filter_iter_counter__int32___int32__int32_ trait=iterator recv
-050_bound_driven_inference.cn:82:26 [call] codegen_stress.bound_driven_inference::counter::next trait=iterator recv
-050_bound_driven_inference.cn:88:19 [call] codegen_stress.bound_driven_inference::filter$counter$int32 recv
-050_bound_driven_inference.cn:88:19 [call] codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32 recv
-050_bound_driven_inference.cn:88:19 [call] codegen_stress.bound_driven_inference::sum$map_iter_filter_iter_counter__int32___int32__int32_$int32 recv
-050_bound_driven_inference.cn:89:18 [call] codegen_stress.bound_driven_inference::tally$counter$int32
+050_bound_driven_inference.cn:60:30 [call] codegen_stress.bound_driven_inference::counter::next trait=iterator recv
+050_bound_driven_inference.cn:76:26 [call] codegen_stress.bound_driven_inference::map_iter::next$map_iter_filter_iter_counter__int32___int32__int32_ trait=iterator recv
+050_bound_driven_inference.cn:84:26 [call] codegen_stress.bound_driven_inference::counter::next trait=iterator recv
+050_bound_driven_inference.cn:90:19 [call] codegen_stress.bound_driven_inference::filter$counter$int32 recv
+050_bound_driven_inference.cn:90:19 [call] codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32 recv
+050_bound_driven_inference.cn:90:19 [call] codegen_stress.bound_driven_inference::sum$map_iter_filter_iter_counter__int32___int32__int32_$int32 recv
+050_bound_driven_inference.cn:91:18 [call] codegen_stress.bound_driven_inference::tally$counter$int32
 052_element_assignment.cn:41:15 [call] std.list::list::len$list_int32_ recv
 052_element_assignment.cn:56:21 [call] std.list::list::len$list_int32_ recv
 054_static_dispatch_on_generic_types.cn:71:30 [call] codegen_stress.static_dispatch_on_generic_types::upto::next trait=iterator recv

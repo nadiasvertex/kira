@@ -8,10 +8,14 @@
 // passes is reported so the list can grow. `CINDER_STORAGE_SURVEY=1` prints
 // every file's status, and `CINDER_CORPUS_FILTER` runs only matching files.
 //
-// A file may bound the heap blocks `main` leaves allocated here with
-// `# storage-max-live-blocks: <integer>`, apart from the
-// `# max-live-blocks:` that `codegen_stress_test` checks on the
-// pointer-per-aggregate tiers, whose struct shells are never freed.
+// Each program is ownership-checked first, as the driver does. `main` must
+// free every heap block it allocates: `# storage-max-live-blocks: <integer>`
+// allows a file to leave some, and `# storage-max-allocations: <integer>`
+// bounds the blocks it allocates at all, both checked on the VM and the LLVM
+// tier and counted from after the statics are built. They are apart
+// from the `# max-live-blocks:`/`# max-allocations:` that
+// `codegen_stress_test` checks on the pointer-per-aggregate tiers, whose
+// struct shells are never freed.
 //
 // A `main` that returns a `str`, a `list[T]`, a tuple, or a fixed array is
 // compared as text: the storage form's inline bytes and the legacy VM's
@@ -25,6 +29,7 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -57,6 +62,7 @@
 #include "src/parser/source_location.h"
 #include "src/runtime/aligned_buffer.h"
 #include "src/runtime/allocator.h"
+#include "src/semantic/ownership_check.h"
 #include "src/runtime/layout.h"
 #include "src/runtime/scheduler.h"
 #include "src/runtime/value_layout.h"
@@ -99,6 +105,42 @@ auto directive_value(std::string_view text, std::string_view marker)
     }
     rest = end == std::string_view::npos ? std::string_view{}
                                          : rest.substr(end + 1);
+  }
+  return std::nullopt;
+}
+
+/// The heap counters just before a tier runs `main`, so the blocks it
+/// allocates and the blocks it leaves behind can be bounded on each tier.
+struct heap_mark {
+  uint64_t allocations = cinder::runtime::heap_allocation_count_all_threads();
+  int64_t live = cinder::runtime::heap_live_block_count();
+};
+
+/// Checks `# storage-max-live-blocks:` (blocks `main` left allocated) and
+/// `# storage-max-allocations:` (blocks it allocated at all, on any thread,
+/// so a task's work on a worker counts too) against what
+/// happened since `before`, once the scheduler is idle. `tier` prefixes the
+/// message.
+auto heap_bounds_status(std::string_view text, const heap_mark &before,
+                        std::string_view tier) -> std::optional<std::string> {
+  cinder::runtime::scheduler::wait_idle();
+  const auto live = cinder::runtime::heap_live_block_count() - before.live;
+  // Every block `main` allocates must be freed by the time it returns, unless
+  // the file says otherwise.
+  const auto live_bound =
+      directive_value(text, "# storage-max-live-blocks:").value_or(0);
+  if (live > live_bound) {
+    return std::format("{}main left {} heap blocks allocated, but "
+                       "`# storage-max-live-blocks:` allows {}",
+                       tier, live, live_bound);
+  }
+  const auto allocated = static_cast<int64_t>(
+      cinder::runtime::heap_allocation_count_all_threads() - before.allocations);
+  if (const auto bound = directive_value(text, "# storage-max-allocations:");
+      bound.has_value() && allocated > *bound) {
+    return std::format("{}main allocated {} heap blocks, but "
+                       "`# storage-max-allocations:` allows {}",
+                       tier, allocated, *bound);
   }
   return std::nullopt;
 }
@@ -227,6 +269,14 @@ auto load(const fs::path &path, const std::string &text, std::string &why,
       semantic::check_program(parsed, out->diag, file_has_errors, &comptime);
   if (out->diag.error_count() != 0) {
     why = "does not check";
+    return nullptr;
+  }
+  // The driver holds every program to the ownership rules (ch. 14), and the
+  // storage form's drops rely on them, so a corpus program is checked too.
+  semantic::check_ownership(parsed, out->checked, out->diag, file_has_errors,
+                            std::numeric_limits<unsigned>::max());
+  if (out->diag.error_count() != 0) {
+    why = "ownership: " + out->diag.diagnostics().front().message;
     return nullptr;
   }
   auto name = cinder::testing::module_name_of(*out->ast_file);
@@ -487,8 +537,12 @@ auto llvm_tier(program &p, std::span<const hir::storage_module *const> modules,
   auto result = cinder::runtime::aligned_buffer(std::max<size_t>(result_abi.size, 16),
                                                 std::max<size_t>(result_abi.align, 16));
   const auto hosted = bc::hosted_panic_scope{};
+  cinder::runtime::scheduler::wait_idle();
+  const auto mark = heap_mark{};
   const auto ran = jit->run_storage("main", std::span<const uint64_t>{}, result.data());
   cinder::runtime::scheduler::wait_idle();
+  const auto heap = ran.has_value() ? heap_bounds_status(text, mark, "LLVM ")
+                                    : std::nullopt;
   if (want.rendering.has_value()) {
     const auto got = ran.has_value()
                          ? render_inline(p, p.main_fn->return_type, result.data())
@@ -496,6 +550,9 @@ auto llvm_tier(program &p, std::span<const hir::storage_module *const> modules,
     if (got != want.rendering) {
       return {false, std::format("LLVM main gave {}, expected {}", got.value_or("?"),
                                  *want.rendering)};
+    }
+    if (heap.has_value()) {
+      return {false, *heap};
     }
     return {true, "passed"};
   }
@@ -511,6 +568,9 @@ auto llvm_tier(program &p, std::span<const hir::storage_module *const> modules,
   if (got != want.result) {
     return {false, std::format("LLVM main gave {}, expected {}", describe(got),
                                describe(want.result))};
+  }
+  if (heap.has_value()) {
+    return {false, *heap};
   }
   return {true, "passed"};
 }
@@ -600,9 +660,6 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
     return {.status = "no compiled `main`"};
   }
 
-  const auto live_bound = directive_value(text, "# storage-max-live-blocks:");
-  cinder::runtime::scheduler::wait_idle();
-  const auto live_before = cinder::runtime::heap_live_block_count();
   const auto hosted = bc::hosted_panic_scope{};
   const auto machine = bc::vm{*compiled};
   for (const auto init : compiled->static_initializers) {
@@ -610,6 +667,9 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
       return {.status = "static init panicked"};
     }
   }
+  // Statics are the program's for its lifetime, so the bounds count from
+  // after they are built.
+  cinder::runtime::scheduler::wait_idle();
   if (aggregate) {
     const auto &abi = compiled->functions[index].abi;
     if (!abi.has_value()) {
@@ -617,6 +677,8 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
     }
     auto result = cinder::runtime::aligned_buffer(
         std::max<size_t>(abi->result.size, 8), std::max<size_t>(abi->result.align, 8));
+    // After the result buffer, which is the harness's, not `main`'s.
+    const auto mark = heap_mark{};
     auto got = std::optional<std::string>{};
     if (abi->returns_through_address) {
       const auto run = machine.run_into(
@@ -634,6 +696,10 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
         got = describe(outcome{.panicked = true, .panic = run.error()});
       }
     }
+    // Before the legacy VM runs for the reference answer: its shells are
+    // never freed. Blocks the result owns (a `list`, a `str`) are `main`'s
+    // and still live, so they need an allowance in the file.
+    const auto heap = heap_bounds_status(text, mark, "");
     const auto want = legacy_rendering(*p);
     if (!got.has_value()) {
       return {.status = "`main`'s inline result cannot be rendered"};
@@ -642,6 +708,9 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
       return {.status = std::format("main gave {}, expected {}", *got,
                                     want.value_or("?"))};
     }
+    if (heap.has_value()) {
+      return {.status = *heap};
+    }
     const auto [llvm_passed, llvm_status] =
         llvm_tier(*p, program_span, text, reference{.rendering = want});
     return {.passed = true,
@@ -649,8 +718,12 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
             .llvm_passed = llvm_passed,
             .llvm_status = llvm_status};
   }
+  const auto mark = heap_mark{};
   const auto run = machine.run(index, std::span<const bc::slot_value>{});
-  cinder::runtime::scheduler::wait_idle();
+  // Before the legacy VM runs for the reference answer: its shells are never
+  // freed. A panic unwinds without drops, so it is not bounded.
+  const auto heap = run.has_value() ? heap_bounds_status(text, mark, "")
+                                    : std::optional<std::string>{};
   const auto got =
       run.has_value()
           ? outcome{.has_value = run->has_value,
@@ -682,13 +755,8 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
     return {.status = std::format("main gave {}, expected {}", describe(got),
                                   describe(*want))};
   }
-  if (live_bound.has_value()) {
-    const auto live = cinder::runtime::heap_live_block_count() - live_before;
-    if (live > *live_bound) {
-      return {.status = std::format("main left {} heap blocks allocated, but "
-                                    "`# storage-max-live-blocks:` allows {}",
-                                    live, *live_bound)};
-    }
+  if (heap.has_value()) {
+    return {.status = *heap};
   }
   const auto [llvm_passed, llvm_status] = llvm_tier(
       *p, program_span, text, reference{.result = got, .panics = got.panicked});

@@ -46,12 +46,19 @@ namespace {
 /// See `heap_allocation_count`.
 thread_local uint64_t allocation_count = 0;
 
+/// See `heap_allocation_count_all_threads`.
+std::atomic<uint64_t> all_threads_allocation_count = 0;
+
 /// See `heap_live_block_count`.
 std::atomic<int64_t> live_blocks = 0;
 
 } // namespace
 
 auto heap_allocation_count() -> uint64_t { return allocation_count; }
+
+auto heap_allocation_count_all_threads() -> uint64_t {
+  return all_threads_allocation_count.load(std::memory_order_relaxed);
+}
 
 auto heap_live_block_count() -> int64_t {
   return live_blocks.load(std::memory_order_relaxed);
@@ -70,6 +77,8 @@ extern "C" auto cinder_heap_alloc(uint64_t bytes) -> void * {
     return nullptr;
   }
   ++cinder::runtime::allocation_count;
+  cinder::runtime::all_threads_allocation_count.fetch_add(
+      1, std::memory_order_relaxed);
   cinder::runtime::live_blocks.fetch_add(1, std::memory_order_relaxed);
   if (cinder::runtime::active_allocator_mode() ==
       cinder::runtime::allocator_mode::arena) {
@@ -158,6 +167,8 @@ extern "C" auto cinder_heap_alloc_aligned(uint64_t bytes, uint64_t align)
     return nullptr;
   }
   ++cinder::runtime::allocation_count;
+  cinder::runtime::all_threads_allocation_count.fetch_add(
+      1, std::memory_order_relaxed);
   cinder::runtime::live_blocks.fetch_add(1, std::memory_order_relaxed);
   if (cinder::runtime::active_allocator_mode() ==
       cinder::runtime::allocator_mode::arena) {

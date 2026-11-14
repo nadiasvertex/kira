@@ -2,12 +2,17 @@ module codegen_stress.par_race_tasks_freed
 
 # expect: 0
 # max-live-blocks: 2100
+# storage-max-live-blocks: 0
+# storage-max-allocations: 7000
 
 # `await par:` and `await race:` drop their branch tasks once the result is
 # read, inside a task and in the entry function. Each pass of the loop makes
-# seven tasks of two heap blocks each. The bound allows the four blocks per
-# pass that are not tasks: the tuple that holds each group's tasks and the
-# tuple `par` returns are never freed (`spec/todo.md`).
+# seven tasks of two heap blocks each (the coroutine object and its state
+# block), 7000 over 500 passes. In the storage form those are the only
+# blocks: the tuples that hold each group's tasks and the one `par` returns
+# are inline values, so nothing else is allocated and nothing is left behind.
+# The pointer form's `max-live-blocks` still allows the four tuple shells per
+# pass it never frees.
 
 async def plus_one(x: int32) -> int32:
     return x + 1

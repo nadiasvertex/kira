@@ -28,7 +28,7 @@ module codegen_stress.raw_pointer_addr_of_compound_element
 
 type pair = (int32, int32)
 
-use std.mem.alloc
+use std.mem.{alloc, free}
 
 machine def swap_via_addr(p: *mut pair, a: usize, b: usize) -> unit:
     let pa = &mut p[a]
@@ -44,7 +44,9 @@ machine def main() -> int32:
     buf[2] = (3, 30)
     swap_via_addr(buf, 0, 2)
     # buf: (3,30), (2,20), (1,10)
-    return buf[0].0 + buf[0].1 + buf[1].0 + buf[1].1 + buf[2].0 + buf[2].1
+    let total = buf[0].0 + buf[0].1 + buf[1].0 + buf[1].1 + buf[2].0 + buf[2].1
+    free(buf, 3)
+    return total
 
 # 3 + 30 + 2 + 20 + 1 + 10
 # expect: 66

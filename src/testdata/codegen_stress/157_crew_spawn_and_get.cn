@@ -7,7 +7,7 @@ module codegen_stress.crew_spawn_and_get
 # The block's value is its last expression. It works in an ordinary task and
 # in the entry `async def main`, and a statement-form crew waits too.
 
-use std.mem.{alloc, atomic_fetch_add}
+use std.mem.{alloc, atomic_fetch_add, free}
 use std.shared.shared
 
 type counter = {
@@ -18,6 +18,12 @@ type counter = {
 impl send for counter:
 
 impl share for counter:
+
+# The counter owns its cell, which is freed when the last `shared` handle to
+# it drops.
+impl drop for counter:
+    machine def drop(mut self):
+        free(self.cell, 1)
 
 extend counter:
     machine def make() -> counter:

@@ -2816,10 +2816,13 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto coroutine_reg = ops.reg();
         f.pc = ops.pos();
         auto *gen_slots = slots_of(f.registers[coroutine_reg]);
-        if (gen_slots[runtime::coroutine::k_status_slot].u !=
+        // Atomic: the scheduler may write the status from another thread.
+        if (const auto status =
+                std::atomic_ref(gen_slots[runtime::coroutine::k_status_slot].u)
+                    .load(std::memory_order_acquire);
+            status !=
             runtime::coroutine::raw(runtime::coroutine::status::suspended)) {
-          f.registers[dst] =
-              gen_slots[runtime::coroutine::k_status_slot].as_slot();
+          f.registers[dst] = slot_value{status};
           break;
         }
         const auto step_fn_idx = static_cast<uint16_t>(
@@ -2853,9 +2856,10 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
           f.registers[dst] = slot_value{};
           break;
         }
-        gen_slots[runtime::coroutine::k_status_slot] =
-            heap_word{runtime::coroutine::raw(
-                runtime::coroutine::status::cancel_requested)};
+        std::atomic_ref(gen_slots[runtime::coroutine::k_status_slot].u)
+            .store(runtime::coroutine::raw(
+                       runtime::coroutine::status::cancel_requested),
+                   std::memory_order_release);
         const auto step_fn_idx = static_cast<uint16_t>(
             gen_slots[runtime::coroutine::k_step_function_slot].u);
         const std::array<slot_value, runtime::coroutine::k_step_arg_count>
@@ -2888,11 +2892,26 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto dst = ops.reg();
         const auto generator_reg = ops.reg();
         f.pc = ops.pos();
+        // Atomic: the scheduler may write the status from another thread.
         f.registers[dst] = store_bool(
-            slots_of(
-                f.registers[generator_reg])[runtime::coroutine::k_status_slot]
-                .u == runtime::coroutine::raw(
-                          runtime::coroutine::status::cancel_requested));
+            std::atomic_ref(
+                slots_of(f.registers[generator_reg])
+                    [runtime::coroutine::k_status_slot]
+                        .u)
+                .load(std::memory_order_acquire) ==
+            runtime::coroutine::raw(
+                runtime::coroutine::status::cancel_requested));
+        break;
+      }
+      case opcode::op_coroutine_finish: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto generator_reg = ops.reg();
+        f.pc = ops.pos();
+        std::atomic_ref(
+            slots_of(f.registers[generator_reg])[runtime::coroutine::k_status_slot]
+                .u)
+            .store(runtime::coroutine::raw(runtime::coroutine::status::done),
+                   std::memory_order_release);
         break;
       }
       case opcode::op_str_decode_scalar: {

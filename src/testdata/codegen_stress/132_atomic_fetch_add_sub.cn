@@ -11,7 +11,7 @@ module codegen_stress.atomic_fetch_add_sub
 # - the full 64-bit width is used (an add of 2^40 survives);
 # - subtraction wraps below zero rather than trapping.
 
-use std.mem.{alloc, atomic_fetch_add, atomic_fetch_sub}
+use std.mem.{alloc, atomic_fetch_add, atomic_fetch_sub, free}
 
 machine def run() -> usize:
     var p: *mut usize = alloc[usize](3)
@@ -34,10 +34,12 @@ machine def run() -> usize:
     let before_unwrap = atomic_fetch_add(count, 1)  # max, word -> 0
     let unwrapped_ok: usize = if before_unwrap +% 1 == 0 and p[1] == 0: 1 else: 0
 
-    return (before_add * 100000000 + before_sub * 10000000 +
-            before_wide * 1000000 + after_wide * 100000 +
-            back_ok * 10000 + (before_wrap + wrapped_ok) * 1000 +
-            unwrapped_ok * 100 + (p[0] - 100) + (p[2] - 200))
+    let total = (before_add * 100000000 + before_sub * 10000000 +
+                 before_wide * 1000000 + after_wide * 100000 +
+                 back_ok * 10000 + (before_wrap + wrapped_ok) * 1000 +
+                 unwrapped_ok * 100 + (p[0] - 100) + (p[2] - 200))
+    free(p, 3)
+    return total
 
 def main() -> int32:
     return int32(run() % 1000000007)

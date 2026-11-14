@@ -13,7 +13,7 @@ module codegen_stress.open_leaf_answered_by_sibling
 # carrying an `int64`. The value is chosen so a 32-bit result cannot produce it.
 # expect: 84
 
-def first_or[T](xs: list[T], fallback: T) -> T:
+def first_or[T](xs: list[T], fallback: T) -> T where T: copy:
     if xs.len() > 0:
         return xs[0]
     return fallback

@@ -42,6 +42,12 @@ enum class allocator_mode : uint8_t {
 /// synchronization; work a program hands to another thread is not counted.
 [[nodiscard]] auto heap_allocation_count() -> uint64_t;
 
+/// How many heap blocks `cinder_heap_alloc` has handed out on every thread
+/// so far, including the work a program hands to the scheduler's workers.
+/// Tests read it before and after a program, with the scheduler idle, to
+/// bound everything the program allocated.
+[[nodiscard]] auto heap_allocation_count_all_threads() -> uint64_t;
+
 /// How many heap blocks are allocated and not yet freed, across every
 /// thread. Tests compare it before and after a program to find blocks the
 /// program never freed. Arena mode never frees, so there it only grows.

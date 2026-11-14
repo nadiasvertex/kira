@@ -9,7 +9,7 @@ module codegen_stress.race_cancels_losers
 # cancelled, then spins for long enough that such a loser has added to the
 # counter before it is read.
 
-use std.mem.{alloc, atomic_fetch_add}
+use std.mem.{alloc, atomic_fetch_add, free}
 use std.shared.shared
 use std.sync.{channel, receiver}
 use std.traits.drop
@@ -22,6 +22,12 @@ type counter = {
 impl send for counter:
 
 impl share for counter:
+
+# The counter owns its cell, which is freed when the last `shared` handle to
+# it drops.
+impl drop for counter:
+    machine def drop(mut self):
+        free(self.cell, 1)
 
 extend counter:
     machine def make() -> counter:

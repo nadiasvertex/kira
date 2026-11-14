@@ -10,7 +10,6 @@
 #include <functional>
 #include <mutex>
 #include <optional>
-#include <queue>
 #include <system_error>
 #include <thread>
 #include <unordered_map>
@@ -76,7 +75,9 @@ struct reactor_state {
   int wake_read = -1;
   int wake_write = -1;
   std::unordered_map<int, fd_waiters> fds;
-  std::priority_queue<timer, std::vector<timer>, std::greater<>> timers;
+  /// A min-heap on the deadline (`std::greater`), kept as a vector so a
+  /// cancelled waiter can be taken out before its deadline.
+  std::vector<timer> timers;
 };
 
 [[noreturn]] void fail_to_start() {
@@ -285,7 +286,7 @@ void run_loop(reactor_state &r) {
       const auto lock = std::scoped_lock(r.mutex);
       if (!r.timers.empty()) {
         const auto now = monotonic_now();
-        const auto deadline = r.timers.top().deadline;
+        const auto deadline = r.timers.front().deadline;
         timeout = deadline > now ? deadline - now : 0;
       }
     }
@@ -319,9 +320,10 @@ void run_loop(reactor_state &r) {
         }
       }
       const auto now = monotonic_now();
-      while (!r.timers.empty() && r.timers.top().deadline <= now) {
-        auto *task = r.timers.top().task;
-        r.timers.pop();
+      while (!r.timers.empty() && r.timers.front().deadline <= now) {
+        auto *task = r.timers.front().task;
+        std::ranges::pop_heap(r.timers, std::greater<>{});
+        r.timers.pop_back();
         set_stage(task, stage::ready);
         ready.push_back(task);
       }
@@ -387,19 +389,50 @@ auto watch_timer(uint64_t *task) -> bool {
   scheduler::hold(task);
   auto &r = state();
   const auto lock = std::scoped_lock(r.mutex);
-  const bool earliest = r.timers.empty() || deadline < r.timers.top().deadline;
-  r.timers.push(timer{.deadline = deadline, .task = task});
+  const bool earliest = r.timers.empty() || deadline < r.timers.front().deadline;
+  r.timers.push_back(timer{.deadline = deadline, .task = task});
+  std::ranges::push_heap(r.timers, std::greater<>{});
   if (earliest) {
     ring(r);
   }
   return true;
 }
 
+/// Takes a cancelled waiter out of the reactor's lists, so the hold its
+/// registration took can end now rather than at its deadline or event.
+/// False when it is in none: the reactor already took it out to wake it, and
+/// that wake ends the hold.
+auto unwatch(uint64_t *task) -> bool {
+  auto &r = state();
+  const auto lock = std::scoped_lock(r.mutex);
+  if (const auto at = std::ranges::find(r.timers, task, &timer::task);
+      at != r.timers.end()) {
+    r.timers.erase(at);
+    std::ranges::make_heap(r.timers, std::greater<>{});
+    return true;
+  }
+  // The descriptor's entry stays, possibly empty, because the queue may still
+  // be armed for it; the event that comes empties and erases it as usual.
+  for (auto &[fd, waiting] : r.fds) {
+    for (auto *list : {&waiting.readers, &waiting.writers}) {
+      if (const auto at = std::ranges::find(*list, task); at != list->end()) {
+        list->erase(at);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /// The poll both waiters share; `watch` registers one.
 auto poll_waiter(uint64_t *task, auto (*watch)(uint64_t *)->bool) -> uint64_t {
   if (task[co::k_status_slot] == co::raw(co::status::cancel_requested)) {
-    // A cancelled waiter may still be in a list. It holds the task, so the
-    // reactor's later wake finds a finished task and does nothing.
+    // A cancelled waiter that is still in a list leaves it now, so the
+    // block is freed once the program has dropped it, not when the deadline
+    // or the event comes.
+    if (stage_of(task) == stage::registered && unwatch(task)) {
+      scheduler::unhold(task);
+    }
     return co::raw(co::status::done);
   }
   switch (stage_of(task)) {

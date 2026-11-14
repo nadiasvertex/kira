@@ -23,6 +23,20 @@
 
 namespace cinder::llvm_codegen {
 
+/// The sanitizer this process was built with, which JIT-compiled code is
+/// instrumented for so that it is checked like the C++ around it.
+enum class host_sanitizer : std::uint8_t { none, address, thread };
+
+[[nodiscard]] auto current_host_sanitizer() -> host_sanitizer;
+
+/// Instruments every function `module` defines for `current_host_sanitizer()`
+/// (AddressSanitizer or ThreadSanitizer), as `-fsanitize=` would for C++.
+/// The sanitizer runtime is the host's, found through the process's symbols.
+/// Globals are left uninstrumented under AddressSanitizer: registering them
+/// needs the object-file sections a static link provides. Does nothing in an
+/// unsanitized build. `jit_module::create` calls it after optimization.
+auto instrument_for_host_sanitizer(llvm::Module &module) -> void;
+
 /// JIT helper: enough `llvm::orc::LLJIT` plumbing to run a `compile_module`
 /// result's zero-argument entry function in-process. The tests use it to
 /// compare the LLVM tier's result against the bytecode VM's

@@ -203,3 +203,4 @@
 199_unannotated_drop_across_await.cn
 200_unproven_contracts_hold.cn
 201_binding_through_borrowed_subject.cn
+202_value_loops_allocate_nothing.cn

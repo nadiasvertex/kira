@@ -1721,7 +1721,9 @@ private:
       auto result = value{};
       auto first = true;
       for (const auto *copy : copies->second) {
-        auto made = eval_lambda(*copy, first);
+        // The copies are one closure value, so only the first takes the
+        // capture borrows (`eval_lambda`).
+        auto made = eval_lambda(*copy, first, /*borrow=*/first);
         first = false;
         result.loans.insert(result.loans.end(), made.loans.begin(),
                             made.loans.end());
@@ -2409,8 +2411,13 @@ private:
   /// entry borrows for as long as the closure lives. Everything else is
   /// captured by value — moved if the body (or `move`) consumes it, copied
   /// otherwise — and a captured value's own borrows travel with it.
-  auto eval_lambda(const ast::lambda_expr &lambda, bool report_captures = true)
-      -> value {
+  ///
+  /// Without `borrow`, the closure is a later copy of a generic lambda whose
+  /// first copy already took the capture borrows, and the caller hands it
+  /// those loans: its by-reference captures are recorded for lowering but
+  /// borrow nothing again.
+  auto eval_lambda(const ast::lambda_expr &lambda, bool report_captures = true,
+                   bool borrow = true) -> value {
     auto nested = cfg_builder(checked_, out_, this);
     nested.report_captures_ = report_captures_ && report_captures;
     nested.build_lambda(lambda);
@@ -2454,6 +2461,9 @@ private:
             continue;
           }
           const auto is_mut = entry.mode == ast::capture_mode::by_mut_ref;
+          if (!borrow) {
+            continue;
+          }
           for (const auto part : group_of(*local)) {
             if (is_mut) {
               reject_place_write(cfg_.locals[part], nullptr,
@@ -2480,7 +2490,7 @@ private:
     }
     for (const auto &capture : nested.captures()) {
       const auto written = nested.writes_capture(capture.name);
-      if (borrow_capture(lambda, capture, written, result)) {
+      if (borrow_capture(lambda, capture, written, borrow, result)) {
         continue;
       }
       if (written && !lookup(capture.name).has_value()) {
@@ -2499,9 +2509,11 @@ private:
   /// loan, so the local cannot be moved or dropped while the closure may
   /// still be called, and a closure that must outlive it is written `move`.
   /// `self` is left out: it is already a reference to the receiver.
+  /// Without `borrow` (a later copy of a generic lambda), the capture is
+  /// recorded but the first copy's loan stands for it.
   auto borrow_capture(const ast::lambda_expr &lambda,
                       const implicit_capture &capture, bool written,
-                      value &result) -> bool {
+                      bool borrow, value &result) -> bool {
     if (capture.moved || lambda.is_move || capture.name == "self") {
       return false;
     }
@@ -2525,6 +2537,11 @@ private:
     }
     if (!cfg_.locals[*local].movable) {
       return false;
+    }
+    if (!borrow) {
+      cfg_.borrowed_captures[&lambda].push_back(borrowed_capture{
+          .name = capture.name, .node = capture.node, .is_mut = written});
+      return true;
     }
     access(*local, written ? access_kind::borrow_mut : access_kind::borrow_shared,
            capture.span);
@@ -3180,8 +3197,17 @@ private:
     const auto &binding = ast::cast<ast::binding_pattern>(*stmt.pattern);
     auto group = std::vector<local_id>{};
     auto first = true;
+    // The copies are one closure value: the first takes the capture borrows
+    // and every copy carries them, so a `&mut` capture is one mutable borrow
+    // however many copies there are (`eval_lambda`).
+    auto borrows = std::vector<loan_id>{};
     for (const auto *copy : copies->second) {
-      auto made = eval_lambda(*copy, first);
+      auto made = eval_lambda(*copy, first, /*borrow=*/first);
+      if (first) {
+        borrows = made.loans;
+      } else {
+        made.loans.insert(made.loans.end(), borrows.begin(), borrows.end());
+      }
       first = false;
       const auto local = declare(binding.name, type_of(copy), binding.span,
                                  /*whole=*/true, /*owns=*/false, copy);

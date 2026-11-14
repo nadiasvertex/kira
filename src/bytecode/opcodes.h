@@ -475,6 +475,12 @@ enum class opcode : uint8_t {
   op_coroutine_cancelled, ///< u16 dst, u16 generator_reg — reg[dst] = whether
                           ///< reg[generator_reg]'s `finished` slot is `2`:
                           ///< the generator was resumed only to be cancelled.
+                          ///< An acquire load: the scheduler may write the
+                          ///< slot from another thread.
+  op_coroutine_finish,    ///< u16 generator_reg — sets reg[generator_reg]'s
+                          ///< `finished` slot to `1` (done) with a release
+                          ///< store, as a body that has returned does. The
+                          ///< storage form's `coroutine_finish`.
   op_drop_closure,        ///< u16 dst, u16 closure_reg — the compiled form of
                           ///< `hir_closure_drop`. When reg[closure_reg] carries
   ///< drop glue, calls it with the closure's `env_ptr` as
@@ -753,6 +759,8 @@ struct operand_signature {
     return sig({reg, reg, reg, imm8});
   case opcode::op_drop_function_value:
     return sig({reg, reg});
+  case opcode::op_coroutine_finish:
+    return sig({reg});
   }
   return operand_signature{};
 }

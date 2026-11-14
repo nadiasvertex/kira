@@ -13,8 +13,14 @@
 #pragma clang diagnostic ignored "-Wshorten-64-to-32"
 #pragma clang diagnostic ignored "-Wshadow"
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/IR/PassManager.h>
+#include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/TargetParser/Host.h>
+#include <llvm/TargetParser/Triple.h>
+#include <llvm/Transforms/Instrumentation/AddressSanitizer.h>
+#include <llvm/Transforms/Instrumentation/ThreadSanitizer.h>
 #pragma clang diagnostic pop
 
 #include "src/llvm_codegen/storage_codegen.h"
@@ -79,10 +85,71 @@ template <typename T>
 
 } // namespace
 
+auto current_host_sanitizer() -> host_sanitizer {
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+  return host_sanitizer::address;
+#elif __has_feature(thread_sanitizer)
+  return host_sanitizer::thread;
+#endif
+#endif
+  return host_sanitizer::none;
+}
+
+auto instrument_for_host_sanitizer(llvm::Module &module) -> void {
+  const auto sanitizer = current_host_sanitizer();
+  if (sanitizer == host_sanitizer::none) {
+    return;
+  }
+  // The passes choose their object-file conventions (COMDATs, constructor
+  // sections) from the triple, which the JIT would otherwise fill in later.
+  if (module.getTargetTriple().empty()) {
+    module.setTargetTriple(llvm::Triple(llvm::sys::getProcessTriple()));
+  }
+  for (auto &fn : module) {
+    if (fn.isDeclaration()) {
+      continue;
+    }
+    fn.addFnAttr(sanitizer == host_sanitizer::address
+                     ? llvm::Attribute::SanitizeAddress
+                     : llvm::Attribute::SanitizeThread);
+  }
+  if (sanitizer == host_sanitizer::address) {
+    for (auto &global : module.globals()) {
+      auto meta = llvm::GlobalValue::SanitizerMetadata{};
+      meta.NoAddress = true;
+      global.setSanitizerMetadata(meta);
+    }
+  }
+
+  auto loops = llvm::LoopAnalysisManager{};
+  auto functions = llvm::FunctionAnalysisManager{};
+  auto cgsccs = llvm::CGSCCAnalysisManager{};
+  auto modules = llvm::ModuleAnalysisManager{};
+  auto builder = llvm::PassBuilder{};
+  builder.registerModuleAnalyses(modules);
+  builder.registerCGSCCAnalyses(cgsccs);
+  builder.registerFunctionAnalyses(functions);
+  builder.registerLoopAnalyses(loops);
+  builder.crossRegisterProxies(loops, functions, cgsccs, modules);
+
+  auto passes = llvm::ModulePassManager{};
+  if (sanitizer == host_sanitizer::address) {
+    passes.addPass(llvm::AddressSanitizerPass(llvm::AddressSanitizerOptions{}));
+  } else {
+    passes.addPass(llvm::ModuleThreadSanitizerPass());
+    passes.addPass(
+        llvm::createModuleToFunctionPassAdaptor(llvm::ThreadSanitizerPass()));
+  }
+  passes.run(module, modules);
+}
+
 auto jit_module::create(compiled_module module, optimization_level level)
     -> std::expected<jit_module, std::string> {
   ensure_native_target_initialized();
   optimize_module(*module.module, level);
+  // After optimization, where `-fsanitize=` places it for C++.
+  instrument_for_host_sanitizer(*module.module);
 
   auto builder = llvm::orc::LLJITBuilder();
   auto jit = builder.create();

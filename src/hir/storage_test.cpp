@@ -58,8 +58,10 @@ struct fixture {
   std::unique_ptr<hir::storage_env> env;
   hir::storage_lowering lowering;
 
+  /// The lowered function named `name`. A reference into `lowering`, so a
+  /// reference to one of its parts stays valid as long as the fixture does.
   [[nodiscard]] auto function(std::string_view name) const
-      -> hir::storage_function {
+      -> const hir::storage_function & {
     const auto *found = lowering.module.find(name);
     if (found == nullptr) {
       std::cerr << "missing function: " << name << "\n";

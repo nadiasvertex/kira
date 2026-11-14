@@ -968,6 +968,20 @@ auto test_generic_lambda_moving_capture_twice_is_explained() -> void {
              analyzed.diagnostics);
 }
 
+auto test_generic_lambda_copies_share_capture_borrows() -> void {
+  const auto accepted = analyze_test_data_file(
+      "accept_generic_lambda_mut_capture_used_twice.cn");
+  expect(accepted.error_count == 0,
+         std::string("expected the copies of a generic lambda to hold one "
+                     "`&mut` capture between them:\n") +
+             accepted.diagnostics);
+  const auto rejected = analyze_test_data_file(
+      "reject_generic_lambda_mut_capture_read_between_uses.cn");
+  expect_diagnostic(rejected, "cannot use `total` while",
+                    "expected a later copy of a generic lambda to keep its "
+                    "`&mut` capture borrowed");
+}
+
 auto test_implicit_capture_borrows() -> void {
   const auto rejected =
       analyze_test_data_file("reject_implicit_capture_borrows.cn");
@@ -1388,6 +1402,7 @@ auto main() -> int {
     test_view_outliving_source_scope_is_rejected();
     test_return_view_of_parameter_is_accepted();
     test_generic_lambda_moving_capture_twice_is_explained();
+    test_generic_lambda_copies_share_capture_borrows();
     test_implicit_capture_borrows();
     test_move_out_of_capture_is_rejected();
     test_reads_of_captures_are_accepted();

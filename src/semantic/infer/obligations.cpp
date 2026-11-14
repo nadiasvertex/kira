@@ -109,6 +109,8 @@ auto obligation_queue::attempt(obligation_id id)
     return false;
   }
 
+  // `records_` is a deque, so `entry` survives the obligations a resolver
+  // adds while it runs.
   const auto report = resolver->second(entry.goal);
   switch (report.outcome) {
   case obligation_outcome::discharged:

@@ -1275,6 +1275,8 @@ private:
           llvm::Type::getInt64Ty(ctx_),
           slot_address(generator_self_arg_, runtime::coroutine::k_status_slot),
           "gen.finished");
+      // The scheduler may write the status from another thread.
+      finished->setAtomic(llvm::AtomicOrdering::Acquire);
       return builder_.CreateICmpEQ(
           finished,
           llvm::ConstantInt::get(
@@ -2844,11 +2846,14 @@ private:
                              private_entry_address(generator_state_arg_, i));
       }
     }
-    builder_.CreateStore(
-        llvm::ConstantInt::get(
-            llvm::Type::getInt64Ty(ctx_),
-            runtime::coroutine::raw(runtime::coroutine::status::done)),
-        slot_address(generator_self_arg_, runtime::coroutine::k_status_slot));
+    // The scheduler may read the status from another thread.
+    builder_
+        .CreateStore(
+            llvm::ConstantInt::get(
+                llvm::Type::getInt64Ty(ctx_),
+                runtime::coroutine::raw(runtime::coroutine::status::done)),
+            slot_address(generator_self_arg_, runtime::coroutine::k_status_slot))
+        ->setAtomic(llvm::AtomicOrdering::Release);
     builder_.CreateRet(llvm::ConstantInt::get(
         llvm::Type::getInt64Ty(ctx_),
         runtime::coroutine::raw(runtime::coroutine::status::done)));
@@ -2896,6 +2901,7 @@ private:
     auto *current = builder_.CreateLoad(
         i64, slot_address(gen, runtime::coroutine::k_status_slot),
         "gen.status");
+    current->setAtomic(llvm::AtomicOrdering::Acquire);
     builder_.CreateStore(current, status_alloca);
     auto *is_suspended = builder_.CreateICmpEQ(
         current,
@@ -2978,6 +2984,7 @@ private:
     auto *finished = builder_.CreateLoad(
         i64, slot_address(gen, runtime::coroutine::k_status_slot),
         "gen.finished");
+    finished->setAtomic(llvm::AtomicOrdering::Acquire);
     auto *running = builder_.CreateICmpEQ(
         finished,
         llvm::ConstantInt::get(i64, runtime::coroutine::raw(
@@ -3005,7 +3012,8 @@ private:
         llvm::ConstantInt::get(
             i64, runtime::coroutine::raw(
                      runtime::coroutine::status::cancel_requested)),
-        slot_address(gen, runtime::coroutine::k_status_slot));
+        slot_address(gen, runtime::coroutine::k_status_slot))
+        ->setAtomic(llvm::AtomicOrdering::Release);
     auto *step_fn_ptr = builder_.CreateLoad(
         ptr_ty, slot_address(gen, runtime::coroutine::k_step_function_slot),
         "gen.step_fn");

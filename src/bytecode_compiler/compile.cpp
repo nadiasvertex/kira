@@ -418,9 +418,9 @@ public:
     emit_op(opcode::op_load_const);
     emit_register(*done_reg);
     writer_.emit_u32(done_const);
-    emit_store_slot(generator_self_reg_,
-                    static_cast<uint16_t>(runtime::coroutine::k_status_slot),
-                    *done_reg);
+    // An atomic write: the scheduler may read the status on another thread.
+    emit_op(opcode::op_coroutine_finish);
+    emit_register(generator_self_reg_);
 
     emit_op(opcode::op_return_value);
     emit_register(*done_reg);

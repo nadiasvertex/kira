@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <format>
 #include <string>
 #include <thread>
 #include <vector>
@@ -13,6 +14,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "src/runtime/allocator.h"
 #include "src/runtime/scheduler.h"
 #include "src/testing/test_assert.h"
 
@@ -218,6 +220,31 @@ auto test_a_cancelled_waiter_finishes_and_ignores_a_later_wake() -> void {
   ::close(p.second);
 }
 
+auto test_a_cancelled_waiter_is_freed_before_its_deadline_or_event() -> void {
+  sched::wait_idle();
+  const auto before = cinder::runtime::heap_live_block_count();
+  const auto p = make_pipe();
+  auto *reader = reactor::fd_waiter(p.first, reactor::interest::read);
+  auto *timer =
+      reactor::timer_waiter(reactor::monotonic_now() + 10'000 * k_millisecond);
+  settle();
+  expect(sched::cancel(reader), "expected the scheduler to own the reader");
+  expect(sched::cancel(timer), "expected the scheduler to own the timer");
+  wait_for(reader);
+  wait_for(timer);
+  sched::release(reader);
+  sched::release(timer);
+  sched::wait_idle();
+  // Neither the deadline nor a byte on the pipe has come, so only leaving
+  // the reactor's lists at cancellation frees the two waiters.
+  const auto live = cinder::runtime::heap_live_block_count() - before;
+  expect(live == 0, std::format("expected the cancelled waiters to be freed, "
+                                "but {} blocks are still live",
+                                live));
+  ::close(p.first);
+  ::close(p.second);
+}
+
 } // namespace
 
 auto main() -> int {
@@ -233,5 +260,6 @@ auto main() -> int {
   test_an_invalid_descriptor_finishes_at_once();
   test_a_regular_file_finishes_at_once();
   test_a_cancelled_waiter_finishes_and_ignores_a_later_wake();
+  test_a_cancelled_waiter_is_freed_before_its_deadline_or_event();
   return 0;
 }

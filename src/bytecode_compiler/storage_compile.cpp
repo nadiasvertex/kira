@@ -1854,21 +1854,12 @@ private:
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
     }
-    const auto status = alloc_register();
-    if (auto ok = emit_load(status, *object, word_at(co::k_status_slot),
-                            runtime::k_word_size);
-        !ok.has_value()) {
-      return ok;
-    }
-    const auto wanted = alloc_register();
-    emit_const(wanted, slot_value{co::raw(co::status::cancel_requested)});
     const auto target = dest->where == location::kind::reg ? dest->reg
                                                           : alloc_register();
-    emit_op(opcode::op_eq);
+    // An atomic read: the scheduler may write the status on another thread.
+    emit_op(opcode::op_coroutine_cancelled);
     emit_register(target);
-    emit_register(status);
-    emit_register(wanted);
-    writer_.emit_numeric_kind(bytecode::numeric_kind::u64);
+    emit_register(*object);
     if (dest->where == location::kind::memory) {
       return write_location(*dest, op.dest.type, target);
     }
@@ -1882,7 +1873,10 @@ private:
     if (!object.has_value()) {
       return std::unexpected(object.error());
     }
-    return store_word(*object, co::k_status_slot, co::raw(co::status::done));
+    // An atomic write: the scheduler may read the status on another thread.
+    emit_op(opcode::op_coroutine_finish);
+    emit_register(*object);
+    return {};
   }
 
   /// Dropping a generator: one still suspended is resumed once to unwind its

@@ -1382,6 +1382,27 @@ private:
                                 llvm::Align(runtime::k_word_size));
   }
 
+  /// A coroutine's status word is read and written by the scheduler on
+  /// other threads (a task's dropper reads it outside the scheduler's lock),
+  /// so generated code reads it with acquire and writes it with release, as
+  /// the runtime does.
+  [[nodiscard]] auto load_status(llvm::Value *object) -> llvm::Value * {
+    auto *load = builder_.CreateAlignedLoad(
+        i64(), word_address(object, runtime::coroutine::k_status_slot),
+        llvm::Align(runtime::k_word_size));
+    load->setAtomic(llvm::AtomicOrdering::Acquire);
+    return load;
+  }
+
+  auto store_status(llvm::Value *object, runtime::coroutine::status status)
+      -> void {
+    auto *store = builder_.CreateAlignedStore(
+        constant(i64(), runtime::coroutine::raw(status)),
+        word_address(object, runtime::coroutine::k_status_slot),
+        llvm::Align(runtime::k_word_size));
+    store->setAtomic(llvm::AtomicOrdering::Release);
+  }
+
   [[nodiscard]] auto emit_make_generator(const hir::storage_op &op)
       -> checked<void> {
     namespace co = runtime::coroutine;
@@ -1452,7 +1473,7 @@ private:
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
     }
-    auto *current = load_word(i64(), *object, co::k_status_slot);
+    auto *current = load_status(*object);
     auto *runnable = builder_.CreateICmpEQ(
         current, constant(i64(), co::raw(co::status::suspended)));
     auto *from = builder_.GetInsertBlock();
@@ -1679,7 +1700,7 @@ private:
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
     }
-    auto *status = load_word(i64(), *object, co::k_status_slot);
+    auto *status = load_status(*object);
     auto *asked = builder_.CreateICmpEQ(
         status, constant(i64(), co::raw(co::status::cancel_requested)));
     return store_scalar(*dest, op.dest.type, asked);
@@ -1692,8 +1713,7 @@ private:
     if (!object.has_value()) {
       return std::unexpected(object.error());
     }
-    store_word(*object, co::k_status_slot,
-               constant(i64(), co::raw(co::status::done)));
+    store_status(*object, co::status::done);
     return {};
   }
 
@@ -1714,8 +1734,7 @@ private:
       return std::unexpected(object.error());
     }
     auto *running = builder_.CreateICmpEQ(
-        load_word(i64(), *object, co::k_status_slot),
-        constant(i64(), co::raw(co::status::suspended)));
+        load_status(*object), constant(i64(), co::raw(co::status::suspended)));
     auto *cancel = llvm::BasicBlock::Create(mc_.ctx, "gen.cancel", llvm_fn_);
     auto *inline_block =
         llvm::BasicBlock::Create(mc_.ctx, "gen.cancel.inline", llvm_fn_);
@@ -1728,8 +1747,7 @@ private:
         builder_.CreateICmpNE(handed_over, constant(handed_over->getType(), 0)),
         done, inline_block);
     builder_.SetInsertPoint(inline_block);
-    store_word(*object, co::k_status_slot,
-               constant(i64(), co::raw(co::status::cancel_requested)));
+    store_status(*object, co::status::cancel_requested);
     static_cast<void>(call_step(*object));
     builder_.CreateBr(done);
     builder_.SetInsertPoint(done);

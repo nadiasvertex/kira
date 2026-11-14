@@ -20,7 +20,7 @@ module main
 
 pub type pair[A, B] = { a: A, b: B }
 
-extend[A, B] pair[A, B]:
+extend[A: copy, B: copy] pair[A, B]:
     def first(self) -> A:
         return self.a
 

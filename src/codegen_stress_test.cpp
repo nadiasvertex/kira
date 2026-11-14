@@ -299,6 +299,10 @@ auto run_llvm(const fs::path &path,
   result.allocations =
       cinder::runtime::heap_allocation_count() - allocations_before;
   result.live_blocks = settled_live_blocks(count_live) - live_before;
+  // A task `main` left running executes this module's code, which must
+  // outlive it, so the module is not handed back to be freed until every
+  // task has finished.
+  cinder::runtime::scheduler::wait_idle();
   return llvm_run{.jit = std::move(*jit), .result = result};
 }
 

@@ -13,7 +13,7 @@ module codegen_stress.bare_generic_static_call
 
 type example_type[T] = { v: T }
 
-extend[T] example_type[T]:
+extend[T: copy] example_type[T]:
     def make(v: T) -> example_type[T]:
         return example_type { v: v }
 

@@ -47,9 +47,9 @@ def iter_mut[T](xs: &mut list[T]) -> mut_cursor[T]:
 def next_mut[T](it: &mut mut_cursor[T]) -> option[&mut T]:
     if it.at >= it.src.len():
         return @none
-    let slot = &mut it.src[it.at]
-    it.at = it.at + 1
-    return @some(slot)
+    let at = it.at
+    it.at = at + 1
+    return @some(&mut it.src[at])
 
 def sum(xs: &list[int32]) -> int32:
     var total = 0

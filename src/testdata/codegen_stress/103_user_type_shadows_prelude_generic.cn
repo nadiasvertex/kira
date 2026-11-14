@@ -9,7 +9,7 @@ module codegen_stress.user_type_shadows_prelude_generic
 
 type box[T] = { w: T }
 
-extend[T] box[T]:
+extend[T: copy] box[T]:
     def get(self) -> T:
         return self.w
 

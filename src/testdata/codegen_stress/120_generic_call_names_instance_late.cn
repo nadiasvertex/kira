@@ -23,7 +23,7 @@ def ident[T](x: T) -> T:
 def twice[T](x: T) -> T where T: add:
     return x + x
 
-def first[T](xs: list[T]) -> T:
+def first[T](xs: list[T]) -> T where T: copy:
     return xs[0]
 
 type w = { v: int32 }

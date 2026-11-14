@@ -5,3 +5,7 @@ def squares(n: int32) -> list[int32]:
 
 def main() -> list[int32]:
     return squares(6)
+
+# The returned list owns its backing block, which is still live when
+# `main` returns.
+# storage-max-live-blocks: 1

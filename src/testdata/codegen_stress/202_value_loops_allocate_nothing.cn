@@ -1,0 +1,70 @@
+module codegen_stress.value_loops_allocate_nothing
+
+# expect: 96894999
+# storage-max-live-blocks: 0
+# storage-max-allocations: 2
+
+# spec/todo.md items 17 and 18: a range index's slice header, tuples, sums,
+# and `option`/generator results were heap blocks that nothing freed, so a
+# loop that built one per pass grew without bound. In the storage form each
+# is inline bytes. Every pass of the 10000 below slices a fixed array, builds
+# a tuple, takes an `option` from a call, builds and matches a sum with a
+# payload, and reads a generator's `next()`. The only heap blocks are the
+# generator's object and state block, however many passes run, and both are
+# freed when `main` returns. A bound of 2 cannot hold if any of these values
+# allocates once per pass.
+
+type step = @stay | @shift(int64, int64)
+
+def window(xs: &array[int64, 8], at: usize) -> int64:
+    let part = xs[at..at + 4]
+    var total: int64 = 0
+    for x in part:
+        total = total + x
+    return total
+
+def split(n: int64) -> (int64, int64):
+    return (n / 10, n % 10)
+
+def found(n: int64) -> option[int64]:
+    if n % 3 == 0:
+        return @some(n)
+    return @none
+
+def step_of(n: int64) -> step:
+    if n % 2 == 0:
+        return @shift(n, 1)
+    return @stay
+
+generator def counter() -> some iterator[int64]:
+    var i: int64 = 0
+    while true:
+        yield i
+        i = i + 1
+
+def main() -> int64:
+    let xs: array[int64, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
+    var g = counter()
+    var total: int64 = 0
+    var pass: int64 = 0
+    while pass < 10000:
+        total = total + window(&xs, (pass % 5) as usize)
+        let (tens, ones) = split(pass)
+        total = total + tens + ones
+        match found(pass):
+            @some(n) =>:
+                total = total + n
+            @none =>:
+                total = total + 1
+        match step_of(pass):
+            @shift(a, b) =>:
+                total = total + a * b
+            @stay =>:
+                total = total + 2
+        match g.next():
+            @some(n) =>:
+                total = total + n
+            @none =>:
+                total = total - 1
+        pass = pass + 1
+    return total

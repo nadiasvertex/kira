@@ -42,3 +42,7 @@ def main() -> int64:
     return total
 
 # expect: 511
+
+# The bytes of a `str` built at run time (interpolation, `show`) are never
+# freed, because `str` is `copy` and so has no owner (spec/todo.md item 24).
+# storage-max-live-blocks: 24
