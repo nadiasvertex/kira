@@ -25,8 +25,8 @@
 #include "src/hir/nodes.h"
 #include "src/hir/storage_program.h"
 #include "src/llvm_codegen/codegen.h"
-#include "src/llvm_codegen/storage_codegen.h"
 #include "src/llvm_codegen/jit_support.h"
+#include "src/llvm_codegen/storage_codegen.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
@@ -188,7 +188,8 @@ auto run_jit(const lc::jit_module &jit, std::string_view name,
              std::optional<bc::numeric_kind> kind)
     -> std::expected<lc::jit_result, bc::panic_reason> {
   alignas(16) auto bytes = std::array<std::byte, 16>{};
-  const auto ran = jit.run_storage(name, std::span<const uint64_t>{}, bytes.data());
+  const auto ran =
+      jit.run_storage(name, std::span<const uint64_t>{}, bytes.data());
   if (!ran.has_value()) {
     return std::unexpected(ran.error());
   }
@@ -241,10 +242,11 @@ auto run_jit(const lc::jit_module &jit, std::string_view name,
 
 /// Runs the zero-argument function `name` and returns the `size` bytes of its
 /// result, built at an address the test owns, which starts zeroed.
-auto run_jit_bytes(const lc::jit_module &jit, std::string_view name, size_t size)
-    -> std::vector<std::byte> {
+auto run_jit_bytes(const lc::jit_module &jit, std::string_view name,
+                   size_t size) -> std::vector<std::byte> {
   auto bytes = std::vector<std::byte>(std::max<size_t>(size, 16));
-  const auto ran = jit.run_storage(name, std::span<const uint64_t>{}, bytes.data());
+  const auto ran =
+      jit.run_storage(name, std::span<const uint64_t>{}, bytes.data());
   expect(ran.has_value(), std::format("expected {}() to succeed", name));
   return bytes;
 }
@@ -252,7 +254,8 @@ auto run_jit_bytes(const lc::jit_module &jit, std::string_view name, size_t size
 /// The `T` stored at `offset` in `bytes`.
 template <typename T>
 auto read_at(const std::vector<std::byte> &bytes, size_t offset) -> T {
-  expect(offset + sizeof(T) <= bytes.size(), "expected a read inside the value");
+  expect(offset + sizeof(T) <= bytes.size(),
+         "expected a read inside the value");
   auto out = T{};
   std::memcpy(&out, bytes.data() + offset, sizeof(T));
   return out;
@@ -337,7 +340,8 @@ auto jit_fixture_for_multi(
   expect(entry != nullptr, "expected to find the entry module by name");
 
   const auto reachable = hir::find_reachable_modules(*entry, modules);
-  auto jit = lc::jit_module::create(compile_storage(reachable, fixture.checked));
+  auto jit =
+      lc::jit_module::create(compile_storage(reachable, fixture.checked));
   expect(jit.has_value(), "expected the compiled module to JIT successfully");
   return jit_fixture{.jit = std::move(*jit)};
 }
@@ -371,7 +375,8 @@ auto count_musttail_calls_to(llvm::Module &module, std::string_view callee_name)
 }
 
 auto test_self_recursive_tail_call_gets_musttail() -> void {
-  auto &fixture = kept_fixture(read_program("self_recursive_tail_call_gets_musttail.cn"));
+  auto &fixture =
+      kept_fixture(read_program("self_recursive_tail_call_gets_musttail.cn"));
   auto compiled = std::optional<lc::compiled_module>{compile_checked(fixture)};
 
   expect(count_musttail_calls_to(*compiled->module, "count_down") == 1,
@@ -475,7 +480,8 @@ auto test_indirect_call_through_closure_never_gets_musttail() -> void {
 }
 
 auto test_intrinsic_call_never_gets_musttail() -> void {
-  auto &fixture = kept_fixture(read_program("intrinsic_call_never_gets_musttail.cn"));
+  auto &fixture =
+      kept_fixture(read_program("intrinsic_call_never_gets_musttail.cn"));
   auto compiled = std::optional<lc::compiled_module>{compile_checked(fixture)};
 
   expect(count_musttail_calls_to(*compiled->module, "cinder_rt_panic") == 0,
@@ -635,7 +641,8 @@ auto test_string_literal_round_trips_through_the_heap() -> void {
   // constant bytes.
   auto jf = jit_fixture_for(load_fixture("string_literal.cn"));
   const auto bytes = run_jit_bytes(jf.jit, "main", 16);
-  expect(read_at<uint64_t>(bytes, 0) == 5, "expected \"hello\" to report length 5");
+  expect(read_at<uint64_t>(bytes, 0) == 5,
+         "expected \"hello\" to report length 5");
   const auto *data = reinterpret_cast<const char *>(
       static_cast<uintptr_t>(read_at<uint64_t>(bytes, 8)));
   expect(std::string_view(data, 5) == "hello",
@@ -647,7 +654,8 @@ auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
   // `u64` tag at offset 0, then the `float64` payload at offset 8.
   auto jf = jit_fixture_for(load_fixture("sum_type_variant.cn"));
   const auto bytes = run_jit_bytes(jf.jit, "main", 16);
-  expect(read_at<int64_t>(bytes, 0) == 0, "expected @circle to encode as tag 0");
+  expect(read_at<int64_t>(bytes, 0) == 0,
+         "expected @circle to encode as tag 0");
   expect(read_at<double>(bytes, 8) == 3.5,
          "expected the payload to hold 3.5 at offset 8");
 }

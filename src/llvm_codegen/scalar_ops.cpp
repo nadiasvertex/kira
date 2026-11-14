@@ -204,8 +204,8 @@ auto llvm_type_for(llvm::LLVMContext &ctx, numeric_kind kind) -> llvm::Type * {
 //  `bytecode::vm`, reified as control flow instead of a C++ exception.
 // ==========================================================================
 
-auto scalar_builder::guard_panic(llvm::Value *panic_if_true, panic_reason reason)
-    -> void {
+auto scalar_builder::guard_panic(llvm::Value *panic_if_true,
+                                 panic_reason reason) -> void {
   auto &ctx = builder_.getContext();
   auto *current_fn = builder_.GetInsertBlock()->getParent();
   auto *panic_bb = llvm::BasicBlock::Create(ctx, "panic", current_fn);
@@ -299,7 +299,8 @@ auto scalar_builder::negated_literal(std::string_view text, source_span span,
 // ==========================================================================
 
 auto scalar_builder::binary(ast::binary_op op, numeric_kind kind,
-                            llvm::Value *lhs, llvm::Value *rhs, source_span span)
+                            llvm::Value *lhs, llvm::Value *rhs,
+                            source_span span)
     -> std::expected<llvm::Value *, codegen_error> {
   using ast::binary_op;
   const auto bits = bit_width(kind);
@@ -416,7 +417,8 @@ auto scalar_builder::checked_arith(llvm::Intrinsic::ID id, llvm::Value *lhs,
 }
 
 auto scalar_builder::checked_div(bool is_signed, int bits, llvm::Value *lhs,
-                                 llvm::Value *rhs, bool is_mod) -> llvm::Value * {
+                                 llvm::Value *rhs, bool is_mod)
+    -> llvm::Value * {
   auto *ty = lhs->getType();
   auto *zero = llvm::ConstantInt::get(ty, 0);
   guard_panic(builder_.CreateICmpEQ(rhs, zero),
@@ -481,7 +483,8 @@ auto scalar_builder::checked_shift(bool is_shl, bool is_signed, int bits,
   if (is_shl) {
     return builder_.CreateShl(lhs, rhs);
   }
-  return is_signed ? builder_.CreateAShr(lhs, rhs) : builder_.CreateLShr(lhs, rhs);
+  return is_signed ? builder_.CreateAShr(lhs, rhs)
+                   : builder_.CreateLShr(lhs, rhs);
 }
 
 auto scalar_builder::negate(numeric_kind kind, llvm::Value *value)
@@ -501,8 +504,8 @@ auto scalar_builder::negate(numeric_kind kind, llvm::Value *value)
   return builder_.CreateNeg(value);
 }
 
-auto scalar_builder::cast(numeric_kind from, numeric_kind to, llvm::Value *value)
-    -> llvm::Value * {
+auto scalar_builder::cast(numeric_kind from, numeric_kind to,
+                          llvm::Value *value) -> llvm::Value * {
   auto *to_ty = llvm_type_for(builder_.getContext(), to);
   const auto from_float = is_float(from);
   const auto to_float = is_float(to);

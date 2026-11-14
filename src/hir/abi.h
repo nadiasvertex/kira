@@ -143,6 +143,7 @@ struct abi_signature {
     -> std::expected<abi_signature, runtime::layout_error>;
 
 /// A one-line rendering such as `(result@, aggregate, scalar) -> aggregate`.
-[[nodiscard]] auto format_signature(const abi_signature &signature) -> std::string;
+[[nodiscard]] auto format_signature(const abi_signature &signature)
+    -> std::string;
 
 } // namespace cinder::hir

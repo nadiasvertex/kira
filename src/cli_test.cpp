@@ -5323,9 +5323,9 @@ auto test_compile_sources_enforces_frame_stack_budget() -> void {
 
   // A buffer of a struct counts the struct's inline bytes (32 per `quad`),
   // not one word per element.
-  const auto aggregate = compile(
-      "aggregate",
-      read_program("compile_sources_enforces_frame_stack_budget_3.cn"));
+  const auto aggregate =
+      compile("aggregate",
+              read_program("compile_sources_enforces_frame_stack_budget_3.cn"));
   expect(aggregate.error_count == 1 &&
              aggregate.diagnostics.find("this buffer takes 1056000 bytes") !=
                  std::string::npos &&

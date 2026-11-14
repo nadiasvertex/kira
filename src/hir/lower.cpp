@@ -24,8 +24,8 @@
 #include "src/parser/ast_traversal.h"
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
-#include "src/runtime/value_layout.h"
 #include "src/runtime/scheduler.h"
+#include "src/runtime/value_layout.h"
 #include "src/semantic/checker_results.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/ownership_cfg.h"
@@ -615,7 +615,8 @@ private:
   [[nodiscard]] auto lower_static_global_ref(const ast::expr &ref, type_id type,
                                              const std::string &name)
       -> std::expected<ptr<hir_expr>, lowering_error> {
-    if (owns_static_reads_ || drop_schedule_.owned_static_reads.contains(&ref)) {
+    if (owns_static_reads_ ||
+        drop_schedule_.owned_static_reads.contains(&ref)) {
       for (const auto &[decl, def] : checked_.lowering.static_global_defs) {
         if (def.name == name) {
           return lower_static_global_value(
@@ -2478,8 +2479,8 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
         if (!call.has_value()) {
           return std::unexpected(call.error());
         }
-        return ok_expr(hir::make<hir_unary>(un.span, *type, un.op,
-                                            std::move(*call)));
+        return ok_expr(
+            hir::make<hir_unary>(un.span, *type, un.op, std::move(*call)));
       }
       return lower_index_dispatch(index.span, *type, found->second,
                                   std::move(*object), std::move(*idx));
@@ -2658,10 +2659,10 @@ auto lowerer::lower_call(const ast::call_expr &call)
     }
     auto size = ptr<hir_literal>(
         make<hir_literal>(call.span, *type, token_kind::int_lit, ""));
-    size->question = layout_question{
-        .wants_alignment =
-            query->second.kind != semantic::layout_query_kind::size_of,
-        .type = query->second.operand};
+    size->question =
+        layout_question{.wants_alignment = query->second.kind !=
+                                           semantic::layout_query_kind::size_of,
+                        .type = query->second.operand};
     return ok_expr(std::move(size));
   }
 
@@ -3401,10 +3402,10 @@ auto lowerer::build_array_drop(const place_fn &make_receiver,
                                         std::string("<drop index>"))),
       ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
                                       std::to_string(length)))));
-  out.push_back(ptr<hir_node>(make<hir_while>(
-      span, std::move(condition),
-      make<hir_block>(span, k_unknown_type, std::move(body)),
-      make<hir_block>(span, k_unknown_type, std::move(step)))));
+  out.push_back(ptr<hir_node>(
+      make<hir_while>(span, std::move(condition),
+                      make<hir_block>(span, k_unknown_type, std::move(body)),
+                      make<hir_block>(span, k_unknown_type, std::move(step)))));
   return {};
 }
 
@@ -3733,8 +3734,8 @@ auto lowerer::coroutine_cancel_check(const void *key, source_span span,
   auto exit = ptr_vec<hir_node>{};
   for (auto &task : awaited) {
     exit.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, ptr<hir_expr>(make<hir_coroutine_cancel>(
-                  span, k_unknown_type, std::move(task))))));
+        span, ptr<hir_expr>(make<hir_coroutine_cancel>(span, k_unknown_type,
+                                                       std::move(task))))));
   }
   for (auto &drop : drops) {
     exit.push_back(std::move(drop));
@@ -3903,9 +3904,8 @@ auto lowerer::lower_runtime_fill(
   push_args.push_back(std::move(*fill_value));
   auto body_stmts = ptr_vec<hir_node>{};
   body_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span, call_from_resolved(
-                declared_result_type(*dispatch.push_callee.decl),
-                dispatch.push_callee, std::move(push_args)))));
+      span, call_from_resolved(declared_result_type(*dispatch.push_callee.decl),
+                               dispatch.push_callee, std::move(push_args)))));
   auto body = make<hir_block>(span, k_unknown_type, std::move(body_stmts));
 
   // The increment lives in the loop's *step*, not the body, for the same
@@ -4468,8 +4468,8 @@ auto lowerer::lower_task_read(const void *key, source_span span,
     return {make<hir_local_ref>(task_span, task_type, task_symbol, task_name)};
   };
   if (named == nullptr) {
-    await_hoist_->push_back(ptr<hir_node>(make<hir_let>(
-        task_span, task_symbol, task_name, std::move(task))));
+    await_hoist_->push_back(ptr<hir_node>(
+        make<hir_let>(task_span, task_symbol, task_name, std::move(task))));
   }
   auto held = ptr_vec<hir_expr>{};
   if (consumes) {
@@ -4746,7 +4746,8 @@ auto lowerer::lower_task_function(
 
   auto callee = ptr<hir_expr>(make<hir_local_ref>(
       span, k_unknown_type, resolve_reference(task_name), task_name));
-  auto call = make<hir_call>(span, task_type, std::move(callee), std::move(args));
+  auto call =
+      make<hir_call>(span, task_type, std::move(callee), std::move(args));
   call->lent_args = std::move(lent_args);
   return ok_expr(std::move(call));
 }
@@ -4996,8 +4997,9 @@ auto lowerer::lower_crew(std::string_view name,
       };
       // A part that is not a task drops by its plan; one with no plan owns
       // nothing to drop.
-      const auto drop_part = [&](const place_fn &part, type_id part_type)
-          -> std::expected<void, lowering_error> {
+      const auto drop_part =
+          [&](const place_fn &part,
+              type_id part_type) -> std::expected<void, lowering_error> {
         if (!checked_.drop.drop_plans.contains(part_type)) {
           return {};
         }
@@ -5017,7 +5019,8 @@ auto lowerer::lower_crew(std::string_view name,
             return std::unexpected(ok.error());
           }
         }
-      } else if (auto ok = drop_part(result_ref, result_type); !ok.has_value()) {
+      } else if (auto ok = drop_part(result_ref, result_type);
+                 !ok.has_value()) {
         return std::unexpected(ok.error());
       }
     }
@@ -5090,8 +5093,8 @@ auto lowerer::lower_crew_errors(const ast::call_expr &call,
   auto stmts = ptr_vec<hir_node>{};
   auto &prologue = in_task ? *await_hoist_ : stmts;
   if (named == nullptr) {
-    prologue.push_back(ptr<hir_node>(make<hir_let>(
-        span, crew_symbol, crew_name, std::move(*crew_value))));
+    prologue.push_back(ptr<hir_node>(
+        make<hir_let>(span, crew_symbol, crew_name, std::move(*crew_value))));
   }
   if (in_task) {
     if (auto waited = emit_task_wait(prologue, crew_ref(), &call, span);
@@ -5172,9 +5175,8 @@ auto lowerer::lower_crew_errors(const ast::call_expr &call,
       std::string("err"), size_t{0})));
   auto err_stmts = ptr_vec<hir_node>{};
   err_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span, call_from_resolved(
-                declared_result_type(*dispatch.push_callee.decl),
-                dispatch.push_callee, std::move(push_args)))));
+      span, call_from_resolved(declared_result_type(*dispatch.push_callee.decl),
+                               dispatch.push_callee, std::move(push_args)))));
   auto err_pattern_args = ptr_vec<hir_pattern>{};
   err_pattern_args.push_back(
       ptr<hir_pattern>(make<hir_wildcard_pattern>(span)));
@@ -5335,8 +5337,8 @@ auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
   const auto read_branch = [&](size_t i) -> ptr<hir_block> {
     auto stmts = ptr_vec<hir_node>{};
     stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, ptr<hir_expr>(make<hir_generator_next>(
-                  span, type, member(i), /*await_task=*/true)))));
+        span, ptr<hir_expr>(make<hir_generator_next>(span, type, member(i),
+                                                     /*await_task=*/true)))));
     return make<hir_block>(span, type, std::move(stmts));
   };
   auto picks = std::vector<hir_if_branch>{};
@@ -6556,8 +6558,7 @@ auto lowerer::lower_stmt(const ast::node &node)
         auto call = lower_index_dispatch(
             // `set_at` returns `unit`, and the statement discards it.
             assign.span, interning_types().builtin("unit"), found->second,
-            std::move(*object),
-            std::move(*subject), std::move(*assigned));
+            std::move(*object), std::move(*subject), std::move(*assigned));
         if (!call.has_value()) {
           return std::unexpected(call.error());
         }
@@ -6660,8 +6661,8 @@ auto lowerer::lower_stmt(const ast::node &node)
     stmts.push_back(ptr<hir_node>(make<hir_let>(
         assign.span, self_symbol, std::string("self"),
         ptr<hir_expr>(hir::make<hir_unary>(assign.span, self_type,
-                                      ast::unary_op::addr_of,
-                                      std::move(*self_value))))));
+                                           ast::unary_op::addr_of,
+                                           std::move(*self_value))))));
     auto check =
         check_invariant_of(*invariant, self_type, self_symbol, assign.span);
     if (!check.has_value()) {
@@ -7747,7 +7748,8 @@ auto lowerer::lower_iterator_loop(
     // elements) is copied into the iterator, which owns nothing.
     adapter_call->receiver_borrowed =
         adapter_call->receiver_by_value &&
-        interning_types().entry(interning_types().strip_refinement(iterable_type))
+        interning_types()
+                .entry(interning_types().strip_refinement(iterable_type))
                 .kind == semantic::type_kind::ref_kind;
     handle_value = ok_expr(std::move(adapter_call));
     handle_type = dispatch.adapter_result_type;
@@ -8046,8 +8048,7 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
     auto push_stmt = ptr<hir_node>(make<hir_expr_stmt>(
         span,
         call_from_resolved(
-            span,
-            declared_result_type(*dispatch->second.push_callee.decl),
+            span, declared_result_type(*dispatch->second.push_callee.decl),
             dispatch->second.push_callee, std::move(push_args))));
 
     auto result = ptr_vec<hir_node>{};

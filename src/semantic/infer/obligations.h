@@ -1,12 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <expected>
 #include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
-#include <deque>
 #include <vector>
 
 #include "src/semantic/infer/infer_ctxt.h"

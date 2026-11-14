@@ -66,7 +66,7 @@ namespace cinder::driver {
 /// @param function_name Name of the zero-argument function to execute.
 [[nodiscard]] auto
 run_hir_module(std::span<const hir::hir_module *const> modules,
-               semantic::checked_types &checked,
-               std::string_view function_name) -> run_outcome;
+               semantic::checked_types &checked, std::string_view function_name)
+    -> run_outcome;
 
 } // namespace cinder::driver

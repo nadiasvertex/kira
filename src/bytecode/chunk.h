@@ -70,7 +70,8 @@ struct value_transport {
   uint32_t align = 1;
   bool by_address = false;
 
-  [[nodiscard]] auto operator==(const value_transport &) const -> bool = default;
+  [[nodiscard]] auto operator==(const value_transport &) const
+      -> bool = default;
 };
 
 /// A function's calling convention in the inline-value representation, kept

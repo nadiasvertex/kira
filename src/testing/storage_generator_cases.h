@@ -83,8 +83,8 @@ inline auto generators_drop_what_they_own_once(case_backend &backend) -> void {
   expect_equal(run("guarded_unstarted_drops"), 0, "guarded_unstarted_drops()");
 }
 
-inline auto generators_hand_droppable_items_to_the_reader(
-    case_backend &backend) -> void {
+inline auto generators_hand_droppable_items_to_the_reader(case_backend &backend)
+    -> void {
   auto p = backend.open("bytecode_storage_test", "generators.cn");
   const auto run = [&](const char *name, int64_t n) {
     return p->scalar(name, std::vector<int64_t>{n});

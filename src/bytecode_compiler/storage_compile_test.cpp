@@ -23,15 +23,15 @@
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/storage_compile.h"
 #include "src/testing/storage_cases.h"
-#include "src/testing/storage_intrinsic_cases.h"
 #include "src/testing/storage_closure_cases.h"
+#include "src/testing/storage_fixture.h"
 #include "src/testing/storage_generator_cases.h"
-#include "src/testing/storage_task_cases.h"
-#include "src/testing/storage_pattern_cases.h"
-#include "src/testing/storage_rvo_cases.h"
+#include "src/testing/storage_intrinsic_cases.h"
 #include "src/testing/storage_memory_cases.h"
 #include "src/testing/storage_module_cases.h"
-#include "src/testing/storage_fixture.h"
+#include "src/testing/storage_pattern_cases.h"
+#include "src/testing/storage_rvo_cases.h"
+#include "src/testing/storage_task_cases.h"
 #include "src/testing/test_assert.h"
 
 namespace {
@@ -85,8 +85,8 @@ public:
     return code.functions[find(name)];
   }
 
-  [[nodiscard]] auto scalar(std::string_view name, std::span<const int64_t> args)
-      -> int64_t override {
+  [[nodiscard]] auto scalar(std::string_view name,
+                            std::span<const int64_t> args) -> int64_t override {
     const auto result = machine->run(find(name), registers(args));
     if (!result.has_value()) {
       std::cerr << name << " panicked: "
@@ -97,7 +97,8 @@ public:
     return result->value.i;
   }
 
-  [[nodiscard]] auto panics(std::string_view name, std::span<const int64_t> args)
+  [[nodiscard]] auto panics(std::string_view name,
+                            std::span<const int64_t> args)
       -> std::optional<bytecode::panic_reason> override {
     const auto &fn = function(name);
     if (fn.abi.has_value() && fn.abi->returns_through_address) {
@@ -141,7 +142,8 @@ public:
     const auto regs = std::vector<slot_value>{slot_value{
         static_cast<uint64_t>(reinterpret_cast<uintptr_t>(argument))}};
     const auto result = machine->run(find(name), regs);
-    expect(result.has_value() && result->has_value, "expected a returned value");
+    expect(result.has_value() && result->has_value,
+           "expected a returned value");
     return result->value.i;
   }
 
@@ -275,8 +277,8 @@ auto test_entry_points_check_the_result_storage() -> void {
 /// The storage form's calls are ordinary calls. A tail call reuses the caller's
 /// frame, which holds outgoing arguments and locals a callee may be handed the
 /// address of, so none is emitted until a shared plan proves one safe.
-/// A tail call with scalar operands and result reuses the frame; one that passes
-/// or returns bytes in this frame keeps it (`hir::is_safe_tail_call`).
+/// A tail call with scalar operands and result reuses the frame; one that
+/// passes or returns bytes in this frame keeps it (`hir::is_safe_tail_call`).
 auto test_only_scalar_tail_calls_reuse_the_frame() -> void {
   auto p = bytecode_backend::build("bytecode_storage_test", "frames_tail.cn");
   auto calls = size_t{0};
@@ -334,7 +336,8 @@ auto test_frame_offsets_that_do_not_fit_are_refused() -> void {
       lifted->lowering.module, *lifted->env);
   expect(!compiled.has_value(), "expected a 4.8 GB frame not to compile");
   expect(compiled.error().kind ==
-             cinder::bytecode_compiler::compile_error_kind::encoding_limit_exceeded,
+             cinder::bytecode_compiler::compile_error_kind::
+                 encoding_limit_exceeded,
          "expected the encoding limit to be named");
   expect(compiled.error().message.find("holds_huge") != std::string::npos,
          "expected the function to be named");

@@ -1616,9 +1616,8 @@ auto checker::check_call_bounds(const ast::call_expr &call,
         has_lambda ? " — in a lambda that returns its parameter, write "
                      "`x => *x` rather than `x => x`"
                    : ""));
-  } else if (const auto structural =
-                 structural_missing_element(failed->subject,
-                                            failed->missing.front())) {
+  } else if (const auto structural = structural_missing_element(
+                 failed->subject, failed->missing.front())) {
     // `(int64, fn() -> int64)` for `T: eq`: the tuple's `eq` comes from
     // `std.traits`, and what keeps it from applying is an element.
     diag.with_help(*structural);

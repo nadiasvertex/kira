@@ -10,7 +10,8 @@ namespace {
 
 [[nodiscard]] auto classify_layout(const runtime::value_layout &layout,
                                    semantic::type_id type) -> abi_value {
-  auto value = abi_value{.type = type, .size = layout.size, .align = layout.align};
+  auto value =
+      abi_value{.type = type, .size = layout.size, .align = layout.align};
   if (layout.size == 0) {
     value.cls = pass_class::zero_sized;
     return value;
@@ -62,12 +63,11 @@ auto pass_class_name(pass_class cls) -> const char * {
 auto abi_signature::operands() const -> std::vector<abi_operand> {
   auto out = std::vector<abi_operand>{};
   if (takes_environment) {
-    out.push_back(abi_operand{
-        .role = abi_operand_role::environment,
-        .value = abi_value{.cls = pass_class::address,
-                           .size = runtime::k_word_size,
-                           .align = runtime::k_word_size},
-        .by_address = false});
+    out.push_back(abi_operand{.role = abi_operand_role::environment,
+                              .value = abi_value{.cls = pass_class::address,
+                                                 .size = runtime::k_word_size,
+                                                 .align = runtime::k_word_size},
+                              .by_address = false});
   }
   if (returns_through_address()) {
     out.push_back(abi_operand{.role = abi_operand_role::result_address,
@@ -90,7 +90,8 @@ auto abi_signature::agrees_with(const abi_signature &other) const -> bool {
   const auto same_shape = [](const abi_value &a, const abi_value &b) {
     return a.cls == b.cls && a.size == b.size && a.align == b.align;
   };
-  if (!same_shape(result, other.result) || params.size() != other.params.size()) {
+  if (!same_shape(result, other.result) ||
+      params.size() != other.params.size()) {
     return false;
   }
   for (size_t i = 0; i < params.size(); ++i) {
@@ -179,4 +180,3 @@ auto format_signature(const abi_signature &signature) -> std::string {
 }
 
 } // namespace cinder::hir
-

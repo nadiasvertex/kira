@@ -62,8 +62,8 @@ auto find_frame_budget_violations(hir_module &module,
   auto violations = std::vector<frame_budget_violation>{};
   for (auto &fn : module.functions) {
     if (fn->body != nullptr) {
-      check_frame(std::format("`{}`", fn->name), fn->span, *fn->body,
-                  layouts, violations);
+      check_frame(std::format("`{}`", fn->name), fn->span, *fn->body, layouts,
+                  violations);
     }
   }
   return violations;

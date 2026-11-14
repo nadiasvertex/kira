@@ -2,10 +2,10 @@
 // bytecode compiler passes (`src/testing/storage_cases.h`), run through the JIT
 // at two optimization levels; the structural checks look at the IR itself.
 #include <array>
-#include <format>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -35,15 +35,15 @@
 #include "src/llvm_codegen/jit_support.h"
 #include "src/llvm_codegen/storage_codegen.h"
 #include "src/testing/storage_cases.h"
-#include "src/testing/storage_intrinsic_cases.h"
 #include "src/testing/storage_closure_cases.h"
+#include "src/testing/storage_fixture.h"
 #include "src/testing/storage_generator_cases.h"
-#include "src/testing/storage_task_cases.h"
-#include "src/testing/storage_pattern_cases.h"
-#include "src/testing/storage_rvo_cases.h"
+#include "src/testing/storage_intrinsic_cases.h"
 #include "src/testing/storage_memory_cases.h"
 #include "src/testing/storage_module_cases.h"
-#include "src/testing/storage_fixture.h"
+#include "src/testing/storage_pattern_cases.h"
+#include "src/testing/storage_rvo_cases.h"
+#include "src/testing/storage_task_cases.h"
 #include "src/testing/test_assert.h"
 
 namespace {
@@ -60,7 +60,8 @@ using cases::expect_equal;
     -> llvm_codegen::compiled_module {
   const auto modules = program.modules();
   auto compiled = llvm_codegen::compile_storage_module(
-      std::span<const cinder::hir::storage_module *const>(modules), *program.env,
+      std::span<const cinder::hir::storage_module *const>(modules),
+      *program.env,
       llvm_codegen::storage_codegen_options{.entry_thunks = true});
   if (!compiled.has_value()) {
     std::cerr << compiled.error().message << "\n";
@@ -83,19 +84,21 @@ public:
     jit_ = std::make_unique<llvm_codegen::jit_module>(std::move(*created));
   }
 
-  [[nodiscard]] auto scalar(std::string_view name, std::span<const int64_t> args)
-      -> int64_t override {
+  [[nodiscard]] auto scalar(std::string_view name,
+                            std::span<const int64_t> args) -> int64_t override {
     auto raw = std::array<std::byte, 8>{};
     const auto ran = jit_->run_storage(name, slots(args), raw.data());
     if (!ran.has_value()) {
-      std::cerr << name << " panicked: "
-                << bytecode::panic_reason_message(ran.error()) << "\n";
+      std::cerr << name
+                << " panicked: " << bytecode::panic_reason_message(ran.error())
+                << "\n";
       fail("expected the function to return");
     }
     return decode(name, raw);
   }
 
-  [[nodiscard]] auto panics(std::string_view name, std::span<const int64_t> args)
+  [[nodiscard]] auto panics(std::string_view name,
+                            std::span<const int64_t> args)
       -> std::optional<bytecode::panic_reason> override {
     // A fatal panic, such as an index out of bounds, ends the process unless
     // the host has said it will handle it. The buffer is large enough for a
@@ -114,8 +117,9 @@ public:
     auto out = cases::result_bytes{};
     const auto ran = jit_->run_storage(name, slots(args), out.bytes.data());
     if (!ran.has_value()) {
-      std::cerr << name << " panicked: "
-                << bytecode::panic_reason_message(ran.error()) << "\n";
+      std::cerr << name
+                << " panicked: " << bytecode::panic_reason_message(ran.error())
+                << "\n";
       fail("expected the function to return");
     }
     return out;
@@ -154,7 +158,8 @@ private:
     const auto &types = program_->env->types();
     const auto kind = bytecode::numeric_kind_of(
         types, types.strip_refinement(fn->signature.result.type));
-    const auto is_signed = kind.has_value() && bytecode::is_signed_integer(*kind);
+    const auto is_signed =
+        kind.has_value() && bytecode::is_signed_integer(*kind);
     switch (fn->signature.result.size) {
     case 1:
       return is_signed ? read<int8_t>(raw) : read<uint8_t>(raw);
@@ -253,8 +258,8 @@ auto test_signatures_follow_the_internal_abi() -> void {
 auto test_no_allocation_symbol_is_declared_or_called() -> void {
   // Neither heap entry point: the runtime's `cinder_heap_alloc` nor the
   // `rt_alloc` intrinsic's `cinder_rt_alloc`.
-  constexpr auto allocators = std::array<std::string_view, 2>{
-      "cinder_heap_alloc", "cinder_rt_alloc"};
+  constexpr auto allocators =
+      std::array<std::string_view, 2>{"cinder_heap_alloc", "cinder_rt_alloc"};
   auto program = cinder::testing::build_storage_program(
       cinder::testing::read_program("bytecode_storage_test", "values.cn"));
   auto compiled = compile(*program);
@@ -313,9 +318,11 @@ auto test_only_scalar_tail_calls_are_musttail() -> void {
     }
     return total;
   };
-  expect(must_in("count_down") == 1, "expected count_down's self-call to be musttail");
-  expect(must_in("tail_with_pair") == 0,
-         "expected a call passing a pair built in this frame not to be musttail");
+  expect(must_in("count_down") == 1,
+         "expected count_down's self-call to be musttail");
+  expect(
+      must_in("tail_with_pair") == 0,
+      "expected a call passing a pair built in this frame not to be musttail");
   expect(must_in("tail_forwarding_result") == 0,
          "expected a call building the caller's result not to be musttail");
 }

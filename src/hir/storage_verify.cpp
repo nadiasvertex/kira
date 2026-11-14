@@ -193,7 +193,8 @@ private:
   [[nodiscard]] auto is_builtin(type_id id, std::string_view name) const
       -> bool {
     const auto &entry = types().entry(types().strip_refinement(id));
-    return entry.kind == semantic::type_kind::builtin_kind && entry.name == name;
+    return entry.kind == semantic::type_kind::builtin_kind &&
+           entry.name == name;
   }
 
   /// A descriptor's `length` is a `usize`; its `data` is a raw pointer to
@@ -212,9 +213,9 @@ private:
     const auto &whole = types().entry(types().strip_refinement(descriptor));
     const auto matches =
         part.kind == semantic::type_kind::ptr_kind &&
-        (whole.name == "str" ? is_builtin(part.result, "byte")
-                             : !whole.args.empty() &&
-                                   same_type(part.result, whole.args[0]));
+        (whole.name == "str"
+             ? is_builtin(part.result, "byte")
+             : !whole.args.empty() && same_type(part.result, whole.args[0]));
     if (!matches) {
       return fail(verify_error_kind::type_mismatch,
                   "the data of " + name_of(descriptor) +
@@ -242,9 +243,9 @@ private:
     for (size_t i = 0; i < fn_.slots.size(); ++i) {
       const auto &slot = fn_.slots[i];
       if (slot.id != i) {
-        return fail(verify_error_kind::bad_slot,
-                    "slot s" + std::to_string(i) + " carries id s" +
-                        std::to_string(slot.id));
+        return fail(verify_error_kind::bad_slot, "slot s" + std::to_string(i) +
+                                                     " carries id s" +
+                                                     std::to_string(slot.id));
       }
       if (slot.owner >= fn_.slots.size()) {
         return fail(verify_error_kind::bad_slot,
@@ -261,8 +262,7 @@ private:
                         " is a captured value of a function with no "
                         "environment, or one that starts empty");
       }
-      if (slot.cls == storage_class::coroutine_frame &&
-          !fn_.coroutine_step) {
+      if (slot.cls == storage_class::coroutine_frame && !fn_.coroutine_step) {
         return fail(verify_error_kind::bad_slot,
                     "slot s" + std::to_string(i) +
                         " lives in a state block, but the function is not a "
@@ -282,12 +282,11 @@ private:
       state_[i].whole = slot.initially_initialized;
     }
     if (fn_.param_slots.size() != fn_.signature.params.size()) {
-      return fail(verify_error_kind::bad_slot,
-                  "the signature has " +
-                      std::to_string(fn_.signature.params.size()) +
-                      " parameters but " +
-                      std::to_string(fn_.param_slots.size()) +
-                      " parameter slots");
+      return fail(
+          verify_error_kind::bad_slot,
+          "the signature has " + std::to_string(fn_.signature.params.size()) +
+              " parameters but " + std::to_string(fn_.param_slots.size()) +
+              " parameter slots");
     }
     for (size_t i = 0; i < fn_.param_slots.size(); ++i) {
       const auto id = fn_.param_slots[i];
@@ -333,9 +332,9 @@ private:
   [[nodiscard]] auto resolve(const place &where)
       -> std::expected<resolved_place, verify_error> {
     if (where.base >= fn_.slots.size()) {
-      return fail(verify_error_kind::bad_place,
-                  "place names slot s" + std::to_string(where.base) +
-                      ", which does not exist");
+      return fail(verify_error_kind::bad_place, "place names slot s" +
+                                                    std::to_string(where.base) +
+                                                    ", which does not exist");
     }
     if (dead_[where.base]) {
       return fail(verify_error_kind::use_after_dead,
@@ -416,8 +415,7 @@ private:
         const auto *variant = found.find_variant(step.name);
         if (variant == nullptr) {
           return fail(verify_error_kind::bad_place,
-                      name_of(current) + " has no variant `" + step.name +
-                          "`");
+                      name_of(current) + " has no variant `" + step.name + "`");
         }
         if (step.index >= variant->payload.size()) {
           return fail(verify_error_kind::bad_place,
@@ -538,8 +536,9 @@ private:
       return node;
     }
     const auto &found = **layout;
-    const auto is_aggregate = found.kind == runtime::value_layout_kind::structure ||
-                              found.kind == runtime::value_layout_kind::tuple;
+    const auto is_aggregate =
+        found.kind == runtime::value_layout_kind::structure ||
+        found.kind == runtime::value_layout_kind::tuple;
     if (is_aggregate) {
       for (size_t i = 0; i < found.members.size(); ++i) {
         const auto child = node.children.find(member_key(i));
@@ -697,8 +696,7 @@ private:
     }
     if (!allow_dropped && touches_dropped(where, at.tracked)) {
       return fail(verify_error_kind::use_after_drop,
-                  describe(where, at.tracked) +
-                      " is used after its drop ran");
+                  describe(where, at.tracked) + " is used after its drop ran");
     }
     return {};
   }
@@ -710,7 +708,8 @@ private:
     if (at.through_deref) {
       return require_init(where, at);
     }
-    if (fn_.slots[where.base].cls == storage_class::global && !fn_.static_init) {
+    if (fn_.slots[where.base].cls == storage_class::global &&
+        !fn_.static_init) {
       return fail(verify_error_kind::already_initialized,
                   describe(where, at.tracked) +
                       " is a static, which only its module's static init "
@@ -903,8 +902,7 @@ private:
       return std::nullopt;
     }
     if (types().entry(stripped).kind == semantic::type_kind::fn_kind) {
-      return dropped.contains(path) ? std::nullopt
-                                           : std::optional{here};
+      return dropped.contains(path) ? std::nullopt : std::optional{here};
     }
     const auto layout = env_.layouts.layout(stripped);
     if (!layout.has_value()) {
@@ -914,8 +912,9 @@ private:
     if (found.kind == runtime::value_layout_kind::tuple ||
         found.kind == runtime::value_layout_kind::structure) {
       for (size_t i = 0; i < found.members.size(); ++i) {
-        if (auto owed = first_owed(child_of(member_key(i)), found.members[i].type,
-                                   slot, path + "/" + member_key(i), dropped);
+        if (auto owed =
+                first_owed(child_of(member_key(i)), found.members[i].type, slot,
+                           path + "/" + member_key(i), dropped);
             owed.has_value()) {
           return owed;
         }
@@ -971,8 +970,7 @@ private:
       if (auto ok = require_init(value.where, *at); !ok.has_value()) {
         return ok;
       }
-      const auto &entry =
-          types().entry(types().strip_refinement(value.type));
+      const auto &entry = types().entry(types().strip_refinement(value.type));
       // An array's address is also the address of its first element, which
       // is what `as_ptr()` hands back even when there are no elements.
       const auto layout = env_.layouts.layout(value.where.type);
@@ -1003,8 +1001,8 @@ private:
       }
       if (!same_type(value.type, value.where.type)) {
         return fail(verify_error_kind::type_mismatch,
-                    "operand is typed " + name_of(value.type) +
-                        " but reads " + name_of(value.where.type));
+                    "operand is typed " + name_of(value.type) + " but reads " +
+                        name_of(value.where.type));
       }
       const auto cls = classify_value(env_.layouts, value.type);
       if (!cls.has_value()) {
@@ -1105,7 +1103,8 @@ private:
       // further.
       {
         auto before = op_index_;
-        while (before > 0 && fn_.ops[before - 1].kind == op_kind::storage_dead) {
+        while (before > 0 &&
+               fn_.ops[before - 1].kind == op_kind::storage_dead) {
           --before;
         }
         if (before == 0 || fn_.ops[before - 1].kind != op_kind::call_into ||
@@ -1259,7 +1258,6 @@ private:
                           keys);
   }
 
-
   struct flow_state {
     std::vector<init_node> state;
     std::vector<std::set<std::string>> dropped;
@@ -1275,11 +1273,11 @@ private:
   /// and drops, and the part as a value that may be held.
   [[nodiscard]] auto join_maybe_part(size_t i, const flow_state &a,
                                      const flow_state &b)
-      -> std::optional<std::tuple<init_node, std::set<std::string>, maybe_value>> {
+      -> std::optional<
+          std::tuple<init_node, std::set<std::string>, maybe_value>> {
     const auto type = fn_.slots[i].type;
     const auto id = static_cast<storage_id>(i);
-    for (const auto &[held, empty] :
-         {std::pair{&a, &b}, std::pair{&b, &a}}) {
+    for (const auto &[held, empty] : {std::pair{&a, &b}, std::pair{&b, &a}}) {
       auto keys = std::vector<std::string>{};
       const auto state_h = normalize(held->state[i], type);
       const auto state_e = normalize(empty->state[i], type);
@@ -1293,12 +1291,12 @@ private:
         continue;
       }
       const auto *live = part_at(state_h, keys);
-      return std::tuple{state_e, empty->dropped[i],
-                        maybe_value{.live = live != nullptr ? *live : init_node{},
-                                    .dropped = dropped_under(held->dropped[i],
-                                                             path_of(keys)),
-                                    .flags = flags,
-                                    .keys = keys}};
+      return std::tuple{
+          state_e, empty->dropped[i],
+          maybe_value{.live = live != nullptr ? *live : init_node{},
+                      .dropped = dropped_under(held->dropped[i], path_of(keys)),
+                      .flags = flags,
+                      .keys = keys}};
     }
     return std::nullopt;
   }
@@ -1414,8 +1412,9 @@ private:
                          s.dropped[i])
                   .has_value();
     };
-    const auto as_held = [&](const flow_state &held,
-                             const flow_state &empty) -> std::optional<maybe_value> {
+    const auto as_held =
+        [&](const flow_state &held,
+            const flow_state &empty) -> std::optional<maybe_value> {
       if (held.maybe[i].has_value()) {
         auto out = *held.maybe[i];
         std::erase_if(out.flags, [&](storage_id f) {
@@ -1430,13 +1429,15 @@ private:
       return out.flags.empty() ? std::nullopt : std::optional{out};
     };
     if (a.maybe[i].has_value() && b.maybe[i].has_value()) {
-      if (normalize(a.maybe[i]->live, type) != normalize(b.maybe[i]->live, type) ||
+      if (normalize(a.maybe[i]->live, type) !=
+              normalize(b.maybe[i]->live, type) ||
           a.maybe[i]->dropped != b.maybe[i]->dropped) {
         return std::nullopt;
       }
       auto out = *a.maybe[i];
-      std::erase_if(out.flags,
-                    [&](storage_id f) { return !b.maybe[i]->flags.contains(f); });
+      std::erase_if(out.flags, [&](storage_id f) {
+        return !b.maybe[i]->flags.contains(f);
+      });
       return out.flags.empty() ? std::nullopt : std::optional{out};
     }
     if (empty_on(b)) {
@@ -1731,13 +1732,11 @@ private:
   /// nothing on either path is spent. Null nodes are parts that were never
   /// written or were moved out. Unset when one path owes a drop the other
   /// does not.
-  [[nodiscard]] auto join_part(type_id type, storage_id slot,
-                               const std::string &path, const init_node *a,
-                               const std::set<std::string> &dropped_a,
-                               const init_node *b,
-                               const std::set<std::string> &dropped_b,
-                               std::set<std::string> &dropped)
-      -> std::optional<init_node> {
+  [[nodiscard]] auto
+  join_part(type_id type, storage_id slot, const std::string &path,
+            const init_node *a, const std::set<std::string> &dropped_a,
+            const init_node *b, const std::set<std::string> &dropped_b,
+            std::set<std::string> &dropped) -> std::optional<init_node> {
     static const auto nothing = init_node{};
     const auto &node_a = a != nullptr ? *a : nothing;
     const auto &node_b = b != nullptr ? *b : nothing;
@@ -1847,7 +1846,8 @@ private:
                      const std::vector<storage_id> &flagged) const -> void {
     state.known[flag] = false;
     for (const auto id : flagged) {
-      const auto part = state.maybe[id].has_value() && !state.maybe[id]->keys.empty();
+      const auto part =
+          state.maybe[id].has_value() && !state.maybe[id]->keys.empty();
       state.maybe[id] = std::nullopt;
       if (!part) {
         state.state[id] = init_node{};
@@ -1899,16 +1899,18 @@ private:
       if (test.kind == op_kind::test_variant && test.dest.steps.empty() &&
           test.dest.base == op.condition.where.base &&
           test.source.base < fn_.slots.size() &&
-          std::ranges::all_of(test.source.steps,
-                              [](const projection &step) {
-                                return step.kind == projection_kind::member ||
-                                       step.kind == projection_kind::payload;
-                              }) &&
+          std::ranges::all_of(
+              test.source.steps,
+              [](const projection &step) {
+                return step.kind == projection_kind::member ||
+                       step.kind == projection_kind::payload;
+              }) &&
           env_.needs_drop(test.source.type) && !dead_[test.source.base]) {
         auto &reg = regions_.back();
         reg.tested_place = test.source;
         reg.tested_variant = test.variant;
-        if (auto ok = narrow(test.source, test.variant, true); !ok.has_value()) {
+        if (auto ok = narrow(test.source, test.variant, true);
+            !ok.has_value()) {
           return ok;
         }
       }
@@ -2006,10 +2008,11 @@ private:
       flag_is_false(reg.entry, *reg.tested_flag, reg.flagged);
     }
     // The side a known flag rules out adds nothing to the join.
-    const auto skipped = !reg.has_else && reg.known_side == std::optional<bool>{true};
-    const auto joined = reg.has_else  ? join(reg.then_end, current())
-                        : skipped     ? join(current(), maybe_flow{})
-                                      : join(current(), maybe_flow{reg.entry});
+    const auto skipped =
+        !reg.has_else && reg.known_side == std::optional<bool>{true};
+    const auto joined = reg.has_else ? join(reg.then_end, current())
+                        : skipped    ? join(current(), maybe_flow{})
+                                     : join(current(), maybe_flow{reg.entry});
     if (!joined.has_value()) {
       return std::unexpected(joined.error());
     }
@@ -2119,9 +2122,9 @@ private:
     const auto expected_operands =
         op.computation == compute_kind::constant ? 0U
         : op.computation == compute_kind::binary ||
-                  op.computation == compute_kind::pointer_offset ||
-                  op.computation == compute_kind::checked_index ||
-                  op.computation == compute_kind::checked_end
+                op.computation == compute_kind::pointer_offset ||
+                op.computation == compute_kind::checked_index ||
+                op.computation == compute_kind::checked_end
             ? 2U
             : 1U;
     if (op.operands.size() != expected_operands) {
@@ -2137,7 +2140,8 @@ private:
     }
     if (op.computation == compute_kind::copy &&
         !same_type(op.operands[0].type, op.dest.type) &&
-        !(is_raw_pointer(op.operands[0].type) && is_raw_pointer(op.dest.type)) &&
+        !(is_raw_pointer(op.operands[0].type) &&
+          is_raw_pointer(op.dest.type)) &&
         !reference_to_pointer(op.operands[0].type, op.dest.type) &&
         !env_.cell_reads_as_reference(op.operands[0].type, op.dest.type)) {
       return fail(verify_error_kind::type_mismatch,
@@ -2191,7 +2195,8 @@ private:
       return std::unexpected(at.error());
     }
     const auto &entry = types().entry(types().strip_refinement(op.dest.type));
-    if (entry.kind != semantic::type_kind::builtin_kind || entry.name != "str") {
+    if (entry.kind != semantic::type_kind::builtin_kind ||
+        entry.name != "str") {
       return fail(verify_error_kind::type_mismatch,
                   "a string literal writes a `str`, not " +
                       name_of(op.dest.type));
@@ -2213,9 +2218,9 @@ private:
       return std::unexpected(layout.error());
     }
     if (!(*layout)->is_zero_sized()) {
-      return fail(verify_error_kind::type_mismatch,
-                  "init_empty on " + name_of(op.dest.type) +
-                      ", which has bytes");
+      return fail(verify_error_kind::type_mismatch, "init_empty on " +
+                                                        name_of(op.dest.type) +
+                                                        ", which has bytes");
     }
     if (auto ok = require_writable(op.dest, *at); !ok.has_value()) {
       return ok;
@@ -2231,8 +2236,8 @@ private:
     if (!at.has_value()) {
       return std::unexpected(at.error());
     }
-    const auto &entry =
-        env_.checked.types.entry(env_.checked.types.strip_refinement(op.dest.type));
+    const auto &entry = env_.checked.types.entry(
+        env_.checked.types.strip_refinement(op.dest.type));
     if (entry.kind != semantic::type_kind::builtin_generic_kind ||
         entry.name != "uninit") {
       return fail(verify_error_kind::type_mismatch,
@@ -2303,7 +2308,8 @@ private:
       return ok;
     }
     if (moving) {
-      if (auto ok = invalidate(op.source, *from, from->tracked); !ok.has_value()) {
+      if (auto ok = invalidate(op.source, *from, from->tracked);
+          !ok.has_value()) {
         return ok;
       }
     }
@@ -2338,7 +2344,8 @@ private:
         op.source.base == op.dest.base &&
         steps.size() == op.dest.steps.size() + 1 &&
         std::equal(op.dest.steps.begin(), op.dest.steps.end(), steps.begin()) &&
-        steps.back().kind == projection_kind::element && steps.back().index == 0;
+        steps.back().kind == projection_kind::element &&
+        steps.back().index == 0;
     if (!is_first) {
       return fail(verify_error_kind::bad_operation,
                   "replicate copies element 0 of the array it fills, not " +
@@ -2380,9 +2387,9 @@ private:
                   name_of(op.source.type) + " is not a sum");
     }
     if ((*layout)->find_variant(op.variant) == nullptr) {
-      return fail(verify_error_kind::bad_place,
-                  name_of(op.source.type) + " has no variant `" + op.variant +
-                      "`");
+      return fail(verify_error_kind::bad_place, name_of(op.source.type) +
+                                                    " has no variant `" +
+                                                    op.variant + "`");
     }
     const auto cls = classify_value(env_.layouts, op.dest.type);
     if (!cls.has_value()) {
@@ -2413,8 +2420,8 @@ private:
   /// and so does one that a nested test split or a payload move left, as long
   /// as an `if` showed which variant it holds: the tag stays in place when
   /// parts of the payload leave.
-  [[nodiscard]] auto tag_known(const place &where, const resolved_place &at)
-      const -> bool {
+  [[nodiscard]] auto tag_known(const place &where,
+                               const resolved_place &at) const -> bool {
     const auto *node = &state_[where.base];
     for (size_t i = 0; i < at.tracked; ++i) {
       if (node->whole) {
@@ -2449,9 +2456,9 @@ private:
     }
     const auto *variant = found.find_variant(op.variant);
     if (variant == nullptr) {
-      return fail(verify_error_kind::bad_place,
-                  name_of(op.dest.type) + " has no variant `" + op.variant +
-                      "`");
+      return fail(verify_error_kind::bad_place, name_of(op.dest.type) +
+                                                    " has no variant `" +
+                                                    op.variant + "`");
     }
     auto *node = &state_[op.dest.base];
     for (size_t i = 0; i < at->tracked; ++i) {
@@ -2585,7 +2592,8 @@ private:
     if (at.tracked >= at.types.size()) {
       return false;
     }
-    const auto &entry = types().entry(types().strip_refinement(at.types[at.tracked]));
+    const auto &entry =
+        types().entry(types().strip_refinement(at.types[at.tracked]));
     return entry.kind == semantic::type_kind::ref_kind && entry.is_mut;
   }
 
@@ -2623,7 +2631,8 @@ private:
         continue;
       }
       if (next.kind == op_kind::call_into && next.is_drop &&
-          next.args.size() == 1 && prefix_of(target, next.args[0].value.where)) {
+          next.args.size() == 1 &&
+          prefix_of(target, next.args[0].value.where)) {
         continue;
       }
       switch (next.kind) {
@@ -2691,7 +2700,8 @@ private:
       if (auto ok = require_init(callable, *at); !ok.has_value()) {
         return ok;
       }
-      const auto indirect = classify_fn_type(env_.layouts, types(), callable.type);
+      const auto indirect =
+          classify_fn_type(env_.layouts, types(), callable.type);
       if (!indirect.has_value()) {
         return fail(verify_error_kind::signature_mismatch,
                     indirect.error().message);
@@ -2788,9 +2798,10 @@ private:
     if (dest->through_deref ||
         types().entry(types().strip_refinement(op.dest.type)).kind !=
             semantic::type_kind::fn_kind) {
-      return fail(verify_error_kind::type_mismatch,
-                  "a closure is built in a `fn` value of its own storage, not " +
-                      name_of(op.dest.type));
+      return fail(
+          verify_error_kind::type_mismatch,
+          "a closure is built in a `fn` value of its own storage, not " +
+              name_of(op.dest.type));
     }
     if (callees_ != nullptr) {
       const auto indirect =
@@ -2978,7 +2989,8 @@ private:
   [[nodiscard]] auto require_step(const char *what) -> result {
     if (!fn_.coroutine_step) {
       return fail(verify_error_kind::bad_operation,
-                  std::string{what} + " belongs to a generator's step function");
+                  std::string{what} +
+                      " belongs to a generator's step function");
     }
     return {};
   }
@@ -3148,8 +3160,8 @@ private:
       return std::unexpected(at.error());
     }
     const auto &entry = types().entry(types().strip_refinement(where.type));
-    auto all_tasks = entry.kind == semantic::type_kind::tuple_kind &&
-                     !entry.args.empty();
+    auto all_tasks =
+        entry.kind == semantic::type_kind::tuple_kind && !entry.args.empty();
     for (const auto member : entry.args) {
       all_tasks = all_tasks && handle_kind_of(member) == handle_kind::task;
     }
@@ -3254,13 +3266,12 @@ private:
                       " still holds an argument no call consumed");
     }
     if (options_.check_leaks && holds && env_.needs_drop(slot.type)) {
-      if (const auto owed =
-              first_owed(&state_[op.slot], slot.type, op.slot, "",
-                         dropped_[op.slot]);
+      if (const auto owed = first_owed(&state_[op.slot], slot.type, op.slot, "",
+                                       dropped_[op.slot]);
           owed.has_value()) {
         return fail(verify_error_kind::leaked_value,
-                    "slot s" + std::to_string(op.slot) +
-                        " ends while " + *owed + " still owes its drop");
+                    "slot s" + std::to_string(op.slot) + " ends while " +
+                        *owed + " still owes its drop");
       }
     }
     dead_[op.slot] = true;
@@ -3276,7 +3287,8 @@ private:
         return fail(verify_error_kind::bad_result,
                     "a result built in caller storage returns no value");
       }
-      if (dead_[fn_.result_slot] || !covered(state_[fn_.result_slot], sig.result.type)) {
+      if (dead_[fn_.result_slot] ||
+          !covered(state_[fn_.result_slot], sig.result.type)) {
         return fail(verify_error_kind::bad_result,
                     "the result is not completely initialized on return");
       }
@@ -3330,9 +3342,8 @@ private:
            slot.cls == storage_class::coroutine_frame ||
            (slot.cls == storage_class::parameter && !fn_.coroutine_step)) &&
           !state_[slot.id].empty() && env_.needs_drop(slot.type)) {
-        if (const auto owed =
-                first_owed(&state_[slot.id], slot.type, slot.id, "",
-                           dropped_[slot.id]);
+        if (const auto owed = first_owed(&state_[slot.id], slot.type, slot.id,
+                                         "", dropped_[slot.id]);
             owed.has_value()) {
           return fail(verify_error_kind::leaked_value,
                       *owed + " still owes its drop at return");
@@ -3439,4 +3450,3 @@ auto verify(const storage_module &module, storage_env &env,
 }
 
 } // namespace cinder::hir
-

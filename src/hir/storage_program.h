@@ -15,8 +15,9 @@
 namespace cinder::hir {
 
 /// A program lowered to the storage form and verified, ready for either
-/// backend: the driver's program, or the code a compile-time call reaches. Owns the layouts and the environment the storage modules refer
-/// to, so it must outlive anything compiled from it.
+/// backend: the driver's program, or the code a compile-time call reaches. Owns
+/// the layouts and the environment the storage modules refer to, so it must
+/// outlive anything compiled from it.
 struct storage_program {
   std::unique_ptr<runtime::value_layouts> layouts;
   std::unique_ptr<hir::storage_env> env;

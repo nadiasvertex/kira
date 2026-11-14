@@ -146,10 +146,9 @@ inline constexpr std::array<intrinsic_signature, 69> known_intrinsics = {{
               {wire::ptr, wire::ptr}), // rt_str_eq         (a, b),
     intrinsic("rt_str_cmp", wire::i32,
               {wire::ptr, wire::ptr}), // rt_str_cmp        (a, b),
-    into_intrinsic(
-        "rt_str_find",
-        {wire::ptr, wire::ptr,
-         wire::i64}), // rt_str_find       (haystack, needle, from),
+    into_intrinsic("rt_str_find",
+                   {wire::ptr, wire::ptr,
+                    wire::i64}), // rt_str_find       (haystack, needle, from),
     into_intrinsic("rt_str_rfind",
                    {wire::ptr, wire::ptr}), // rt_str_rfind (haystack, needle),
     into_intrinsic("rt_str_reverse", {wire::ptr}), // rt_str_reverse (s),

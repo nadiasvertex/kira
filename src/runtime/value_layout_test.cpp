@@ -50,9 +50,10 @@ struct world {
                           types.const_value(scalar("usize"), *count));
   }
 
-  auto make_struct(std::string name,
-                   std::vector<std::pair<std::string, semantic::type_id>> fields,
-                   bool packed = false) -> semantic::type_id {
+  auto
+  make_struct(std::string name,
+              std::vector<std::pair<std::string, semantic::type_id>> fields,
+              bool packed = false) -> semantic::type_id {
     auto &decl = decls.emplace_back();
     decl.name = std::move(name);
     decl.modifiers.is_packed = packed;
@@ -67,9 +68,10 @@ struct world {
     return id;
   }
 
-  auto make_sum(std::string name,
-                std::vector<std::pair<std::string, std::vector<semantic::type_id>>>
-                    variants) -> semantic::type_id {
+  auto
+  make_sum(std::string name,
+           std::vector<std::pair<std::string, std::vector<semantic::type_id>>>
+               variants) -> semantic::type_id {
     auto &decl = decls.emplace_back();
     decl.name = std::move(name);
     decl.definition = std::make_unique<ast::sum_type_def>();
@@ -111,14 +113,15 @@ auto expect_size_align(runtime::value_layouts &layouts, semantic::type_id id,
                        size_t size, size_t align, std::string_view what)
     -> void {
   const auto found = layouts.layout(id);
-  expect(found.has_value(), std::string(what) + ": expected a layout, got " +
-                                (found.has_value() ? "" : found.error().message));
-  expect((*found)->size == size,
-         std::string(what) + ": expected size " + std::to_string(size) +
-             ", got " + std::to_string((*found)->size));
-  expect((*found)->align == align,
-         std::string(what) + ": expected alignment " + std::to_string(align) +
-             ", got " + std::to_string((*found)->align));
+  expect(found.has_value(),
+         std::string(what) + ": expected a layout, got " +
+             (found.has_value() ? "" : found.error().message));
+  expect((*found)->size == size, std::string(what) + ": expected size " +
+                                     std::to_string(size) + ", got " +
+                                     std::to_string((*found)->size));
+  expect((*found)->align == align, std::string(what) + ": expected alignment " +
+                                       std::to_string(align) + ", got " +
+                                       std::to_string((*found)->align));
 }
 
 auto expect_failure(runtime::value_layouts &layouts, semantic::type_id id,
@@ -145,9 +148,9 @@ auto test_scalar_layouts() -> void {
   expect_size_align(layouts, w.scalar("int128"), 16, 16, "int128");
   expect_size_align(layouts, w.scalar("unit"), 0, 1, "unit");
   expect_size_align(layouts, w.scalar("str"), 16, 8, "str descriptor");
-  const auto failure = expect_failure(
-      layouts, w.scalar("float128"), runtime::layout_error_kind::unsupported,
-      "float128");
+  const auto failure =
+      expect_failure(layouts, w.scalar("float128"),
+                     runtime::layout_error_kind::unsupported, "float128");
   expect(contains(failure.message, "float128"),
          "expected the failure to name the type");
 }
@@ -179,9 +182,9 @@ auto test_reserved_builtins_fail_closed() -> void {
   auto layouts = runtime::value_layouts{w.types, w.shapes};
   const auto i32 = w.scalar("int32");
   for (const auto *name : {"box", "channel", "watch", "mutex", "atomic"}) {
-    const auto failure = expect_failure(
-        layouts, w.types.builtin_generic(name, {i32}),
-        runtime::layout_error_kind::unsupported, name);
+    const auto failure =
+        expect_failure(layouts, w.types.builtin_generic(name, {i32}),
+                       runtime::layout_error_kind::unsupported, name);
     expect(contains(failure.message, name), "expected the failure to name it");
   }
   // A struct whose shape the checker never recorded is unresolved, not empty.
@@ -189,7 +192,8 @@ auto test_reserved_builtins_fail_closed() -> void {
   decl.name = "ghost";
   decl.definition = std::make_unique<ast::struct_type_def>();
   expect_failure(layouts, w.types.user_type(decl, "test", {}),
-                 runtime::layout_error_kind::unresolved, "struct with no shape");
+                 runtime::layout_error_kind::unresolved,
+                 "struct with no shape");
   expect_failure(layouts, semantic::k_unknown_type,
                  runtime::layout_error_kind::unresolved, "unknown type");
 }
@@ -225,18 +229,19 @@ auto test_struct_padding_and_nesting() -> void {
 auto test_packed_struct_has_no_padding() -> void {
   auto w = world{};
   auto layouts = runtime::value_layouts{w.types, w.shapes};
-  const auto packed = w.make_struct(
-      "packed",
-      {{"a", w.scalar("bool")}, {"b", w.scalar("int32")}, {"c", w.scalar("bool")}},
-      /*packed=*/true);
+  const auto packed = w.make_struct("packed",
+                                    {{"a", w.scalar("bool")},
+                                     {"b", w.scalar("int32")},
+                                     {"c", w.scalar("bool")}},
+                                    /*packed=*/true);
   expect_size_align(layouts, packed, 6, 1, "packed struct");
   const auto layout = *layouts.layout(packed);
   expect(layout->packed, "expected the packed flag on the layout");
   expect(layout->find_field("b")->offset == 1, "packed b at 1");
   expect(layout->find_field("c")->offset == 5, "packed c at 5");
   // A padded struct holding a packed one keeps the packed one's alignment of 1.
-  const auto holder = w.make_struct(
-      "holder", {{"tag", w.scalar("int8")}, {"inner", packed}});
+  const auto holder =
+      w.make_struct("holder", {{"tag", w.scalar("int8")}, {"inner", packed}});
   expect_size_align(layouts, holder, 7, 1, "struct holding a packed struct");
 }
 
@@ -262,8 +267,8 @@ auto test_array_stride_and_zero_sized_arrays() -> void {
   expect(five_layout->stride == 4 && five_layout->count == 5,
          "expected stride 4 and count 5");
 
-  const auto inner = w.make_struct("inner", {{"a", w.scalar("int64")},
-                                             {"b", w.scalar("int8")}});
+  const auto inner = w.make_struct(
+      "inner", {{"a", w.scalar("int64")}, {"b", w.scalar("int8")}});
   const auto structs = w.array(inner, 3);
   expect_size_align(layouts, structs, 48, 8, "array of 16-byte structs");
   expect((*layouts.layout(structs))->stride == 16, "expected stride 16");
@@ -294,9 +299,9 @@ auto test_sum_layouts() -> void {
   expect_size_align(layouts, w.make_option(i8), 16, 8, "option[int8]");
 
   // `rect` is a tuple of two int32 (8 bytes, align 4) placed after the tag.
-  const auto shape = w.make_sum("shape", {{"circle", {w.scalar("float64")}},
-                                          {"rect", {i32, i32}},
-                                          {"empty", {}}});
+  const auto shape = w.make_sum(
+      "shape",
+      {{"circle", {w.scalar("float64")}}, {"rect", {i32, i32}}, {"empty", {}}});
   expect_size_align(layouts, shape, 16, 8, "shape");
   const auto shape_layout = *layouts.layout(shape);
   expect(shape_layout->payload_offset == 8, "expected the payload at 8");
@@ -313,7 +318,8 @@ auto test_sum_layouts() -> void {
   expect_size_align(layouts, wide, 32, 16, "sum with an int128 payload");
   expect((*layouts.layout(wide))->payload_offset == 16,
          "expected the int128 payload area at 16");
-  expect((*layouts.layout(wide))->find_variant("small")->payload[0].offset == 16,
+  expect((*layouts.layout(wide))->find_variant("small")->payload[0].offset ==
+             16,
          "expected every variant's payload at the payload offset");
 
   expect_size_align(layouts, w.make_result(i32, w.scalar("str")), 24, 8,
@@ -384,10 +390,9 @@ auto test_inline_cycles_are_rejected_with_a_path() -> void {
   const auto tree = w.types.user_type(tree_decl, "test", {});
   const auto kids = w.array(tree, 2);
   const auto maybe = w.make_option(tree);
-  w.shapes.emplace(tree,
-                   semantic::aggregate_shape{
-                       .fields = {{.name = "kids", .type = kids},
-                                  {.name = "parent", .type = maybe}}});
+  w.shapes.emplace(tree, semantic::aggregate_shape{
+                             .fields = {{.name = "kids", .type = kids},
+                                        {.name = "parent", .type = maybe}}});
   const auto tree_error = expect_failure(
       layouts, tree, runtime::layout_error_kind::infinite_size, "tree");
   expect(contains(tree_error.message, "`tree.kids`"),
@@ -406,10 +411,11 @@ auto test_cycle_through_an_address_is_finite() -> void {
   decl.definition = std::make_unique<ast::struct_type_def>();
   const auto node = w.types.user_type(decl, "test", {});
   w.shapes.emplace(
-      node, semantic::aggregate_shape{
-                .fields = {{.name = "value", .type = w.scalar("int32")},
-                           {.name = "next", .type = w.types.ptr_to(node, true)},
-                           {.name = "prev", .type = w.types.ref_to(node, false)}}});
+      node,
+      semantic::aggregate_shape{
+          .fields = {{.name = "value", .type = w.scalar("int32")},
+                     {.name = "next", .type = w.types.ptr_to(node, true)},
+                     {.name = "prev", .type = w.types.ref_to(node, false)}}});
   expect_size_align(layouts, node, 24, 8, "node with pointer links");
 }
 
@@ -418,9 +424,9 @@ auto test_oversized_layouts_are_rejected() -> void {
   auto layouts = runtime::value_layouts{w.types, w.shapes};
   const auto i64 = w.scalar("int64");
   // 2^20 * 2^20 * 2^20 * 8 bytes overflows any real address space.
-  const auto big = w.array(
-      w.array(w.array(i64, uint64_t{1} << 20), uint64_t{1} << 20),
-      uint64_t{1} << 20);
+  const auto big =
+      w.array(w.array(w.array(i64, uint64_t{1} << 20), uint64_t{1} << 20),
+              uint64_t{1} << 20);
   const auto failure = expect_failure(
       layouts, big, runtime::layout_error_kind::too_large, "oversized array");
   expect(contains(failure.message, "larger than the supported maximum"),
@@ -429,8 +435,7 @@ auto test_oversized_layouts_are_rejected() -> void {
   expect_failure(layouts, w.array(i64, UINT64_MAX),
                  runtime::layout_error_kind::too_large, "huge count");
   // But a large zero-sized array is fine.
-  expect_size_align(layouts,
-                    w.array(w.scalar("unit"), UINT64_MAX >> 1), 0, 1,
+  expect_size_align(layouts, w.array(w.scalar("unit"), UINT64_MAX >> 1), 0, 1,
                     "huge array of unit");
 }
 
@@ -516,8 +521,8 @@ auto test_checked_generic_nesting() -> void {
   expect(layout->find_field("wide")->offset == 32, "wide at 32");
 
   // option[pair]: the tag, then the 16-byte payload.
-  expect_size_align(layouts, find_type(fixture, "option[pair[int8, int64]]"), 24,
-                    8, "option[pair[int8, int64]]");
+  expect_size_align(layouts, find_type(fixture, "option[pair[int8, int64]]"),
+                    24, 8, "option[pair[int8, int64]]");
 }
 
 auto test_checked_sum_layouts() -> void {
@@ -646,15 +651,15 @@ auto test_checked_inline_cycles() -> void {
   auto fixture = check_fixture(read_program("inline_cycle.cn"));
   auto layouts =
       runtime::value_layouts{fixture.checked.types, fixture.checked.shapes};
-  const auto ping = expect_failure(layouts, find_type(fixture, "ping"),
-                                   runtime::layout_error_kind::infinite_size,
-                                   "ping");
+  const auto ping =
+      expect_failure(layouts, find_type(fixture, "ping"),
+                     runtime::layout_error_kind::infinite_size, "ping");
   expect(contains(ping.message, "`ping.next` is `pong`") &&
              contains(ping.message, "`pong.back` is `ping`"),
          "expected both fields: " + ping.message);
-  const auto direct = expect_failure(
-      layouts, find_type(fixture, "direct"),
-      runtime::layout_error_kind::infinite_size, "direct");
+  const auto direct =
+      expect_failure(layouts, find_type(fixture, "direct"),
+                     runtime::layout_error_kind::infinite_size, "direct");
   expect(contains(direct.message, "`direct.inner` is `direct`"),
          "expected the field: " + direct.message);
   const auto through = expect_failure(

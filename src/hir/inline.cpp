@@ -317,8 +317,8 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
   }
   case hir_node_kind::hir_container_data: {
     const auto &n = dynamic_cast<const hir_container_data &>(node);
-    auto out = hir::make<hir_container_data>(span, type,
-                                             clone_as(*n.object, rename));
+    auto out =
+        hir::make<hir_container_data>(span, type, clone_as(*n.object, rename));
     out->takes_elements = n.takes_elements;
     return out;
   }

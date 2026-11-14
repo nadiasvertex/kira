@@ -19,10 +19,10 @@ namespace cinder::hir {
 /// This is a read-only discovery pass, not a linker: nothing here mutates or
 /// moves any `hir_module`/`hir_function` — `hir::prepare_storage_program`
 /// consumes the returned pointers directly, and each backend computes a
-/// cross-module call's dispatch key from `owner_module` at compile time. Because discovery never
-/// touches the underlying HIR, the same `all_modules` can be reused any
-/// number of times (e.g. once for `--run`, once for `--build`, in the same
-/// invocation).
+/// cross-module call's dispatch key from `owner_module` at compile time.
+/// Because discovery never touches the underlying HIR, the same `all_modules`
+/// can be reused any number of times (e.g. once for `--run`, once for
+/// `--build`, in the same invocation).
 [[nodiscard]] auto
 find_reachable_modules(const hir_module &entry,
                        const ptr_vec<hir_module> &all_modules)

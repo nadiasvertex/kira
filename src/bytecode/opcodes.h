@@ -121,8 +121,8 @@ namespace cinder::bytecode {
 // ==========================================================================
 enum class opcode : uint8_t {
   // --- Constants and register-to-register moves --------------------------
-  op_load_const,   ///< u16 dst, u32 const_index — reg[dst] = constants[idx].
-  op_move,         ///< u16 dst, u16 src — reg[dst] = reg[src].
+  op_load_const, ///< u16 dst, u32 const_index — reg[dst] = constants[idx].
+  op_move,       ///< u16 dst, u16 src — reg[dst] = reg[src].
 
   // --- Checked arithmetic (panics on overflow/div-by-zero for integer
   //     kinds, per spec/cinder-reference.md's "Integer Overflow" section;
@@ -338,53 +338,53 @@ enum class opcode : uint8_t {
                           ///< `finished` slot to `1` (done) with a release
                           ///< store, as a body that has returned does. The
                           ///< storage form's `coroutine_finish`.
-  op_atomic_fetch_add,  ///< u16 dst, u16 ptr, u16 n — atomically adds
-                        ///< reg[n] to the 8-byte word at reg[ptr], with
-                        ///< acquire-release ordering; dst = the word's
-                        ///< previous value. Compiled form of
-                        ///< `rt_atomic_fetch_add` (`src/intrinsics.h`).
-  op_atomic_fetch_sub,  ///< u16 dst, u16 ptr, u16 n — the subtracting
-                        ///< counterpart of `op_atomic_fetch_add`.
-  op_host_call,         ///< u16 dst, u16 site, u16 first_arg_reg, u8 argc —
-                        ///< asks the host to perform the operation
-                        ///< `bytecode_function::host_sites[site]` describes,
-                        ///< on reg[first_arg_reg .. +argc]; dst = its
-                        ///< result. Compiled form of `hir_host_call`; only
-                        ///< a hosted run (`run_limits::host`) can do one.
-  op_copy_bytes,        ///< u16 dst_ptr, u16 src_ptr, u32 byte_count — copies
-                        ///< `byte_count` bytes from the address in reg[src_ptr]
-                        ///< to the address in reg[dst_ptr]. The transfer of an
-                        ///< inline aggregate or descriptor (representation
-                        ///< v2); both ranges are owned storage that the
-                        ///< compiler has shown do not overlap, but the copy is
-                        ///< a `memmove` so a mistake there cannot corrupt
-                        ///< bytes silently. Does nothing for a zero count.
-  op_zero_bytes,        ///< u16 dst_ptr, u32 byte_count — writes `byte_count`
-                        ///< zero bytes at the address in reg[dst_ptr]: an
-                        ///< `uninit[T, N]` buffer each time it is made.
+  op_atomic_fetch_add,    ///< u16 dst, u16 ptr, u16 n — atomically adds
+                          ///< reg[n] to the 8-byte word at reg[ptr], with
+                          ///< acquire-release ordering; dst = the word's
+                          ///< previous value. Compiled form of
+                          ///< `rt_atomic_fetch_add` (`src/intrinsics.h`).
+  op_atomic_fetch_sub,    ///< u16 dst, u16 ptr, u16 n — the subtracting
+                          ///< counterpart of `op_atomic_fetch_add`.
+  op_host_call,           ///< u16 dst, u16 site, u16 first_arg_reg, u8 argc —
+                          ///< asks the host to perform the operation
+                          ///< `bytecode_function::host_sites[site]` describes,
+                          ///< on reg[first_arg_reg .. +argc]; dst = its
+                          ///< result. Compiled form of `hir_host_call`; only
+                          ///< a hosted run (`run_limits::host`) can do one.
+  op_copy_bytes,          ///< u16 dst_ptr, u16 src_ptr, u32 byte_count — copies
+  ///< `byte_count` bytes from the address in reg[src_ptr]
+  ///< to the address in reg[dst_ptr]. The transfer of an
+  ///< inline aggregate or descriptor (representation
+  ///< v2); both ranges are owned storage that the
+  ///< compiler has shown do not overlap, but the copy is
+  ///< a `memmove` so a mistake there cannot corrupt
+  ///< bytes silently. Does nothing for a zero count.
+  op_zero_bytes,          ///< u16 dst_ptr, u32 byte_count — writes `byte_count`
+                          ///< zero bytes at the address in reg[dst_ptr]: an
+                          ///< `uninit[T, N]` buffer each time it is made.
   op_call_intrinsic_into, ///< u8 intrinsic_id, u16 first_arg_reg, u8 argc —
-                        ///< calls an intrinsic marked `into` in
-                        ///< `src/intrinsics.h`, whose result is built in
-                        ///< caller storage. reg[first_arg_reg] holds the
-                        ///< destination address and the following registers
-                        ///< the parameters: a scalar in its register, a
-                        ///< descriptor or aggregate as the address of the
-                        ///< caller's bytes. Nothing comes back. The
-                        ///< counterpart of `op_call_intrinsic`, whose result
-                        ///< comes back in a register.
-  op_call_function,     ///< u16 dst, u16 entry_reg, u16 first_arg, u8 argc —
-                        ///< calls function `reg[entry_reg]` with the `argc`
-                        ///< registers from `first_arg` as its arguments. The
-                        ///< storage compiler's call through a `fn` value
-                        ///< (`{entry, env, glue}`, 24 bytes of the caller's
-                        ///< storage): the caller loads `entry`, and the
-                        ///< environment address is the first argument.
+                          ///< calls an intrinsic marked `into` in
+                          ///< `src/intrinsics.h`, whose result is built in
+                          ///< caller storage. reg[first_arg_reg] holds the
+                          ///< destination address and the following registers
+                          ///< the parameters: a scalar in its register, a
+                          ///< descriptor or aggregate as the address of the
+                          ///< caller's bytes. Nothing comes back. The
+                          ///< counterpart of `op_call_intrinsic`, whose result
+                          ///< comes back in a register.
+  op_call_function,       ///< u16 dst, u16 entry_reg, u16 first_arg, u8 argc —
+                          ///< calls function `reg[entry_reg]` with the `argc`
+                          ///< registers from `first_arg` as its arguments. The
+                          ///< storage compiler's call through a `fn` value
+                          ///< (`{entry, env, glue}`, 24 bytes of the caller's
+                          ///< storage): the caller loads `entry`, and the
+                          ///< environment address is the first argument.
   op_drop_function_value, ///< u16 dst, u16 value_reg — runs the drop glue of
-                        ///< the `fn` value whose bytes are at the address in
-                        ///< reg[value_reg], when it has any: calls function
-                        ///< `glue - 1` with the environment address as its only
-                        ///< argument, its `unit` landing in dst. Does nothing
-                        ///< for a value with no glue (`glue == 0`).
+                          ///< the `fn` value whose bytes are at the address in
+                          ///< reg[value_reg], when it has any: calls function
+  ///< `glue - 1` with the environment address as its only
+  ///< argument, its `unit` landing in dst. Does nothing
+  ///< for a value with no glue (`glue == 0`).
 };
 
 // ==========================================================================

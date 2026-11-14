@@ -75,7 +75,8 @@ inline auto loops_and_else_use_patterns(case_backend &backend) -> void {
 /// Sums that own droppable payloads. The `machine` entry points report a
 /// counter that each drop appends its id to: `drops * 100 + result`, so the
 /// digits before the last two say which drops ran and in what order.
-inline auto sums_that_own_drops_are_dropped_once(case_backend &backend) -> void {
+inline auto sums_that_own_drops_are_dropped_once(case_backend &backend)
+    -> void {
   auto p = backend.open("bytecode_storage_test", "patterns.cn");
   const auto run = [&](const char *name, std::vector<int64_t> args) {
     return p->scalar(name, args);
@@ -108,8 +109,8 @@ inline auto sums_that_own_drops_are_dropped_once(case_backend &backend) -> void 
 
 /// Literal and nested tests on sums that own drops. The payload a failed test
 /// leaves with the sum is dropped once, where the sum ends.
-inline auto tests_beyond_the_variant_on_sums_that_own_drops(case_backend &backend)
-    -> void {
+inline auto
+tests_beyond_the_variant_on_sums_that_own_drops(case_backend &backend) -> void {
   auto p = backend.open("bytecode_storage_test", "patterns.cn");
   const auto run = [&](const char *name, std::vector<int64_t> args) {
     return p->scalar(name, args);
@@ -154,7 +155,8 @@ inline auto match_arms_with_guards(case_backend &backend) -> void {
   expect_equal(run("guard_pair", {10, 3}), 13, "guard_pair(10 3)");
   expect_equal(run("guard_leave", {1, 1, 2}), 10, "guard_leave(held)");
   expect_equal(run("guard_leave", {0, 1, 2}), 20, "guard_leave(guard fails)");
-  expect_equal(run("guard_leave", {1, 1, 3}), 20, "guard_leave(second literal)");
+  expect_equal(run("guard_leave", {1, 1, 3}), 20,
+               "guard_leave(second literal)");
   expect_equal(run("guard_leave", {1, 2, 2}), 30, "guard_leave(first literal)");
   // The trail names the guards that ran: 1, 12, 12 (neither held), 3.
   expect_equal(run("guard_order", {0, 20, 0}), 1020, "guard_order(circle 20)");

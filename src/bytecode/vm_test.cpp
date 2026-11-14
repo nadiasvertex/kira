@@ -62,8 +62,8 @@ auto emit_store_slot(bc::chunk_writer &writer, uint8_t ptr, uint16_t slot_index,
 /// of an indexed load or store.
 constexpr uint8_t k_scratch = 15;
 
-auto emit_addr_indexed(bc::chunk_writer &writer, uint8_t ptr,
-                       uint8_t index_reg, uint8_t elem_size) -> void {
+auto emit_addr_indexed(bc::chunk_writer &writer, uint8_t ptr, uint8_t index_reg,
+                       uint8_t elem_size) -> void {
   writer.emit_opcode(bc::opcode::op_addr_indexed);
   writer.emit_register(k_scratch);
   writer.emit_register(ptr);
@@ -811,9 +811,8 @@ auto test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe() -> void {
   auto in = descriptor{.len = 2, .data = &read_buf[0]};
 
   auto written = result_bytes{};
-  const auto write_args =
-      std::array{address_of(written.bytes), address_of(write_fd),
-                 address_of(out)};
+  const auto write_args = std::array{address_of(written.bytes),
+                                     address_of(write_fd), address_of(out)};
   expect(run_into_intrinsic("rt_write", write_args),
          "expected rt_write() not to panic");
   auto read = result_bytes{};

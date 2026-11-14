@@ -2918,8 +2918,8 @@ private:
   /// friends are reported.
   auto require_structural_operator(const ast::binary_expr &binary,
                                    type_id target, std::string_view trait_name,
-                                   std::string_view op_name,
-                                   bool wire_dispatch) -> type_id;
+                                   std::string_view op_name, bool wire_dispatch)
+      -> type_id;
 
   /// Whether `entry` is one of the types whose comparisons go through an
   /// impl on its structure rather than a declaration or a primitive:

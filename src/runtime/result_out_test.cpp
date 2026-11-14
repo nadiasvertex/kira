@@ -80,8 +80,7 @@ auto test_pipe_round_trip_and_errors() -> void {
            "expected five bytes to be written");
 
     auto storage = std::array<char, 16>{};
-    const auto incoming =
-        text{storage.size(), storage.data()};
+    const auto incoming = text{storage.size(), storage.data()};
     auto received = buffer{};
     cinder_rt_read_into(received.data(), &read_end, &incoming);
     expect(received.at<uint64_t>(0) == 0 && received.at<int64_t>(8) == 5,

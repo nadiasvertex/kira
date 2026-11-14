@@ -82,9 +82,9 @@ compile_storage_module(std::span<const hir::storage_module *const> modules,
     -> std::expected<compiled_module, codegen_error>;
 
 /// Compiles one module as a program of its own.
-[[nodiscard]] auto compile_storage_module(const hir::storage_module &module,
-                                          hir::storage_env &env,
-                                          const storage_codegen_options &options = {})
+[[nodiscard]] auto
+compile_storage_module(const hir::storage_module &module, hir::storage_env &env,
+                       const storage_codegen_options &options = {})
     -> std::expected<compiled_module, codegen_error>;
 
 } // namespace cinder::llvm_codegen

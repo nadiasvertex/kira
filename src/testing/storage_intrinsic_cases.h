@@ -73,8 +73,7 @@ inline auto expect_err(const result_bytes &result, int code,
                        std::string_view what) -> void {
   expect_equal(static_cast<int64_t>(result.at<uint64_t>(0)), 1,
                std::string(what) + " is err");
-  expect_equal(result.at<int32_t>(8), code,
-               std::string(what) + " error code");
+  expect_equal(result.at<int32_t>(8), code, std::string(what) + " error code");
 }
 
 /// A descriptor argument that has to stay alive for the call.
@@ -133,8 +132,8 @@ inline auto io_results_are_written_in_place(case_backend &backend) -> void {
 
   auto buffer = std::string(16, '\0');
   const auto incoming = text_view(buffer);
-  auto received = p->into("read_bytes", std::vector<int64_t>{
-                                            read_end, as_argument(incoming)});
+  auto received = p->into(
+      "read_bytes", std::vector<int64_t>{read_end, as_argument(incoming)});
   expect_ok(received, "read");
   expect_equal(received.at<int64_t>(8), 4, "bytes read");
   expect(buffer.substr(0, 4) == "ping", "expected the bytes that were sent");
@@ -142,15 +141,15 @@ inline auto io_results_are_written_in_place(case_backend &backend) -> void {
   // Reading an empty non-blocking descriptor reports the host's EAGAIN.
   expect_ok(p->into("nonblocking", std::vector<int64_t>{read_end}),
             "set_nonblocking");
-  auto empty = p->into("read_bytes", std::vector<int64_t>{
-                                          read_end, as_argument(incoming)});
+  auto empty = p->into("read_bytes",
+                       std::vector<int64_t>{read_end, as_argument(incoming)});
   expect_err(empty, static_cast<int>(p->scalar("would_block", {})),
              "read of an empty pipe");
   expect_equal(p->scalar("would_block", {}), EAGAIN, "would_block");
 
   expect_ok(p->into("close_fd", std::vector<int64_t>{read_end}), "close read");
-  expect_err(p->into("write_bytes", std::vector<int64_t>{
-                                        read_end, as_argument(outgoing)}),
+  expect_err(p->into("write_bytes",
+                     std::vector<int64_t>{read_end, as_argument(outgoing)}),
              EBADF, "write to a closed descriptor");
   expect_ok(p->into("close_fd", std::vector<int64_t>{write_end}),
             "close write");
@@ -173,9 +172,9 @@ inline auto repeated_io_allocates_nothing(case_backend &backend) -> void {
     expect_err(p->into("close_fd", std::vector<int64_t>{write_end}), EBADF,
                "close after discard");
   }
-  expect_equal(static_cast<int64_t>(runtime::heap_allocation_count() -
-                                    allocations),
-               0, "heap blocks allocated by repeated pipe calls");
+  expect_equal(
+      static_cast<int64_t>(runtime::heap_allocation_count() - allocations), 0,
+      "heap blocks allocated by repeated pipe calls");
   expect_equal(runtime::heap_live_block_count() - live, 0,
                "heap blocks left by repeated pipe calls");
 }
@@ -192,33 +191,35 @@ inline auto string_results_are_written_in_place(case_backend &backend) -> void {
     const auto s = text("abc");
     expect_text(p->into("reverse", std::vector<int64_t>{as_argument(s)}), "cba",
                 "reverse");
-    const auto multi = text("a\xC3\xB1" "b"); // "añb"
+    const auto multi = text("a\xC3\xB1"
+                            "b"); // "añb"
     expect_text(p->into("reverse", std::vector<int64_t>{as_argument(multi)}),
-                "b\xC3\xB1" "a", "reverse of a multibyte string");
+                "b\xC3\xB1"
+                "a",
+                "reverse of a multibyte string");
     expect_equal(p->scalar("length", std::vector<int64_t>{as_argument(multi)}),
                  3, "length counts scalars");
-    expect_text(
-        p->into("truncate",
-                std::vector<int64_t>{as_argument(multi), int64_t{2}}),
-        "a\xC3\xB1", "truncate");
+    expect_text(p->into("truncate",
+                        std::vector<int64_t>{as_argument(multi), int64_t{2}}),
+                "a\xC3\xB1", "truncate");
   }
   {
     const auto a = text("ab");
     const auto b = text("cde");
-    expect_text(p->into("concat", std::vector<int64_t>{as_argument(a),
-                                                       as_argument(b)}),
-                "abcde", "concat");
-    expect_equal(p->scalar("same", std::vector<int64_t>{as_argument(a),
-                                                        as_argument(a)}),
-                 1, "same");
-    expect_equal(p->scalar("same", std::vector<int64_t>{as_argument(a),
-                                                        as_argument(b)}),
-                 0, "different");
-    expect(p->scalar("compare", std::vector<int64_t>{as_argument(a),
-                                                     as_argument(b)}) < 0,
+    expect_text(
+        p->into("concat", std::vector<int64_t>{as_argument(a), as_argument(b)}),
+        "abcde", "concat");
+    expect_equal(
+        p->scalar("same", std::vector<int64_t>{as_argument(a), as_argument(a)}),
+        1, "same");
+    expect_equal(
+        p->scalar("same", std::vector<int64_t>{as_argument(a), as_argument(b)}),
+        0, "different");
+    expect(p->scalar("compare",
+                     std::vector<int64_t>{as_argument(a), as_argument(b)}) < 0,
            "expected \"ab\" to sort before \"cde\"");
-    expect(p->scalar("compare", std::vector<int64_t>{as_argument(b),
-                                                     as_argument(a)}) > 0,
+    expect(p->scalar("compare",
+                     std::vector<int64_t>{as_argument(b), as_argument(a)}) > 0,
            "expected \"cde\" to sort after \"ab\"");
   }
   {
@@ -293,8 +294,8 @@ inline auto string_results_allocate_only_their_bytes(case_backend &backend)
   expect_text(reversed, "olleh", "reverse");
 
   before = runtime::heap_allocation_count();
-  auto nothing = p->into("concat", std::vector<int64_t>{as_argument(empty),
-                                                        as_argument(empty)});
+  auto nothing = p->into(
+      "concat", std::vector<int64_t>{as_argument(empty), as_argument(empty)});
   expect_equal(static_cast<int64_t>(runtime::heap_allocation_count() - before),
                0, "allocations for an empty string result");
   expect_equal(static_cast<int64_t>(nothing.at<uint64_t>(0)), 0,
@@ -361,8 +362,9 @@ inline auto descriptor_words_are_read_and_written(case_backend &backend)
     -> void {
   auto p = backend.open("bytecode_storage_test", "views.cn");
   const auto accented = text_view("héllo");
-  expect_equal(p->scalar("text_len", std::vector<int64_t>{as_argument(accented)}),
-               6, "text_len(héllo) counts bytes");
+  expect_equal(
+      p->scalar("text_len", std::vector<int64_t>{as_argument(accented)}), 6,
+      "text_len(héllo) counts bytes");
   expect_equal(p->scalar("literal_len", {}), 6, "literal_len");
   const auto hi = text_view("hi");
   expect_equal(p->scalar("first_byte", std::vector<int64_t>{as_argument(hi)}),
@@ -410,7 +412,8 @@ inline auto run_time_indexes_are_checked(case_backend &backend) -> void {
   oob("middle_len", args{0, 7});
   expect_equal(p->scalar("inclusive_first", args{3, 4}), 'd',
                "inclusive_first(3, 4)");
-  expect_equal(p->scalar("inclusive_len", args{0, 5}), 6, "inclusive_len(0, 5)");
+  expect_equal(p->scalar("inclusive_len", args{0, 5}), 6,
+               "inclusive_len(0, 5)");
   oob("inclusive_len", args{0, 6});
   expect_equal(p->scalar("window_sum", args{1, 4}), 234, "window_sum(1, 4)");
   expect_equal(p->scalar("window_sum", args{2, 2}), 0, "window_sum(2, 2)");

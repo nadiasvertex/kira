@@ -13,22 +13,22 @@ namespace cinder::hir {
 
 /// Which rule a storage form breaks.
 enum class verify_error_kind : uint8_t {
-  bad_slot,          ///< A slot is malformed or the function's slots disagree
-                     ///< with its signature.
-  bad_place,         ///< A projection leaves the bounds of its type.
-  type_mismatch,     ///< An operation joins places or operands of other types.
-  bad_operation,     ///< An operation names fields its kind does not use.
-  uninitialized,     ///< A value is read before it is complete.
-  already_initialized, ///< A write targets bytes that still hold a value.
-  move_from_reference, ///< A move would take a value out of borrowed bytes.
-  partial_move,      ///< A move or drop of part of a sum or array.
-  not_copy,          ///< A copy of a type that moves.
-  incomplete_variant, ///< A sum is published before its payload is ready.
-  overlapping_transfer, ///< Source and destination share bytes.
-  signature_mismatch, ///< A call disagrees with its callee's ABI.
-  bad_argument,      ///< An argument is not what the signature asks for.
+  bad_slot,      ///< A slot is malformed or the function's slots disagree
+                 ///< with its signature.
+  bad_place,     ///< A projection leaves the bounds of its type.
+  type_mismatch, ///< An operation joins places or operands of other types.
+  bad_operation, ///< An operation names fields its kind does not use.
+  uninitialized, ///< A value is read before it is complete.
+  already_initialized,     ///< A write targets bytes that still hold a value.
+  move_from_reference,     ///< A move would take a value out of borrowed bytes.
+  partial_move,            ///< A move or drop of part of a sum or array.
+  not_copy,                ///< A copy of a type that moves.
+  incomplete_variant,      ///< A sum is published before its payload is ready.
+  overlapping_transfer,    ///< Source and destination share bytes.
+  signature_mismatch,      ///< A call disagrees with its callee's ABI.
+  bad_argument,            ///< An argument is not what the signature asks for.
   result_aliases_argument, ///< A call's result overlaps a borrowed argument.
-  use_after_dead,    ///< A slot is used after its lifetime ended.
+  use_after_dead,          ///< A slot is used after its lifetime ended.
   bad_lifetime_end,  ///< `storage_dead` on storage that cannot end here, or
                      ///< an argument slot that still holds a value.
   bad_result,        ///< The result is not complete on a normal return.
@@ -42,7 +42,8 @@ enum class verify_error_kind : uint8_t {
   layout_failed,     ///< A type in the form has no layout.
 };
 
-[[nodiscard]] auto verify_error_kind_name(verify_error_kind kind) -> const char *;
+[[nodiscard]] auto verify_error_kind_name(verify_error_kind kind) -> const
+    char *;
 
 /// The first rule a form breaks, with where.
 struct verify_error {

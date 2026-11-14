@@ -389,7 +389,8 @@ auto watch_timer(uint64_t *task) -> bool {
   scheduler::hold(task);
   auto &r = state();
   const auto lock = std::scoped_lock(r.mutex);
-  const bool earliest = r.timers.empty() || deadline < r.timers.front().deadline;
+  const bool earliest =
+      r.timers.empty() || deadline < r.timers.front().deadline;
   r.timers.push_back(timer{.deadline = deadline, .task = task});
   std::ranges::push_heap(r.timers, std::greater<>{});
   if (earliest) {

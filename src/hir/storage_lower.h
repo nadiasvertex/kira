@@ -27,7 +27,8 @@ enum class storage_lower_error_kind : uint8_t {
 };
 
 struct storage_lower_error {
-  storage_lower_error_kind kind = storage_lower_error_kind::unsupported_construct;
+  storage_lower_error_kind kind =
+      storage_lower_error_kind::unsupported_construct;
   source_span span;
   std::string message;
 };

@@ -177,9 +177,8 @@ extern "C" auto cinder_heap_alloc_aligned(uint64_t bytes, uint64_t align)
   }
   // `aligned_alloc` wants a size that is a multiple of the alignment, and
   // does not zero what it returns.
-  const auto padded =
-      (size + static_cast<size_t>(align) - 1) / static_cast<size_t>(align) *
-      static_cast<size_t>(align);
+  const auto padded = (size + static_cast<size_t>(align) - 1) /
+                      static_cast<size_t>(align) * static_cast<size_t>(align);
   void *const block = std::aligned_alloc(static_cast<size_t>(align), padded);
   if (block == nullptr) {
     cinder::runtime::out_of_memory(bytes);

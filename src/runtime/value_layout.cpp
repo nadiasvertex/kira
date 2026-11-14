@@ -5,7 +5,6 @@
 #include <optional>
 #include <utility>
 
-
 namespace cinder::runtime {
 
 auto builtin_scalar_layout(std::string_view name)
@@ -51,13 +50,12 @@ auto uninit_slot_count(const semantic::type_table &types,
     return std::nullopt;
   }
   const auto &count = types.entry(entry.args[1]);
-  if (count.kind != semantic::type_kind::const_value_kind || !count.value.is_constant() ||
-      count.value.constant < 0) {
+  if (count.kind != semantic::type_kind::const_value_kind ||
+      !count.value.is_constant() || count.value.constant < 0) {
     return std::nullopt;
   }
   return static_cast<uint64_t>(count.value.constant);
 }
-
 
 namespace {
 
@@ -128,9 +126,9 @@ auto value_layouts::fail(layout_error_kind kind, type_id id,
   if (!path_.empty()) {
     message += " (reached through ";
     for (size_t i = 0; i < path_.size(); ++i) {
-      message += std::format("{}`{}.{}`", i == 0 ? "" : ", ",
-                             types_.display(path_[i].container),
-                             path_[i].member);
+      message +=
+          std::format("{}`{}.{}`", i == 0 ? "" : ", ",
+                      types_.display(path_[i].container), path_[i].member);
     }
     message += ')';
   }
@@ -142,8 +140,8 @@ auto value_layouts::cycle_error(type_id id) const -> layout_error {
   while (first < path_.size() && path_[first].container != id) {
     ++first;
   }
-  auto message = std::format(
-      "`{}` contains itself, so it has no finite size: ", types_.display(id));
+  auto message = std::format("`{}` contains itself, so it has no finite size: ",
+                             types_.display(id));
   for (auto i = first; i < path_.size(); ++i) {
     message += std::format("{}`{}.{}` is `{}`", i == first ? "" : ", ",
                            types_.display(path_[i].container), path_[i].member,
@@ -195,11 +193,10 @@ auto value_layouts::layout(type_id id)
   return &stored.first->second;
 }
 
-auto value_layouts::member_of(type_id container, std::string name,
-                              type_id type)
+auto value_layouts::member_of(type_id container, std::string name, type_id type)
     -> std::expected<const value_layout *, layout_error> {
-  path_.push_back(
-      path_step{.container = container, .member = std::move(name), .type = type});
+  path_.push_back(path_step{
+      .container = container, .member = std::move(name), .type = type});
   auto result = layout(type);
   path_.pop_back();
   return result;
@@ -252,8 +249,8 @@ auto value_layouts::compute(type_id id)
                                           .align = placed.align});
       offset = *end;
     }
-    const auto size = packed ? std::optional{offset}
-                             : checked_round_up(offset, widest);
+    const auto size =
+        packed ? std::optional{offset} : checked_round_up(offset, widest);
     if (!size.has_value()) {
       return std::unexpected(too_large("this type"));
     }
@@ -264,8 +261,9 @@ auto value_layouts::compute(type_id id)
   };
 
   // `array[T, N]` and `uninit[T, N]`: `count` contiguous elements.
-  const auto place_array = [&](type_id element, uint64_t count)
-      -> std::expected<value_layout, layout_error> {
+  const auto place_array =
+      [&](type_id element,
+          uint64_t count) -> std::expected<value_layout, layout_error> {
     const auto member = member_of(id, "[]", element);
     if (!member.has_value()) {
       return std::unexpected(member.error());
@@ -281,7 +279,8 @@ auto value_layouts::compute(type_id id)
     if (!total.has_value()) {
       return std::unexpected(too_large("this array"));
     }
-    auto out = simple_layout(id, value_layout_kind::array, *total, placed.align);
+    auto out =
+        simple_layout(id, value_layout_kind::array, *total, placed.align);
     out.element = element;
     out.stride = placed.size;
     out.count = count;
@@ -289,7 +288,8 @@ auto value_layouts::compute(type_id id)
   };
 
   // A sum: tag, then the widest variant payload, each laid out like a tuple.
-  const auto place_sum = [&](const std::vector<semantic::variant_shape> &variants)
+  const auto place_sum =
+      [&](const std::vector<semantic::variant_shape> &variants)
       -> std::expected<value_layout, layout_error> {
     auto out = simple_layout(id, value_layout_kind::sum, 0, k_sum_tag_size);
     auto widest_payload_align = size_t{1};

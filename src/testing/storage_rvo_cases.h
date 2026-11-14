@@ -38,8 +38,7 @@ inline auto failures_are_rebuilt_in_the_result(case_backend &backend) -> void {
   expect_equal(run("wrap_value", {-3}), 1003, "wrap_value(err 3)");
   expect_equal(run("wrap_value", {0}), 1000, "wrap_value(err 0)");
   expect_equal(run("wrap_inside_value", {5}), 505, "wrap_inside_value(ok)");
-  expect_equal(run("wrap_inside_value", {-2}), 2002,
-               "wrap_inside_value(err)");
+  expect_equal(run("wrap_inside_value", {-2}), 2002, "wrap_inside_value(err)");
   expect_equal(run("maybe_pair_value", {4}), 48, "maybe_pair_value(some)");
   expect_equal(run("maybe_pair_value", {0}), -3, "maybe_pair_value(none)");
 }

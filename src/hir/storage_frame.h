@@ -41,7 +41,9 @@ struct frame_plan {
   uint64_t bytes = 0;
   std::vector<frame_contributor> contributors;
 
-  [[nodiscard]] auto within(uint64_t limit) const -> bool { return bytes <= limit; }
+  [[nodiscard]] auto within(uint64_t limit) const -> bool {
+    return bytes <= limit;
+  }
 };
 
 /// The padded total of `requests` placed in order, or `UINT64_MAX` if any step
@@ -51,12 +53,14 @@ struct frame_plan {
 
 /// The frame plan of `function` under the concrete layouts of `env`. Fails with
 /// the layout error's message when a slot's type has no layout.
-[[nodiscard]] auto plan_frame(const storage_function &function, storage_env &env)
+[[nodiscard]] auto plan_frame(const storage_function &function,
+                              storage_env &env)
     -> std::expected<frame_plan, std::string>;
 
 /// Why `plan` is over `limit`: the total, the limit, and the largest
 /// contributors (up to `shown`), largest first. Empty when it is within.
-[[nodiscard]] auto describe_frame_overflow(const frame_plan &plan, uint64_t limit,
-                                           size_t shown = 3) -> std::string;
+[[nodiscard]] auto describe_frame_overflow(const frame_plan &plan,
+                                           uint64_t limit, size_t shown = 3)
+    -> std::string;
 
 } // namespace cinder::hir

@@ -131,10 +131,10 @@ auto build(const std::string &text, bool nrvo = false,
                                                           out->checked.shapes);
   out->env = std::make_unique<hir::storage_env>(
       hir::storage_env{out->checked, *out->layouts});
-  out->lowering = hir::lower_to_storage(*out->module, *out->env,
-                                        hir::storage_lower_options{
-                                            .nrvo = nrvo,
-                                            .max_frame_bytes = max_frame_bytes});
+  out->lowering = hir::lower_to_storage(
+      *out->module, *out->env,
+      hir::storage_lower_options{.nrvo = nrvo,
+                                 .max_frame_bytes = max_frame_bytes});
   return out;
 }
 
@@ -184,7 +184,8 @@ auto find_op(const hir::storage_function &function, hir::op_kind kind,
 auto expect_verifies(const fixture &f, const hir::storage_function &function,
                      std::string_view label,
                      const hir::verify_options &options = {}) -> void {
-  const auto verdict = hir::verify(function, *f.env, &f.lowering.module, options);
+  const auto verdict =
+      hir::verify(function, *f.env, &f.lowering.module, options);
   if (!verdict.has_value()) {
     std::cerr << label << ": unexpected "
               << hir::verify_error_kind_name(verdict.error().kind) << ": "
@@ -199,7 +200,8 @@ auto expect_rejects(const fixture &f, const hir::storage_function &function,
                     hir::verify_error_kind kind, std::string_view label,
                     const hir::verify_options &options = {},
                     std::string_view message_has = {}) -> void {
-  const auto verdict = hir::verify(function, *f.env, &f.lowering.module, options);
+  const auto verdict =
+      hir::verify(function, *f.env, &f.lowering.module, options);
   if (verdict.has_value()) {
     std::cerr << label << ": the verifier accepted a corrupted form\n";
     fail("expected the verifier to reject the corrupted form");
@@ -212,8 +214,9 @@ auto expect_rejects(const fixture &f, const hir::storage_function &function,
   }
   if (verdict.error().kind != kind) {
     std::cerr << label << ": expected " << hir::verify_error_kind_name(kind)
-              << " but got " << hir::verify_error_kind_name(verdict.error().kind)
-              << ": " << verdict.error().message << "\n";
+              << " but got "
+              << hir::verify_error_kind_name(verdict.error().kind) << ": "
+              << verdict.error().message << "\n";
     fail("expected a different verifier rule to fire");
   }
 }
@@ -221,10 +224,8 @@ auto expect_rejects(const fixture &f, const hir::storage_function &function,
 auto add_slot(hir::storage_function &function, hir::storage_class cls,
               semantic::type_id type) -> hir::storage_id {
   const auto id = static_cast<hir::storage_id>(function.slots.size());
-  function.slots.push_back(hir::storage_slot{.id = id,
-                                             .cls = cls,
-                                             .type = type,
-                                             .owner = id});
+  function.slots.push_back(
+      hir::storage_slot{.id = id, .cls = cls, .type = type, .owner = id});
   return id;
 }
 
@@ -264,10 +265,11 @@ auto test_abi_classes_follow_layout() -> void {
   expect(classify(reference).cls == hir::pass_class::address,
          "expected &pair to be an address");
   const auto closure = f->function("apply").slots[1].type;
-  expect(hir::classify_value(*f->layouts, f->checked.types.entry(closure).result)
-                 .value()
-                 .cls == hir::pass_class::aggregate,
-         "expected a fn value to be an aggregate");
+  expect(
+      hir::classify_value(*f->layouts, f->checked.types.entry(closure).result)
+              .value()
+              .cls == hir::pass_class::aggregate,
+      "expected a fn value to be an aggregate");
 }
 
 auto test_signature_operands_hide_the_result_address() -> void {
@@ -312,7 +314,8 @@ auto test_signature_agreement_ignores_type_ids_but_not_shape() -> void {
 
   const auto first = f->function("first").slots[0].type;
   const auto ref_params = std::vector<semantic::type_id>{first};
-  const auto c = hir::classify_signature(*f->layouts, ref_params, int32).value();
+  const auto c =
+      hir::classify_signature(*f->layouts, ref_params, int32).value();
   expect(c.agrees_with(c) && !a.agrees_with(c),
          "expected an address and a scalar to disagree");
 }
@@ -327,9 +330,10 @@ auto test_function_value_and_function_share_a_signature() -> void {
   const auto &direct = f->function("make_pair").signature;
   expect(indirect->agrees_with(direct),
          "expected `fn(int32) -> pair` to match `make_pair`");
-  expect(hir::classify_fn_type(*f->layouts, f->checked.types, f->builtin("int32"))
-             .has_value() == false,
-         "expected a non-function type to be refused");
+  expect(
+      hir::classify_fn_type(*f->layouts, f->checked.types, f->builtin("int32"))
+              .has_value() == false,
+      "expected a non-function type to be refused");
 }
 
 auto test_synthesized_functions_classify_with_handle_results() -> void {
@@ -349,12 +353,12 @@ auto test_synthesized_functions_classify_with_handle_results() -> void {
 
 auto test_constructor_is_built_in_the_result_bytes() -> void {
   auto f = build(read_program("forms.cn"));
-  expect_ops(*f, "make_pair",
-             {"compute s0.a = copy s1", "compute s0.b = binary + s1, #1",
-              "return"});
-  expect_ops(*f, "make_tuple",
-             {"compute s0.0 = copy s1", "compute s0.1 = binary + s1, #1",
-              "return"});
+  expect_ops(
+      *f, "make_pair",
+      {"compute s0.a = copy s1", "compute s0.b = binary + s1, #1", "return"});
+  expect_ops(
+      *f, "make_tuple",
+      {"compute s0.0 = copy s1", "compute s0.1 = binary + s1, #1", "return"});
   expect_ops(*f, "make_array",
              {"compute s0[0] = copy s1", "compute s0[1] = copy s1",
               "compute s0[2] = const 0", "return"});
@@ -426,9 +430,10 @@ auto test_nrvo_reports_why_a_local_is_not_built_in_the_result() -> void {
           {"sometimes_noisy", "the returns move different locals"}};
   for (const auto &[name, reason] : reasons) {
     const auto *decision = nrvo_decision_for(*f, name);
-    if (decision == nullptr || decision->applied || decision->reason != reason) {
+    if (decision == nullptr || decision->applied ||
+        decision->reason != reason) {
       std::cerr << name << ": expected `" << reason << "`, got "
-                << (decision == nullptr  ? "no decision"
+                << (decision == nullptr ? "no decision"
                     : decision->applied ? "applied"
                                         : decision->reason)
                 << "\n";
@@ -551,7 +556,8 @@ auto test_frame_layout_pads_to_alignment_and_checks_overflow() -> void {
   expect(hir::lay_out_frame(big_first) == 9, "expected no padding");
   // A zero-sized slot adds nothing, not even its alignment.
   const auto with_zero = std::vector<frame_request>{{1, 1}, {0, 8}, {1, 1}};
-  expect(hir::lay_out_frame(with_zero) == 2, "expected a zero-sized slot to add nothing");
+  expect(hir::lay_out_frame(with_zero) == 2,
+         "expected a zero-sized slot to add nothing");
   // Sums that do not fit report overflow instead of wrapping.
   const auto huge_sum = std::vector<frame_request>{{max - 1, 1}, {4, 1}};
   expect(hir::lay_out_frame(huge_sum) == max, "expected a sum overflow");
@@ -561,7 +567,8 @@ auto test_frame_layout_pads_to_alignment_and_checks_overflow() -> void {
       {1, uint64_t{1} << 63}, {1, uint64_t{1} << 63}, {1, uint64_t{1} << 63}};
   expect(hir::lay_out_frame(huge_pad) == max, "expected a padding overflow");
   const auto fits = std::vector<frame_request>{{1, uint64_t{1} << 63}};
-  expect(hir::lay_out_frame(fits) == 1, "expected a lone slot to need no padding");
+  expect(hir::lay_out_frame(fits) == 1,
+         "expected a lone slot to need no padding");
 }
 
 auto test_frame_plan_counts_the_slots_a_function_owns() -> void {
@@ -570,7 +577,8 @@ auto test_frame_plan_counts_the_slots_a_function_owns() -> void {
   const auto &big = frame_of(*f, "buf8");
   expect(contributor_bytes(small, "buf") == 32, "expected 4 int64 elements");
   expect(contributor_bytes(big, "buf") == 64, "expected 8 int64 elements");
-  expect(big.bytes - small.bytes == 32, "expected the larger buffer to cost its difference");
+  expect(big.bytes - small.bytes == 32,
+         "expected the larger buffer to cost its difference");
   const auto &two = frame_of(*f, "two_bufs");
   expect(contributor_bytes(two, "a") == 32 && contributor_bytes(two, "b") == 32,
          "expected each buffer to count");
@@ -588,9 +596,10 @@ auto test_frame_plan_counts_the_slots_a_function_owns() -> void {
 
 /// The tail-call ops of `function`.
 auto tail_calls_of(const hir::storage_function &function) -> size_t {
-  return static_cast<size_t>(std::ranges::count_if(function.ops, [](const auto &op) {
-    return op.kind == hir::op_kind::call_into && op.tail_call;
-  }));
+  return static_cast<size_t>(
+      std::ranges::count_if(function.ops, [](const auto &op) {
+        return op.kind == hir::op_kind::call_into && op.tail_call;
+      }));
 }
 
 auto test_only_scalar_tail_calls_replace_the_frame() -> void {
@@ -606,7 +615,8 @@ auto test_only_scalar_tail_calls_replace_the_frame() -> void {
          "expected a call passing bytes of this frame to keep it");
   expect(tail_calls_of(f->function("forwards_result")) == 0,
          "expected a call building the caller's result to keep the frame");
-  for (const auto *name : {"count_down", "is_even", "with_pair", "forwards_result"}) {
+  for (const auto *name :
+       {"count_down", "is_even", "with_pair", "forwards_result"}) {
     expect_verifies(*f, f->function(name), name);
   }
 
@@ -615,7 +625,8 @@ auto test_only_scalar_tail_calls_replace_the_frame() -> void {
   auto passes = f->function("with_pair");
   auto marked = false;
   for (auto &op : passes.ops) {
-    if (op.kind == hir::op_kind::call_into && op.callee.name.ends_with("sum_pair")) {
+    if (op.kind == hir::op_kind::call_into &&
+        op.callee.name.ends_with("sum_pair")) {
       op.tail_call = true;
       marked = true;
     }
@@ -626,11 +637,16 @@ auto test_only_scalar_tail_calls_replace_the_frame() -> void {
 
   // So is one with work left after it.
   auto later = f->function("count_down");
-  const auto call = static_cast<size_t>(std::ranges::find_if(later.ops, [](const auto &op) {
-                      return op.kind == hir::op_kind::call_into && op.tail_call;
-                    }) - later.ops.begin());
+  const auto call = static_cast<size_t>(
+      std::ranges::find_if(later.ops,
+                           [](const auto &op) {
+                             return op.kind == hir::op_kind::call_into &&
+                                    op.tail_call;
+                           }) -
+      later.ops.begin());
   auto extra = later.ops[call - 1];
-  later.ops.insert(later.ops.begin() + static_cast<std::ptrdiff_t>(call) + 1, extra);
+  later.ops.insert(later.ops.begin() + static_cast<std::ptrdiff_t>(call) + 1,
+                   extra);
   expect_rejects(*f, later, hir::verify_error_kind::bad_operation,
                  "tail call followed by more work", {}, "tail call");
 }
@@ -639,24 +655,27 @@ auto test_only_scalar_tail_calls_replace_the_frame() -> void {
 /// of thousands of distinct elements is built one element at a time and still
 /// verifies as complete.
 auto test_large_array_literals() -> void {
-  auto f = build(cinder::testing::read_program("bytecode_storage_test",
-                                               "far_offsets.cn"));
+  auto f = build(
+      cinder::testing::read_program("bytecode_storage_test", "far_offsets.cn"));
   const auto &init = f->function(hir::k_static_init_name);
   const auto replicates = std::ranges::count_if(init.ops, [](const auto &op) {
     return op.kind == hir::op_kind::replicate;
   });
   expect(replicates == 1 && init.ops.size() < 8,
          "expected the reified `[5; 9000]` static to be one store and a "
-         "replicate, got " + std::to_string(init.ops.size()) + " ops");
+         "replicate, got " +
+             std::to_string(init.ops.size()) + " ops");
   expect_verifies(*f, init, "static init");
   const auto &counted = f->function("counted");
-  const auto element_writes = std::ranges::count_if(counted.ops, [](const auto &op) {
-    return op.kind == hir::op_kind::compute && !op.dest.steps.empty() &&
-           op.dest.steps.back().kind == hir::projection_kind::element;
-  });
-  expect(element_writes == 8200,
-         "expected the 8200 distinct elements to be written one at a time, got " +
-             std::to_string(element_writes));
+  const auto element_writes =
+      std::ranges::count_if(counted.ops, [](const auto &op) {
+        return op.kind == hir::op_kind::compute && !op.dest.steps.empty() &&
+               op.dest.steps.back().kind == hir::projection_kind::element;
+      });
+  expect(
+      element_writes == 8200,
+      "expected the 8200 distinct elements to be written one at a time, got " +
+          std::to_string(element_writes));
   expect_verifies(*f, counted, "counted");
 }
 
@@ -670,7 +689,8 @@ auto test_an_outgoing_argument_is_part_of_the_callers_frame() -> void {
   expect(outgoing == 1, "expected the pair to be built in an outgoing slot");
   auto counted = uint64_t{0};
   for (const auto &part : frame_of(*f, "passes_pair").contributors) {
-    if (function.slots[part.slot].cls == hir::storage_class::outgoing_argument) {
+    if (function.slots[part.slot].cls ==
+        hir::storage_class::outgoing_argument) {
       counted = part.bytes;
     }
   }
@@ -679,24 +699,28 @@ auto test_an_outgoing_argument_is_part_of_the_callers_frame() -> void {
 
 auto test_an_overflow_message_lists_the_largest_first() -> void {
   const auto part = [](hir::storage_id slot, std::string name, uint64_t bytes) {
-    return hir::frame_contributor{.slot = slot, .name = std::move(name), .bytes = bytes};
+    return hir::frame_contributor{
+        .slot = slot, .name = std::move(name), .bytes = bytes};
   };
-  const auto plan = hir::frame_plan{
-      .function = "f",
-      .bytes = 100,
-      .contributors = {part(0, "a", 4), part(1, "b", 64), part(2, "", 16),
-                       part(3, "d", 8)}};
+  const auto plan =
+      hir::frame_plan{.function = "f",
+                      .bytes = 100,
+                      .contributors = {part(0, "a", 4), part(1, "b", 64),
+                                       part(2, "", 16), part(3, "d", 8)}};
   expect(hir::describe_frame_overflow(plan, 100).empty(),
          "expected nothing to say about a frame at the limit");
-  expect(hir::describe_frame_overflow(plan, 99) ==
-             "`f` needs 100 bytes of frame storage; the limit is 99 bytes; the "
-             "largest are `b` (64 bytes), a temporary (16 bytes), `d` (8 bytes)",
-         "expected the three largest, largest first");
-  expect(hir::describe_frame_overflow(plan, 99, 1).ends_with("the largest are `b` (64 bytes)"),
+  expect(
+      hir::describe_frame_overflow(plan, 99) ==
+          "`f` needs 100 bytes of frame storage; the limit is 99 bytes; the "
+          "largest are `b` (64 bytes), a temporary (16 bytes), `d` (8 bytes)",
+      "expected the three largest, largest first");
+  expect(hir::describe_frame_overflow(plan, 99, 1)
+             .ends_with("the largest are `b` (64 bytes)"),
          "expected only the number asked for");
   auto overflowed = plan;
   overflowed.bytes = std::numeric_limits<uint64_t>::max();
-  expect(hir::describe_frame_overflow(overflowed, 99).find("more frame storage than can be counted") !=
+  expect(hir::describe_frame_overflow(overflowed, 99)
+                 .find("more frame storage than can be counted") !=
              std::string::npos,
          "expected an overflowed total not to be printed as a number");
 }
@@ -711,7 +735,9 @@ auto test_a_loop_does_not_grow_its_frame() -> void {
 auto test_nrvo_shrinks_the_frame_by_the_local() -> void {
   auto off = build(read_program("frames.cn"), false);
   auto on = build(read_program("frames.cn"), true);
-  expect(frame_of(*off, "locals_only").bytes - frame_of(*on, "locals_only").bytes == 8,
+  expect(frame_of(*off, "locals_only").bytes -
+                 frame_of(*on, "locals_only").bytes ==
+             8,
          "expected the returned local to leave the frame");
   expect(on->lowering.nrvo.size() >= 1, "expected the pass to run");
 }
@@ -738,7 +764,8 @@ auto test_a_frame_over_the_limit_is_refused_with_its_contributors() -> void {
     expect(plan.function != "buf8", "expected no plan for a refused function");
   }
   // The functions that fit are untouched.
-  expect(f->refusal("buf4") == nullptr, "expected the smaller function to lower");
+  expect(f->refusal("buf4") == nullptr,
+         "expected the smaller function to lower");
   // At the language's own limit, a 4.8 GB local is refused and says so.
   const auto *huge = probe->refusal("holds_huge");
   expect(huge != nullptr &&
@@ -759,7 +786,8 @@ auto test_the_frame_limit_is_exact() -> void {
   auto probe = build(read_program("frames.cn"));
   const auto bytes = frame_of(*probe, "buf4").bytes;
   auto at = build(read_program("frames.cn"), false, bytes);
-  expect(at->refusal("buf4") == nullptr, "expected a frame at the limit to fit");
+  expect(at->refusal("buf4") == nullptr,
+         "expected a frame at the limit to fit");
   auto under = build(read_program("frames.cn"), false, bytes - 1);
   const auto *refused = under->refusal("buf4");
   expect(refused != nullptr &&
@@ -788,9 +816,9 @@ auto test_direct_constructions_make_no_intermediate_transfers() -> void {
              {"if s1", "call s0 = make_pair(s2)", "else",
               "compute s0.a = const 0", "compute s0.b = copy s2", "end_if",
               "return"});
-  expect_ops(*f, "sum_payload",
-             {"call s0.@circle.0 = make_pair(s1)", "publish s0 @circle",
-              "return"});
+  expect_ops(
+      *f, "sum_payload",
+      {"call s0.@circle.0 = make_pair(s1)", "publish s0 @circle", "return"});
   expect_ops(*f, "tuple_calls",
              {"call s0.0 = make_pair(s1)", "compute s2 = binary + s1, #1",
               "call s0.1 = make_pair(s2)", "dead s2", "return"});
@@ -805,13 +833,28 @@ auto test_try_rebuilds_the_failure_when_the_success_types_differ() -> void {
   // `parse(n)?` returns the operand's failure as the function's own result:
   // the err payload moves across and the variant is published.
   expect_ops(*f, "wrap",
-             {"call s3 = parse(s1)", "test s5 = s3 is @ok", "if s5", "dead s5",
-              "compute s4 = const true", "else", "dead s5",
-              "compute s4 = const false", "end_if", "if s4", "dead s4",
-              "compute s2 = copy s3.@ok.0", "else", "dead s4",
-              "compute s0.@err.0 = copy s3.@err.0", "publish s0 @err",
-              "return", "end_if", "dead s3", "compute s0.@ok.0.a = copy s2",
-              "compute s0.@ok.0.b = binary + s2, #1", "publish s0 @ok",
+             {"call s3 = parse(s1)",
+              "test s5 = s3 is @ok",
+              "if s5",
+              "dead s5",
+              "compute s4 = const true",
+              "else",
+              "dead s5",
+              "compute s4 = const false",
+              "end_if",
+              "if s4",
+              "dead s4",
+              "compute s2 = copy s3.@ok.0",
+              "else",
+              "dead s4",
+              "compute s0.@err.0 = copy s3.@err.0",
+              "publish s0 @err",
+              "return",
+              "end_if",
+              "dead s3",
+              "compute s0.@ok.0.a = copy s2",
+              "compute s0.@ok.0.b = binary + s2, #1",
+              "publish s0 @ok",
               "return"});
   // For an `option` the failure has no payload.
   auto none = size_t{0};
@@ -828,13 +871,26 @@ auto test_failure_inside_a_construction_drops_the_built_parts() -> void {
   // `x` is built when `y`'s `?` fails: it is dropped before the failure is
   // returned, and the success path leaves it to the value being built.
   expect_ops(*f, "duo_try",
-             {"call s2.x = make_noisy(s1)", "compute s4 = binary - s1, #1",
-              "call s3 = may_noisy(s4)", "dead s4", "test s5 = s3 is @ok",
-              "if s5", "dead s5", "move s2.y <- s3.@ok.0", "else", "dead s5",
-              "call.drop s6 = noisy::drop(&s2.x)", "dead s6",
-              "compute s0.@err.0 = copy s3.@err.0", "publish s0 @err",
-              "return", "end_if", "dead s3", "move s0.@ok.0 <- s2",
-              "publish s0 @ok", "return"});
+             {"call s2.x = make_noisy(s1)",
+              "compute s4 = binary - s1, #1",
+              "call s3 = may_noisy(s4)",
+              "dead s4",
+              "test s5 = s3 is @ok",
+              "if s5",
+              "dead s5",
+              "move s2.y <- s3.@ok.0",
+              "else",
+              "dead s5",
+              "call.drop s6 = noisy::drop(&s2.x)",
+              "dead s6",
+              "compute s0.@err.0 = copy s3.@err.0",
+              "publish s0 @err",
+              "return",
+              "end_if",
+              "dead s3",
+              "move s0.@ok.0 <- s2",
+              "publish s0 @ok",
+              "return"});
   // The same inside a tuple built in the result's own payload: the member
   // that was built is dropped, and then `err` is published over the `ok`
   // payload it left.
@@ -894,8 +950,8 @@ auto test_sum_is_published_after_its_payload() -> void {
              {"compute s0.@some.0 = copy s1", "publish s0 @some", "return"});
   // A sum nested in a struct publishes in place, before later fields.
   expect_ops(*f, "make_framed",
-             {"compute s0.kind.@circle.0 = copy s1",
-              "publish s0.kind @circle", "compute s0.id = copy s1", "return"});
+             {"compute s0.kind.@circle.0 = copy s1", "publish s0.kind @circle",
+              "compute s0.id = copy s1", "return"});
 }
 
 auto test_aggregate_arguments_use_outgoing_slots() -> void {
@@ -936,8 +992,8 @@ auto test_replacement_is_built_apart_from_the_target() -> void {
               "move s2 <- s3", "dead s3", "move s0 <- s2", "return"});
   // The callee borrows the old value while the new one is built elsewhere.
   expect_ops(*f, "self_bump",
-             {"call s2 = make_pair(s1)", "call s3 = bump(&s2)",
-              "move s2 <- s3", "dead s3", "move s0 <- s2", "return"});
+             {"call s2 = make_pair(s1)", "call s3 = bump(&s2)", "move s2 <- s3",
+              "dead s3", "move s0 <- s2", "return"});
 }
 
 auto test_projection_through_a_reference_dereferences() -> void {
@@ -978,8 +1034,8 @@ auto test_calls_between_modules_name_the_owner() -> void {
                        op.callee.name);
     }
   }
-  expect(owners == std::vector<std::string>{"tools/make", "tools/total",
-                                             "/make"},
+  expect(owners ==
+             std::vector<std::string>{"tools/make", "tools/total", "/make"},
          "expected the calls into tools to name it and the local one not to");
 
   // The drop of a value whose type lives in the other module is a call into
@@ -1032,8 +1088,8 @@ auto test_calls_between_modules_name_the_owner() -> void {
 auto test_scalar_and_unit_functions() -> void {
   auto f = build(read_program("forms.cn"));
   expect_ops(*f, "sum_scalars",
-             {"compute s2 = binary + s0, s1",
-              "compute s3 = binary * s2, #2", "return s3"});
+             {"compute s2 = binary + s0, s1", "compute s3 = binary * s2, #2",
+              "return s3"});
   expect_ops(*f, "unit_result", {"call s1 = make_pair(s0)", "return"});
 }
 
@@ -1129,10 +1185,11 @@ auto test_scope_exit_drop_is_a_marked_call() -> void {
          "expected a type with a drop to move and to need a drop");
   // Only synthesized drops carry the mark.
   const auto lowered = f->function("read_through");
-  expect(!lowered.ops[find_op(lowered, hir::op_kind::call_into, 0)].is_drop &&
-             !lowered.ops[find_op(lowered, hir::op_kind::call_into, 1)].is_drop &&
-             lowered.ops[find_op(lowered, hir::op_kind::call_into, 2)].is_drop,
-         "expected exactly the scheduled drop to be marked");
+  expect(
+      !lowered.ops[find_op(lowered, hir::op_kind::call_into, 0)].is_drop &&
+          !lowered.ops[find_op(lowered, hir::op_kind::call_into, 1)].is_drop &&
+          lowered.ops[find_op(lowered, hir::op_kind::call_into, 2)].is_drop,
+      "expected exactly the scheduled drop to be marked");
 }
 
 auto test_discarded_temporary_is_dropped() -> void {
@@ -1223,36 +1280,88 @@ auto test_a_sum_is_dropped_through_the_variant_it_holds() -> void {
               "end_if", "return s2"});
   // A payload that is not bound stays in the sum, and the arm drops it.
   expect_ops(*f, "first_of",
-             {"call s1 = make_duo(s0)", "test s3 = s1 is @both", "if s3",
-              "dead s3", "move s4 <- s1.@both.0",
-              "call.drop s5 = noisy::drop(&s1.@both.1)", "dead s5",
-              "compute s6 = copy s4.id", "call.drop s7 = noisy::drop(&s4)",
-              "dead s7", "compute s2 = copy s6", "else", "dead s3",
-              "test s8 = s1 is @left", "if s8", "dead s8",
-              "move s9 <- s1.@left.0", "compute s10 = copy s9.id",
-              "call.drop s11 = noisy::drop(&s9)", "dead s11",
-              "compute s2 = copy s10", "else", "dead s8",
-              "compute s2 = const 0", "end_if", "end_if", "return s2"});
+             {"call s1 = make_duo(s0)",
+              "test s3 = s1 is @both",
+              "if s3",
+              "dead s3",
+              "move s4 <- s1.@both.0",
+              "call.drop s5 = noisy::drop(&s1.@both.1)",
+              "dead s5",
+              "compute s6 = copy s4.id",
+              "call.drop s7 = noisy::drop(&s4)",
+              "dead s7",
+              "compute s2 = copy s6",
+              "else",
+              "dead s3",
+              "test s8 = s1 is @left",
+              "if s8",
+              "dead s8",
+              "move s9 <- s1.@left.0",
+              "compute s10 = copy s9.id",
+              "call.drop s11 = noisy::drop(&s9)",
+              "dead s11",
+              "compute s2 = copy s10",
+              "else",
+              "dead s8",
+              "compute s2 = const 0",
+              "end_if",
+              "end_if",
+              "return s2"});
   // The loop leaves when the item is `none`, which owes nothing.
   expect_ops(*f, "first_or",
-             {"call s1 = make_option(s0)", "test s2 = s1 is @some", "if s2",
-              "dead s2", "else", "dead s2", "test s3 = s1 is @some", "if s3",
-              "dead s3", "call.drop s4 = noisy::drop(&s1.@some.0)", "dead s4",
-              "else", "dead s3", "end_if", "compute s5 = unary - #5",
-              "return s5", "end_if", "move s6 <- s1.@some.0",
-              "compute s7 = copy s6.id", "call.drop s8 = noisy::drop(&s6)",
-              "dead s8", "return s7"});
+             {"call s1 = make_option(s0)",
+              "test s2 = s1 is @some",
+              "if s2",
+              "dead s2",
+              "else",
+              "dead s2",
+              "test s3 = s1 is @some",
+              "if s3",
+              "dead s3",
+              "call.drop s4 = noisy::drop(&s1.@some.0)",
+              "dead s4",
+              "else",
+              "dead s3",
+              "end_if",
+              "compute s5 = unary - #5",
+              "return s5",
+              "end_if",
+              "move s6 <- s1.@some.0",
+              "compute s7 = copy s6.id",
+              "call.drop s8 = noisy::drop(&s6)",
+              "dead s8",
+              "return s7"});
   // A pattern that binds nothing leaves the item in the sum, and the pass
   // drops it; the loop ends on `none`, which owes nothing.
   expect_ops(*f, "count_some",
-             {"compute s1 = copy s0", "compute s2 = const 0", "loop", "block",
-              "call s3 = make_option(s1)", "test s4 = s3 is @some", "if s4",
-              "dead s4", "call.drop s5 = noisy::drop(&s3.@some.0)", "dead s5",
-              "compute s2 = binary + s2, #1", "compute s1 = binary - s1, #1",
-              "else", "dead s4", "test s6 = s3 is @some", "if s6", "dead s6",
-              "call.drop s7 = noisy::drop(&s3.@some.0)", "dead s7", "else",
-              "dead s6", "end_if", "exit 1", "end_if", "dead s3", "end_block",
-              "end_loop", "return s2"});
+             {"compute s1 = copy s0",
+              "compute s2 = const 0",
+              "loop",
+              "block",
+              "call s3 = make_option(s1)",
+              "test s4 = s3 is @some",
+              "if s4",
+              "dead s4",
+              "call.drop s5 = noisy::drop(&s3.@some.0)",
+              "dead s5",
+              "compute s2 = binary + s2, #1",
+              "compute s1 = binary - s1, #1",
+              "else",
+              "dead s4",
+              "test s6 = s3 is @some",
+              "if s6",
+              "dead s6",
+              "call.drop s7 = noisy::drop(&s3.@some.0)",
+              "dead s7",
+              "else",
+              "dead s6",
+              "end_if",
+              "exit 1",
+              "end_if",
+              "dead s3",
+              "end_block",
+              "end_loop",
+              "return s2"});
   // `let else` leaves in the `else` arm, so the item is dropped there.
   expect_ops(*f, "has_some",
              {"call s1 = make_option(s0)", "test s2 = s1 is @some", "if s2",
@@ -1268,75 +1377,214 @@ auto test_literal_and_nested_tests_on_droppable_sums() -> void {
   // The literal is compared inside the arm for its variant; a payload bound
   // by the first arm leaves the sum, and the second arm's drop covers the rest.
   expect_ops(*f, "literal_payload",
-             {"call s1 = make_tagged(s0)", "test s3 = s1 is @item", "if s3",
-              "dead s3", "compute s4 = binary == s1.@item.1, #0", "if s4",
-              "dead s4", "move s5 <- s1.@item.0", "compute s6 = copy s5.id",
-              "call.drop s7 = noisy::drop(&s5)", "dead s7",
-              "compute s2 = copy s6", "else", "dead s4",
-              "test s8 = s1 is @item", "if s8", "dead s8",
-              "call.drop s9 = noisy::drop(&s1.@item.0)", "dead s9",
+             {"call s1 = make_tagged(s0)",
+              "test s3 = s1 is @item",
+              "if s3",
+              "dead s3",
+              "compute s4 = binary == s1.@item.1, #0",
+              "if s4",
+              "dead s4",
+              "move s5 <- s1.@item.0",
+              "compute s6 = copy s5.id",
+              "call.drop s7 = noisy::drop(&s5)",
+              "dead s7",
+              "compute s2 = copy s6",
+              "else",
+              "dead s4",
+              "test s8 = s1 is @item",
+              "if s8",
+              "dead s8",
+              "call.drop s9 = noisy::drop(&s1.@item.0)",
+              "dead s9",
               "compute s10 = copy s1.@item.1",
-              "compute s2 = binary + #100, s10", "else", "dead s8",
-              "compute s2 = unary - #1", "end_if", "end_if", "else", "dead s3",
-              "test s11 = s1 is @item", "if s11", "dead s11",
-              "call.drop s12 = noisy::drop(&s1.@item.0)", "dead s12",
+              "compute s2 = binary + #100, s10",
+              "else",
+              "dead s8",
+              "compute s2 = unary - #1",
+              "end_if",
+              "end_if",
+              "else",
+              "dead s3",
+              "test s11 = s1 is @item",
+              "if s11",
+              "dead s11",
+              "call.drop s12 = noisy::drop(&s1.@item.0)",
+              "dead s12",
               "compute s13 = copy s1.@item.1",
-              "compute s2 = binary + #100, s13", "else", "dead s11",
-              "compute s2 = unary - #1", "end_if", "end_if", "return s2"});
+              "compute s2 = binary + #100, s13",
+              "else",
+              "dead s11",
+              "compute s2 = unary - #1",
+              "end_if",
+              "end_if",
+              "return s2"});
   // A nested variant is tested on the payload of an outer variant that was
   // already confirmed; the verifier follows both.
   // The `else` block leaves, so it appears at both places a test can fail,
   // each time after the drops of what the sum holds there.
-  expect_ops(
-      *f, "nested_else",
-      {"call s1 = make_nested(s0)", "test s2 = s1 is @some", "if s2", "dead s2",
-       "test s3 = s1.@some.0 is @full", "if s3", "dead s3", "else", "dead s3",
-       "test s4 = s1 is @some", "if s4", "dead s4",
-       "test s5 = s1.@some.0 is @full", "if s5", "dead s5",
-       "call.drop s6 = noisy::drop(&s1.@some.0.@full.0)", "dead s6", "else",
-       "dead s5", "end_if", "else", "dead s4", "end_if",
-       "compute s7 = unary - #7", "return s7", "end_if", "else", "dead s2",
-       "test s8 = s1 is @some", "if s8", "dead s8",
-       "test s9 = s1.@some.0 is @full", "if s9", "dead s9",
-       "call.drop s10 = noisy::drop(&s1.@some.0.@full.0)", "dead s10", "else",
-       "dead s9", "end_if", "else", "dead s8", "end_if",
-       "compute s11 = unary - #7", "return s11", "end_if",
-       "move s12 <- s1.@some.0.@full.0", "compute s13 = copy s12.id",
-       "call.drop s14 = noisy::drop(&s12)", "dead s14", "return s13"});
+  expect_ops(*f, "nested_else",
+             {"call s1 = make_nested(s0)",
+              "test s2 = s1 is @some",
+              "if s2",
+              "dead s2",
+              "test s3 = s1.@some.0 is @full",
+              "if s3",
+              "dead s3",
+              "else",
+              "dead s3",
+              "test s4 = s1 is @some",
+              "if s4",
+              "dead s4",
+              "test s5 = s1.@some.0 is @full",
+              "if s5",
+              "dead s5",
+              "call.drop s6 = noisy::drop(&s1.@some.0.@full.0)",
+              "dead s6",
+              "else",
+              "dead s5",
+              "end_if",
+              "else",
+              "dead s4",
+              "end_if",
+              "compute s7 = unary - #7",
+              "return s7",
+              "end_if",
+              "else",
+              "dead s2",
+              "test s8 = s1 is @some",
+              "if s8",
+              "dead s8",
+              "test s9 = s1.@some.0 is @full",
+              "if s9",
+              "dead s9",
+              "call.drop s10 = noisy::drop(&s1.@some.0.@full.0)",
+              "dead s10",
+              "else",
+              "dead s9",
+              "end_if",
+              "else",
+              "dead s8",
+              "end_if",
+              "compute s11 = unary - #7",
+              "return s11",
+              "end_if",
+              "move s12 <- s1.@some.0.@full.0",
+              "compute s13 = copy s12.id",
+              "call.drop s14 = noisy::drop(&s12)",
+              "dead s14",
+              "return s13"});
   // Nothing is bound, so the payload stays with the sum, and the drop at the
   // end of the scope tests the outer variant and then the inner one.
-  expect_ops(
-      *f, "nested_peek",
-      {"call s1 = make_nested(s0)", "test s3 = s1 is @some", "if s3", "dead s3",
-       "test s4 = s1.@some.0 is @full", "if s4", "dead s4",
-       "compute s2 = const 3", "else", "dead s4", "test s5 = s1 is @some",
-       "if s5", "dead s5", "test s6 = s1.@some.0 is @vacant", "if s6",
-       "dead s6", "compute s2 = const 1", "else", "dead s6",
-       "compute s2 = const 2", "end_if", "else", "dead s5",
-       "compute s2 = const 2", "end_if", "end_if", "else", "dead s3",
-       "test s7 = s1 is @some", "if s7", "dead s7",
-       "test s8 = s1.@some.0 is @vacant", "if s8", "dead s8",
-       "compute s2 = const 1", "else", "dead s8", "compute s2 = const 2",
-       "end_if", "else", "dead s7", "compute s2 = const 2", "end_if", "end_if",
-       "test s9 = s1 is @some", "if s9", "dead s9",
-       "test s10 = s1.@some.0 is @full", "if s10", "dead s10",
-       "call.drop s11 = noisy::drop(&s1.@some.0.@full.0)", "dead s11", "else",
-       "dead s10", "end_if", "else", "dead s9", "end_if", "return s2"});
-  expect_ops(
-      *f, "nested",
-      {"call s1 = make_nested(s0)", "test s3 = s1 is @some", "if s3", "dead s3",
-       "test s4 = s1.@some.0 is @full", "if s4", "dead s4",
-       "move s5 <- s1.@some.0.@full.0", "compute s6 = copy s5.id",
-       "call.drop s7 = noisy::drop(&s5)", "dead s7", "compute s2 = copy s6",
-       "else", "dead s4", "test s8 = s1 is @some", "if s8", "dead s8",
-       "test s9 = s1.@some.0 is @vacant", "if s9", "dead s9",
-       "compute s2 = unary - #1", "else", "dead s9", "compute s2 = const 0",
-       "end_if", "else", "dead s8", "compute s2 = const 0", "end_if", "end_if",
-       "else", "dead s3", "test s10 = s1 is @some", "if s10", "dead s10",
-       "test s11 = s1.@some.0 is @vacant", "if s11", "dead s11",
-       "compute s2 = unary - #1", "else", "dead s11", "compute s2 = const 0",
-       "end_if", "else", "dead s10", "compute s2 = const 0", "end_if",
-       "end_if", "return s2"});
+  expect_ops(*f, "nested_peek",
+             {"call s1 = make_nested(s0)",
+              "test s3 = s1 is @some",
+              "if s3",
+              "dead s3",
+              "test s4 = s1.@some.0 is @full",
+              "if s4",
+              "dead s4",
+              "compute s2 = const 3",
+              "else",
+              "dead s4",
+              "test s5 = s1 is @some",
+              "if s5",
+              "dead s5",
+              "test s6 = s1.@some.0 is @vacant",
+              "if s6",
+              "dead s6",
+              "compute s2 = const 1",
+              "else",
+              "dead s6",
+              "compute s2 = const 2",
+              "end_if",
+              "else",
+              "dead s5",
+              "compute s2 = const 2",
+              "end_if",
+              "end_if",
+              "else",
+              "dead s3",
+              "test s7 = s1 is @some",
+              "if s7",
+              "dead s7",
+              "test s8 = s1.@some.0 is @vacant",
+              "if s8",
+              "dead s8",
+              "compute s2 = const 1",
+              "else",
+              "dead s8",
+              "compute s2 = const 2",
+              "end_if",
+              "else",
+              "dead s7",
+              "compute s2 = const 2",
+              "end_if",
+              "end_if",
+              "test s9 = s1 is @some",
+              "if s9",
+              "dead s9",
+              "test s10 = s1.@some.0 is @full",
+              "if s10",
+              "dead s10",
+              "call.drop s11 = noisy::drop(&s1.@some.0.@full.0)",
+              "dead s11",
+              "else",
+              "dead s10",
+              "end_if",
+              "else",
+              "dead s9",
+              "end_if",
+              "return s2"});
+  expect_ops(*f, "nested",
+             {"call s1 = make_nested(s0)",
+              "test s3 = s1 is @some",
+              "if s3",
+              "dead s3",
+              "test s4 = s1.@some.0 is @full",
+              "if s4",
+              "dead s4",
+              "move s5 <- s1.@some.0.@full.0",
+              "compute s6 = copy s5.id",
+              "call.drop s7 = noisy::drop(&s5)",
+              "dead s7",
+              "compute s2 = copy s6",
+              "else",
+              "dead s4",
+              "test s8 = s1 is @some",
+              "if s8",
+              "dead s8",
+              "test s9 = s1.@some.0 is @vacant",
+              "if s9",
+              "dead s9",
+              "compute s2 = unary - #1",
+              "else",
+              "dead s9",
+              "compute s2 = const 0",
+              "end_if",
+              "else",
+              "dead s8",
+              "compute s2 = const 0",
+              "end_if",
+              "end_if",
+              "else",
+              "dead s3",
+              "test s10 = s1 is @some",
+              "if s10",
+              "dead s10",
+              "test s11 = s1.@some.0 is @vacant",
+              "if s11",
+              "dead s11",
+              "compute s2 = unary - #1",
+              "else",
+              "dead s11",
+              "compute s2 = const 0",
+              "end_if",
+              "else",
+              "dead s10",
+              "compute s2 = const 0",
+              "end_if",
+              "end_if",
+              "return s2"});
 }
 
 auto test_match_arm_guards() -> void {
@@ -1360,25 +1608,53 @@ auto test_match_arm_guards() -> void {
   // The guard copies a scalar out of the payload, so the sum stays whole
   // through the failed guard and the scope-end drop still finds its variant.
   expect_ops(*g, "guard_scalar",
-             {"call s1 = make_tagged(s0)", "test s3 = s1 is @item", "if s3",
-              "dead s3", "compute s4 = copy s1.@item.1",
-              "compute s5 = binary > s4, #5", "if s5", "dead s5",
-              "compute s2 = copy s4", "else", "dead s5",
-              "test s6 = s1 is @item", "if s6", "dead s6",
-              "compute s2 = const 1", "else", "dead s6",
-              "compute s2 = const 0", "end_if", "end_if", "else", "dead s3",
-              "test s7 = s1 is @item", "if s7", "dead s7",
-              "compute s2 = const 1", "else", "dead s7",
-              "compute s2 = const 0", "end_if", "end_if",
-              "test s8 = s1 is @item", "if s8", "dead s8",
-              "call.drop s9 = noisy::drop(&s1.@item.0)", "dead s9", "else",
-              "dead s8", "end_if", "return s2"});
+             {"call s1 = make_tagged(s0)",
+              "test s3 = s1 is @item",
+              "if s3",
+              "dead s3",
+              "compute s4 = copy s1.@item.1",
+              "compute s5 = binary > s4, #5",
+              "if s5",
+              "dead s5",
+              "compute s2 = copy s4",
+              "else",
+              "dead s5",
+              "test s6 = s1 is @item",
+              "if s6",
+              "dead s6",
+              "compute s2 = const 1",
+              "else",
+              "dead s6",
+              "compute s2 = const 0",
+              "end_if",
+              "end_if",
+              "else",
+              "dead s3",
+              "test s7 = s1 is @item",
+              "if s7",
+              "dead s7",
+              "compute s2 = const 1",
+              "else",
+              "dead s7",
+              "compute s2 = const 0",
+              "end_if",
+              "end_if",
+              "test s8 = s1 is @item",
+              "if s8",
+              "dead s8",
+              "call.drop s9 = noisy::drop(&s1.@item.0)",
+              "dead s9",
+              "else",
+              "dead s8",
+              "end_if",
+              "return s2"});
   expect_verifies(*g, g->function("guard_scalar"), "guard_scalar");
   const auto *drops_first = g->refusal("guard_then_take");
-  expect(drops_first != nullptr &&
-             drops_first->message.find("drops part of the value") !=
-                 std::string::npos,
-         "expected a guard run after a drop of the pattern's part to be refused");
+  expect(
+      drops_first != nullptr &&
+          drops_first->message.find("drops part of the value") !=
+              std::string::npos,
+      "expected a guard run after a drop of the pattern's part to be refused");
   const auto *takes = g->refusal("guard_takes");
   expect(takes != nullptr &&
              takes->message.find("needs a drop") != std::string::npos,
@@ -1404,7 +1680,8 @@ auto test_places_reached_through_references() -> void {
   // straight after.
   expect_verifies(*f, f->function("set_list"), "set_list");
   auto unreplaced = f->function("set_list");
-  unreplaced.ops.erase(unreplaced.ops.begin() + static_cast<std::ptrdiff_t>(
+  unreplaced.ops.erase(unreplaced.ops.begin() +
+                       static_cast<std::ptrdiff_t>(
                            find_op(unreplaced, hir::op_kind::move_into, 1)));
   expect_rejects(*f, unreplaced, hir::verify_error_kind::move_from_reference,
                  "a drop through a reference that nothing replaces");
@@ -1500,8 +1777,8 @@ auto test_verifier_follows_the_variant_a_droppable_sum_holds() -> void {
   make_true.literal = cinder::token_kind::kw_true;
   make_true.text = "true";
   other_flag.ops.insert(other_flag.ops.begin() + 2, make_true);
-  other_flag.ops[find_op(other_flag, hir::op_kind::if_begin)]
-      .condition.where = place_at(other_slot, flag_type);
+  other_flag.ops[find_op(other_flag, hir::op_kind::if_begin)].condition.where =
+      place_at(other_slot, flag_type);
   expect_rejects(*f, other_flag, hir::verify_error_kind::join_mismatch,
                  "an `if` that reads a flag the variant test did not write");
 
@@ -1537,9 +1814,11 @@ auto test_verifier_follows_the_variant_a_droppable_sum_holds() -> void {
 
   // After the arms join, the sum may hold any variant again.
   auto joined = f->function("nested_peek");
-  const auto payload =
-      joined.ops[find_op(joined, hir::op_kind::call_into, 1)].args[0].value.where;
-  const auto sink = add_slot(joined, hir::storage_class::frame_local, payload.type);
+  const auto payload = joined.ops[find_op(joined, hir::op_kind::call_into, 1)]
+                           .args[0]
+                           .value.where;
+  const auto sink =
+      add_slot(joined, hir::storage_class::frame_local, payload.type);
   auto take = hir::storage_op{.kind = hir::op_kind::move_into};
   take.dest = place_at(sink, payload.type);
   take.source = payload;
@@ -1554,29 +1833,29 @@ auto test_verifier_follows_the_variant_a_droppable_sum_holds() -> void {
   auto either_after = f->function("peek");
   const auto kept =
       either_after.ops[find_op(either_after, hir::op_kind::call_into, 1)]
-          .args[0].value.where;
+          .args[0]
+          .value.where;
   const auto kept_sink =
       add_slot(either_after, hir::storage_class::frame_local, kept.type);
   auto take_kept = hir::storage_op{.kind = hir::op_kind::move_into};
   take_kept.dest = place_at(kept_sink, kept.type);
   take_kept.source = kept;
-  either_after.ops.insert(
-      either_after.ops.begin() +
-          static_cast<std::ptrdiff_t>(
-              find_op(either_after, hir::op_kind::test_variant, 1)),
-      take_kept);
+  either_after.ops.insert(either_after.ops.begin() +
+                              static_cast<std::ptrdiff_t>(find_op(
+                                  either_after, hir::op_kind::test_variant, 1)),
+                          take_kept);
   expect_rejects(*f, either_after, hir::verify_error_kind::partial_move,
                  "a payload taken after arms for both variants joined");
 
   // A tag that is known is still not readable once the payload was dropped.
   auto retest = f->function("nested_peek");
-  const auto retest_flag = add_slot(retest, hir::storage_class::frame_local,
-                                    retest.slots[3].type);
+  const auto retest_flag =
+      add_slot(retest, hir::storage_class::frame_local, retest.slots[3].type);
   auto again = retest.ops[find_op(retest, hir::op_kind::test_variant, 1)];
   again.dest = place_at(retest_flag, retest.slots[3].type);
   const auto after_drop = find_op(retest, hir::op_kind::call_into, 1) + 1;
-  retest.ops.insert(retest.ops.begin() + static_cast<std::ptrdiff_t>(after_drop),
-                    again);
+  retest.ops.insert(
+      retest.ops.begin() + static_cast<std::ptrdiff_t>(after_drop), again);
   expect_rejects(*f, retest, hir::verify_error_kind::use_after_drop,
                  "a variant test of a payload after its drop ran");
 
@@ -1682,8 +1961,9 @@ auto test_verifier_checks_projection_bounds_and_types() -> void {
                  "an element past the end of an array");
 
   auto deref = f->function("make_pair");
-  deref.ops[0].dest.steps.insert(deref.ops[0].dest.steps.begin(),
-                                 hir::projection{.kind = hir::projection_kind::deref});
+  deref.ops[0].dest.steps.insert(
+      deref.ops[0].dest.steps.begin(),
+      hir::projection{.kind = hir::projection_kind::deref});
   expect_rejects(*f, deref, hir::verify_error_kind::bad_place,
                  "a dereference of a value that is not an address");
 }
@@ -1705,11 +1985,10 @@ auto test_verifier_checks_transfer_rules() -> void {
   auto mismatched = f->function("return_local");
   auto &join = mismatched.ops[find_op(mismatched, hir::op_kind::move_into)];
   join.source.type = f->builtin("int32");
-  expect_rejects(*f, join.source.type == f->builtin("int32")
-                         ? mismatched
-                         : mismatched,
-                 hir::verify_error_kind::type_mismatch,
-                 "a transfer between different types");
+  expect_rejects(
+      *f, join.source.type == f->builtin("int32") ? mismatched : mismatched,
+      hir::verify_error_kind::type_mismatch,
+      "a transfer between different types");
 }
 
 auto test_verifier_rejects_moves_out_of_references_and_sums() -> void {
@@ -1721,23 +2000,22 @@ auto test_verifier_rejects_moves_out_of_references_and_sums() -> void {
   const auto local = add_slot(through, hir::storage_class::frame_local, pair);
   auto steal = hir::storage_op{.kind = hir::op_kind::move_into};
   steal.dest = place_at(local, pair);
-  steal.source = place_at(
-      0, pair, {hir::projection{.kind = hir::projection_kind::deref}});
+  steal.source =
+      place_at(0, pair, {hir::projection{.kind = hir::projection_kind::deref}});
   through.ops.insert(through.ops.begin(), steal);
   expect_rejects(*f, through, hir::verify_error_kind::move_from_reference,
                  "a move out of borrowed bytes");
 
   // Take one payload out of a sum, then pass the sum on whole.
   auto partial = f->function("pass_shape");
-  const auto taken = add_slot(partial, hir::storage_class::frame_local,
-                              f->builtin("int32"));
+  const auto taken =
+      add_slot(partial, hir::storage_class::frame_local, f->builtin("int32"));
   auto take = hir::storage_op{.kind = hir::op_kind::move_into};
   take.dest = place_at(taken, f->builtin("int32"));
-  take.source = place_at(
-      0, f->builtin("int32"),
-      {hir::projection{.kind = hir::projection_kind::payload,
-                       .index = 0,
-                       .name = "rect"}});
+  take.source = place_at(0, f->builtin("int32"),
+                         {hir::projection{.kind = hir::projection_kind::payload,
+                                          .index = 0,
+                                          .name = "rect"}});
   partial.ops.insert(partial.ops.begin(), take);
   expect_rejects(*f, partial, hir::verify_error_kind::uninitialized,
                  "a sum read whole after one payload moved out");
@@ -1767,8 +2045,9 @@ auto test_descriptor_words_are_parts() -> void {
   auto f = build(read_program("forms.cn"));
   expect_ops(*f, "text_len", {"compute s1 = copy s0.len", "return s1"});
   expect_ops(*f, "text_data", {"compute s1 = copy s0.data", "return s1"});
-  expect_ops(*f, "view_of",
-             {"compute s0.len = copy s2", "compute s0.data = copy s1", "return"});
+  expect_ops(
+      *f, "view_of",
+      {"compute s0.len = copy s2", "compute s0.data = copy s1", "return"});
 
   // A length read as a signed word.
   auto signed_len = f->function("text_len");
@@ -1789,9 +2068,9 @@ auto test_descriptor_words_are_parts() -> void {
 
   // A view with only its length written is not a value.
   auto half = f->function("view_of");
-  half.ops.erase(half.ops.begin() + static_cast<std::ptrdiff_t>(find_op(
-                                        half, hir::op_kind::compute)) +
-                 1);
+  half.ops.erase(
+      half.ops.begin() +
+      static_cast<std::ptrdiff_t>(find_op(half, hir::op_kind::compute)) + 1);
   expect_rejects(*f, half, hir::verify_error_kind::bad_result,
                  "a view returned with its data word unwritten");
 
@@ -1807,10 +2086,10 @@ auto test_descriptor_words_are_parts() -> void {
 
 auto test_indexes_are_checked() -> void {
   auto f = build(read_program("forms.cn"));
-  expect_ops(*f, "text_at", {"compute s2 = index s1 < s0.len",
-                             "compute s3 = offset s0.data, s2 * 1",
-                             "compute s4 = copy s3.*", "dead s3", "dead s2",
-                             "return s4"});
+  expect_ops(*f, "text_at",
+             {"compute s2 = index s1 < s0.len",
+              "compute s3 = offset s0.data, s2 * 1", "compute s4 = copy s3.*",
+              "dead s3", "dead s2", "return s4"});
   expect_ops(*f, "text_part",
              {"compute s4 = bound s3 <= s1.len", "compute s5 = bound s2 <= s4",
               "compute s0.data = offset s1.data, s5 * 1",
@@ -1834,15 +2113,17 @@ auto test_indexes_are_checked() -> void {
   auto wide = f->function("text_at");
   wide.ops[1].stride = 8;
   expect_rejects(*f, wide, hir::verify_error_kind::type_mismatch,
-                 "a byte offset stepping a word at a time", {}, "steps 8 bytes");
+                 "a byte offset stepping a word at a time", {},
+                 "steps 8 bytes");
 }
 
 auto test_fills_and_computed_fields() -> void {
   auto f = build(read_program("forms.cn"));
   expect_ops(*f, "filled",
              {"compute s0[0] = copy s1", "replicate s0 <- s0[0]", "return"});
-  expect_ops(*f, "doubled", {"call s1 = make_pair(s0)", "compute s2 = copy s1.b",
-                              "dead s1", "return s2"});
+  expect_ops(*f, "doubled",
+             {"call s1 = make_pair(s0)", "compute s2 = copy s1.b", "dead s1",
+              "return s2"});
 
   // Only element 0 can be the source: another element is not the value, and
   // is overwritten by the copies.
@@ -1891,7 +2172,8 @@ auto test_statics() -> void {
   // Every function shares a static, so nothing moves out of one.
   auto moved = f->function("pair_first");
   const auto pair_type = moved.slots[0].type;
-  const auto taken = add_slot(moved, hir::storage_class::frame_local, pair_type);
+  const auto taken =
+      add_slot(moved, hir::storage_class::frame_local, pair_type);
   moved.ops.insert(moved.ops.begin(),
                    hir::storage_op{.kind = hir::op_kind::move_into,
                                    .dest = place_at(taken, pair_type),
@@ -1925,23 +2207,12 @@ auto test_stdlib_shapes() -> void {
   // Each optional field is settled under its own `if`: the join after the
   // first must keep what the `else` side learned about that field.
   expect_ops(*f, "release",
-             {"test s1 = s0.first is @some",
-              "if s1",
-              "dead s1",
-              "call.drop s2 = noisy::drop(&s0.first.@some.0)",
-              "dead s2",
-              "else",
-              "dead s1",
-              "end_if",
-              "test s3 = s0.second is @some",
-              "if s3",
-              "dead s3",
-              "call.drop s4 = noisy::drop(&s0.second.@some.0)",
-              "dead s4",
-              "else",
-              "dead s3",
-              "end_if",
-              "return"});
+             {"test s1 = s0.first is @some", "if s1", "dead s1",
+              "call.drop s2 = noisy::drop(&s0.first.@some.0)", "dead s2",
+              "else", "dead s1", "end_if", "test s3 = s0.second is @some",
+              "if s3", "dead s3",
+              "call.drop s4 = noisy::drop(&s0.second.@some.0)", "dead s4",
+              "else", "dead s3", "end_if", "return"});
   expect_verifies(*f, f->function("release"), "release");
 
   // The second field's drop is still owed when its `if` is removed.
@@ -1992,8 +2263,7 @@ auto test_verifier_checks_call_signatures() -> void {
                  "a call with a missing argument");
 
   auto indirect = f->function("apply");
-  indirect.ops[find_op(indirect, hir::op_kind::call_into)]
-      .signature.params[0] =
+  indirect.ops[find_op(indirect, hir::op_kind::call_into)].signature.params[0] =
       hir::classify_value(*f->layouts, f->builtin("int64")).value();
   expect_rejects(*f, indirect, hir::verify_error_kind::signature_mismatch,
                  "an indirect call that disagrees with the function value");
@@ -2002,15 +2272,17 @@ auto test_verifier_checks_call_signatures() -> void {
 auto test_verifier_checks_argument_consumption() -> void {
   auto f = build(read_program("forms.cn"));
   auto unused = f->function("pass_fresh");
-  unused.ops.erase(unused.ops.begin() +
-                   static_cast<std::ptrdiff_t>(
-                       find_op(unused, hir::op_kind::call_into, 1)));
+  unused.ops.erase(
+      unused.ops.begin() +
+      static_cast<std::ptrdiff_t>(find_op(unused, hir::op_kind::call_into, 1)));
   expect_rejects(*f, unused, hir::verify_error_kind::bad_lifetime_end,
                  "an outgoing argument no call consumed");
 
   auto shared = f->function("pass_fresh");
   auto &call = shared.ops[find_op(shared, hir::op_kind::call_into, 1)];
-  call.args[0].slot = place_at(add_slot(shared, hir::storage_class::frame_local, call.args[0].slot.type), call.args[0].slot.type);
+  call.args[0].slot = place_at(
+      add_slot(shared, hir::storage_class::frame_local, call.args[0].slot.type),
+      call.args[0].slot.type);
   expect_rejects(*f, shared, hir::verify_error_kind::bad_argument,
                  "an argument that is not an outgoing slot");
 }
@@ -2123,10 +2395,10 @@ auto test_verifier_checks_the_shape_of_a_drop_call() -> void {
   auto borrowed = f->function("read_id");
   auto drop = f->function("forget_noisy").ops[2];
   const auto noisy = f->function("forget_noisy").slots[1].type;
-  drop.dest = place_at(add_slot(borrowed, hir::storage_class::frame_local, unit),
-                       unit);
-  drop.args[0].value.where =
-      place_at(0, noisy, {hir::projection{.kind = hir::projection_kind::deref}});
+  drop.dest =
+      place_at(add_slot(borrowed, hir::storage_class::frame_local, unit), unit);
+  drop.args[0].value.where = place_at(
+      0, noisy, {hir::projection{.kind = hir::projection_kind::deref}});
   borrowed.ops.insert(borrowed.ops.begin(), drop);
   expect_rejects(*f, borrowed, hir::verify_error_kind::move_from_reference,
                  "a drop of a value behind a reference");
@@ -2208,8 +2480,8 @@ auto test_if_branches_build_the_value_in_the_destination() -> void {
              {"compute s2 = binary > s0, #10", "if s2", "dead s2",
               "compute s1 = const 3", "else", "dead s2",
               "compute s3 = binary > s0, #5", "if s3", "dead s3",
-              "compute s1 = const 2", "else", "dead s3",
-              "compute s1 = const 1", "end_if", "end_if", "return s1"});
+              "compute s1 = const 2", "else", "dead s3", "compute s1 = const 1",
+              "end_if", "end_if", "return s1"});
   // A path that returns leaves the join to the other path.
   expect_ops(*f, "early",
              {"compute s1 = binary > s0, #0", "if s1", "dead s1", "return #1",
@@ -2224,8 +2496,8 @@ auto test_loops_test_run_and_repeat() -> void {
   // The condition leaves the loop; the body is a block; the loop repeats.
   expect_ops(*f, "count",
              {"compute s1 = const 0", "loop", "compute s2 = binary < s1, s0",
-              "if s2", "dead s2", "else", "dead s2", "exit 0", "end_if", "block",
-              "compute s1 = binary + s1, #1", "end_block", "end_loop",
+              "if s2", "dead s2", "else", "dead s2", "exit 0", "end_if",
+              "block", "compute s1 = binary + s1, #1", "end_block", "end_loop",
               "return s1"});
   // Storage the body declares ends before the loop repeats.
   expect_ops(*f, "count_with_locals",
@@ -2253,14 +2525,33 @@ auto test_break_and_continue_name_their_loop_by_depth() -> void {
   auto f = build(read_program("flow.cn"));
   // `continue` leaves the body block, so the step still runs.
   expect_ops(*f, "stepped",
-             {"compute s1 = const 0", "compute s2 = const 0",
-              "compute s3 = copy s0", "compute s4 = copy s2", "loop",
-              "compute s5 = binary < s4, s3", "if s5", "dead s5", "else",
-              "dead s5", "exit 0", "end_if", "block", "compute s6 = copy s4",
-              "compute s7 = binary == s6, #2", "if s7", "dead s7", "exit 0",
-              "else", "dead s7", "end_if", "compute s1 = binary + s1, s6",
-              "end_block", "compute s4 = binary + s4, #1", "dead s6",
-              "end_loop", "return s1"});
+             {"compute s1 = const 0",
+              "compute s2 = const 0",
+              "compute s3 = copy s0",
+              "compute s4 = copy s2",
+              "loop",
+              "compute s5 = binary < s4, s3",
+              "if s5",
+              "dead s5",
+              "else",
+              "dead s5",
+              "exit 0",
+              "end_if",
+              "block",
+              "compute s6 = copy s4",
+              "compute s7 = binary == s6, #2",
+              "if s7",
+              "dead s7",
+              "exit 0",
+              "else",
+              "dead s7",
+              "end_if",
+              "compute s1 = binary + s1, s6",
+              "end_block",
+              "compute s4 = binary + s4, #1",
+              "dead s6",
+              "end_loop",
+              "return s1"});
   // In nested loops `break` counts the inner body block and the inner loop.
   const auto inner = f->function("nested");
   auto depths = std::vector<size_t>{};
@@ -2272,12 +2563,28 @@ auto test_break_and_continue_name_their_loop_by_depth() -> void {
   expect((depths == std::vector<size_t>{0, 0, 1}),
          "expected exits for the outer test, the inner test, and the break");
   expect_ops(*f, "skips",
-             {"compute s1 = const 0", "compute s2 = const 0", "loop",
-              "compute s3 = binary < s1, s0", "if s3", "dead s3", "else",
-              "dead s3", "exit 0", "end_if", "block",
-              "compute s1 = binary + s1, #1", "compute s4 = binary == s1, #3",
-              "if s4", "dead s4", "exit 0", "else", "dead s4", "end_if",
-              "compute s2 = binary + s2, s1", "end_block", "end_loop",
+             {"compute s1 = const 0",
+              "compute s2 = const 0",
+              "loop",
+              "compute s3 = binary < s1, s0",
+              "if s3",
+              "dead s3",
+              "else",
+              "dead s3",
+              "exit 0",
+              "end_if",
+              "block",
+              "compute s1 = binary + s1, #1",
+              "compute s4 = binary == s1, #3",
+              "if s4",
+              "dead s4",
+              "exit 0",
+              "else",
+              "dead s4",
+              "end_if",
+              "compute s2 = binary + s2, s1",
+              "end_block",
+              "end_loop",
               "return s2"});
 }
 
@@ -2361,10 +2668,10 @@ auto test_drops_inside_branches_and_loops() -> void {
   // The value dropped each iteration is built again on the next one.
   expect_ops(*f, "drop_in_loop",
              {"compute s1 = const 0", "loop", "compute s2 = binary < s1, s0",
-              "if s2", "dead s2", "else", "dead s2", "exit 0", "end_if", "block",
-              "call s3 = make_noisy(s1)", "compute s1 = binary + s1, #1",
-              "call.drop s4 = noisy::drop(&s3)", "dead s4", "end_block",
-              "dead s3", "end_loop", "return s1"});
+              "if s2", "dead s2", "else", "dead s2", "exit 0", "end_if",
+              "block", "call s3 = make_noisy(s1)",
+              "compute s1 = binary + s1, #1", "call.drop s4 = noisy::drop(&s3)",
+              "dead s4", "end_block", "dead s3", "end_loop", "return s1"});
 }
 
 auto test_verifier_checks_joins_and_loops() -> void {
@@ -2464,21 +2771,20 @@ auto test_verifier_follows_drop_flags() -> void {
 
   // A value that may have moved cannot be read.
   auto read = moved;
-  read.ops[9].operands[1] = hir::operand{
-      .kind = hir::operand_kind::read,
-      .where = hir::place{.base = 2,
-                          .steps = {hir::projection{
-                              .kind = hir::projection_kind::member,
-                              .index = 0,
-                              .name = "id"}},
-                          .type = moved.ops[9].operands[1].type},
-      .type = moved.ops[9].operands[1].type};
+  read.ops[9].operands[1] =
+      hir::operand{.kind = hir::operand_kind::read,
+                   .where = hir::place{.base = 2,
+                                       .steps = {hir::projection{
+                                           .kind = hir::projection_kind::member,
+                                           .index = 0,
+                                           .name = "id"}},
+                                       .type = moved.ops[9].operands[1].type},
+                   .type = moved.ops[9].operands[1].type};
   expect_rejects(*f, read, hir::verify_error_kind::uninitialized,
                  "a read of a value that may have moved");
 }
 
 } // namespace
-
 
 // ==========================================================================
 //  Raw memory
@@ -2581,18 +2887,32 @@ auto test_arrays_forget_and_owned_receivers() -> void {
   // An array drops each element through a raw pointer to its first, in index
   // order, and then gives up the array itself, which owes nothing more.
   expect_ops(*f, "pair",
-             {"compute s0[0].id = const 1", "compute s0[1].id = const 2",
-              "compute s1 = copy &s0", "forget s0", "compute s2 = const 0",
-              "loop", "compute s3 = binary < s2, #2", "if s3", "dead s3",
-              "else", "dead s3", "exit 0", "end_if", "block",
+             {"compute s0[0].id = const 1",
+              "compute s0[1].id = const 2",
+              "compute s1 = copy &s0",
+              "forget s0",
+              "compute s2 = const 0",
+              "loop",
+              "compute s3 = binary < s2, #2",
+              "if s3",
+              "dead s3",
+              "else",
+              "dead s3",
+              "exit 0",
+              "end_if",
+              "block",
               "compute s5 = offset s1, s2 * 4",
-              "call.drop s4 = noisy::drop(&s5.*)", "dead s5", "dead s4",
-              "end_block", "compute s2 = binary + s2, #1", "end_loop",
+              "call.drop s4 = noisy::drop(&s5.*)",
+              "dead s5",
+              "dead s4",
+              "end_block",
+              "compute s2 = binary + s2, #1",
+              "end_loop",
               "return"});
   expect_verifies(*f, f->function("pair"), "pair");
   auto kept = f->function("pair");
-  kept.ops.erase(kept.ops.begin() +
-                 static_cast<std::ptrdiff_t>(find_op(kept, hir::op_kind::forget)));
+  kept.ops.erase(kept.ops.begin() + static_cast<std::ptrdiff_t>(
+                                        find_op(kept, hir::op_kind::forget)));
   expect_rejects(*f, kept, hir::verify_error_kind::leaked_value,
                  "an array whose elements were dropped but is not given up");
 
@@ -2611,9 +2931,9 @@ auto test_arrays_forget_and_owned_receivers() -> void {
 
   // `into_iter` owns its receiver: `self` is the bag, passed by address, and
   // the caller moves the bag in.
-  expect_ops(*f, "bag::into_iter",
-             {"move s0.item.@some.0 <- s1.item", "publish s0.item @some",
-              "return"});
+  expect_ops(
+      *f, "bag::into_iter",
+      {"move s0.item.@some.0 <- s1.item", "publish s0.item @some", "return"});
   const auto into_iter = f->function("bag::into_iter");
   expect(into_iter.slots[1].type == f->hir_function("walk").params[0].type,
          "expected the owned receiver to be typed as the bag itself");
@@ -2660,9 +2980,8 @@ auto test_arrays_forget_and_owned_receivers() -> void {
          "expected a shallow copy of the borrowed list into `into_iter`");
   expect(total.slots[2].owns_nothing,
          "expected the iterator over a borrowed list to own nothing");
-  expect(std::ranges::none_of(total.ops, [](const hir::storage_op &op) {
-           return op.is_drop;
-         }),
+  expect(std::ranges::none_of(
+             total.ops, [](const hir::storage_op &op) { return op.is_drop; }),
          "expected nothing to drop the iterator over a borrowed list");
   expect_verifies(*f, total, "total");
   auto owning = f->function("total");
@@ -2674,8 +2993,8 @@ auto test_arrays_forget_and_owned_receivers() -> void {
   expect_rejects(*f, deep, hir::verify_error_kind::not_copy,
                  "a plain copy of a list out of a reference");
   auto local = f->function("total");
-  local.slots[local.ops[find_op(local, hir::op_kind::copy_into)].dest.base].cls =
-      hir::storage_class::frame_local;
+  local.slots[local.ops[find_op(local, hir::op_kind::copy_into)].dest.base]
+      .cls = hir::storage_class::frame_local;
   expect_rejects(*f, local, hir::verify_error_kind::bad_operation,
                  "a shallow copy into a local rather than an argument", {},
                  "shallow copy");
@@ -2684,12 +3003,12 @@ auto test_arrays_forget_and_owned_receivers() -> void {
   // `into_iter`; the iterator owns the list and drops it after the loop.
   const auto literal = op_lines(*f, f->function("literal_total"));
   expect(std::ranges::find(literal, "move s4 <- s2") != literal.end() &&
-             std::ranges::find(literal,
-                               "call s1 = list::into_iter$list_int64_(move s4)") !=
+             std::ranges::find(
+                 literal, "call s1 = list::into_iter$list_int64_(move s4)") !=
                  literal.end() &&
              std::ranges::find(
-                 literal,
-                 "call.drop s9 = list_into_iter::drop$list_into_iter_int64_(&s1)") !=
+                 literal, "call.drop s9 = "
+                          "list_into_iter::drop$list_into_iter_int64_(&s1)") !=
                  literal.end(),
          "expected the literal to move into the iterator, which drops it");
   expect_verifies(*f, f->function("literal_total"), "literal_total");
@@ -2706,12 +3025,14 @@ auto test_arrays_forget_and_owned_receivers() -> void {
   // `@some(20)` at `keep_some(_, int32(1))` is an `option[int32]`, not an
   // `option[_]` with no layout.
   const auto keep_literal = f->function("keep_literal");
-  const auto option_int32 = types.builtin_generic("option", {f->builtin("int32")});
-  expect(std::ranges::any_of(keep_literal.slots,
-                             [&](const hir::storage_slot &slot) {
-                               return slot.cls == hir::storage_class::outgoing_argument &&
-                                      slot.type == option_int32;
-                             }),
+  const auto option_int32 =
+      types.builtin_generic("option", {f->builtin("int32")});
+  expect(std::ranges::any_of(
+             keep_literal.slots,
+             [&](const hir::storage_slot &slot) {
+               return slot.cls == hir::storage_class::outgoing_argument &&
+                      slot.type == option_int32;
+             }),
          "expected the literal payload's argument to be an `option[int32]`");
   expect_verifies(*f, keep_literal, "keep_literal");
 }
@@ -2727,7 +3048,8 @@ auto test_constant_array_index_is_an_element_projection() -> void {
   expect_verifies(*f, third, "third");
 }
 
-auto closure_op(const hir::storage_function &function) -> const hir::storage_op & {
+auto closure_op(const hir::storage_function &function)
+    -> const hir::storage_op & {
   return function.ops[find_op(function, hir::op_kind::make_closure)];
 }
 
@@ -2763,7 +3085,8 @@ auto test_closure_is_built_with_its_captures_and_glue() -> void {
 
   // The glue frees the block it is given.
   const auto glue = f->function("add_captured$closure0$drop");
-  const auto &release = glue.ops[find_op(glue, hir::op_kind::release_environment)];
+  const auto &release =
+      glue.ops[find_op(glue, hir::op_kind::release_environment)];
   expect(release.env_size == 8, "expected the glue to free the whole block");
   expect_verifies(*f, glue, "add_captured$closure0$drop");
 }
@@ -2822,7 +3145,8 @@ auto test_moved_captures_are_dropped_by_the_glue() -> void {
              callee.param_slots[0],
          "expected `call_it` to drop the function value it owns");
   const auto &call = callee.ops[find_op(callee, hir::op_kind::call_into)];
-  expect(!call.callee.is_direct(), "expected a call through the function value");
+  expect(!call.callee.is_direct(),
+         "expected a call through the function value");
 }
 
 auto test_reference_captures_are_reached_through_an_address() -> void {
@@ -2837,10 +3161,10 @@ auto test_reference_captures_are_reached_through_an_address() -> void {
   const auto body = f->function("by_reference$closure0");
   auto indirect = size_t{0};
   for (const auto &slot : body.slots) {
-    indirect += slot.cls == hir::storage_class::closure_environment &&
-                        slot.env_indirect
-                    ? 1U
-                    : 0U;
+    indirect +=
+        slot.cls == hir::storage_class::closure_environment && slot.env_indirect
+            ? 1U
+            : 0U;
   }
   expect(indirect == 1, "expected `total` reached through the stored address");
   expect_verifies(*f, body, "by_reference$closure0");
@@ -2850,7 +3174,8 @@ auto test_verifier_checks_closures() -> void {
   auto f = build(read_program("closures.cn"));
 
   auto outside = f->function("add_captured");
-  outside.ops[find_op(outside, hir::op_kind::make_closure)].captures[0].offset = 16;
+  outside.ops[find_op(outside, hir::op_kind::make_closure)].captures[0].offset =
+      16;
   expect_rejects(*f, outside, hir::verify_error_kind::bad_operation,
                  "a capture outside the environment");
 
@@ -2862,7 +3187,8 @@ auto test_verifier_checks_closures() -> void {
                  "a capture that is not at its alignment");
 
   auto wrong_body = f->function("add_captured");
-  wrong_body.ops[find_op(wrong_body, hir::op_kind::make_closure)].entry = "call_it";
+  wrong_body.ops[find_op(wrong_body, hir::op_kind::make_closure)].entry =
+      "call_it";
   expect_rejects(*f, wrong_body, hir::verify_error_kind::signature_mismatch,
                  "an entry that is not a closure body");
 
@@ -2879,9 +3205,9 @@ auto test_verifier_checks_closures() -> void {
 
   // A function that was not given an environment has none to release.
   auto stray = f->function("call_it");
-  stray.ops.insert(stray.ops.begin(), hir::storage_op{
-                                          .kind = hir::op_kind::release_environment,
-                                          .env_size = 8});
+  stray.ops.insert(stray.ops.begin(),
+                   hir::storage_op{.kind = hir::op_kind::release_environment,
+                                   .env_size = 8});
   expect_rejects(*f, stray, hir::verify_error_kind::bad_operation,
                  "a release in a function with no environment");
 
@@ -2912,16 +3238,39 @@ auto test_match_tests_the_tag_and_binds_payloads() -> void {
   // Each arm tests its variant into a flag, branches on it, and binds its
   // payload from the sum's own bytes. The last arm needs no test.
   expect_ops(*f, "area",
-             {"test s3 = s0 is @circle", "if s3", "dead s3",
-              "compute s2 = const true", "else", "dead s3",
-              "compute s2 = const false", "end_if", "if s2", "dead s2",
-              "compute s4 = copy s0.@circle.0", "compute s1 = copy s4", "else",
-              "dead s2", "test s6 = s0 is @rect", "if s6", "dead s6",
-              "compute s5 = const true", "else", "dead s6",
-              "compute s5 = const false", "end_if", "if s5", "dead s5",
-              "compute s7 = copy s0.@rect.0", "compute s8 = copy s0.@rect.1",
-              "compute s1 = binary + s7, s8", "else", "dead s5",
-              "compute s1 = const 7", "end_if", "end_if", "return s1"});
+             {"test s3 = s0 is @circle",
+              "if s3",
+              "dead s3",
+              "compute s2 = const true",
+              "else",
+              "dead s3",
+              "compute s2 = const false",
+              "end_if",
+              "if s2",
+              "dead s2",
+              "compute s4 = copy s0.@circle.0",
+              "compute s1 = copy s4",
+              "else",
+              "dead s2",
+              "test s6 = s0 is @rect",
+              "if s6",
+              "dead s6",
+              "compute s5 = const true",
+              "else",
+              "dead s6",
+              "compute s5 = const false",
+              "end_if",
+              "if s5",
+              "dead s5",
+              "compute s7 = copy s0.@rect.0",
+              "compute s8 = copy s0.@rect.1",
+              "compute s1 = binary + s7, s8",
+              "else",
+              "dead s5",
+              "compute s1 = const 7",
+              "end_if",
+              "end_if",
+              "return s1"});
   expect_verifies(*f, f->function("area"), "area");
   const auto tests = [&](std::string_view name) {
     auto count = size_t{0};
@@ -2938,16 +3287,38 @@ auto test_match_tests_the_tag_and_binds_payloads() -> void {
 auto test_statement_match_writes_through_its_arms() -> void {
   auto f = build(read_program("patterns.cn"));
   expect_ops(*f, "partial",
-             {"compute s1 = const 100", "test s3 = s0 is @circle", "if s3",
-              "dead s3", "compute s2 = const true", "else", "dead s3",
-              "compute s2 = const false", "end_if", "if s2", "dead s2",
+             {"compute s1 = const 100",
+              "test s3 = s0 is @circle",
+              "if s3",
+              "dead s3",
+              "compute s2 = const true",
+              "else",
+              "dead s3",
+              "compute s2 = const false",
+              "end_if",
+              "if s2",
+              "dead s2",
               "compute s4 = copy s0.@circle.0",
-              "compute s1 = binary + s1, s4", "else", "dead s2",
-              "test s6 = s0 is @empty", "if s6", "dead s6",
-              "compute s5 = const true", "else", "dead s6",
-              "compute s5 = const false", "end_if", "if s5", "dead s5",
-              "compute s1 = binary + s1, #1", "else", "dead s5",
-              "compute s1 = binary + s1, #2", "end_if", "end_if", "return s1"});
+              "compute s1 = binary + s1, s4",
+              "else",
+              "dead s2",
+              "test s6 = s0 is @empty",
+              "if s6",
+              "dead s6",
+              "compute s5 = const true",
+              "else",
+              "dead s6",
+              "compute s5 = const false",
+              "end_if",
+              "if s5",
+              "dead s5",
+              "compute s1 = binary + s1, #1",
+              "else",
+              "dead s5",
+              "compute s1 = binary + s1, #2",
+              "end_if",
+              "end_if",
+              "return s1"});
   expect_verifies(*f, f->function("partial"), "partial");
 }
 
@@ -2956,10 +3327,10 @@ auto test_literal_patterns_compare_after_the_tag() -> void {
   // `@some(0)` reads the payload only inside the branch that saw `@some`.
   const auto lines = op_lines(*f, f->function("literal"));
   const auto head = std::vector<std::string>(lines.begin(), lines.begin() + 5);
-  expect(head == std::vector<std::string>{"test s3 = s0 is @some", "if s3",
-                                          "dead s3",
-                                          "compute s4 = binary == s0.@some.0, #0",
-                                          "if s4"},
+  expect(head ==
+             std::vector<std::string>{
+                 "test s3 = s0 is @some", "if s3", "dead s3",
+                 "compute s4 = binary == s0.@some.0, #0", "if s4"},
          "expected the comparison to sit inside the branch on the tag");
   expect_verifies(*f, f->function("literal"), "literal");
 }
@@ -2981,15 +3352,35 @@ auto test_while_let_and_let_else_lower() -> void {
   // pattern fails, and the subject's storage ends before the loop repeats.
   // On the way out it stays live: outside every loop it lasts to the return.
   expect_ops(*f, "drain",
-             {"compute s1 = copy s0", "compute s2 = const 0", "loop",
-              "compute s4 = binary > s1, #0", "call s3 = make_option(s4, s1)",
-              "dead s4", "test s6 = s3 is @some", "if s6", "dead s6",
-              "compute s5 = const true", "else", "dead s6",
-              "compute s5 = const false", "end_if", "if s5", "dead s5", "else",
-              "dead s5", "exit 0", "end_if", "block",
-              "compute s7 = copy s3.@some.0", "compute s2 = binary + s2, s7",
-              "compute s1 = binary - s1, #1", "end_block", "dead s7", "dead s3",
-              "end_loop", "return s2"});
+             {"compute s1 = copy s0",
+              "compute s2 = const 0",
+              "loop",
+              "compute s4 = binary > s1, #0",
+              "call s3 = make_option(s4, s1)",
+              "dead s4",
+              "test s6 = s3 is @some",
+              "if s6",
+              "dead s6",
+              "compute s5 = const true",
+              "else",
+              "dead s6",
+              "compute s5 = const false",
+              "end_if",
+              "if s5",
+              "dead s5",
+              "else",
+              "dead s5",
+              "exit 0",
+              "end_if",
+              "block",
+              "compute s7 = copy s3.@some.0",
+              "compute s2 = binary + s2, s7",
+              "compute s1 = binary - s1, #1",
+              "end_block",
+              "dead s7",
+              "dead s3",
+              "end_loop",
+              "return s2"});
   // The else block leaves, so the code after the statement runs only when the
   // pattern held and reads the payload unconditionally.
   expect_ops(*f, "first_or",
@@ -3046,10 +3437,11 @@ auto test_verifier_checks_variant_tests() -> void {
   auto taken = f->function("unbox");
   const auto &move = taken.ops[find_op(taken, hir::op_kind::move_into)];
   auto again = move;
-  taken.ops.insert(taken.ops.begin() +
-                       static_cast<std::ptrdiff_t>(
-                           find_op(taken, hir::op_kind::move_into)) + 1,
-                   again);
+  taken.ops.insert(
+      taken.ops.begin() +
+          static_cast<std::ptrdiff_t>(find_op(taken, hir::op_kind::move_into)) +
+          1,
+      again);
   expect_rejects(*f, taken, hir::verify_error_kind::uninitialized,
                  "a payload moved out twice");
 }
@@ -3077,11 +3469,13 @@ auto test_verifier_checks_task_groups() -> void {
 
   // A step suspends instead of blocking the thread.
   auto blocks_in_step = f->function("together$step");
-  const auto group = blocks_in_step.ops[find_op(blocks_in_step, hir::op_kind::coroutine_await)]
-                         .source;
+  const auto group =
+      blocks_in_step.ops[find_op(blocks_in_step, hir::op_kind::coroutine_await)]
+          .source;
   blocks_in_step.ops.insert(
       blocks_in_step.ops.begin() +
-          static_cast<std::ptrdiff_t>(find_op(blocks_in_step, hir::op_kind::coroutine_await)),
+          static_cast<std::ptrdiff_t>(
+              find_op(blocks_in_step, hir::op_kind::coroutine_await)),
       hir::storage_op{.kind = hir::op_kind::task_block_on_group,
                       .source = group,
                       .waits = hir::wait_mode::all});
@@ -3115,13 +3509,15 @@ auto test_generator_constructor_builds_the_handle() -> void {
   auto f = build(read_program("generators.cn"));
   // The constructor is an ordinary function: it copies `n` into the state
   // block and returns the handle.
-  expect_ops(*f, "count",
-             {"generator s1 = count$step state 48/8 [copy s0 @0]",
-              "return move s1"});
+  expect_ops(
+      *f, "count",
+      {"generator s1 = count$step state 48/8 [copy s0 @0]", "return move s1"});
   expect_verifies(*f, f->function("count"), "count");
   const auto &made =
-      f->function("count").ops[find_op(f->function("count"), hir::op_kind::make_generator)];
-  expect(made.entry == "count$step" && made.env_size == 48 && made.env_align == 8,
+      f->function("count")
+          .ops[find_op(f->function("count"), hir::op_kind::make_generator)];
+  expect(made.entry == "count$step" && made.env_size == 48 &&
+             made.env_align == 8,
          "expected the generator to name its step and size its state block");
 }
 
@@ -3139,34 +3535,90 @@ auto test_generator_step_keeps_every_local_in_the_state_block() -> void {
       offsets.push_back(slot.env_offset);
     }
   }
-  expect(offsets.size() == 6, "expected the parameter and every local in the block");
-  expect(offsets.front() == 0, "expected `n` first, where the constructor copies it");
+  expect(offsets.size() == 6,
+         "expected the parameter and every local in the block");
+  expect(offsets.front() == 0,
+         "expected `n` first, where the constructor copies it");
   expect_ops(*f, "count$step",
-             {"dispatch s0 of 1", "cancelled s3 = s1", "if s3", "dead s3",
-              "finish s1", "return #1", "else", "dead s3", "end_if",
-              "compute s4 = const 0", "loop", "compute s5 = binary < s4, s2",
-              "if s5", "dead s5", "else", "dead s5", "exit 0", "end_if",
-              "block", "compute s6 = copy s4", "suspend #1 s1 <- s6", "dead s6",
-              "cancelled s7 = s1", "if s7", "dead s7", "finish s1", "return #1",
-              "else", "dead s7", "end_if", "compute s4 = binary + s4, #1",
-              "end_block", "end_loop", "finish s1", "return #1"});
+             {"dispatch s0 of 1",
+              "cancelled s3 = s1",
+              "if s3",
+              "dead s3",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s3",
+              "end_if",
+              "compute s4 = const 0",
+              "loop",
+              "compute s5 = binary < s4, s2",
+              "if s5",
+              "dead s5",
+              "else",
+              "dead s5",
+              "exit 0",
+              "end_if",
+              "block",
+              "compute s6 = copy s4",
+              "suspend #1 s1 <- s6",
+              "dead s6",
+              "cancelled s7 = s1",
+              "if s7",
+              "dead s7",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s7",
+              "end_if",
+              "compute s4 = binary + s4, #1",
+              "end_block",
+              "end_loop",
+              "finish s1",
+              "return #1"});
   expect_verifies(*f, step, "count$step");
 }
 
 auto test_next_resumes_then_takes_or_publishes_none() -> void {
   auto f = build(read_program("generators.cn"));
   expect_ops(*f, "sum_to",
-             {"call s1 = count(s0)", "compute s2 = const 0", "loop",
-              "resume s4 = s1", "compute s5 = binary == s4, #0", "if s5",
-              "dead s5", "take s3.@some.0 <- s1", "publish s3 @some", "else",
-              "dead s5", "publish s3 @none", "end_if", "dead s4",
-              "test s7 = s3 is @some", "if s7", "dead s7",
-              "compute s6 = const true", "else", "dead s7",
-              "compute s6 = const false", "end_if", "if s6", "dead s6", "else",
-              "dead s6", "exit 0", "end_if", "block",
-              "compute s8 = copy s3.@some.0", "compute s2 = binary + s2, s8",
-              "end_block", "dead s8", "dead s3", "end_loop",
-              "compute s9 = copy s2", "drop s1", "return s9"});
+             {"call s1 = count(s0)",
+              "compute s2 = const 0",
+              "loop",
+              "resume s4 = s1",
+              "compute s5 = binary == s4, #0",
+              "if s5",
+              "dead s5",
+              "take s3.@some.0 <- s1",
+              "publish s3 @some",
+              "else",
+              "dead s5",
+              "publish s3 @none",
+              "end_if",
+              "dead s4",
+              "test s7 = s3 is @some",
+              "if s7",
+              "dead s7",
+              "compute s6 = const true",
+              "else",
+              "dead s7",
+              "compute s6 = const false",
+              "end_if",
+              "if s6",
+              "dead s6",
+              "else",
+              "dead s6",
+              "exit 0",
+              "end_if",
+              "block",
+              "compute s8 = copy s3.@some.0",
+              "compute s2 = binary + s2, s8",
+              "end_block",
+              "dead s8",
+              "dead s3",
+              "end_loop",
+              "compute s9 = copy s2",
+              "drop s1",
+              "return s9"});
   expect_verifies(*f, f->function("sum_to"), "sum_to");
   // Two generators in one function each get their own drop.
   auto drops = size_t{0};
@@ -3189,16 +3641,21 @@ auto test_generators_not_lowered_yet_are_refused_by_name() -> void {
 
 auto test_verifier_checks_generators() -> void {
   auto f = build(read_program("generators.cn"));
-  const auto step_index = [&](const hir::storage_function &fn, hir::op_kind kind,
-                              size_t nth = 0) { return find_op(fn, kind, nth); };
+  const auto step_index = [&](const hir::storage_function &fn,
+                              hir::op_kind kind, size_t nth = 0) {
+    return find_op(fn, kind, nth);
+  };
 
   auto wrong_entry = f->function("count");
-  wrong_entry.ops[step_index(wrong_entry, hir::op_kind::make_generator)].entry = "sum_to";
+  wrong_entry.ops[step_index(wrong_entry, hir::op_kind::make_generator)].entry =
+      "sum_to";
   expect_rejects(*f, wrong_entry, hir::verify_error_kind::signature_mismatch,
                  "an entry that is not a step function");
 
   auto outside = f->function("count");
-  outside.ops[step_index(outside, hir::op_kind::make_generator)].captures[0].offset = 48;
+  outside.ops[step_index(outside, hir::op_kind::make_generator)]
+      .captures[0]
+      .offset = 48;
   expect_rejects(*f, outside, hir::verify_error_kind::bad_operation,
                  "a capture outside the state block");
 
@@ -3214,7 +3671,8 @@ auto test_verifier_checks_generators() -> void {
   auto twice = f->function("count$step");
   const auto at = step_index(twice, hir::op_kind::coroutine_suspend);
   auto again = twice.ops[at];
-  twice.ops.insert(twice.ops.begin() + static_cast<std::ptrdiff_t>(at) + 1, again);
+  twice.ops.insert(twice.ops.begin() + static_cast<std::ptrdiff_t>(at) + 1,
+                   again);
   expect_rejects(*f, twice, hir::verify_error_kind::bad_operation,
                  "a suspension point placed twice");
 
@@ -3224,11 +3682,12 @@ auto test_verifier_checks_generators() -> void {
   auto copy = hir::storage_op{.kind = hir::op_kind::compute,
                               .computation = hir::compute_kind::copy,
                               .dest = reread.ops[suspend].source};
-  copy.operands.push_back(hir::operand{.kind = hir::operand_kind::read,
-                                       .where = reread.ops[suspend].source,
-                                       .type = reread.ops[suspend].source.type});
-  reread.ops.insert(reread.ops.begin() + static_cast<std::ptrdiff_t>(suspend) + 1,
-                    copy);
+  copy.operands.push_back(
+      hir::operand{.kind = hir::operand_kind::read,
+                   .where = reread.ops[suspend].source,
+                   .type = reread.ops[suspend].source.type});
+  reread.ops.insert(
+      reread.ops.begin() + static_cast<std::ptrdiff_t>(suspend) + 1, copy);
   expect_rejects(*f, reread, hir::verify_error_kind::uninitialized,
                  "an item read after it was handed over");
 
@@ -3253,19 +3712,47 @@ auto test_groups_wait_for_every_task_or_the_first() -> void {
   // reads in place. The step waits on the tuple as a whole; the cancel exit
   // drops its members, and so does the read after the wait.
   expect_ops(*f, "together$step",
-             {"dispatch s0 of 2", "cancelled s3 = s1", "if s3", "dead s3",
-              "finish s1", "return #1", "else", "dead s3", "end_if",
-              "call s4 = double(s2)", "compute s6 = binary + s2, #1",
-              "call s5 = double(s6)", "dead s6", "call s7 = rt_task_spawn(s4, #0)",
-              "dead s7", "call s8 = rt_task_spawn(s5, #0)", "dead s8",
-              "move s9.0 <- s4", "move s9.1 <- s5", "await all #1 s1 <- s9",
-              "cancelled s10 = s1", "if s10", "dead s10", "drop s9.0",
-              "drop s9.1", "finish s1", "return #1", "else", "dead s10",
-              "end_if", "read s11.0 <- s9.0", "read s11.1 <- s9.1",
-              "drop s9.0", "drop s9.1",
-              "compute s12 = copy s11.0", "compute s13 = copy s11.1",
-              "compute s14 = binary + s12, s13", "suspend #2 s1 <- s14",
-              "dead s14", "finish s1", "return #1"});
+             {"dispatch s0 of 2",
+              "cancelled s3 = s1",
+              "if s3",
+              "dead s3",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s3",
+              "end_if",
+              "call s4 = double(s2)",
+              "compute s6 = binary + s2, #1",
+              "call s5 = double(s6)",
+              "dead s6",
+              "call s7 = rt_task_spawn(s4, #0)",
+              "dead s7",
+              "call s8 = rt_task_spawn(s5, #0)",
+              "dead s8",
+              "move s9.0 <- s4",
+              "move s9.1 <- s5",
+              "await all #1 s1 <- s9",
+              "cancelled s10 = s1",
+              "if s10",
+              "dead s10",
+              "drop s9.0",
+              "drop s9.1",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s10",
+              "end_if",
+              "read s11.0 <- s9.0",
+              "read s11.1 <- s9.1",
+              "drop s9.0",
+              "drop s9.1",
+              "compute s12 = copy s11.0",
+              "compute s13 = copy s11.1",
+              "compute s14 = binary + s12, s13",
+              "suspend #2 s1 <- s14",
+              "dead s14",
+              "finish s1",
+              "return #1"});
   expect_verifies(*f, f->function("together$step"), "together$step");
 
   const auto &race = f->function("first_wins$step");
@@ -3276,11 +3763,12 @@ auto test_groups_wait_for_every_task_or_the_first() -> void {
 
   // The entry `async def main` is not a task, so its waits block the thread.
   const auto &entry = f->function("main");
-  expect(entry.ops[find_op(entry, hir::op_kind::task_block_on_group, 0)].waits ==
-                 hir::wait_mode::all &&
-             entry.ops[find_op(entry, hir::op_kind::task_block_on_group, 1)]
-                     .waits == hir::wait_mode::any,
-         "expected `par` to wait for all and `race` for any");
+  expect(
+      entry.ops[find_op(entry, hir::op_kind::task_block_on_group, 0)].waits ==
+              hir::wait_mode::all &&
+          entry.ops[find_op(entry, hir::op_kind::task_block_on_group, 1)]
+                  .waits == hir::wait_mode::any,
+      "expected `par` to wait for all and `race` for any");
   expect_verifies(*f, entry, "main");
 }
 
@@ -3289,9 +3777,9 @@ auto test_task_constructor_and_step_hand_over_the_result() -> void {
   expect(f->lowering.refused.empty(), "expected every task function to lower");
   // The constructor is the generator's: it copies `x` into the state block
   // and returns the handle, which is a `task`.
-  expect_ops(*f, "double",
-             {"generator s1 = double$step state 24/8 [copy s0 @0]",
-              "return move s1"});
+  expect_ops(
+      *f, "double",
+      {"generator s1 = double$step state 24/8 [copy s0 @0]", "return move s1"});
   expect_verifies(*f, f->function("double"), "double");
   // The body hands its result over once and finishes.
   expect_ops(*f, "double$step",
@@ -3309,24 +3797,58 @@ auto test_await_is_a_resume_point_that_may_return_pending() -> void {
   // checks for a cancel, which drops the awaited task first; past it the
   // `copy` result is read and the task dropped.
   expect_ops(*f, "sum_doubles$step",
-             {"dispatch s0 of 2", "cancelled s3 = s1", "if s3", "dead s3",
-              "finish s1", "return #1", "else", "dead s3", "end_if",
-              "compute s4 = const 0", "compute s5 = const 0", "loop",
-              "compute s6 = binary < s5, s2", "if s6", "dead s6", "else",
-              "dead s6", "exit 0", "end_if", "block", "call s7 = double(s5)",
-              "await #1 s1 <- s7", "cancelled s8 = s1", "if s8", "dead s8",
-              "drop s7", "finish s1", "return #1", "else", "dead s8", "end_if",
-              "read s9 <- s7", "drop s7", "compute s4 = binary + s4, s9",
-              "compute s5 = binary + s5, #1", "end_block", "dead s9", "dead s7",
-              "end_loop", "compute s10 = copy s4", "suspend #2 s1 <- s10",
-              "dead s10", "finish s1", "return #1"});
+             {"dispatch s0 of 2",
+              "cancelled s3 = s1",
+              "if s3",
+              "dead s3",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s3",
+              "end_if",
+              "compute s4 = const 0",
+              "compute s5 = const 0",
+              "loop",
+              "compute s6 = binary < s5, s2",
+              "if s6",
+              "dead s6",
+              "else",
+              "dead s6",
+              "exit 0",
+              "end_if",
+              "block",
+              "call s7 = double(s5)",
+              "await #1 s1 <- s7",
+              "cancelled s8 = s1",
+              "if s8",
+              "dead s8",
+              "drop s7",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s8",
+              "end_if",
+              "read s9 <- s7",
+              "drop s7",
+              "compute s4 = binary + s4, s9",
+              "compute s5 = binary + s5, #1",
+              "end_block",
+              "dead s9",
+              "dead s7",
+              "end_loop",
+              "compute s10 = copy s4",
+              "suspend #2 s1 <- s10",
+              "dead s10",
+              "finish s1",
+              "return #1"});
   expect_verifies(*f, f->function("sum_doubles$step"), "sum_doubles$step");
   const auto &step = f->function("sum_doubles$step");
   const auto &wait = step.ops[find_op(step, hir::op_kind::coroutine_await)];
   expect(wait.depth == 1 && wait.dest.base == 1,
          "expected the await to be the first resume point, in the task itself");
   // The awaited task lives in the state block, so it is there after a resume.
-  expect(step.slots[wait.source.base].cls == hir::storage_class::coroutine_frame,
+  expect(step.slots[wait.source.base].cls ==
+             hir::storage_class::coroutine_frame,
          "expected the awaited task to be held in the state block");
 }
 
@@ -3334,7 +3856,8 @@ auto test_await_is_a_resume_point_that_may_return_pending() -> void {
 /// in place; a result that needs a drop is taken, and leaving one in place is
 /// refused, since the task would still own it.
 auto test_copy_task_results_are_read_in_place() -> void {
-  auto f = build(cinder::testing::read_program("bytecode_storage_test", "tasks.cn"));
+  auto f =
+      build(cinder::testing::read_program("bytecode_storage_test", "tasks.cn"));
   const auto shallow_takes = [](const hir::storage_function &function) {
     auto reads = size_t{0};
     auto takes = size_t{0};
@@ -3351,12 +3874,14 @@ auto test_copy_task_results_are_read_in_place() -> void {
          "expected errors() and both get()s to read in place, got " +
              std::to_string(reads) + " reads and " + std::to_string(takes) +
              " takes");
-  const auto crew_tasks = std::ranges::count_if(errors.slots, [](const auto &slot) {
-    return slot.name == "<errors task>" && slot.owns_nothing;
-  });
+  const auto crew_tasks =
+      std::ranges::count_if(errors.slots, [](const auto &slot) {
+        return slot.name == "<errors task>" && slot.owns_nothing;
+      });
   expect(crew_tasks == 1, "expected the crew's task to be named, not owned");
   expect_verifies(*f, errors, "errors_then_get");
-  expect_verifies(*f, f->function("errors_in_task$step"), "errors_in_task$step");
+  expect_verifies(*f, f->function("errors_in_task$step"),
+                  "errors_in_task$step");
 
   auto noisy = f->function("get_noisy");
   const auto [noisy_reads, noisy_takes] = shallow_takes(noisy);
@@ -3384,28 +3909,63 @@ auto test_plain_functions_block_on_the_task() -> void {
               "dead s4", "drop s1", "return s3"});
   expect_verifies(*f, f->function("run_spawned"), "run_spawned");
   // The entry `async def main` is an ordinary function that awaits this way.
-  expect_ops(
-      *f, "main",
-      {"call s1 = double(#4)", "call s2 = double(#5)",
-       "call s3 = rt_task_spawn(s1, #0)", "dead s3",
-       "call s4 = rt_task_spawn(s2, #0)", "dead s4", "move s5.0 <- s1",
-       "move s5.1 <- s2", "block_on_group all s5", "init_empty s6", "dead s6",
-       "call s8 = rt_task_block_on(s5.0, #0)", "read s7.0 <- s5.0",
-       "call s9 = rt_task_block_on(s5.1, #0)", "read s7.1 <- s5.1", "dead s9",
-       "dead s8", "drop s5.0", "drop s5.1", "move s0 <- s7",
-       "compute s10 = copy s0.0", "compute s11 = copy s0.1",
-       "call s13 = double(#6)", "call s14 = double(#7)",
-       "call s15 = rt_task_spawn(s13, #0)", "dead s15",
-       "call s16 = rt_task_spawn(s14, #0)", "dead s16", "move s17.0 <- s13",
-       "move s17.1 <- s14", "block_on_group any s17", "init_empty s18",
-       "dead s18", "call s20 = rt_task_is_finished(s17.0)", "if s20", "dead s20",
-       "call s21 = rt_task_block_on(s17.0, #0)", "read s19 <- s17.0", "dead s21",
-       "else", "dead s20", "call s22 = rt_task_block_on(s17.1, #0)",
-       "read s19 <- s17.1", "dead s22", "end_if", "call s23 = rt_task_cancel(s17.0)",
-       "dead s23", "call s24 = rt_task_cancel(s17.1)", "dead s24",
-       "drop s17.0", "drop s17.1", "compute s12 = copy s19",
-       "compute s26 = binary + s10, s11", "compute s25 = binary + s26, s12",
-       "dead s26", "return s25"});
+  expect_ops(*f, "main",
+             {"call s1 = double(#4)",
+              "call s2 = double(#5)",
+              "call s3 = rt_task_spawn(s1, #0)",
+              "dead s3",
+              "call s4 = rt_task_spawn(s2, #0)",
+              "dead s4",
+              "move s5.0 <- s1",
+              "move s5.1 <- s2",
+              "block_on_group all s5",
+              "init_empty s6",
+              "dead s6",
+              "call s8 = rt_task_block_on(s5.0, #0)",
+              "read s7.0 <- s5.0",
+              "call s9 = rt_task_block_on(s5.1, #0)",
+              "read s7.1 <- s5.1",
+              "dead s9",
+              "dead s8",
+              "drop s5.0",
+              "drop s5.1",
+              "move s0 <- s7",
+              "compute s10 = copy s0.0",
+              "compute s11 = copy s0.1",
+              "call s13 = double(#6)",
+              "call s14 = double(#7)",
+              "call s15 = rt_task_spawn(s13, #0)",
+              "dead s15",
+              "call s16 = rt_task_spawn(s14, #0)",
+              "dead s16",
+              "move s17.0 <- s13",
+              "move s17.1 <- s14",
+              "block_on_group any s17",
+              "init_empty s18",
+              "dead s18",
+              "call s20 = rt_task_is_finished(s17.0)",
+              "if s20",
+              "dead s20",
+              "call s21 = rt_task_block_on(s17.0, #0)",
+              "read s19 <- s17.0",
+              "dead s21",
+              "else",
+              "dead s20",
+              "call s22 = rt_task_block_on(s17.1, #0)",
+              "read s19 <- s17.1",
+              "dead s22",
+              "end_if",
+              "call s23 = rt_task_cancel(s17.0)",
+              "dead s23",
+              "call s24 = rt_task_cancel(s17.1)",
+              "dead s24",
+              "drop s17.0",
+              "drop s17.1",
+              "compute s12 = copy s19",
+              "compute s26 = binary + s10, s11",
+              "compute s25 = binary + s26, s12",
+              "dead s26",
+              "return s25"});
   expect_verifies(*f, f->function("main"), "main");
   expect_verifies(*f, f->function("run_pair"), "run_pair");
 }
@@ -3418,52 +3978,140 @@ auto test_a_crew_waits_for_its_tasks() -> void {
   // looked at. A cancellation after the wait releases the tasks the block
   // is about to hand back, which no name owns yet.
   expect_ops(*f, "in_task$step",
-             {"dispatch s0 of 4", "cancelled s3 = s1", "if s3", "dead s3",
-              "finish s1", "return #1", "else", "dead s3", "end_if",
-              "call s4 = rt_crew_new()", "call s6 = square(s2)",
-              "call s5 = rt_crew_spawn(s4, move s6)", "dead s6",
-              "compute s9 = binary + s2, #1", "call s8 = square(s9)",
-              "call s7 = rt_crew_spawn(s4, move s8)", "dead s9", "dead s8",
-              "move s10.0 <- s5", "move s10.1 <- s7", "await crew #1 s1 <- s4",
-              "call s11 = rt_crew_free(s4)", "dead s11", "cancelled s12 = s1",
-              "if s12", "dead s12", "drop s10.0", "drop s10.1", "finish s1",
-              "return #1", "else", "dead s12", "end_if",
-              "move s13 <- s10.0", "move s14 <- s10.1", "move s15 <- s13",
-              "await #2 s1 <- s15", "cancelled s16 = s1", "if s16", "dead s16",
-              "drop s15", "drop s14", "finish s1", "return #1", "else",
-              "dead s16", "end_if", "read s17 <- s15", "drop s15",
-              "move s18 <- s14", "await #3 s1 <- s18", "cancelled s19 = s1",
-              "if s19", "dead s19", "drop s18", "finish s1", "return #1",
-              "else", "dead s19", "end_if", "read s20 <- s18", "drop s18",
-              "compute s21 = binary + s17, s20", "suspend #4 s1 <- s21",
-              "dead s21", "finish s1", "return #1"});
+             {"dispatch s0 of 4",
+              "cancelled s3 = s1",
+              "if s3",
+              "dead s3",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s3",
+              "end_if",
+              "call s4 = rt_crew_new()",
+              "call s6 = square(s2)",
+              "call s5 = rt_crew_spawn(s4, move s6)",
+              "dead s6",
+              "compute s9 = binary + s2, #1",
+              "call s8 = square(s9)",
+              "call s7 = rt_crew_spawn(s4, move s8)",
+              "dead s9",
+              "dead s8",
+              "move s10.0 <- s5",
+              "move s10.1 <- s7",
+              "await crew #1 s1 <- s4",
+              "call s11 = rt_crew_free(s4)",
+              "dead s11",
+              "cancelled s12 = s1",
+              "if s12",
+              "dead s12",
+              "drop s10.0",
+              "drop s10.1",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s12",
+              "end_if",
+              "move s13 <- s10.0",
+              "move s14 <- s10.1",
+              "move s15 <- s13",
+              "await #2 s1 <- s15",
+              "cancelled s16 = s1",
+              "if s16",
+              "dead s16",
+              "drop s15",
+              "drop s14",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s16",
+              "end_if",
+              "read s17 <- s15",
+              "drop s15",
+              "move s18 <- s14",
+              "await #3 s1 <- s18",
+              "cancelled s19 = s1",
+              "if s19",
+              "dead s19",
+              "drop s18",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s19",
+              "end_if",
+              "read s20 <- s18",
+              "drop s18",
+              "compute s21 = binary + s17, s20",
+              "suspend #4 s1 <- s21",
+              "dead s21",
+              "finish s1",
+              "return #1"});
   expect_verifies(*f, f->function("in_task$step"), "in_task$step");
   // A handle that is dropped while the crew still runs leaves the task to the
   // crew; the join comes after.
   expect_ops(*f, "discarded$step",
-             {"dispatch s0 of 2", "cancelled s3 = s1", "if s3", "dead s3",
-              "finish s1", "return #1", "else", "dead s3", "end_if",
-              "call s4 = rt_crew_new()", "call s6 = square(s2)",
-              "call s5 = rt_crew_spawn(s4, move s6)", "dead s6", "drop s5",
-              "await crew #1 s1 <- s4", "call s7 = rt_crew_free(s4)", "dead s7",
-              "cancelled s8 = s1", "if s8", "dead s8", "finish s1",
-              "return #1", "else", "dead s8", "end_if",
-              "compute s9 = copy s2", "suspend #2 s1 <- s9", "dead s9",
-              "finish s1", "return #1"});
+             {"dispatch s0 of 2",
+              "cancelled s3 = s1",
+              "if s3",
+              "dead s3",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s3",
+              "end_if",
+              "call s4 = rt_crew_new()",
+              "call s6 = square(s2)",
+              "call s5 = rt_crew_spawn(s4, move s6)",
+              "dead s6",
+              "drop s5",
+              "await crew #1 s1 <- s4",
+              "call s7 = rt_crew_free(s4)",
+              "dead s7",
+              "cancelled s8 = s1",
+              "if s8",
+              "dead s8",
+              "finish s1",
+              "return #1",
+              "else",
+              "dead s8",
+              "end_if",
+              "compute s9 = copy s2",
+              "suspend #2 s1 <- s9",
+              "dead s9",
+              "finish s1",
+              "return #1"});
   expect_verifies(*f, f->function("discarded$step"), "discarded$step");
   // Outside a task the thread waits for the crew.
   expect_ops(*f, "in_function",
-             {"call s2 = rt_crew_new()", "call s5 = square(s0)",
-              "call s4 = rt_crew_spawn(s2, move s5)", "dead s5",
-              "compute s8 = binary + s0, #1", "call s7 = square(s8)",
-              "call s6 = rt_crew_spawn(s2, move s7)", "dead s8", "dead s7",
-              "move s3.0 <- s4", "move s3.1 <- s6", "call s9 = rt_crew_join(s2)",
-              "dead s9", "call s10 = rt_crew_free(s2)", "dead s10",
-              "move s1 <- s3", "move s11 <- s1.0", "move s12 <- s1.1",
-              "call s15 = rt_task_block_on(s11, #0)", "read s14 <- s11",
-              "call s17 = rt_task_block_on(s12, #0)", "read s16 <- s12",
-              "compute s13 = binary + s14, s16", "dead s17", "dead s16",
-              "dead s15", "dead s14", "drop s12", "drop s11", "return s13"});
+             {"call s2 = rt_crew_new()",
+              "call s5 = square(s0)",
+              "call s4 = rt_crew_spawn(s2, move s5)",
+              "dead s5",
+              "compute s8 = binary + s0, #1",
+              "call s7 = square(s8)",
+              "call s6 = rt_crew_spawn(s2, move s7)",
+              "dead s8",
+              "dead s7",
+              "move s3.0 <- s4",
+              "move s3.1 <- s6",
+              "call s9 = rt_crew_join(s2)",
+              "dead s9",
+              "call s10 = rt_crew_free(s2)",
+              "dead s10",
+              "move s1 <- s3",
+              "move s11 <- s1.0",
+              "move s12 <- s1.1",
+              "call s15 = rt_task_block_on(s11, #0)",
+              "read s14 <- s11",
+              "call s17 = rt_task_block_on(s12, #0)",
+              "read s16 <- s12",
+              "compute s13 = binary + s14, s16",
+              "dead s17",
+              "dead s16",
+              "dead s15",
+              "dead s14",
+              "drop s12",
+              "drop s11",
+              "return s13"});
   expect_verifies(*f, f->function("in_function"), "in_function");
 
   // The wait names a crew.
@@ -3474,9 +4122,9 @@ auto test_a_crew_waits_for_its_tasks() -> void {
                  "a crew wait on a task");
   // A crew that has not been made cannot be waited for.
   auto unmade = f->function("in_task$step");
-  unmade.ops.erase(unmade.ops.begin() +
-                   static_cast<std::ptrdiff_t>(
-                       find_op(unmade, hir::op_kind::call_into, 0)));
+  unmade.ops.erase(
+      unmade.ops.begin() +
+      static_cast<std::ptrdiff_t>(find_op(unmade, hir::op_kind::call_into, 0)));
   expect_rejects(*f, unmade, hir::verify_error_kind::uninitialized,
                  "a crew that was never made");
   // The wait reads a crew that has a value.
@@ -3505,13 +4153,32 @@ auto test_dropping_a_task_drops_its_unread_result() -> void {
   // A fallible task holds `result[T, E]`; its unread item is dropped through
   // the variant it holds, as a sum result is.
   expect_ops(*f, "unread_fallible",
-             {"call s1 = fallible_noisy(s0)", "compute s2 = copy s0",
-              "call s3 = rt_task_is_finished(s1)", "if s3", "dead s3",
-              "has_item s4 = s1", "if s4", "dead s4", "take s5 <- s1",
-              "test s6 = s5 is @ok", "if s6", "dead s6",
-              "call.drop s7 = noisy::drop(&s5.@ok.0)", "dead s7", "else",
-              "dead s6", "end_if", "dead s5", "else", "dead s4", "end_if",
-              "else", "dead s3", "end_if", "drop s1", "return s2"});
+             {"call s1 = fallible_noisy(s0)",
+              "compute s2 = copy s0",
+              "call s3 = rt_task_is_finished(s1)",
+              "if s3",
+              "dead s3",
+              "has_item s4 = s1",
+              "if s4",
+              "dead s4",
+              "take s5 <- s1",
+              "test s6 = s5 is @ok",
+              "if s6",
+              "dead s6",
+              "call.drop s7 = noisy::drop(&s5.@ok.0)",
+              "dead s7",
+              "else",
+              "dead s6",
+              "end_if",
+              "dead s5",
+              "else",
+              "dead s4",
+              "end_if",
+              "else",
+              "dead s3",
+              "end_if",
+              "drop s1",
+              "return s2"});
   expect_verifies(*f, f->function("unread_fallible"), "unread_fallible");
   const auto *nested = f->refusal("unread_nested");
   expect(nested != nullptr &&
@@ -3520,11 +4187,25 @@ auto test_dropping_a_task_drops_its_unread_result() -> void {
   // The handle is dropped without a read. If it has finished and still holds
   // its result, the result is taken out and dropped before the handle goes.
   expect_ops(*f, "unread_noisy",
-             {"call s1 = make_noisy(s0)", "compute s2 = copy s0",
-              "call s3 = rt_task_is_finished(s1)", "if s3", "dead s3",
-              "has_item s4 = s1", "if s4", "dead s4", "take s5 <- s1",
-              "call.drop s6 = noisy::drop(&s5)", "dead s6", "dead s5", "else",
-              "dead s4", "end_if", "else", "dead s3", "end_if", "drop s1",
+             {"call s1 = make_noisy(s0)",
+              "compute s2 = copy s0",
+              "call s3 = rt_task_is_finished(s1)",
+              "if s3",
+              "dead s3",
+              "has_item s4 = s1",
+              "if s4",
+              "dead s4",
+              "take s5 <- s1",
+              "call.drop s6 = noisy::drop(&s5)",
+              "dead s6",
+              "dead s5",
+              "else",
+              "dead s4",
+              "end_if",
+              "else",
+              "dead s3",
+              "end_if",
+              "drop s1",
               "return s2"});
   expect_verifies(*f, f->function("unread_noisy"), "unread_noisy");
   // A reader moves the result out and drops it itself; the drop of the handle
@@ -3535,33 +4216,82 @@ auto test_dropping_a_task_drops_its_unread_result() -> void {
 
   // Each droppable field and tuple member is dropped, in order.
   expect_ops(*f, "unread_holder",
-             {"call s1 = make_holder(s0)", "compute s2 = copy s0",
-              "call s3 = rt_task_is_finished(s1)", "if s3", "dead s3",
-              "has_item s4 = s1", "if s4", "dead s4", "take s5 <- s1",
-              "call.drop s6 = noisy::drop(&s5.first)", "dead s6",
-              "call.drop s7 = noisy::drop(&s5.second)", "dead s7", "dead s5",
-              "else", "dead s4", "end_if", "else", "dead s3", "end_if",
-              "drop s1", "return s2"});
+             {"call s1 = make_holder(s0)",
+              "compute s2 = copy s0",
+              "call s3 = rt_task_is_finished(s1)",
+              "if s3",
+              "dead s3",
+              "has_item s4 = s1",
+              "if s4",
+              "dead s4",
+              "take s5 <- s1",
+              "call.drop s6 = noisy::drop(&s5.first)",
+              "dead s6",
+              "call.drop s7 = noisy::drop(&s5.second)",
+              "dead s7",
+              "dead s5",
+              "else",
+              "dead s4",
+              "end_if",
+              "else",
+              "dead s3",
+              "end_if",
+              "drop s1",
+              "return s2"});
   expect_ops(*f, "unread_both",
-             {"call s1 = make_both(s0)", "compute s2 = copy s0",
-              "call s3 = rt_task_is_finished(s1)", "if s3", "dead s3",
-              "has_item s4 = s1", "if s4", "dead s4", "take s5 <- s1",
-              "call.drop s6 = noisy::drop(&s5.0)", "dead s6",
-              "call.drop s7 = noisy::drop(&s5.1)", "dead s7", "dead s5",
-              "else", "dead s4", "end_if", "else", "dead s3", "end_if",
-              "drop s1", "return s2"});
+             {"call s1 = make_both(s0)",
+              "compute s2 = copy s0",
+              "call s3 = rt_task_is_finished(s1)",
+              "if s3",
+              "dead s3",
+              "has_item s4 = s1",
+              "if s4",
+              "dead s4",
+              "take s5 <- s1",
+              "call.drop s6 = noisy::drop(&s5.0)",
+              "dead s6",
+              "call.drop s7 = noisy::drop(&s5.1)",
+              "dead s7",
+              "dead s5",
+              "else",
+              "dead s4",
+              "end_if",
+              "else",
+              "dead s3",
+              "end_if",
+              "drop s1",
+              "return s2"});
   expect_verifies(*f, f->function("unread_holder"), "unread_holder");
   expect_verifies(*f, f->function("unread_both"), "unread_both");
 
   // A sum result is dropped through the variant it holds.
   expect_ops(*f, "unread_maybe",
-             {"call s1 = make_maybe(s0)", "compute s2 = copy s0",
-              "call s3 = rt_task_is_finished(s1)", "if s3", "dead s3",
-              "has_item s4 = s1", "if s4", "dead s4", "take s5 <- s1",
-              "test s6 = s5 is @some", "if s6", "dead s6",
-              "call.drop s7 = noisy::drop(&s5.@some.0)", "dead s7", "else",
-              "dead s6", "end_if", "dead s5", "else", "dead s4", "end_if",
-              "else", "dead s3", "end_if", "drop s1", "return s2"});
+             {"call s1 = make_maybe(s0)",
+              "compute s2 = copy s0",
+              "call s3 = rt_task_is_finished(s1)",
+              "if s3",
+              "dead s3",
+              "has_item s4 = s1",
+              "if s4",
+              "dead s4",
+              "take s5 <- s1",
+              "test s6 = s5 is @some",
+              "if s6",
+              "dead s6",
+              "call.drop s7 = noisy::drop(&s5.@some.0)",
+              "dead s7",
+              "else",
+              "dead s6",
+              "end_if",
+              "dead s5",
+              "else",
+              "dead s4",
+              "end_if",
+              "else",
+              "dead s3",
+              "end_if",
+              "drop s1",
+              "return s2"});
   expect_verifies(*f, f->function("unread_maybe"), "unread_maybe");
   expect_verifies(*f, f->function("unread_pick"), "unread_pick");
   const auto pick = f->function("unread_pick");
@@ -3580,14 +4310,14 @@ auto test_dropping_a_task_drops_its_unread_result() -> void {
 
   // The item test reads a coroutine and writes a flag.
   auto not_a_handle = f->function("unread_noisy");
-  auto &test = not_a_handle.ops[find_op(not_a_handle,
-                                        hir::op_kind::coroutine_has_item)];
+  auto &test =
+      not_a_handle.ops[find_op(not_a_handle, hir::op_kind::coroutine_has_item)];
   test.source = place_at(0, not_a_handle.slots[0].type);
   expect_rejects(*f, not_a_handle, hir::verify_error_kind::type_mismatch,
                  "an item test of something that is not a coroutine");
   auto not_a_flag = f->function("unread_noisy");
-  auto &flagged = not_a_flag.ops[find_op(not_a_flag,
-                                         hir::op_kind::coroutine_has_item)];
+  auto &flagged =
+      not_a_flag.ops[find_op(not_a_flag, hir::op_kind::coroutine_has_item)];
   flagged.dest = place_at(0, not_a_flag.slots[0].type);
   expect_rejects(*f, not_a_flag, hir::verify_error_kind::type_mismatch,
                  "an item test written to something that is not a flag");
@@ -3610,7 +4340,8 @@ auto test_verifier_checks_tasks() -> void {
   auto twice = f->function("sum_doubles$step");
   const auto at = find_op(twice, hir::op_kind::coroutine_await);
   auto again = twice.ops[at];
-  twice.ops.insert(twice.ops.begin() + static_cast<std::ptrdiff_t>(at) + 1, again);
+  twice.ops.insert(twice.ops.begin() + static_cast<std::ptrdiff_t>(at) + 1,
+                   again);
   expect_rejects(*f, twice, hir::verify_error_kind::bad_operation,
                  "an await point placed twice");
 
@@ -3638,13 +4369,18 @@ auto test_verifier_checks_tasks() -> void {
   take.kind = hir::op_kind::generator_resume;
   take.dest = place_at(3, resumed.slots[3].type);
   expect_rejects(*f, resumed, hir::verify_error_kind::type_mismatch,
-                 "a task resumed like a generator", {}, "resume needs a generator");
+                 "a task resumed like a generator", {},
+                 "resume needs a generator");
 
   // A generator is not awaited: only tasks are, and only the scheduler wakes
   // the waiter.
   auto awaits_generator = f->function("with_generator$step");
-  auto &wait = awaits_generator.ops[find_op(awaits_generator, hir::op_kind::coroutine_await)];
-  wait.source = awaits_generator.ops[find_op(awaits_generator, hir::op_kind::call_into)].dest;
+  auto &wait =
+      awaits_generator
+          .ops[find_op(awaits_generator, hir::op_kind::coroutine_await)];
+  wait.source =
+      awaits_generator.ops[find_op(awaits_generator, hir::op_kind::call_into)]
+          .dest;
   expect_rejects(*f, awaits_generator, hir::verify_error_kind::type_mismatch,
                  "an await of a generator", {}, "an await needs a task");
 
@@ -3657,15 +4393,16 @@ auto test_verifier_checks_tasks() -> void {
 
   // A task that yields the wrong type of result.
   auto wrong_result = f->function("make_pair$step");
-  wrong_result.ops[find_op(wrong_result, hir::op_kind::coroutine_suspend)].source =
-      place_at(2, wrong_result.slots[2].type);
+  wrong_result.ops[find_op(wrong_result, hir::op_kind::coroutine_suspend)]
+      .source = place_at(2, wrong_result.slots[2].type);
   expect_rejects(*f, wrong_result, hir::verify_error_kind::type_mismatch,
                  "a task that yields a value of another type");
 
   // The awaited task must not be left behind when the wait is cancelled.
   auto leaked = f->function("sum_doubles$step");
   const auto cancel_drop = find_op(leaked, hir::op_kind::drop_in_place);
-  leaked.ops.erase(leaked.ops.begin() + static_cast<std::ptrdiff_t>(cancel_drop));
+  leaked.ops.erase(leaked.ops.begin() +
+                   static_cast<std::ptrdiff_t>(cancel_drop));
   expect_rejects(*f, leaked, hir::verify_error_kind::leaked_value,
                  "a cancelled wait that leaves the awaited task behind");
 }

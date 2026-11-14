@@ -793,9 +793,9 @@ auto checker::add_aggregate_shapes(aggregate_shapes &shapes, bool settled_only)
       shape.packed = entry.decl != nullptr && entry.decl->modifiers.is_packed;
       for (const auto &field : *fields) {
         const auto type = struct_field_type(entry, field.name);
-        shape.fields.push_back(field_shape{
-            .name = field.name,
-            .type = lowering_type(type.value_or(k_unknown_type))});
+        shape.fields.push_back(
+            field_shape{.name = field.name,
+                        .type = lowering_type(type.value_or(k_unknown_type))});
       }
     } else {
       const auto *variants = sum_variants_of(entry);
@@ -807,8 +807,8 @@ auto checker::add_aggregate_shapes(aggregate_shapes &shapes, bool settled_only)
         for (auto &type : payload) {
           type = lowering_type(type);
         }
-        shape.variants.push_back(variant_shape{.name = variant.name,
-                                               .payload = std::move(payload)});
+        shape.variants.push_back(
+            variant_shape{.name = variant.name, .payload = std::move(payload)});
       }
     }
     if (settled_only) {

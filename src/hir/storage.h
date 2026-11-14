@@ -67,7 +67,8 @@ struct storage_env {
   /// `cell[T]`/`cell_mut[T]` and `to` a reference to the same `T`, `&mut T`
   /// only from a `cell_mut[T]`. Both are the address of the `T`.
   [[nodiscard]] auto cell_reads_as_reference(semantic::type_id from,
-                                             semantic::type_id to) const -> bool;
+                                             semantic::type_id to) const
+      -> bool;
 };
 
 /// Index of a `storage_slot` in its function.
@@ -107,9 +108,9 @@ struct storage_slot {
   /// names itself; an `owner_field` names the owner it is part of.
   storage_id owner = k_invalid_storage;
   /// `closure_environment` and `coroutine_frame`: the slot's bytes are in the
-  /// environment (state) block the function received, `env_offset` bytes in. When `env_indirect` is set
-  /// the environment holds the address of the variable instead, and the slot is
-  /// the variable it points at.
+  /// environment (state) block the function received, `env_offset` bytes in.
+  /// When `env_indirect` is set the environment holds the address of the
+  /// variable instead, and the slot is the variable it points at.
   size_t env_offset = 0;
   bool env_indirect = false;
   /// The value here owes no drop: the iterator a `for` loop makes from a
@@ -165,7 +166,7 @@ struct operand {
   bool consume = false;
   semantic::type_id type = semantic::k_unknown_type;
   token_kind literal = token_kind::eof; ///< `constant`.
-  std::string text{};                     ///< `constant`: the spelling.
+  std::string text{};                   ///< `constant`: the spelling.
 };
 
 /// What a `compute` operation evaluates.
@@ -209,8 +210,8 @@ struct call_target {
 struct call_argument {
   size_t source_index = 0;
   pass_class cls = pass_class::scalar;
-  operand value{};       ///< Direct classes.
-  place slot{};          ///< Indirect classes: initialized before the call.
+  operand value{}; ///< Direct classes.
+  place slot{};    ///< Indirect classes: initialized before the call.
 };
 
 /// How a closure's environment holds one captured variable.
@@ -224,9 +225,9 @@ enum class capture_kind : uint8_t {
 
 /// One captured variable, as `make_closure` stores it.
 struct closure_capture {
-  place source{};      ///< The variable in the enclosing function.
+  place source{}; ///< The variable in the enclosing function.
   capture_kind kind = capture_kind::copy;
-  size_t offset = 0;   ///< Bytes into the environment block.
+  size_t offset = 0; ///< Bytes into the environment block.
 };
 
 /// The promise a `check` operation tests: a `pre`, `post`, or `invariant`
@@ -253,57 +254,57 @@ enum class op_kind : uint8_t {
                    ///< is dropped through a raw pointer instead (an array's
                    ///< elements). No code; the verifier treats it as a drop.
   call_into,       ///< Calls `callee`; the result is built in `dest`.
-  make_closure,    ///< `dest` (a `fn` value) <- `{entry, env, glue}`; see below.
+  make_closure, ///< `dest` (a `fn` value) <- `{entry, env, glue}`; see below.
   release_environment, ///< Frees the environment block this closure body or
                        ///< drop glue received. Only the glue does this.
   // Generators. A `generator def` lowers to a constructor and a step function.
   // The step's frame is its state block: every local is a `coroutine_frame`
   // slot at a fixed offset in it, so nothing needs saving at a suspension.
-  make_generator,   ///< `dest` (a generator) <- a new coroutine whose step is
-                    ///< `entry`; `env_size`/`env_align` size its state block
-                    ///< and `captures` fill it, as for `make_closure`.
-  generator_resume, ///< `dest` (a `uint64`) <- the status after resuming the
-                    ///< generator at `source` once.
-  generator_take,   ///< `dest` <- the item the generator at `source` last
-                    ///< yielded, moved out of the producer's state block. The
-                    ///< coroutine then holds no item.
-  coroutine_has_item,  ///< `dest` (a `bool`) <- whether the coroutine at
-                       ///< `source` holds an item that was handed over and not
-                       ///< yet taken.
-  coroutine_dispatch,  ///< Step only, first: jumps to the resume point of
-                       ///< `source` (a `uint64`); `depth` points exist.
-  coroutine_suspend,   ///< Step only: hands the item at `source` (consumed) to
-                       ///< the resumer of `dest` (the coroutine) and returns;
-                       ///< resumption continues here. `depth` numbers the point
-                       ///< from 1.
-  coroutine_await,     ///< Step only, in a task: waits for the task at `source`,
-                       ///< or, when `waits` is `all` or `any`, for a tuple of
-                       ///< tasks to all finish or for one of them to.
-                       ///< `dest` is the coroutine. If the wait is not over
-                       ///< the step returns `pending` and, once woken,
-                       ///< resumes here and polls again. `depth` numbers the
-                       ///< point from 1, as for a suspension.
+  make_generator,     ///< `dest` (a generator) <- a new coroutine whose step is
+                      ///< `entry`; `env_size`/`env_align` size its state block
+                      ///< and `captures` fill it, as for `make_closure`.
+  generator_resume,   ///< `dest` (a `uint64`) <- the status after resuming the
+                      ///< generator at `source` once.
+  generator_take,     ///< `dest` <- the item the generator at `source` last
+                      ///< yielded, moved out of the producer's state block. The
+                      ///< coroutine then holds no item.
+  coroutine_has_item, ///< `dest` (a `bool`) <- whether the coroutine at
+                      ///< `source` holds an item that was handed over and not
+                      ///< yet taken.
+  coroutine_dispatch, ///< Step only, first: jumps to the resume point of
+                      ///< `source` (a `uint64`); `depth` points exist.
+  coroutine_suspend,  ///< Step only: hands the item at `source` (consumed) to
+                      ///< the resumer of `dest` (the coroutine) and returns;
+                      ///< resumption continues here. `depth` numbers the point
+                      ///< from 1.
+  coroutine_await,    ///< Step only, in a task: waits for the task at `source`,
+                      ///< or, when `waits` is `all` or `any`, for a tuple of
+                      ///< tasks to all finish or for one of them to.
+                      ///< `dest` is the coroutine. If the wait is not over
+                      ///< the step returns `pending` and, once woken,
+                      ///< resumes here and polls again. `depth` numbers the
+                      ///< point from 1, as for a suspension.
   task_block_on_group, ///< Not in a step: blocks the thread until all (or, for
                        ///< `waits == any`, one) of the tuple of tasks at
                        ///< `source` have finished.
   coroutine_cancelled, ///< Step only: `dest` (a `bool`) <- whether the
                        ///< coroutine at `source` was resumed to unwind.
   coroutine_finish,    ///< Step only: marks the coroutine at `source` done.
-  storage_dead,    ///< Ends the lifetime of slot `slot`.
-  return_value,    ///< Leaves the function; see `value`.
-  unreachable,     ///< Never runs: the operation before it (a call that
-                   ///< returns `never`) does not return. Ends the path.
-  check,           ///< Panics, naming `contract`, unless `condition` (a
-                   ///< `bool`) is true.
+  storage_dead,        ///< Ends the lifetime of slot `slot`.
+  return_value,        ///< Leaves the function; see `value`.
+  unreachable,         ///< Never runs: the operation before it (a call that
+                       ///< returns `never`) does not return. Ends the path.
+  check,               ///< Panics, naming `contract`, unless `condition` (a
+                       ///< `bool`) is true.
   // Structured control flow. The markers nest like brackets in the flat
   // operation list; the verifier joins the initialization state where
   // branches meet.
-  if_begin,   ///< Runs the operations up to `else_begin` or `if_end` when
-              ///< `condition` is true.
-  else_begin, ///< Starts the operations that run when it is false.
-  if_end,     ///< Ends the conditional; the two paths join here.
-  loop_begin, ///< Starts operations that repeat until an `exit` leaves them.
-  loop_end,   ///< Ends the loop body and returns to `loop_begin`.
+  if_begin,    ///< Runs the operations up to `else_begin` or `if_end` when
+               ///< `condition` is true.
+  else_begin,  ///< Starts the operations that run when it is false.
+  if_end,      ///< Ends the conditional; the two paths join here.
+  loop_begin,  ///< Starts operations that repeat until an `exit` leaves them.
+  loop_end,    ///< Ends the loop body and returns to `loop_begin`.
   block_begin, ///< Starts a region that an `exit` can leave early.
   block_end,   ///< Ends the region; the paths that left it join here.
   exit,        ///< Leaves the `depth`-th enclosing loop or block (0 is the
@@ -314,9 +315,9 @@ enum class op_kind : uint8_t {
 
 /// What an await waits for.
 enum class wait_mode : uint8_t {
-  one, ///< A single task.
-  all, ///< Every task of a tuple (`await par`).
-  any, ///< The first task of a tuple to finish (`await race`).
+  one,  ///< A single task.
+  all,  ///< Every task of a tuple (`await par`).
+  any,  ///< The first task of a tuple to finish (`await race`).
   crew, ///< Every task spawned into one `crew` (the end of a crew block).
 };
 
@@ -366,11 +367,12 @@ struct storage_op {
   size_t depth = 0;
   // coroutine_await, task_block_on_group
   wait_mode waits = wait_mode::one;
-  // make_closure, make_generator: `entry` and `glue` name functions of the module that take the
-  // environment as their first operand (`abi_signature::takes_environment`).
-  // The environment is one block of `env_size` bytes, allocated here when it is
-  // not empty and released by `glue`; `captures` fill it. `glue` is empty only
-  // when the environment is empty.
+  // make_closure, make_generator: `entry` and `glue` name functions of the
+  // module that take the environment as their first operand
+  // (`abi_signature::takes_environment`). The environment is one block of
+  // `env_size` bytes, allocated here when it is not empty and released by
+  // `glue`; `captures` fill it. `glue` is empty only when the environment is
+  // empty.
   std::string entry{};
   std::string glue{};
   size_t env_size = 0;
@@ -445,7 +447,8 @@ struct storage_module {
 /// module the call is in. A callee with no owner module is in that module.
 [[nodiscard]] auto program_callee_name(std::string_view entry,
                                        std::string_view module,
-                                       const call_target &callee) -> std::string;
+                                       const call_target &callee)
+    -> std::string;
 
 /// A stable, line-per-operation text rendering. Slots are named `s<id>` and
 /// listed first; the rendering depends only on the form, so tests can compare
@@ -456,8 +459,8 @@ struct storage_module {
 /// followed only by `storage_dead` ops and the return of its whole result.
 /// Scalars cannot hold the address of the frame, and nothing is left to run
 /// in it, so no callee can reach the storage the call releases.
-[[nodiscard]] auto is_safe_tail_call(const storage_function &function, size_t index)
-    -> bool;
+[[nodiscard]] auto is_safe_tail_call(const storage_function &function,
+                                     size_t index) -> bool;
 
 [[nodiscard]] auto dump(const storage_function &function,
                         const semantic::type_table &types) -> std::string;

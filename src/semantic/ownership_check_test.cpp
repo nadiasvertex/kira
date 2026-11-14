@@ -969,8 +969,8 @@ auto test_generic_lambda_moving_capture_twice_is_explained() -> void {
 }
 
 auto test_generic_lambda_copies_share_capture_borrows() -> void {
-  const auto accepted = analyze_test_data_file(
-      "accept_generic_lambda_mut_capture_used_twice.cn");
+  const auto accepted =
+      analyze_test_data_file("accept_generic_lambda_mut_capture_used_twice.cn");
   expect(accepted.error_count == 0,
          std::string("expected the copies of a generic lambda to hold one "
                      "`&mut` capture between them:\n") +

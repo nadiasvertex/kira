@@ -123,8 +123,8 @@ void cinder_rt_stderr_into(void *result) {
 }
 
 void cinder_rt_open_into(void *result, const void *path, const void *opts) {
-  const auto opened = open_file(out::view_of(path),
-                                static_cast<const uint8_t *>(opts));
+  const auto opened =
+      open_file(out::view_of(path), static_cast<const uint8_t *>(opts));
   if (!opened) {
     out::write_err(result, out::k_result_word_size, opened.error());
     return;
@@ -177,13 +177,13 @@ void cinder_rt_pipe_into(void *result) {
   }
   out::begin_ok(result, size);
   out::store<int64_t>(result, out::k_result_payload_offset, (*ends)[0]);
-  out::store<int64_t>(result,
-                      out::k_result_payload_offset + sizeof(int64_t),
+  out::store<int64_t>(result, out::k_result_payload_offset + sizeof(int64_t),
                       (*ends)[1]);
 }
 
 void cinder_rt_set_nonblocking_into(void *result, const void *fd) {
-  const auto done = make_nonblocking(raw_fd_of(static_cast<const uint64_t *>(fd)));
+  const auto done =
+      make_nonblocking(raw_fd_of(static_cast<const uint64_t *>(fd)));
   if (!done) {
     out::write_err(result, out::k_result_unit_size, done.error());
     return;

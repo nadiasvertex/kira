@@ -25,8 +25,8 @@ inline auto raw_slots_hold_aggregates_at_their_stride(case_backend &backend)
   expect_equal(p->scalar("sum_pairs", std::vector<int64_t>{5}), 55,
                "sum_pairs");
   // Four different pairs: each read comes from its own slot.
-  expect_equal(p->scalar("distinct_pairs", {}), 3 * 1000000 + 300 * 1000 + 100 + 100,
-               "distinct_pairs");
+  expect_equal(p->scalar("distinct_pairs", {}),
+               3 * 1000000 + 300 * 1000 + 100 + 100, "distinct_pairs");
   // `s[1].to.b + s[2].from.a + s[0].to.b` = 8 + 9 + 4.
   expect_equal(p->scalar("nested", {}), 21, "nested");
   // Only the middle pair was written through the reference.
@@ -52,13 +52,15 @@ inline auto raw_slots_cost_one_allocation_for_the_buffer(case_backend &backend)
   expect_equal(p->scalar("sum_pairs", std::vector<int64_t>{200}), 200 * 11,
                "sum_pairs");
   // The old representation boxed every pair: this is the buffer, only.
-  expect_equal(static_cast<int64_t>(runtime::heap_allocation_count() - allocations),
-               1, "allocations for 200 pairs");
-  expect_equal(runtime::heap_live_block_count() - live, 0, "blocks left behind");
+  expect_equal(
+      static_cast<int64_t>(runtime::heap_allocation_count() - allocations), 1,
+      "allocations for 200 pairs");
+  expect_equal(runtime::heap_live_block_count() - live, 0,
+               "blocks left behind");
 }
 
-inline auto raw_reads_and_writes_follow_the_ownership_rules(case_backend &backend)
-    -> void {
+inline auto
+raw_reads_and_writes_follow_the_ownership_rules(case_backend &backend) -> void {
   auto p = backend.open("bytecode_storage_test", "raw_memory.cn");
   // Four values written, none dropped; four read out, four dropped.
   expect_equal(p->scalar("read_and_drop", std::vector<int64_t>{4}), 4,

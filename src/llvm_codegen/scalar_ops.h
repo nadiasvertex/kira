@@ -36,8 +36,8 @@ namespace cinder::llvm_codegen {
 /// The LLVM type a scalar of `kind` has as an SSA value. A `bool` is `i1`
 /// here; its in-memory form is a byte, which callers handle where they load
 /// and store.
-[[nodiscard]] auto llvm_type_for(llvm::LLVMContext &ctx, bytecode::numeric_kind kind)
-    -> llvm::Type *;
+[[nodiscard]] auto llvm_type_for(llvm::LLVMContext &ctx,
+                                 bytecode::numeric_kind kind) -> llvm::Type *;
 
 /// Emits scalar instructions through a caller-owned `IRBuilder`. Checked
 /// operations split the current block: the failing edge calls the panic
@@ -69,7 +69,8 @@ public:
   /// Arithmetic, comparison, bitwise, and shift operators on two values of
   /// `kind`. Short-circuit `and`/`or` are control flow and not handled here.
   [[nodiscard]] auto binary(ast::binary_op op, bytecode::numeric_kind kind,
-                            llvm::Value *lhs, llvm::Value *rhs, source_span span)
+                            llvm::Value *lhs, llvm::Value *rhs,
+                            source_span span)
       -> std::expected<llvm::Value *, codegen_error>;
 
   /// `-value`: floats negate plainly, signed integers panic on the minimum.
@@ -78,14 +79,16 @@ public:
 
   /// A numeric conversion with the bytecode VM's rules: integers extend from
   /// the source's signedness, then truncate to the destination width.
-  [[nodiscard]] auto cast(bytecode::numeric_kind from, bytecode::numeric_kind to,
-                          llvm::Value *value) -> llvm::Value *;
+  [[nodiscard]] auto cast(bytecode::numeric_kind from,
+                          bytecode::numeric_kind to, llvm::Value *value)
+      -> llvm::Value *;
 
 private:
   [[nodiscard]] auto checked_arith(llvm::Intrinsic::ID id, llvm::Value *lhs,
                                    llvm::Value *rhs) -> llvm::Value *;
   [[nodiscard]] auto checked_div(bool is_signed, int bits, llvm::Value *lhs,
-                                 llvm::Value *rhs, bool is_mod) -> llvm::Value *;
+                                 llvm::Value *rhs, bool is_mod)
+      -> llvm::Value *;
   [[nodiscard]] auto checked_mul_sat(bool is_signed, int bits, llvm::Value *lhs,
                                      llvm::Value *rhs) -> llvm::Value *;
   [[nodiscard]] auto checked_shift(bool is_shl, bool is_signed, int bits,

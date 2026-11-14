@@ -11,10 +11,10 @@
 
 #include "aot.h"
 #include "src/hir/lower.h"
+#include "src/hir/storage_program.h"
 #include "src/llvm_codegen/aot.h"
 #include "src/llvm_codegen/codegen.h"
 #include "src/llvm_codegen/storage_codegen.h"
-#include "src/hir/storage_program.h"
 #include "src/util/path.h"
 
 namespace fs = std::filesystem;
@@ -70,8 +70,9 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   auto program = hir::prepare_storage_program(modules, checked);
   if (!program.has_value()) {
     return build_outcome{.succeeded = false,
-                         .message = std::format("failed to compile `{}`: {}",
-                                                function_name, program.error())};
+                         .message =
+                             std::format("failed to compile `{}`: {}",
+                                         function_name, program.error())};
   }
   auto compiled = llvm_codegen::compile_storage_module(
       std::span<const hir::storage_module *const>((*program)->modules),

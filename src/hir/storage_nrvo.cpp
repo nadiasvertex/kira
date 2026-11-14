@@ -39,9 +39,8 @@ auto for_each_place(Op &op, Visit &&visit) -> void {
 
 [[nodiscard]] auto mentions(const storage_op &op, storage_id slot) -> bool {
   auto found = op.kind == op_kind::storage_dead && op.slot == slot;
-  for_each_place(op, [&](const place &where) {
-    found = found || where.base == slot;
-  });
+  for_each_place(
+      op, [&](const place &where) { found = found || where.base == slot; });
   return found;
 }
 
@@ -216,16 +215,16 @@ auto apply_nrvo(storage_function &function) -> std::vector<nrvo_decision> {
     kept.push_back(std::move(op));
   }
   ops = std::move(kept);
-  const auto renumber = [&](storage_id id) {
-    return id > local ? id - 1 : id;
-  };
+  const auto renumber = [&](storage_id id) { return id > local ? id - 1 : id; };
   for (auto &op : ops) {
-    for_each_place(op, [&](place &where) { where.base = renumber(where.base); });
+    for_each_place(op,
+                   [&](place &where) { where.base = renumber(where.base); });
     if (op.kind == op_kind::storage_dead) {
       op.slot = renumber(op.slot);
     }
   }
-  function.slots.erase(function.slots.begin() + static_cast<std::ptrdiff_t>(local));
+  function.slots.erase(function.slots.begin() +
+                       static_cast<std::ptrdiff_t>(local));
   for (auto &remaining : function.slots) {
     remaining.id = renumber(remaining.id);
     remaining.owner = renumber(remaining.owner);

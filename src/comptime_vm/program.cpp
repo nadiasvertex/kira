@@ -231,7 +231,8 @@ assemble(semantic::comptime_program &program, const std::string &entry_module,
   }
   // The same storage form the driver runs (spec/value-semantics.md): values
   // are inline bytes, and the compiler runs the bytecode built from it.
-  auto storage = hir::prepare_storage_program(module_pointers, program.records());
+  auto storage =
+      hir::prepare_storage_program(module_pointers, program.records());
   if (!storage.has_value()) {
     auto message = storage.error();
     for (const auto &[name, why] : skipped) {

@@ -68,15 +68,14 @@ auto plan_frame(const storage_function &function, storage_env &env)
   return plan;
 }
 
-auto describe_frame_overflow(const frame_plan &plan, uint64_t limit, size_t shown)
-    -> std::string {
+auto describe_frame_overflow(const frame_plan &plan, uint64_t limit,
+                             size_t shown) -> std::string {
   if (plan.within(limit)) {
     return {};
   }
   auto ordered = plan.contributors;
-  std::ranges::stable_sort(ordered, [](const auto &a, const auto &b) {
-    return a.bytes > b.bytes;
-  });
+  std::ranges::stable_sort(
+      ordered, [](const auto &a, const auto &b) { return a.bytes > b.bytes; });
   auto text = plan.bytes == k_overflow
                   ? std::format("`{}` needs more frame storage than can be "
                                 "counted; the limit is {} bytes",

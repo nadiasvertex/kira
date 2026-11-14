@@ -59,11 +59,11 @@
 #include "src/parser/source_location.h"
 #include "src/runtime/aligned_buffer.h"
 #include "src/runtime/allocator.h"
-#include "src/semantic/ownership_check.h"
 #include "src/runtime/scheduler.h"
 #include "src/runtime/value_layout.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
+#include "src/semantic/ownership_check.h"
 #include "src/testing/stdlib_fixtures.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
@@ -154,7 +154,8 @@ auto heap_bounds_status(std::string_view text, const heap_mark &before,
                        tier, live, live_bound);
   }
   const auto allocated = static_cast<int64_t>(
-      cinder::runtime::heap_allocation_count_all_threads() - before.allocations);
+      cinder::runtime::heap_allocation_count_all_threads() -
+      before.allocations);
   if (const auto bound = directive_value(text, "# max-allocations:");
       bound.has_value() && allocated > *bound) {
     return std::format("{}main allocated {} heap blocks, but "
@@ -317,12 +318,14 @@ auto load(const fs::path &path, const std::string &text, std::string &why,
   for (auto &submodule : *submodules) {
     out->modules.push_back(std::move(submodule));
   }
-  cinder::testing::lower_stdlib_modules(out->stdlib, out->checked, out->modules);
+  cinder::testing::lower_stdlib_modules(out->stdlib, out->checked,
+                                        out->modules);
   if (inline_calls) {
     inlined_call_sites +=
         hir::inline_small_calls(out->modules, out->checked.types).call_sites;
   }
-  out->reached = hir::find_reachable_modules(*out->modules.front(), out->modules);
+  out->reached =
+      hir::find_reachable_modules(*out->modules.front(), out->modules);
   for (const auto &fn : out->modules.front()->functions) {
     if (fn != nullptr && fn->name == "main") {
       out->main_fn = fn.get();
@@ -411,8 +414,9 @@ struct reference {
 auto quote_span(const std::string &text, const cinder::source_span &span)
     -> std::string {
   if (span.end > span.start && span.end <= text.size()) {
-    return std::format(" (at `{}`)",
-                       text.substr(span.start, std::min<size_t>(span.end - span.start, 60)));
+    return std::format(
+        " (at `{}`)",
+        text.substr(span.start, std::min<size_t>(span.end - span.start, 60)));
   }
   return {};
 }
@@ -425,7 +429,8 @@ auto llvm_tier(program &p, std::span<const hir::storage_module *const> modules,
                const std::string &text, const reference &want)
     -> std::pair<bool, std::string> {
   auto compiled = llvm_codegen::compile_storage_module(
-      modules, *p.env, llvm_codegen::storage_codegen_options{.entry_thunks = true});
+      modules, *p.env,
+      llvm_codegen::storage_codegen_options{.entry_thunks = true});
   if (!compiled.has_value()) {
     return {false, "LLVM compile: " + compiled.error().message +
                        quote_span(text, compiled.error().span)};
@@ -442,22 +447,25 @@ auto llvm_tier(program &p, std::span<const hir::storage_module *const> modules,
     return {false, "no storage `main`"};
   }
   const auto &result_abi = main_fn->signature.result;
-  auto result = cinder::runtime::aligned_buffer(std::max<size_t>(result_abi.size, 16),
-                                                std::max<size_t>(result_abi.align, 16));
+  auto result =
+      cinder::runtime::aligned_buffer(std::max<size_t>(result_abi.size, 16),
+                                      std::max<size_t>(result_abi.align, 16));
   const auto hosted = bc::hosted_panic_scope{};
   cinder::runtime::scheduler::wait_idle();
   const auto mark = heap_mark{};
-  const auto ran = jit->run_storage("main", std::span<const uint64_t>{}, result.data());
+  const auto ran =
+      jit->run_storage("main", std::span<const uint64_t>{}, result.data());
   cinder::runtime::scheduler::wait_idle();
-  const auto heap = ran.has_value() ? heap_bounds_status(text, mark, "LLVM ")
-                                    : std::nullopt;
+  const auto heap =
+      ran.has_value() ? heap_bounds_status(text, mark, "LLVM ") : std::nullopt;
   if (want.rendering.has_value()) {
-    const auto got = ran.has_value()
-                         ? render_inline(p, p.main_fn->return_type, result.data())
-                         : describe(outcome{.panicked = true, .panic = ran.error()});
+    const auto got =
+        ran.has_value()
+            ? render_inline(p, p.main_fn->return_type, result.data())
+            : describe(outcome{.panicked = true, .panic = ran.error()});
     if (got != want.rendering) {
-      return {false, std::format("LLVM main gave {}, expected {}", got.value_or("?"),
-                                 *want.rendering)};
+      return {false, std::format("LLVM main gave {}, expected {}",
+                                 got.value_or("?"), *want.rendering)};
     }
     if (heap.has_value()) {
       return {false, *heap};
@@ -471,7 +479,8 @@ auto llvm_tier(program &p, std::span<const hir::storage_module *const> modules,
           ? outcome{.panicked = true, .panic = ran.error()}
           : outcome{.has_value = want.result.has_value,
                     .value = want.result.has_value && kind.has_value()
-                                 ? widen(*kind, load_bits(result.data(), result_abi.size))
+                                 ? widen(*kind, load_bits(result.data(),
+                                                          result_abi.size))
                                  : 0};
   if (got != want.result) {
     return {false, std::format("LLVM main gave {}, expected {}", describe(got),
@@ -510,9 +519,10 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
       const auto span = first.error.span;
       if (module == p->reached.front() && span.end > span.start &&
           span.end <= text.size()) {
-        where = std::format(" (at `{}`)",
-                            text.substr(span.start, std::min<size_t>(
-                                                        span.end - span.start, 60)));
+        where = std::format(
+            " (at `{}`)",
+            text.substr(span.start,
+                        std::min<size_t>(span.end - span.start, 60)));
       }
       return {.status = std::format("refused {}.{}: {}{}", module->module_name,
                                     first.name, first.error.message, where)};
@@ -522,10 +532,11 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
   for (const auto &lowering : lowerings) {
     modules.push_back(&lowering.module);
   }
-  const auto program_span = std::span<const hir::storage_module *const>(modules);
+  const auto program_span =
+      std::span<const hir::storage_module *const>(modules);
   for (const auto *module : modules) {
-    const auto checked =
-        hir::verify(*module, *p->env, hir::verify_options{.program = program_span});
+    const auto checked = hir::verify(
+        *module, *p->env, hir::verify_options{.program = program_span});
     if (!checked.has_value()) {
       // `CINDER_STORAGE_DUMP=1` prints the function the verifier rejected.
       if (std::getenv("CINDER_STORAGE_DUMP") != nullptr) {
@@ -535,12 +546,13 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
           }
         }
       }
-      return {.status = std::format("unverified {}: {}", checked.error().function,
-                                    checked.error().message)};
+      return {.status =
+                  std::format("unverified {}: {}", checked.error().function,
+                              checked.error().message)};
     }
   }
-  auto compiled = cinder::bytecode_compiler::compile_storage_module(program_span,
-                                                                     *p->env);
+  auto compiled =
+      cinder::bytecode_compiler::compile_storage_module(program_span, *p->env);
   if (!compiled.has_value()) {
     // `CINDER_STORAGE_DUMP=1` prints the function the VM compiler rejected.
     if (std::getenv("CINDER_STORAGE_DUMP") != nullptr) {
@@ -556,8 +568,9 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
     auto where = std::string{};
     const auto span = compiled.error().span;
     if (span.end > span.start && span.end <= text.size()) {
-      where = std::format(" (at `{}`)", text.substr(span.start, std::min<size_t>(
-                                                                 span.end - span.start, 60)));
+      where = std::format(
+          " (at `{}`)",
+          text.substr(span.start, std::min<size_t>(span.end - span.start, 60)));
     }
     return {.status = "VM compile: " + compiled.error().message + where};
   }
@@ -585,8 +598,9 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
     if (!abi.has_value()) {
       return {.status = "compiled `main` has no inline-value signature"};
     }
-    auto result = cinder::runtime::aligned_buffer(
-        std::max<size_t>(abi->result.size, 8), std::max<size_t>(abi->result.align, 8));
+    auto result =
+        cinder::runtime::aligned_buffer(std::max<size_t>(abi->result.size, 8),
+                                        std::max<size_t>(abi->result.align, 8));
     // After the result buffer, which is the harness's, not `main`'s.
     const auto mark = heap_mark{};
     auto got = std::optional<std::string>{};
@@ -596,7 +610,8 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
           std::span<const bc::slot_value>{});
       got = run.has_value()
                 ? render_inline(*p, p->main_fn->return_type, result.data())
-                : describe(outcome{.panicked = true, .panic = run.error().reason});
+                : describe(
+                      outcome{.panicked = true, .panic = run.error().reason});
     } else {
       const auto run = machine.run(index, std::span<const bc::slot_value>{});
       if (run.has_value()) {
@@ -632,13 +647,12 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
   // A panic unwinds without drops, so it is not bounded.
   const auto heap = run.has_value() ? heap_bounds_status(text, mark, "")
                                     : std::optional<std::string>{};
-  const auto got =
-      run.has_value()
-          ? outcome{.has_value = run->has_value,
-                    .value = run->has_value && kind.has_value()
-                                 ? widen(*kind, run->value.u)
-                                 : 0}
-          : outcome{.panicked = true, .panic = run.error()};
+  const auto got = run.has_value()
+                       ? outcome{.has_value = run->has_value,
+                                 .value = run->has_value && kind.has_value()
+                                              ? widen(*kind, run->value.u)
+                                              : 0}
+                       : outcome{.panicked = true, .panic = run.error()};
 
   // What the file says `main` gives, in `describe`'s words.
   auto want = std::string{};
@@ -654,8 +668,8 @@ auto survey(const fs::path &path, bool inline_calls) -> verdict {
     return {.status = "the file has no `# expect:` or `# expect-panic:`"};
   }
   if (describe(got) != want) {
-    return {.status = std::format("main gave {}, expected {}", describe(got),
-                                  want)};
+    return {.status =
+                std::format("main gave {}, expected {}", describe(got), want)};
   }
   if (heap.has_value()) {
     return {.status = *heap};

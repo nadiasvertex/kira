@@ -7,8 +7,8 @@
 #include "src/runtime/scheduler.h"
 
 #include <algorithm>
-#include <deque>
 #include <charconv>
+#include <deque>
 #include <functional>
 #include <optional>
 #include <string>
@@ -168,13 +168,13 @@ public:
   [[nodiscard]] auto state_size() const -> size_t { return state_size_; }
   [[nodiscard]] auto state_align() const -> size_t { return state_align_; }
 
-  [[nodiscard]] auto run() -> std::expected<storage_function, storage_lower_error> {
+  [[nodiscard]] auto run()
+      -> std::expected<storage_function, storage_lower_error> {
     if (fn_.step) {
       return run_step();
     }
     if (fn_.coroutine) {
-      return refuse(fn_.span,
-                    "a task body needs suspension-aware storage");
+      return refuse(fn_.span, "a task body needs suspension-aware storage");
     }
     out_.name = fn_.name;
     auto param_types = std::vector<type_id>{};
@@ -196,9 +196,8 @@ public:
     signature->takes_environment = fn_.environment != nullptr;
     out_.signature = std::move(*signature);
     if (out_.signature.returns_through_address()) {
-      out_.result_slot = new_slot(storage_class::caller_result,
-                                  fn_.return_type, "", k_invalid_symbol_id,
-                                  fn_.span, false);
+      out_.result_slot = new_slot(storage_class::caller_result, fn_.return_type,
+                                  "", k_invalid_symbol_id, fn_.span, false);
     }
     for (size_t i = 0; i < fn_.params->size(); ++i) {
       const auto &param = (*fn_.params)[i];
@@ -234,7 +233,8 @@ public:
         // trailing `match` or `if`, which HIR types as the result), unless
         // the result is zero-sized or the expression does not return.
         const auto *tail =
-            i + 1 == stmts.size() && stmt.kind == hir_node_kind::hir_expr_stmt &&
+            i + 1 == stmts.size() &&
+                    stmt.kind == hir_node_kind::hir_expr_stmt &&
                     out_.signature.result.cls != pass_class::zero_sized &&
                     !always_leaves(stmt)
                 ? as<hir_expr_stmt>(stmt).expr.get()
@@ -251,7 +251,8 @@ public:
     }
     if (!terminated_) {
       if (out_.signature.result.cls != pass_class::zero_sized) {
-        return malformed(fn_.span, "the body can end without returning a value");
+        return malformed(fn_.span,
+                         "the body can end without returning a value");
       }
       if (auto ended = flush_pending(fn_.span); !ended.has_value()) {
         return std::unexpected(ended.error());
@@ -271,8 +272,8 @@ private:
 
   /// Builds each static in its `global` slot, which starts unwritten here.
   /// A static's value is a compile-time constant, so it reads no other.
-  [[nodiscard]] auto lower_statics(const std::vector<hir_static_global> &statics)
-      -> result {
+  [[nodiscard]] auto
+  lower_statics(const std::vector<hir_static_global> &statics) -> result {
     for (const auto &global : statics) {
       const auto id = new_slot(storage_class::global, global.type, global.name,
                                k_invalid_symbol_id, global.value->span, false);
@@ -301,10 +302,10 @@ private:
   [[nodiscard]] auto layout_failure(const source_span &span,
                                     const runtime::layout_error &error) const
       -> lower_failure {
-    return std::unexpected(storage_lower_error{
-        .kind = storage_lower_error_kind::layout_failed,
-        .span = span,
-        .message = error.message});
+    return std::unexpected(
+        storage_lower_error{.kind = storage_lower_error_kind::layout_failed,
+                            .span = span,
+                            .message = error.message});
   }
 
   auto new_slot(storage_class cls, type_id type, std::string name,
@@ -356,8 +357,8 @@ private:
   /// returns outside every loop, as a named local does.
   auto keep_for_scope(std::size_t first) -> void {
     const auto kept = std::ranges::subrange(
-        pending_.begin() + static_cast<std::ptrdiff_t>(
-                               std::min(first, pending_.size())),
+        pending_.begin() +
+            static_cast<std::ptrdiff_t>(std::min(first, pending_.size())),
         pending_.end());
     if (kept.empty() || std::ranges::any_of(kept, [&](const pending_temp &t) {
           return env_.needs_drop(out_.slots[t.slot].type);
@@ -403,7 +404,8 @@ private:
       emit(storage_op{.kind = op_kind::coroutine_finish,
                       .source = whole(object_slot_)},
            span);
-      value = word_constant(runtime::coroutine::raw(runtime::coroutine::status::done));
+      value = word_constant(
+          runtime::coroutine::raw(runtime::coroutine::status::done));
     }
     auto ret = storage_op{.kind = op_kind::return_value};
     ret.value = std::move(value);
@@ -657,15 +659,15 @@ private:
         return malformed(expr.span, "`" + types().display(object.type) +
                                         "` has no payload slot " +
                                         std::to_string(payload.index) +
-                                        " in variant `" +
-                                        payload.variant_name + "`");
+                                        " in variant `" + payload.variant_name +
+                                        "`");
       }
-      return std::optional<place>{project(
-          std::move(object),
-          projection{.kind = projection_kind::payload,
-                     .index = payload.index,
-                     .name = payload.variant_name},
-          variant->payload[payload.index].type)};
+      return std::optional<place>{
+          project(std::move(object),
+                  projection{.kind = projection_kind::payload,
+                             .index = payload.index,
+                             .name = payload.variant_name},
+                  variant->payload[payload.index].type)};
     }
     case hir_node_kind::hir_index:
       return lower_index(as<hir_index>(expr));
@@ -687,26 +689,25 @@ private:
             std::all_of(stmts.begin(), stmts.end() - 1, [](const auto &stmt) {
               return stmt->kind == hir_node_kind::hir_let;
             });
-        const auto *value =
-            lets_then_value ? as<hir_expr_stmt>(*stmts.back()).expr.get()
-                            : nullptr;
+        const auto *value = lets_then_value
+                                ? as<hir_expr_stmt>(*stmts.back()).expr.get()
+                                : nullptr;
         if (value != nullptr && is_address_of(*value) &&
             as<hir_unary>(*value).operand->kind ==
                 hir_node_kind::hir_local_ref) {
           // The lets end their own temporaries; those of the enclosing
           // expression outlive them, as for any value block.
-          if (auto ok = in_region(operand->span,
-                                  [&]() -> result {
-                                    for (size_t i = 0; i + 1 < stmts.size();
-                                         ++i) {
-                                      if (auto let = lower_let(
-                                              as<hir_let>(*stmts[i]));
-                                          !let.has_value()) {
-                                        return let;
-                                      }
-                                    }
-                                    return {};
-                                  });
+          if (auto ok = in_region(
+                  operand->span,
+                  [&]() -> result {
+                    for (size_t i = 0; i + 1 < stmts.size(); ++i) {
+                      if (auto let = lower_let(as<hir_let>(*stmts[i]));
+                          !let.has_value()) {
+                        return let;
+                      }
+                    }
+                    return {};
+                  });
               !ok.has_value()) {
             return std::unexpected(ok.error());
           }
@@ -741,9 +742,9 @@ private:
         return malformed(expr.span, "cannot dereference `" +
                                         types().display(pointer.type) + "`");
       }
-      return std::optional<place>{project(
-          std::move(pointer), projection{.kind = projection_kind::deref},
-          *referent)};
+      return std::optional<place>{
+          project(std::move(pointer),
+                  projection{.kind = projection_kind::deref}, *referent)};
     }
     default:
       return std::optional<place>{};
@@ -801,10 +802,10 @@ private:
                                        " is past the end of `" +
                                        types().display(object.type) + "`");
     }
-    return std::optional<place>{project(
-        std::move(object),
-        projection{.kind = projection_kind::element, .index = at},
-        found.element)};
+    return std::optional<place>{
+        project(std::move(object),
+                projection{.kind = projection_kind::element, .index = at},
+                found.element)};
   }
 
   /// Whether `type` is an `uninit[T, N]` buffer.
@@ -828,7 +829,8 @@ private:
   /// The `a..b` or `a..=b` that `index` indexes by, or null.
   [[nodiscard]] static auto range_of(const hir_index &index)
       -> const hir_binary * {
-    if (index.index == nullptr || index.index->kind != hir_node_kind::hir_binary) {
+    if (index.index == nullptr ||
+        index.index->kind != hir_node_kind::hir_binary) {
       return nullptr;
     }
     const auto &range = as<hir_binary>(*index.index);
@@ -862,13 +864,14 @@ private:
     auto &table = env_.checked.types;
     auto view = container_view{};
     if (found.kind == runtime::value_layout_kind::descriptor) {
-      view.element = entry.name == "str" ? table.builtin("byte") : entry.args.at(0);
+      view.element =
+          entry.name == "str" ? table.builtin("byte") : entry.args.at(0);
       view.pointer = table.ptr_to(view.element, entry.name == "slice_mut");
-      view.length = read_of(
-          descriptor_part(object, projection_kind::length, types().usize_type()),
-          false);
-      view.data = read_of(descriptor_part(object, projection_kind::data, view.pointer),
-                          false);
+      view.length = read_of(descriptor_part(object, projection_kind::length,
+                                            types().usize_type()),
+                            false);
+      view.data = read_of(
+          descriptor_part(object, projection_kind::data, view.pointer), false);
     } else if (found.kind == runtime::value_layout_kind::array) {
       // An `uninit` buffer's slots are reached the same way, as raw memory.
       view.element = found.element;
@@ -921,7 +924,8 @@ private:
     }
     auto &found = **view;
     if (env_.needs_drop(found.element)) {
-      return refuse(index.span, "an element of `" + types().display(object->type) +
+      return refuse(index.span, "an element of `" +
+                                    types().display(object->type) +
                                     "` at a run-time index, whose elements "
                                     "need a drop");
     }
@@ -929,8 +933,9 @@ private:
     if (!at.has_value()) {
       return std::unexpected(at.error());
     }
-    const auto checked = checked_word(compute_kind::checked_index, std::move(*at),
-                                      std::move(found.length), index.span);
+    const auto checked =
+        checked_word(compute_kind::checked_index, std::move(*at),
+                     std::move(found.length), index.span);
     const auto moved = new_temp(found.pointer, index.span);
     auto op = storage_op{.kind = op_kind::compute};
     op.dest = whole(moved);
@@ -939,8 +944,9 @@ private:
     op.operands.push_back(std::move(found.data));
     op.operands.push_back(read_of(whole(checked), false));
     emit(std::move(op), index.span);
-    return std::optional<place>{project(
-        whole(moved), projection{.kind = projection_kind::deref}, found.element)};
+    return std::optional<place>{
+        project(whole(moved), projection{.kind = projection_kind::deref},
+                found.element)};
   }
 
   /// `xs[a..b]` (or `a..=b`) into `dest`, a `str` or `slice`: `b <= len` and
@@ -991,8 +997,8 @@ private:
         checked_word(compute_kind::checked_end, std::move(*start),
                      read_of(whole(last), false), index.span);
     const auto &dest_entry = types().entry(types().strip_refinement(dest.type));
-    const auto data_type =
-        env_.checked.types.ptr_to(found.element, dest_entry.name == "slice_mut");
+    const auto data_type = env_.checked.types.ptr_to(
+        found.element, dest_entry.name == "slice_mut");
     auto data = storage_op{.kind = op_kind::compute};
     data.dest = descriptor_part(dest, projection_kind::data, data_type);
     data.computation = compute_kind::pointer_offset;
@@ -1012,9 +1018,8 @@ private:
 
   /// Whether `index` indexes a raw pointer.
   [[nodiscard]] auto indexes_raw_pointer(const hir_index &index) const -> bool {
-    return types()
-               .entry(types().strip_refinement(index.object->type))
-               .kind == semantic::type_kind::ptr_kind;
+    return types().entry(types().strip_refinement(index.object->type)).kind ==
+           semantic::type_kind::ptr_kind;
   }
 
   /// `p[i]` on a raw pointer: the slot `i` elements past `p`, reached by
@@ -1048,8 +1053,9 @@ private:
     op.operands.push_back(std::move(*base));
     op.operands.push_back(std::move(*count));
     emit(std::move(op), index.span);
-    return std::optional<place>{project(
-        whole(moved), projection{.kind = projection_kind::deref}, entry.result)};
+    return std::optional<place>{
+        project(whole(moved), projection{.kind = projection_kind::deref},
+                entry.result)};
   }
 
   // ------------------------------------------------------------------
@@ -1101,8 +1107,8 @@ private:
     case pass_class::handle:
     case pass_class::descriptor:
     case pass_class::aggregate:
-      op.kind = env_.is_copy(dest.type) ? op_kind::copy_into
-                                        : op_kind::move_into;
+      op.kind =
+          env_.is_copy(dest.type) ? op_kind::copy_into : op_kind::move_into;
       op.source = source;
       break;
     }
@@ -1110,7 +1116,8 @@ private:
     return {};
   }
 
-  [[nodiscard]] auto read_of(const place &where, bool consume) const -> operand {
+  [[nodiscard]] auto read_of(const place &where, bool consume) const
+      -> operand {
     return operand{.kind = operand_kind::read,
                    .where = where,
                    .consume = consume,
@@ -1186,7 +1193,8 @@ private:
         return read_of(**source, consume);
       }
       const auto temp = new_temp(expr.type, expr.span);
-      if (auto ok = transfer(**source, whole(temp), expr.span); !ok.has_value()) {
+      if (auto ok = transfer(**source, whole(temp), expr.span);
+          !ok.has_value()) {
         return std::unexpected(ok.error());
       }
       if (consume) {
@@ -1285,7 +1293,8 @@ private:
     case hir_node_kind::hir_block:
       // The statements inside end their own temporaries; those of the
       // enclosing expression, `dest` among them, outlive the block.
-      return in_region(expr.span, [&] { return lower_block(as<hir_block>(expr), dest); });
+      return in_region(expr.span,
+                       [&] { return lower_block(as<hir_block>(expr), dest); });
     case hir_node_kind::hir_if:
       return lower_if(as<hir_if>(expr), dest);
     case hir_node_kind::hir_lambda:
@@ -1326,8 +1335,8 @@ private:
     }
   }
 
-  [[nodiscard]] auto transfer_from_place(const hir_expr &expr, const place &dest)
-      -> result {
+  [[nodiscard]] auto transfer_from_place(const hir_expr &expr,
+                                         const place &dest) -> result {
     auto source = lower_place(expr);
     if (!source.has_value()) {
       return std::unexpected(source.error());
@@ -1364,26 +1373,28 @@ private:
         const auto name = "p" + std::to_string(i);
         params.push_back(
             hir_param{.symbol = symbol, .name = name, .type = fn_type.args[i]});
-        args.push_back(std::make_unique<hir_local_ref>(ref.span, fn_type.args[i],
-                                                       symbol, name));
+        args.push_back(std::make_unique<hir_local_ref>(
+            ref.span, fn_type.args[i], symbol, name));
       }
-      auto callee = std::make_unique<hir_local_ref>(ref.span, ref.type, ref.symbol,
-                                                    ref.name, ref.owner_module);
+      auto callee = std::make_unique<hir_local_ref>(
+          ref.span, ref.type, ref.symbol, ref.name, ref.owner_module);
       auto stmts = ptr_vec<hir_node>{};
       stmts.push_back(std::make_unique<hir_return>(
-          ref.span, std::make_unique<hir_call>(ref.span, fn_type.result,
-                                               std::move(callee), std::move(args))));
+          ref.span,
+          std::make_unique<hir_call>(ref.span, fn_type.result,
+                                     std::move(callee), std::move(args))));
       auto body = std::make_unique<hir_block>(ref.span, fn_type.result,
                                               std::move(stmts));
       static const auto no_environment = environment_plan{};
-      auto lowered = function_lowerer(body_shape{.name = entry,
-                                                 .params = &params,
-                                                 .return_type = fn_type.result,
-                                                 .body = body.get(),
-                                                 .span = ref.span,
-                                                 .environment = &no_environment},
-                                      env_, closures_)
-                         .run();
+      auto lowered =
+          function_lowerer(body_shape{.name = entry,
+                                      .params = &params,
+                                      .return_type = fn_type.result,
+                                      .body = body.get(),
+                                      .span = ref.span,
+                                      .environment = &no_environment},
+                           env_, closures_)
+              .run();
       if (!lowered.has_value()) {
         return std::unexpected(lowered.error());
       }
@@ -1419,8 +1430,8 @@ private:
   }
 
   [[nodiscard]] static auto descriptor_part(place descriptor,
-                                            projection_kind kind,
-                                            type_id type) -> place {
+                                            projection_kind kind, type_id type)
+      -> place {
     descriptor.steps.push_back(projection{.kind = kind, .type = type});
     descriptor.type = type;
     return descriptor;
@@ -1455,14 +1466,15 @@ private:
     }
     const auto word = types().usize_type();
     auto signature = classify_signature(
-        env_.layouts, std::vector<type_id>{(**view).pointer, word, word}, dest.type);
+        env_.layouts, std::vector<type_id>{(**view).pointer, word, word},
+        dest.type);
     if (!signature.has_value()) {
       return layout_failure(span, signature.error());
     }
     auto call = storage_op{.kind = op_kind::call_into};
     call.callee.name = std::string(name);
-    auto values = std::array{std::move((**view).data), std::move((**view).length),
-                             std::move(*cursor)};
+    auto values = std::array{std::move((**view).data),
+                             std::move((**view).length), std::move(*cursor)};
     for (size_t i = 0; i < values.size(); ++i) {
       call.args.push_back(call_argument{.source_index = i,
                                         .cls = signature->params[i].cls,
@@ -1485,8 +1497,8 @@ private:
       return std::unexpected(layout.error());
     }
     if ((*layout)->kind == runtime::value_layout_kind::descriptor) {
-      return transfer(descriptor_part(std::move(*object), projection_kind::length,
-                                      node.type),
+      return transfer(descriptor_part(std::move(*object),
+                                      projection_kind::length, node.type),
                       dest, node.span);
     }
     if ((*layout)->kind == runtime::value_layout_kind::array) {
@@ -1510,7 +1522,8 @@ private:
   /// it (`self`, typed `&T` in the HIR, is a `T` here).
   [[nodiscard]] auto owned_receiver_slot(const hir_expr &expr) const
       -> std::optional<storage_id> {
-    if (!owned_receiver_.has_value() || expr.kind != hir_node_kind::hir_local_ref ||
+    if (!owned_receiver_.has_value() ||
+        expr.kind != hir_node_kind::hir_local_ref ||
         as<hir_local_ref>(expr).symbol != owned_receiver_->symbol) {
       return std::nullopt;
     }
@@ -1545,9 +1558,9 @@ private:
     }
     const auto &found = **layout;
     if (found.kind == runtime::value_layout_kind::descriptor) {
-      return transfer(descriptor_part(std::move(*object), projection_kind::data,
-                                      node.type),
-                      dest, node.span);
+      return transfer(
+          descriptor_part(std::move(*object), projection_kind::data, node.type),
+          dest, node.span);
     }
     if (found.kind == runtime::value_layout_kind::array) {
       const auto array = *object;
@@ -1569,8 +1582,9 @@ private:
 
   /// `slice_from_raw_parts(p, n)`: a descriptor whose words are `n` and `p`,
   /// evaluated in that source order (`p` first).
-  [[nodiscard]] auto lower_slice_from_raw_parts(
-      const hir_slice_from_raw_parts &node, const place &dest) -> result {
+  [[nodiscard]] auto
+  lower_slice_from_raw_parts(const hir_slice_from_raw_parts &node,
+                             const place &dest) -> result {
     auto pointer = lower_operand(*node.pointer, !is_pure(*node.len));
     if (!pointer.has_value()) {
       return std::unexpected(pointer.error());
@@ -1609,8 +1623,8 @@ private:
     return std::to_string(*answer);
   }
 
-  [[nodiscard]] auto lower_literal(const hir_literal &literal, const place &dest)
-      -> result {
+  [[nodiscard]] auto lower_literal(const hir_literal &literal,
+                                   const place &dest) -> result {
     const auto cls = class_of(dest.type, literal.span);
     if (!cls.has_value()) {
       return std::unexpected(cls.error());
@@ -1629,7 +1643,8 @@ private:
       }
       op.text = std::move(*text);
     } else if (literal.lit_kind == token_kind::string_lit &&
-               types().entry(types().strip_refinement(dest.type)).name == "str") {
+               types().entry(types().strip_refinement(dest.type)).name ==
+                   "str") {
       // The bytes are static data; the descriptor built here points at them.
       auto text = decode_string_literal(literal.value);
       if (!text.has_value()) {
@@ -1638,9 +1653,9 @@ private:
       op.kind = op_kind::string_literal;
       op.text = std::move(*text);
     } else {
-      return refuse(literal.span,
-                    "a literal of type `" + types().display(dest.type) +
-                        "`, which needs static data");
+      return refuse(literal.span, "a literal of type `" +
+                                      types().display(dest.type) +
+                                      "`, which needs static data");
     }
     emit(std::move(op), literal.span);
     return {};
@@ -1671,9 +1686,9 @@ private:
                                unary.op == ast::unary_op::addr_of_mut;
     // `&x` is the address of `x`, which `lower_operand` builds from the whole
     // expression; any other operator reads its operand's value.
-    auto value = lower_operand(takes_address ? static_cast<const hir_expr &>(unary)
-                                                     : *unary.operand,
-                               false);
+    auto value = lower_operand(
+        takes_address ? static_cast<const hir_expr &>(unary) : *unary.operand,
+        false);
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
@@ -1826,8 +1841,8 @@ private:
     return {};
   }
 
-  [[nodiscard]] auto lower_struct(const hir_struct_init &init, const place &dest)
-      -> result {
+  [[nodiscard]] auto lower_struct(const hir_struct_init &init,
+                                  const place &dest) -> result {
     const auto layout = layout_of(dest.type, init.span);
     if (!layout.has_value()) {
       return std::unexpected(layout.error());
@@ -1839,9 +1854,8 @@ private:
                                       "`, which is not a struct");
     }
     if (init.fields.size() != found.members.size()) {
-      return refuse(init.span,
-                    "a struct literal that leaves fields of `" +
-                        types().display(dest.type) + "` unwritten");
+      return refuse(init.span, "a struct literal that leaves fields of `" +
+                                   types().display(dest.type) + "` unwritten");
     }
     if (found.members.empty()) {
       return empty_value(dest, init.span);
@@ -1858,8 +1872,8 @@ private:
         return malformed(init.span, "`" + types().display(dest.type) +
                                         "` has no field `" + field.name + "`");
       }
-      const auto part =
-          project(dest, member_step(index, field.name), found.members[index].type);
+      const auto part = project(dest, member_step(index, field.name),
+                                found.members[index].type);
       if (auto ok = lower_into(*field.value, part); !ok.has_value()) {
         return ok;
       }
@@ -1919,8 +1933,8 @@ private:
 
   /// Whether every element is the same literal (same kind, spelling, and
   /// type), so building the first and replicating it builds them all.
-  [[nodiscard]] static auto all_same_literal(
-      const ptr_vec<hir_expr> &elements) -> bool {
+  [[nodiscard]] static auto all_same_literal(const ptr_vec<hir_expr> &elements)
+      -> bool {
     const auto *first = elements.front().get();
     if (first->kind != hir_node_kind::hir_literal ||
         as<hir_literal>(*first).question.has_value()) {
@@ -1954,14 +1968,15 @@ private:
     }
     if (found.count == 0) {
       const auto temp = new_temp(found.element, init.span);
-      if (auto ok = lower_into(*init.fill_value, whole(temp)); !ok.has_value()) {
+      if (auto ok = lower_into(*init.fill_value, whole(temp));
+          !ok.has_value()) {
         return ok;
       }
       return empty_value(dest, init.span);
     }
-    const auto first = project(
-        dest, projection{.kind = projection_kind::element, .index = 0},
-        found.element);
+    const auto first =
+        project(dest, projection{.kind = projection_kind::element, .index = 0},
+                found.element);
     if (auto ok = lower_into(*init.fill_value, first); !ok.has_value()) {
       return ok;
     }
@@ -1972,8 +1987,8 @@ private:
     return {};
   }
 
-  [[nodiscard]] auto lower_variant(const hir_variant_init &init, const place &dest)
-      -> result {
+  [[nodiscard]] auto lower_variant(const hir_variant_init &init,
+                                   const place &dest) -> result {
     const auto layout = layout_of(dest.type, init.span);
     if (!layout.has_value()) {
       return std::unexpected(layout.error());
@@ -1988,12 +2003,11 @@ private:
     }
     const auto mark = partials_.size();
     for (size_t i = 0; i < init.args.size(); ++i) {
-      const auto part = project(
-          dest,
-          projection{.kind = projection_kind::payload,
-                     .index = i,
-                     .name = init.variant_name},
-          variant->payload[i].type);
+      const auto part = project(dest,
+                                projection{.kind = projection_kind::payload,
+                                           .index = i,
+                                           .name = init.variant_name},
+                                variant->payload[i].type);
       if (auto ok = lower_into(*init.args[i], part); !ok.has_value()) {
         return ok;
       }
@@ -2180,14 +2194,13 @@ private:
       return std::unexpected(plan.error());
     }
     const auto name = out_.name + "$closure" + std::to_string(closure_count_++);
-    auto body = function_lowerer(
-                    body_shape{.name = name,
-                               .params = &lambda.params,
-                               .return_type = lambda.return_type,
-                               .body = lambda.body.get(),
-                               .span = lambda.span,
-                               .environment = &*plan},
-                    env_, closures_)
+    auto body = function_lowerer(body_shape{.name = name,
+                                            .params = &lambda.params,
+                                            .return_type = lambda.return_type,
+                                            .body = lambda.body.get(),
+                                            .span = lambda.span,
+                                            .environment = &*plan},
+                                 env_, closures_)
                     .run();
     if (!body.has_value()) {
       return std::unexpected(body.error());
@@ -2200,18 +2213,18 @@ private:
       // closure whose environment is all copies still has the block to free.
       static const auto no_params = std::vector<hir_param>{};
       glue_name = name + "$drop";
-      auto glue = function_lowerer(
-                      body_shape{.name = glue_name,
-                                 .params = &no_params,
-                                 .return_type = unit_type(),
-                                 .body = lambda.drop_glue != nullptr
-                                             ? lambda.drop_glue->body.get()
-                                             : nullptr,
-                                 .span = lambda.span,
-                                 .environment = &*plan,
-                                 .releases_environment = true},
-                      env_, closures_)
-                      .run();
+      auto glue =
+          function_lowerer(body_shape{.name = glue_name,
+                                      .params = &no_params,
+                                      .return_type = unit_type(),
+                                      .body = lambda.drop_glue != nullptr
+                                                  ? lambda.drop_glue->body.get()
+                                                  : nullptr,
+                                      .span = lambda.span,
+                                      .environment = &*plan,
+                                      .releases_environment = true},
+                           env_, closures_)
+              .run();
       if (!glue.has_value()) {
         return std::unexpected(glue.error());
       }
@@ -2272,7 +2285,8 @@ private:
   /// A generator's step. Its parameters and every local are slots of the state
   /// block the constructor filled, so a suspension saves nothing: the function
   /// returns, and the next call resumes at the point the dispatch names.
-  [[nodiscard]] auto run_step() -> std::expected<storage_function, storage_lower_error> {
+  [[nodiscard]] auto run_step()
+      -> std::expected<storage_function, storage_lower_error> {
     out_.name = fn_.name;
     out_.coroutine_step = true;
     const auto word = types().usize_type();
@@ -2285,8 +2299,8 @@ private:
     out_.signature = std::move(*signature);
     const auto resume = new_slot(storage_class::parameter, word, "resume",
                                  k_invalid_symbol_id, fn_.span, true);
-    object_slot_ = new_slot(storage_class::parameter, fn_.generator, "coroutine",
-                            k_invalid_symbol_id, fn_.span, true);
+    object_slot_ = new_slot(storage_class::parameter, fn_.generator,
+                            "coroutine", k_invalid_symbol_id, fn_.span, true);
     out_.param_slots = {resume, object_slot_};
     for (const auto &param : *fn_.params) {
       const auto id = new_slot(storage_class::coroutine_frame, param.type,
@@ -2294,7 +2308,8 @@ private:
       out_.slots[id].owns_nothing = param.lent && !env_.is_copy(param.type);
       locals_[param.symbol] = id;
     }
-    emit(storage_op{.kind = op_kind::coroutine_dispatch, .source = whole(resume)},
+    emit(storage_op{.kind = op_kind::coroutine_dispatch,
+                    .source = whole(resume)},
          fn_.span);
     if (fn_.body != nullptr) {
       for (const auto &stmt : fn_.body->stmts) {
@@ -2345,12 +2360,12 @@ private:
     auto item_type = yield.value->type;
     const auto &object_entry =
         types().entry(types().strip_refinement(fn_.generator));
-    if (is_task_type(fn_.generator) &&
-        object_entry.args.size() >= 2) {
-      item_type = types().entry(object_entry.args[1]).name == "never"
-                      ? object_entry.args[0]
-                      : env_.checked.types.builtin_generic(
-                            "result", {object_entry.args[0], object_entry.args[1]});
+    if (is_task_type(fn_.generator) && object_entry.args.size() >= 2) {
+      item_type =
+          types().entry(object_entry.args[1]).name == "never"
+              ? object_entry.args[0]
+              : env_.checked.types.builtin_generic(
+                    "result", {object_entry.args[0], object_entry.args[1]});
     }
     const auto item = new_temp(item_type, yield.value->span);
     if (auto ok = lower_returned(*yield.value, whole(item)); !ok.has_value()) {
@@ -2428,8 +2443,8 @@ private:
       return std::unexpected(awaited.error());
     }
     auto wait = storage_op{.kind = op_kind::coroutine_await};
-    wait.waits = crew     ? wait_mode::crew
-                 : !group ? wait_mode::one
+    wait.waits = crew               ? wait_mode::crew
+                 : !group           ? wait_mode::one
                  : yield.awaits_all ? wait_mode::all
                                     : wait_mode::any;
     wait.source = std::move(*awaited);
@@ -2465,11 +2480,11 @@ private:
       block.args.push_back(call_argument{.source_index = 0,
                                          .cls = signature->params[0].cls,
                                          .value = read_of(*task, false)});
-      block.args.push_back(call_argument{
-          .source_index = 1,
-          .cls = signature->params[1].cls,
-          .value = word_constant(
-              static_cast<uint64_t>(runtime::scheduler::pool::io))});
+      block.args.push_back(
+          call_argument{.source_index = 1,
+                        .cls = signature->params[1].cls,
+                        .value = word_constant(static_cast<uint64_t>(
+                            runtime::scheduler::pool::io))});
       block.signature = std::move(*signature);
       block.dest = whole(new_temp(unit_type(), next.span));
       emit(std::move(block), next.span);
@@ -2527,11 +2542,12 @@ private:
         },
         [&]() -> result {
           emit(storage_op{.kind = op_kind::generator_take,
-                          .dest = project(dest,
-                                          projection{.kind = projection_kind::payload,
-                                                     .index = 0,
-                                                     .name = "some"},
-                                          some->payload[0].type),
+                          .dest = project(
+                              dest,
+                              projection{.kind = projection_kind::payload,
+                                         .index = 0,
+                                         .name = "some"},
+                              some->payload[0].type),
                           .source = generator},
                next.span);
           auto op = storage_op{.kind = op_kind::publish_variant};
@@ -2572,9 +2588,11 @@ private:
       return std::unexpected(where.error());
     }
     if (!where->has_value()) {
-      return refuse(cancel.span, "the drop of a generator that is not a variable");
+      return refuse(cancel.span,
+                    "the drop of a generator that is not a variable");
     }
-    if (auto ok = lower_unread_result_drop(**where, cancel.span); !ok.has_value()) {
+    if (auto ok = lower_unread_result_drop(**where, cancel.span);
+        !ok.has_value()) {
       return ok;
     }
     auto op = storage_op{.kind = op_kind::drop_in_place};
@@ -2606,13 +2624,11 @@ private:
       return {};
     }
     // A fallible task holds `result[value, error]`, as it hands it over.
-    const auto item_type =
-        fallible ? env_.checked.types.builtin_generic(
-                       "result", {value, entry.args[1]})
-                 : value;
-    auto finished = classify_signature(env_.layouts,
-                                       std::vector<type_id>{task.type},
-                                       types().bool_type());
+    const auto item_type = fallible ? env_.checked.types.builtin_generic(
+                                          "result", {value, entry.args[1]})
+                                    : value;
+    auto finished = classify_signature(
+        env_.layouts, std::vector<type_id>{task.type}, types().bool_type());
     if (!finished.has_value()) {
       return layout_failure(span, finished.error());
     }
@@ -2698,25 +2714,24 @@ private:
     if (plan->own_drop.has_value()) {
       const auto &resolved = *plan->own_drop;
       const auto receiver = env_.checked.types.ref_to(where.type, true);
-      auto signature = classify_signature(env_.layouts,
-                                          std::vector<type_id>{receiver},
-                                          unit_type());
+      auto signature = classify_signature(
+          env_.layouts, std::vector<type_id>{receiver}, unit_type());
       if (!signature.has_value()) {
         return layout_failure(span, signature.error());
       }
       auto call = storage_op{.kind = op_kind::call_into};
       call.is_drop = true;
-      call.callee.name = resolved.impl_target_type.empty()
-                             ? resolved.decl->name
-                             : resolved.impl_target_type +
-                                   "::" + resolved.decl->name;
+      call.callee.name =
+          resolved.impl_target_type.empty()
+              ? resolved.decl->name
+              : resolved.impl_target_type + "::" + resolved.decl->name;
       call.callee.owner_module = resolved.owner_module;
-      call.args.push_back(call_argument{
-          .source_index = 0,
-          .cls = signature->params[0].cls,
-          .value = operand{.kind = operand_kind::address_of,
-                           .where = where,
-                           .type = receiver}});
+      call.args.push_back(
+          call_argument{.source_index = 0,
+                        .cls = signature->params[0].cls,
+                        .value = operand{.kind = operand_kind::address_of,
+                                         .where = where,
+                                         .type = receiver}});
       call.signature = std::move(*signature);
       const auto result_slot = new_slot(storage_class::frame_local, unit_type(),
                                         "", k_invalid_symbol_id, span, false);
@@ -2819,7 +2834,8 @@ private:
   [[nodiscard]] auto lower_group_block(const hir_call &call, wait_mode mode,
                                        const place &dest) -> result {
     if (call.args.size() != 2 || !is_task_group_type(call.args[0]->type)) {
-      return malformed(call.span, "a wait on a group of tasks needs a tuple of tasks");
+      return malformed(call.span,
+                       "a wait on a group of tasks needs a tuple of tasks");
     }
     auto group = lower_coroutine_place(*call.args[0]);
     if (!group.has_value()) {
@@ -2838,19 +2854,20 @@ private:
   /// `rt_crew_task(c, i)`, which `c.errors()` lowers to, names a task the
   /// crew still owns: it goes into a local that owns nothing, and the task's
   /// result is read in place, which leaves it there only for a `copy` result.
-  [[nodiscard]] auto check_crew_task_read(const hir_call &call, const place &dest)
-      -> result {
+  [[nodiscard]] auto check_crew_task_read(const hir_call &call,
+                                          const place &dest) -> result {
     if (dest.base == k_invalid_storage || !dest.steps.empty() ||
         (out_.slots[dest.base].cls != storage_class::frame_local &&
          out_.slots[dest.base].cls != storage_class::coroutine_frame)) {
-      return malformed(call.span, "a crew's task read into anything but a local");
+      return malformed(call.span,
+                       "a crew's task read into anything but a local");
     }
     const auto &task = types().entry(types().strip_refinement(dest.type));
     if (!is_task_type(dest.type) || task.args.size() < 2) {
       return malformed(call.span, "a crew's task that is not a `task`");
     }
-    const auto outcome =
-        env_.checked.types.builtin_generic("result", {task.args[0], task.args[1]});
+    const auto outcome = env_.checked.types.builtin_generic(
+        "result", {task.args[0], task.args[1]});
     if (!env_.is_copy(outcome)) {
       return refuse(call.span,
                     "`errors()` on a crew whose tasks finish with `" +
@@ -2874,7 +2891,8 @@ private:
       }
       if (name == "rt_task_block_on_all" || name == "rt_task_block_on_any") {
         return lower_group_block(
-            call, name == "rt_task_block_on_all" ? wait_mode::all : wait_mode::any,
+            call,
+            name == "rt_task_block_on_all" ? wait_mode::all : wait_mode::any,
             dest);
       }
     }
@@ -2887,7 +2905,8 @@ private:
       if (call.receiver_borrowed) {
         borrowed_receiver = env_.pointee(first.type);
         if (!borrowed_receiver.has_value()) {
-          return malformed(call.span, "a borrowed receiver that is not a reference");
+          return malformed(call.span,
+                           "a borrowed receiver that is not a reference");
         }
       } else {
         // `&v`, or a block that binds a temporary and ends in `&tmp`, whose
@@ -2919,10 +2938,10 @@ private:
     }
     auto params = std::vector<type_id>{};
     for (size_t i = 0; i < call.args.size(); ++i) {
-      params.push_back(i == 0 && owned_receiver != nullptr ? owned_receiver->type
-                       : i == 0 && borrowed_receiver.has_value()
-                           ? *borrowed_receiver
-                           : call.args[i]->type);
+      params.push_back(
+          i == 0 && owned_receiver != nullptr       ? owned_receiver->type
+          : i == 0 && borrowed_receiver.has_value() ? *borrowed_receiver
+                                                    : call.args[i]->type);
     }
     auto signature = classify_signature(env_.layouts, params, call.type);
     if (!signature.has_value()) {
@@ -2975,9 +2994,9 @@ private:
         if (auto ok = lower_into(arg, whole(reference)); !ok.has_value()) {
           return ok;
         }
-        const auto slot = new_slot(storage_class::outgoing_argument,
-                                   *borrowed_receiver, "", k_invalid_symbol_id,
-                                   arg.span, false);
+        const auto slot =
+            new_slot(storage_class::outgoing_argument, *borrowed_receiver, "",
+                     k_invalid_symbol_id, arg.span, false);
         outgoing.push_back(slot);
         lowered.slot = whole(slot);
         auto copy = storage_op{.kind = op_kind::copy_into};
@@ -2996,7 +3015,8 @@ private:
           return std::unexpected(source.error());
         }
         if (!source->has_value()) {
-          return refuse(arg.span, "a borrowed task capture that is not a place");
+          return refuse(arg.span,
+                        "a borrowed task capture that is not a place");
         }
         const auto reference_type = env_.checked.types.ref_to(arg.type, false);
         const auto reference = new_temp(reference_type, arg.span);
@@ -3013,9 +3033,9 @@ private:
         lowered.slot = whole(slot);
         auto copy = storage_op{.kind = op_kind::copy_into};
         copy.dest = lowered.slot;
-        copy.source = project(whole(reference),
-                              projection{.kind = projection_kind::deref},
-                              arg.type);
+        copy.source =
+            project(whole(reference),
+                    projection{.kind = projection_kind::deref}, arg.type);
         copy.shallow = true;
         emit(std::move(copy), arg.span);
       } else if (param.cls == pass_class::zero_sized) {
@@ -3040,8 +3060,8 @@ private:
         // A crew takes the task it is handed and gives it back as the
         // result, so only the crew itself is looked at.
         const auto hands_over = target.name == "rt_crew_spawn" && i == 1;
-        auto value = lower_operand(arg, later_effects,
-                                   borrows_handles && !hands_over);
+        auto value =
+            lower_operand(arg, later_effects, borrows_handles && !hands_over);
         if (!value.has_value()) {
           return std::unexpected(value.error());
         }
@@ -3119,9 +3139,8 @@ private:
       }
       op.args.push_back(std::move(lowered));
     }
-    op.callee = call_target{.name = call.operation,
-                            .host = true,
-                            .host_subject = call.subject};
+    op.callee = call_target{
+        .name = call.operation, .host = true, .host_subject = call.subject};
     op.signature = std::move(*signature);
     op.dest = dest;
     emit(std::move(op), call.span);
@@ -3180,11 +3199,10 @@ private:
     }
     auto op = storage_op{.kind = op_kind::check};
     op.condition = test->value;
-    op.contract = node.kind == contract_kind::precondition
-                      ? check_kind::precondition
-                  : node.kind == contract_kind::postcondition
-                      ? check_kind::postcondition
-                      : check_kind::invariant;
+    op.contract =
+        node.kind == contract_kind::precondition    ? check_kind::precondition
+        : node.kind == contract_kind::postcondition ? check_kind::postcondition
+                                                    : check_kind::invariant;
     emit(std::move(op), node.span);
     if (test->hold != k_invalid_storage) {
       kill(test->hold, node.span);
@@ -3240,7 +3258,8 @@ private:
     const auto slot = new_slot(storage_class::frame_local, let.type(), let.name,
                                let.symbol, let.span, false);
     if (let.initializer != nullptr) {
-      if (auto ok = lower_into(*let.initializer, whole(slot)); !ok.has_value()) {
+      if (auto ok = lower_into(*let.initializer, whole(slot));
+          !ok.has_value()) {
         return ok;
       }
     }
@@ -3264,8 +3283,8 @@ private:
         const auto *value = stmt.kind != hir_node_kind::hir_expr_stmt
                                 ? dynamic_cast<const hir_expr *>(&stmt)
                                 : nullptr;
-        if (auto ok = value != nullptr ? lower_discarded(*value)
-                                       : lower_stmt(stmt);
+        if (auto ok =
+                value != nullptr ? lower_discarded(*value) : lower_stmt(stmt);
             !ok.has_value()) {
           return ok;
         }
@@ -3283,7 +3302,8 @@ private:
       return lower_closure_drop(as<hir_closure_drop>(expr), std::nullopt);
     }
     if (expr.kind == hir_node_kind::hir_coroutine_cancel) {
-      return lower_coroutine_cancel(as<hir_coroutine_cancel>(expr), std::nullopt);
+      return lower_coroutine_cancel(as<hir_coroutine_cancel>(expr),
+                                    std::nullopt);
     }
     const auto temp = new_temp(expr.type, expr.span);
     if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
@@ -3313,7 +3333,8 @@ private:
   [[nodiscard]] auto in_region(const source_span &span, F &&body) -> result {
     auto saved = std::move(pending_);
     pending_.clear();
-    outer_pending_.push_back(outer_temps{.temps = &saved, .frames = frames_.size()});
+    outer_pending_.push_back(
+        outer_temps{.temps = &saved, .frames = frames_.size()});
     auto ok = body();
     if (ok.has_value() && !terminated_) {
       ok = flush_pending(span);
@@ -3351,7 +3372,8 @@ private:
                                 &pending_temp::slot);
     }
     if (found != pending_.end()) {
-      if (out.value.kind == operand_kind::read && out.value.where.steps.empty()) {
+      if (out.value.kind == operand_kind::read &&
+          out.value.where.steps.empty()) {
         out.hold = found->slot;
         pending_.erase(found);
       } else {
@@ -3373,17 +3395,16 @@ private:
 
   /// `if`, with `elif` branches, as a statement (no `dest`) or as a value
   /// built in `dest`.
-  [[nodiscard]] auto lower_if(const hir_if &node, const std::optional<place> &dest)
-      -> result {
+  [[nodiscard]] auto lower_if(const hir_if &node,
+                              const std::optional<place> &dest) -> result {
     if (dest.has_value() && node.else_body == nullptr) {
       return malformed(node.span, "an `if` that yields a value has no `else`");
     }
-    return in_region(node.span,
-                     [&] { return lower_branches(node, 0, dest); });
+    return in_region(node.span, [&] { return lower_branches(node, 0, dest); });
   }
 
-  [[nodiscard]] auto lower_arm(const hir_block &body, const std::optional<place> &dest)
-      -> result {
+  [[nodiscard]] auto lower_arm(const hir_block &body,
+                               const std::optional<place> &dest) -> result {
     return in_region(body.span, [&]() -> result {
       if (dest.has_value()) {
         return lower_block(body, *dest, true);
@@ -3393,7 +3414,8 @@ private:
   }
 
   [[nodiscard]] auto lower_branches(const hir_if &node, size_t index,
-                                    const std::optional<place> &dest) -> result {
+                                    const std::optional<place> &dest)
+      -> result {
     const auto &branch = node.branches[index];
     auto test = lower_condition(*branch.condition);
     if (!test.has_value()) {
@@ -3419,8 +3441,8 @@ private:
         kill(test->hold, branch.condition->span);
       }
       if (index + 1 < node.branches.size()) {
-        auto ok = in_region(node.span,
-                            [&] { return lower_branches(node, index + 1, dest); });
+        auto ok = in_region(
+            node.span, [&] { return lower_branches(node, index + 1, dest); });
         if (!ok.has_value()) {
           return ok;
         }
@@ -3442,7 +3464,8 @@ private:
         loop.condition->kind == hir_node_kind::hir_literal &&
         as<hir_literal>(*loop.condition).lit_kind == token_kind::kw_true;
     emit(storage_op{.kind = op_kind::loop_begin}, loop.span);
-    frames_.push_back(loop_frame{.kind = loop_frame_kind::loop, .partials = partials_.size()});
+    frames_.push_back(loop_frame{.kind = loop_frame_kind::loop,
+                                 .partials = partials_.size()});
     scopes_.emplace_back();
     if (!always) {
       auto ok = in_region(loop.condition->span, [&]() -> result {
@@ -3482,7 +3505,8 @@ private:
                                  const source_span &span) -> result {
     const auto head_storage = scopes_.back().size();
     emit(storage_op{.kind = op_kind::block_begin}, body.span);
-    frames_.push_back(loop_frame{.kind = loop_frame_kind::body, .partials = partials_.size()});
+    frames_.push_back(loop_frame{.kind = loop_frame_kind::body,
+                                 .partials = partials_.size()});
     auto ok = in_region(body.span, [&] { return lower_discarded(body); });
     if (!ok.has_value()) {
       return ok;
@@ -3501,7 +3525,8 @@ private:
     }
     if (!terminated_) {
       // Storage declared in the body starts over on the next iteration.
-      for (auto it = scopes_.back().rbegin(); it != scopes_.back().rend(); ++it) {
+      for (auto it = scopes_.back().rbegin(); it != scopes_.back().rend();
+           ++it) {
         kill(*it, span);
       }
     }
@@ -3554,8 +3579,8 @@ private:
   /// from an `if` directly on the tag test; each alternative of an or-pattern
   /// gets its own copy of the arm (`emit_alternatives`), so each copy knows the
   /// variant its alternative tested.
-  [[nodiscard]] auto tests_supported_on_droppable(
-      const hir_pattern &pattern) const -> bool {
+  [[nodiscard]] auto
+  tests_supported_on_droppable(const hir_pattern &pattern) const -> bool {
     switch (pattern.kind) {
     case hir_node_kind::hir_wildcard_pattern:
     case hir_node_kind::hir_literal_pattern:
@@ -3600,7 +3625,8 @@ private:
       return std::unexpected(layout.error());
     }
     if ((*layout)->kind != runtime::value_layout_kind::sum) {
-      return refuse(span, "a pattern test on `" + types().display(subject.type) +
+      return refuse(span, "a pattern test on `" +
+                              types().display(subject.type) +
                               "`, which needs a drop");
     }
     if (!tests_supported_on_droppable(pattern)) {
@@ -3619,7 +3645,8 @@ private:
       return std::unexpected(named.error());
     }
     if (named->has_value() && symbol != k_invalid_symbol_id &&
-        (is_reference_type(subject.type) || reached_through_reference(subject))) {
+        (is_reference_type(subject.type) ||
+         reached_through_reference(subject))) {
       borrowed_subjects_.insert(symbol);
     }
     if (named->has_value()) {
@@ -3634,7 +3661,8 @@ private:
     }
     const auto slot = new_slot(storage_class::frame_local, subject.type, "",
                                k_invalid_symbol_id, span, false);
-    auto built = in_region(span, [&] { return lower_into(subject, whole(slot)); });
+    auto built =
+        in_region(span, [&] { return lower_into(subject, whole(slot)); });
     if (!built.has_value()) {
       return std::unexpected(built.error());
     }
@@ -3642,7 +3670,8 @@ private:
     return subject_place{.where = whole(slot), .held = slot};
   }
 
-  auto set_bool(const place &dest, bool value, const source_span &span) -> void {
+  auto set_bool(const place &dest, bool value, const source_span &span)
+      -> void {
     auto op = storage_op{.kind = op_kind::compute};
     op.dest = dest;
     op.computation = compute_kind::constant;
@@ -3690,21 +3719,21 @@ private:
       return malformed(span, "a string literal that does not decode");
     }
     const auto text_type = next.where.type;
-    auto signature =
-        classify_signature(env_.layouts, std::vector<type_id>{text_type, text_type},
-                           types().bool_type());
+    auto signature = classify_signature(
+        env_.layouts, std::vector<type_id>{text_type, text_type},
+        types().bool_type());
     if (!signature.has_value()) {
       return layout_failure(span, signature.error());
     }
     return branch_on(
         span,
         [&](const place &flag) {
-          const auto subject = new_slot(storage_class::outgoing_argument,
-                                        text_type, "", k_invalid_symbol_id,
-                                        span, false);
-          const auto expected = new_slot(storage_class::outgoing_argument,
-                                         text_type, "", k_invalid_symbol_id,
-                                         span, false);
+          const auto subject =
+              new_slot(storage_class::outgoing_argument, text_type, "",
+                       k_invalid_symbol_id, span, false);
+          const auto expected =
+              new_slot(storage_class::outgoing_argument, text_type, "",
+                       k_invalid_symbol_id, span, false);
           auto copy = storage_op{.kind = op_kind::copy_into};
           copy.dest = whole(subject);
           copy.source = next.where;
@@ -3818,10 +3847,9 @@ private:
     }
     case hir_node_kind::hir_tuple_pattern:
     case hir_node_kind::hir_array_pattern: {
-      const auto &elements =
-          pattern.kind == hir_node_kind::hir_tuple_pattern
-              ? as<hir_tuple_pattern>(pattern).elements
-              : as<hir_array_pattern>(pattern).elements;
+      const auto &elements = pattern.kind == hir_node_kind::hir_tuple_pattern
+                                 ? as<hir_tuple_pattern>(pattern).elements
+                                 : as<hir_array_pattern>(pattern).elements;
       auto object = auto_deref(next.where);
       const auto layout = layout_of(object.type, span);
       if (!layout.has_value()) {
@@ -3833,20 +3861,22 @@ private:
         // A fixed array is matched element by element, by a tuple pattern
         // or an array pattern of its length.
         if (found.count != elements.size()) {
-          return malformed(span, "a pattern of " + std::to_string(elements.size()) +
+          return malformed(span, "a pattern of " +
+                                     std::to_string(elements.size()) +
                                      " elements does not match `" +
                                      types().display(object.type) + "`");
         }
         for (size_t i = 0; i < elements.size(); ++i) {
           inner.push_back(obligation{
               .pattern = elements[i].get(),
-              .where = project(object,
-                               projection{.kind = projection_kind::element,
-                                          .index = i},
-                               found.element)});
+              .where = project(
+                  object,
+                  projection{.kind = projection_kind::element, .index = i},
+                  found.element)});
         }
       } else if (pattern.kind == hir_node_kind::hir_array_pattern) {
-        return refuse(span, "an array pattern on `" + types().display(object.type) +
+        return refuse(span, "an array pattern on `" +
+                                types().display(object.type) +
                                 "`, whose length is not part of its type");
       } else {
         const auto &members = found.members;
@@ -3879,10 +3909,10 @@ private:
             continue;
           }
           found = true;
-          inner.push_back(obligation{
-              .pattern = field.pattern.get(),
-              .where = project(object, member_step(i, field.name),
-                               members[i].type)});
+          inner.push_back(
+              obligation{.pattern = field.pattern.get(),
+                         .where = project(object, member_step(i, field.name),
+                                          members[i].type)});
         }
         if (!found) {
           return malformed(span, "`" + types().display(object.type) +
@@ -3896,8 +3926,8 @@ private:
       return emit_alternatives(as<hir_or_pattern>(pattern), 0, next.where, todo,
                                success, failure);
     case hir_node_kind::hir_range_pattern:
-      return emit_range_test(as<hir_range_pattern>(pattern), next, std::move(todo),
-                             success, failure);
+      return emit_range_test(as<hir_range_pattern>(pattern), next,
+                             std::move(todo), success, failure);
     default:
       return refuse(span, "this kind of pattern is not part of storage "
                           "lowering yet");
@@ -3937,17 +3967,17 @@ private:
                                           : ast::binary_op::lt,
                           std::move(*high));
     }
-    return emit_bound_tests(bounds, 0, next.where, todo, success, failure, span);
+    return emit_bound_tests(bounds, 0, next.where, todo, success, failure,
+                            span);
   }
 
   /// The comparisons of a range pattern from `index` on, then the rest of
   /// the pattern's tests.
-  [[nodiscard]] auto
-  emit_bound_tests(const std::vector<std::pair<ast::binary_op, operand>> &bounds,
-                   size_t index, const place &where,
-                   const std::vector<obligation> &todo,
-                   const continuation &success, const continuation &failure,
-                   const source_span &span) -> result {
+  [[nodiscard]] auto emit_bound_tests(
+      const std::vector<std::pair<ast::binary_op, operand>> &bounds,
+      size_t index, const place &where, const std::vector<obligation> &todo,
+      const continuation &success, const continuation &failure,
+      const source_span &span) -> result {
     if (index == bounds.size()) {
       return emit_tests(todo, success, failure);
     }
@@ -3982,11 +4012,9 @@ private:
     auto todo = std::vector<obligation>{
         obligation{.pattern = any.alternatives[index].get(), .where = where}};
     todo.insert(todo.end(), rest.begin(), rest.end());
-    return emit_tests(
-        std::move(todo), success, [&, index] {
-          return emit_alternatives(any, index + 1, where, rest, success,
-                                   failure);
-        });
+    return emit_tests(std::move(todo), success, [&, index] {
+      return emit_alternatives(any, index + 1, where, rest, success, failure);
+    });
   }
 
   /// Whether the pattern holds for every value of its type.
@@ -4043,9 +4071,8 @@ private:
       open_subjects_.push_back(
           open_subject{.slot = subject->held, .frames = frames_.size()});
     }
-    auto ok = in_region(node.span, [&] {
-      return lower_arms(node, 0, subject->where, dest);
-    });
+    auto ok = in_region(
+        node.span, [&] { return lower_arms(node, 0, subject->where, dest); });
     if (subject->held != k_invalid_storage) {
       open_subjects_.pop_back();
     }
@@ -4098,8 +4125,9 @@ private:
       terminated_ = arm_terminated && terminated_;
       return {};
     }
-    const auto flag = new_slot(storage_class::frame_local, types().bool_type(),
-                               "", k_invalid_symbol_id, arm.pattern->span, false);
+    const auto flag =
+        new_slot(storage_class::frame_local, types().bool_type(), "",
+                 k_invalid_symbol_id, arm.pattern->span, false);
     if (auto ok = test_pattern(*arm.pattern, subject, whole(flag));
         !ok.has_value()) {
       return ok;
@@ -4196,8 +4224,8 @@ private:
           const auto root = let.initializer != nullptr
                                 ? root_symbol(*let.initializer)
                                 : std::nullopt;
-          const auto binds = root.has_value() &&
-                             std::ranges::contains(from_subject, *root);
+          const auto binds =
+              root.has_value() && std::ranges::contains(from_subject, *root);
           if (binds) {
             from_subject.push_back(let.symbol);
           }
@@ -4300,19 +4328,21 @@ private:
   /// does not hold, and otherwise runs the body.
   [[nodiscard]] auto lower_while_let(const hir_while_let &loop) -> result {
     emit(storage_op{.kind = op_kind::loop_begin}, loop.span);
-    frames_.push_back(loop_frame{.kind = loop_frame_kind::loop, .partials = partials_.size()});
+    frames_.push_back(loop_frame{.kind = loop_frame_kind::loop,
+                                 .partials = partials_.size()});
     scopes_.emplace_back();
     auto head = in_region(loop.span, [&]() -> result {
       // A `for` over values that need a drop arrives here as a `while let`
       // over the iterator's `option`. Its variants are tested like a `let
       // else`: the payload is moved or dropped in the body, and the loop is
       // left where the pattern fails.
-      if (auto ok = check_droppable_subject(*loop.subject, *loop.pattern,
-                                            loop.span);
+      if (auto ok =
+              check_droppable_subject(*loop.subject, *loop.pattern, loop.span);
           !ok.has_value()) {
         return ok;
       }
-      auto subject = bind_subject(*loop.subject, loop.subject_symbol, loop.span);
+      auto subject =
+          bind_subject(*loop.subject, loop.subject_symbol, loop.span);
       if (!subject.has_value()) {
         return std::unexpected(subject.error());
       }
@@ -4321,8 +4351,10 @@ private:
       }
       if (env_.needs_drop(subject->where.type)) {
         auto ok = emit_tests(
-            {obligation{.pattern = loop.pattern.get(), .where = subject->where}},
-            []() -> result { return {}; }, [&]() -> result {
+            {obligation{.pattern = loop.pattern.get(),
+                        .where = subject->where}},
+            []() -> result { return {}; },
+            [&]() -> result {
               auto leave = storage_op{.kind = op_kind::exit};
               leave.depth = 0;
               emit(std::move(leave), loop.span);
@@ -4331,9 +4363,9 @@ private:
         terminated_ = false;
         return ok;
       }
-      const auto flag = new_slot(storage_class::frame_local,
-                                 types().bool_type(), "", k_invalid_symbol_id,
-                                 loop.span, false);
+      const auto flag =
+          new_slot(storage_class::frame_local, types().bool_type(), "",
+                   k_invalid_symbol_id, loop.span, false);
       if (auto ok = test_pattern(*loop.pattern, subject->where, whole(flag));
           !ok.has_value()) {
         return ok;
@@ -4378,7 +4410,8 @@ private:
     if (env_.needs_drop(subject->where.type)) {
       auto ok = emit_tests(
           {obligation{.pattern = node.pattern.get(), .where = subject->where}},
-          []() -> result { return {}; }, [&]() -> result {
+          []() -> result { return {}; },
+          [&]() -> result {
             // A nested pattern has several failure sites, each a copy of the
             // `else` block; one that leaves must not hide the next.
             terminated_ = false;
@@ -4430,7 +4463,8 @@ private:
         if (group->frames <= target_index) {
           continue;
         }
-        for (auto it = group->temps->rbegin(); it != group->temps->rend(); ++it) {
+        for (auto it = group->temps->rbegin(); it != group->temps->rend();
+             ++it) {
           if (!it->consumed && env_.needs_drop(out_.slots[it->slot].type)) {
             return refuse(span, "`break` or `continue` inside an expression "
                                 "with a temporary of type `" +
@@ -4444,7 +4478,8 @@ private:
         if (group->frames <= target_index) {
           continue;
         }
-        for (auto it = group->temps->rbegin(); it != group->temps->rend(); ++it) {
+        for (auto it = group->temps->rbegin(); it != group->temps->rend();
+             ++it) {
           kill(it->slot, span);
         }
       }
@@ -4476,7 +4511,8 @@ private:
       return std::unexpected(target.error());
     }
     if (!target->has_value()) {
-      return malformed(assign.span, "the target of an assignment is not a place");
+      return malformed(assign.span,
+                       "the target of an assignment is not a place");
     }
     const auto &where = **target;
     const auto cls = class_of(where.type, assign.span);
@@ -4524,7 +4560,8 @@ private:
   /// is. HIR stages no drop of the old value here, so an element that needs
   /// one is refused.
   [[nodiscard]] auto lower_cell_set(const hir_cell_set &set,
-                                    const std::optional<place> &dest) -> result {
+                                    const std::optional<place> &dest)
+      -> result {
     auto cell = lower_place(*set.cell);
     if (!cell.has_value()) {
       return std::unexpected(cell.error());
@@ -4544,12 +4581,13 @@ private:
       return malformed(set.span, "`set` on a value that is not a cell");
     }
     if (env_.needs_drop(*element)) {
-      return refuse(set.span, "`set` on a cell of " + types().display(*element) +
+      return refuse(set.span, "`set` on a cell of " +
+                                  types().display(*element) +
                                   ", whose old value needs a drop");
     }
-    const auto target = project(std::move(address),
-                                projection{.kind = projection_kind::deref},
-                                *element);
+    const auto target =
+        project(std::move(address), projection{.kind = projection_kind::deref},
+                *element);
     const auto cls = class_of(*element, set.span);
     if (!cls.has_value()) {
       return std::unexpected(cls.error());
@@ -4561,7 +4599,8 @@ private:
     } else {
       // Built apart, because building it may read the cell.
       const auto replacement = new_temp(*element, set.span);
-      if (auto ok = lower_into(*set.value, whole(replacement)); !ok.has_value()) {
+      if (auto ok = lower_into(*set.value, whole(replacement));
+          !ok.has_value()) {
         return ok;
       }
       if (*cls != pass_class::zero_sized) {
@@ -4613,20 +4652,23 @@ private:
   [[nodiscard]] auto lower_compound_assign(const hir_assign &assign) -> result {
     const auto op = compound_operator(assign.op);
     if (!op.has_value()) {
-      return refuse(assign.span, "a wrapping or saturating compound assignment");
+      return refuse(assign.span,
+                    "a wrapping or saturating compound assignment");
     }
     auto target = lower_place(*assign.target);
     if (!target.has_value()) {
       return std::unexpected(target.error());
     }
     if (!target->has_value()) {
-      return malformed(assign.span, "the target of an assignment is not a place");
+      return malformed(assign.span,
+                       "the target of an assignment is not a place");
     }
     const auto &where = **target;
     if (auto ok = require_scalar_dest(where, assign.span); !ok.has_value()) {
       return ok;
     }
-    // The target is read before the value runs, as in `target = target op value`.
+    // The target is read before the value runs, as in `target = target op
+    // value`.
     auto current = read_of(where, false);
     if (!is_pure(*assign.value)) {
       const auto held = new_temp(where.type, assign.span);
@@ -4679,8 +4721,9 @@ private:
     const auto *dest_variant = (*to)->find_variant(failure);
     if (source_variant == nullptr || dest_variant == nullptr ||
         source_variant->payload.size() != dest_variant->payload.size()) {
-      return malformed(value.span, "`?` returns `" + types().display(dest.type) +
-                                       "` from `" + types().display(value.type) +
+      return malformed(value.span, "`?` returns `" +
+                                       types().display(dest.type) + "` from `" +
+                                       types().display(value.type) +
                                        "`, which have no common failure");
     }
     auto source = lower_place(value);
@@ -4692,11 +4735,10 @@ private:
         return projection{
             .kind = projection_kind::payload, .index = i, .name = name};
       };
-      if (auto ok = transfer(project(**source, step(failure),
-                                     source_variant->payload[i].type),
-                             project(dest, step(failure),
-                                     dest_variant->payload[i].type),
-                             value.span);
+      if (auto ok = transfer(
+              project(**source, step(failure), source_variant->payload[i].type),
+              project(dest, step(failure), dest_variant->payload[i].type),
+              value.span);
           !ok.has_value()) {
         return ok;
       }
@@ -4897,19 +4939,19 @@ namespace {
 /// A `generator def` becomes two functions: the step, whose frame is the state
 /// block, and the constructor, which allocates the block, moves the parameters
 /// into it, and returns the coroutine.
-[[nodiscard]] auto lower_generator(const hir_function &function, storage_env &env,
-                                   closure_sink &closures)
+[[nodiscard]] auto lower_generator(const hir_function &function,
+                                   storage_env &env, closure_sink &closures)
     -> std::expected<storage_function, storage_lower_error> {
   const auto step_name = function.name + "$step";
-  auto stepper = function_lowerer(
-      body_shape{.name = step_name,
-                 .params = &function.params,
-                 .return_type = function.return_type,
-                 .body = function.body.get(),
-                 .span = function.span,
-                 .step = true,
-                 .generator = function.return_type},
-      env, closures);
+  auto stepper =
+      function_lowerer(body_shape{.name = step_name,
+                                  .params = &function.params,
+                                  .return_type = function.return_type,
+                                  .body = function.body.get(),
+                                  .span = function.span,
+                                  .step = true,
+                                  .generator = function.return_type},
+                       env, closures);
   auto step = stepper.run();
   if (!step.has_value()) {
     return std::unexpected(step.error());
@@ -4921,12 +4963,13 @@ namespace {
   for (const auto &param : function.params) {
     param_types.push_back(param.type);
   }
-  auto signature = classify_signature(env.layouts, param_types, function.return_type);
+  auto signature =
+      classify_signature(env.layouts, param_types, function.return_type);
   if (!signature.has_value()) {
-    return std::unexpected(storage_lower_error{
-        .kind = storage_lower_error_kind::layout_failed,
-        .span = function.span,
-        .message = signature.error().message});
+    return std::unexpected(
+        storage_lower_error{.kind = storage_lower_error_kind::layout_failed,
+                            .span = function.span,
+                            .message = signature.error().message});
   }
   ctor.signature = std::move(*signature);
   auto make = storage_op{.kind = op_kind::make_generator};
@@ -4944,31 +4987,32 @@ namespace {
   };
   for (const auto &param : function.params) {
     const auto id = static_cast<storage_id>(ctor.slots.size());
-    ctor.slots.push_back(storage_slot{.id = id,
-                                      .cls = storage_class::parameter,
-                                      .type = param.type,
-                                      .name = param.name,
-                                      .symbol = param.symbol,
-                                      .span = function.span,
-                                      .initially_initialized = true,
-                                      .owner = id,
-                                      .owns_nothing =
-                                          param.lent && !env.is_copy(param.type)});
+    ctor.slots.push_back(
+        storage_slot{.id = id,
+                     .cls = storage_class::parameter,
+                     .type = param.type,
+                     .name = param.name,
+                     .symbol = param.symbol,
+                     .span = function.span,
+                     .initially_initialized = true,
+                     .owner = id,
+                     .owns_nothing = param.lent && !env.is_copy(param.type)});
     ctor.param_slots.push_back(id);
     const auto &held = next_state_slot();
     const auto layout = env.layouts.layout(param.type);
     if (!layout.has_value()) {
-      return std::unexpected(storage_lower_error{
-          .kind = storage_lower_error_kind::layout_failed,
-          .span = function.span,
-          .message = layout.error().message});
+      return std::unexpected(
+          storage_lower_error{.kind = storage_lower_error_kind::layout_failed,
+                              .span = function.span,
+                              .message = layout.error().message});
     }
     if ((*layout)->size == 0) {
       continue; // Nothing to store; the step's slot has no bytes either.
     }
     make.captures.push_back(closure_capture{
         .source = place{.base = id, .steps = {}, .type = param.type},
-        .kind = env.is_copy(param.type) ? capture_kind::copy : capture_kind::move,
+        .kind =
+            env.is_copy(param.type) ? capture_kind::copy : capture_kind::move,
         .offset = held.env_offset});
   }
   const auto handle = static_cast<storage_id>(ctor.slots.size());
@@ -4981,10 +5025,11 @@ namespace {
   ctor.ops.push_back(std::move(make));
   auto ret = storage_op{.kind = op_kind::return_value};
   ret.span = function.span;
-  ret.value = operand{.kind = operand_kind::read,
-                      .where = place{.base = handle, .steps = {}, .type = function.return_type},
-                      .consume = true,
-                      .type = function.return_type};
+  ret.value = operand{
+      .kind = operand_kind::read,
+      .where = place{.base = handle, .steps = {}, .type = function.return_type},
+      .consume = true,
+      .type = function.return_type};
   ctor.ops.push_back(std::move(ret));
   closures.functions.insert(closures.functions.begin(), std::move(*step));
   return ctor;
@@ -4993,7 +5038,8 @@ namespace {
 } // namespace
 
 auto lower_to_storage(const hir_module &module, storage_env &env,
-                      const storage_lower_options &options) -> storage_lowering {
+                      const storage_lower_options &options)
+    -> storage_lowering {
   auto out = storage_lowering{};
   out.module.name = module.module_name;
   if (!module.statics.empty()) {
@@ -5004,8 +5050,9 @@ auto lower_to_storage(const hir_module &module, storage_env &env,
                             .span = module.span,
                             .statics = &module.statics};
     for (const auto &global : module.statics) {
-      out.module.globals.push_back(storage_global{
-          .name = global.name, .type = global.type, .span = global.value->span});
+      out.module.globals.push_back(storage_global{.name = global.name,
+                                                  .type = global.type,
+                                                  .span = global.value->span});
     }
     auto closures = closure_sink{};
     auto lowered = function_lowerer(std::move(shape), env, closures).run();
@@ -5015,9 +5062,9 @@ auto lower_to_storage(const hir_module &module, storage_env &env,
         out.module.functions.push_back(std::move(closure));
       }
     } else {
-      out.refused.push_back(refused_function{
-          .name = std::string{k_static_init_name},
-          .error = std::move(lowered.error())});
+      out.refused.push_back(
+          refused_function{.name = std::string{k_static_init_name},
+                           .error = std::move(lowered.error())});
     }
   }
   for (const auto &function : module.functions) {
@@ -5042,8 +5089,8 @@ auto lower_to_storage(const hir_module &module, storage_env &env,
         out.module.functions.push_back(std::move(closure));
       }
     } else {
-      out.refused.push_back(refused_function{.name = function->name,
-                                             .error = std::move(lowered.error())});
+      out.refused.push_back(refused_function{
+          .name = function->name, .error = std::move(lowered.error())});
     }
   }
   if (options.nrvo) {
@@ -5068,23 +5115,25 @@ auto lower_to_storage(const hir_module &module, storage_env &env,
   for (auto &function : out.module.functions) {
     auto plan = plan_frame(function, env);
     if (!plan.has_value()) {
-      out.refused.push_back(refused_function{
-          .name = function.name,
-          .error = storage_lower_error{.kind = storage_lower_error_kind::layout_failed,
-                                       .span = {},
-                                       .message = plan.error()}});
+      out.refused.push_back(
+          refused_function{.name = function.name,
+                           .error = storage_lower_error{
+                               .kind = storage_lower_error_kind::layout_failed,
+                               .span = {},
+                               .message = plan.error()}});
       continue;
     }
     if (!plan->within(options.max_frame_bytes)) {
-      const auto largest = std::ranges::max_element(
-          plan->contributors, {}, &frame_contributor::bytes);
+      const auto largest = std::ranges::max_element(plan->contributors, {},
+                                                    &frame_contributor::bytes);
       out.refused.push_back(refused_function{
           .name = function.name,
           .error = storage_lower_error{
               .kind = storage_lower_error_kind::frame_too_large,
               .span = largest == plan->contributors.end() ? source_span{}
                                                           : largest->span,
-              .message = describe_frame_overflow(*plan, options.max_frame_bytes)}});
+              .message =
+                  describe_frame_overflow(*plan, options.max_frame_bytes)}});
       continue;
     }
     out.frames.push_back(std::move(*plan));

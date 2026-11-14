@@ -127,8 +127,9 @@ inline auto scalars_and_control_flow(case_backend &backend) -> void {
 //  Aggregate results built in caller storage
 // ==========================================================================
 
-inline auto aggregate_results_are_built_in_the_caller_storage(
-    case_backend &backend) -> void {
+inline auto
+aggregate_results_are_built_in_the_caller_storage(case_backend &backend)
+    -> void {
   auto p = backend.open("bytecode_storage_test", "values.cn");
 
   auto pair = p->into("make_pair", std::vector<int64_t>{5});
@@ -352,7 +353,8 @@ inline auto drops_run_with_the_value_they_end(case_backend &backend) -> void {
 inline auto never_calls_and_tail_values(case_backend &backend) -> void {
   auto p = backend.open("hir_storage_test", "flow.cn");
   alignas(8) auto empty = std::array<uint64_t, 2>{0, 0};
-  const auto message = static_cast<int64_t>(reinterpret_cast<uintptr_t>(&empty));
+  const auto message =
+      static_cast<int64_t>(reinterpret_cast<uintptr_t>(&empty));
   expect_equal(p->scalar("guard", std::vector<int64_t>{4, message}), 8,
                "guard(4)");
   expect_equal(p->scalar("arm_dies", std::vector<int64_t>{3, message}), 3,

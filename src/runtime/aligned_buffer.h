@@ -11,9 +11,9 @@ namespace cinder::runtime {
 /// widest at 16); a layout that needs more must ask `aligned_buffer` for more.
 inline constexpr size_t k_frame_storage_alignment = 16;
 
-/// Releases a block that `aligned_buffer` allocated with a stricter-than-default
-/// alignment; it must be told the alignment, since the matching `operator
-/// delete` takes it.
+/// Releases a block that `aligned_buffer` allocated with a
+/// stricter-than-default alignment; it must be told the alignment, since the
+/// matching `operator delete` takes it.
 struct aligned_bytes_deleter {
   size_t align = k_frame_storage_alignment;
   auto operator()(std::byte *raw) const -> void {

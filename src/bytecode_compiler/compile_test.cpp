@@ -221,7 +221,7 @@ auto compile_fixture_multi(
       std::vector<bool>(static_cast<size_t>(file_ids.back()) + 1, false);
   auto comptime = cinder::comptime_vm::vm_backend{};
   kept.checked = cinder::semantic::check_program(parsed_modules, diag,
-                                                file_has_errors, &comptime);
+                                                 file_has_errors, &comptime);
   auto &checked = kept.checked;
   expect_checked_cleanly(sources, diag);
 
@@ -310,7 +310,8 @@ auto run_for_bytes(const bc::bytecode_module &module, std::string_view name,
 /// The `T` stored at `offset` in `bytes`.
 template <typename T>
 auto read_at(const std::vector<std::byte> &bytes, size_t offset) -> T {
-  expect(offset + sizeof(T) <= bytes.size(), "expected a read inside the value");
+  expect(offset + sizeof(T) <= bytes.size(),
+         "expected a read inside the value");
   auto out = T{};
   std::memcpy(&out, bytes.data() + offset, sizeof(T));
   return out;
@@ -1064,7 +1065,8 @@ auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
   const auto args = std::array{bc::slot_value{3.5}};
   for (const auto &bytes :
        {run_for_bytes(module, "make", args), run_for_bytes(module, "main")}) {
-    expect(read_at<int64_t>(bytes, 0) == 0, "expected @circle to encode as tag 0");
+    expect(read_at<int64_t>(bytes, 0) == 0,
+           "expected @circle to encode as tag 0");
     expect(read_at<double>(bytes, 8) == 3.5,
            "expected the payload to hold 3.5 at offset 8");
   }

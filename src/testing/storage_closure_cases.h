@@ -53,9 +53,9 @@ inline auto closures_cost_one_block_each(case_backend &backend) -> void {
                  2 * count + count * (count - 1) / 2, "count_closures");
     // The old representation boxed the pair, the environment and the closure
     // value: this is the environment, only.
-    expect_equal(static_cast<int64_t>(runtime::heap_allocation_count() -
-                                      allocations),
-                 count, "allocations for the closures");
+    expect_equal(
+        static_cast<int64_t>(runtime::heap_allocation_count() - allocations),
+        count, "allocations for the closures");
     expect_equal(runtime::heap_live_block_count() - live, 0,
                  "blocks left behind");
   }

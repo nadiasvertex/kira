@@ -4,8 +4,8 @@
 #include <utility>
 
 #include "src/hir/frame_budget.h"
-#include "src/runtime/value_layout.h"
 #include "src/hir/lower.h"
+#include "src/runtime/value_layout.h"
 #include "src/util/path.h"
 #include "src/util/str.h"
 

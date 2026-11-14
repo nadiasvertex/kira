@@ -463,7 +463,8 @@ auto checker::register_impl_methods(
   // call it (through a `for` loop) before then.
   if (impl.decl->trait_type != nullptr &&
       impl.decl->trait_type->kind == ast::node_kind::named_type) {
-    const auto &trait = ast::cast<const ast::named_type>(*impl.decl->trait_type);
+    const auto &trait =
+        ast::cast<const ast::named_type>(*impl.decl->trait_type);
     if (!trait.path.empty() && trait.path.back() == "into_iterator") {
       for (const auto &item : impl.decl->items) {
         if (item != nullptr && item->kind == ast::node_kind::func_decl &&

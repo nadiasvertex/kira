@@ -263,8 +263,7 @@ auto expect_structural_refusal(std::string_view file,
   for (const auto needle : needles) {
     expect_diagnostic(analyzed, needle, message);
   }
-  expect(analyzed.diagnostics.find("traits.structural.cn") ==
-             std::string::npos,
+  expect(analyzed.diagnostics.find("traits.structural.cn") == std::string::npos,
          "expected the structural-equality refusal to point at user code");
 }
 
@@ -4055,11 +4054,10 @@ auto test_rejects_on_io_non_sendable() -> void {
 
 auto test_accepts_on_io_sendable() -> void {
   const auto analyzed = analyze_test_data_file("accept_on_io_sendable.cn");
-  expect_clean(analyzed,
-               std::string("expected owned values, shared borrows of "
-                           "immutable data and a mutex to cross into "
-                           "`on(io)`:\n") +
-                   analyzed.diagnostics);
+  expect_clean(analyzed, std::string("expected owned values, shared borrows of "
+                                     "immutable data and a mutex to cross into "
+                                     "`on(io)`:\n") +
+                             analyzed.diagnostics);
 }
 
 auto test_rejects_non_task_spawned() -> void {

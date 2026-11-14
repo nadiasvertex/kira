@@ -72,8 +72,7 @@ inline constexpr size_t k_word_size = 8;
 inline constexpr size_t k_sum_tag_size = 8;
 /// The largest size or offset a layout may have. Anything larger is reported
 /// as `too_large` instead of wrapping.
-inline constexpr size_t k_max_layout_bytes =
-    static_cast<size_t>(INT64_MAX) / 2;
+inline constexpr size_t k_max_layout_bytes = static_cast<size_t>(INT64_MAX) / 2;
 
 /// One placed member: a struct field, tuple element, or variant payload slot.
 struct member_layout {
@@ -198,9 +197,8 @@ private:
 
   [[nodiscard]] auto compute(semantic::type_id id)
       -> std::expected<value_layout, layout_error>;
-  [[nodiscard]] auto
-  member_of(semantic::type_id container, std::string name,
-            semantic::type_id type)
+  [[nodiscard]] auto member_of(semantic::type_id container, std::string name,
+                               semantic::type_id type)
       -> std::expected<const value_layout *, layout_error>;
   [[nodiscard]] auto fail(layout_error_kind kind, semantic::type_id id,
                           std::string_view reason) const -> layout_error;

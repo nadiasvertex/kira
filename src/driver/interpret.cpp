@@ -11,8 +11,8 @@
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/storage_compile.h"
-#include "src/hir/storage_program.h"
 #include "src/hir/lower.h"
+#include "src/hir/storage_program.h"
 #include "src/runtime/aligned_buffer.h"
 #include "src/runtime/scheduler.h"
 #include "src/util/integer_literal.h"
@@ -101,9 +101,10 @@ namespace cinder::driver {
 /// and `exit_code_of` read: a signed integer sign-extended into `i`, an
 /// unsigned one zero-extended into `u`, a 128-bit one in `w`, and a float's
 /// bits where its width reads them.
-[[nodiscard]] static auto
-slot_of_inline(const semantic::type_table &types, semantic::type_id type,
-               const std::byte *at, size_t size) -> bytecode::slot_value {
+[[nodiscard]] static auto slot_of_inline(const semantic::type_table &types,
+                                         semantic::type_id type,
+                                         const std::byte *at, size_t size)
+    -> bytecode::slot_value {
   auto bits = uint64_t{0};
   std::memcpy(&bits, at, std::min(size, sizeof(bits)));
   auto slot = bytecode::slot_value{};
@@ -155,8 +156,8 @@ slot_of_inline(const semantic::type_table &types, semantic::type_id type,
 
 [[nodiscard]] auto
 run_hir_module(std::span<const hir::hir_module *const> modules,
-               semantic::checked_types &checked,
-               std::string_view function_name) -> run_outcome {
+               semantic::checked_types &checked, std::string_view function_name)
+    -> run_outcome {
   const auto &types = checked.types;
   const auto &entry_module = *modules.front();
   const auto *target = static_cast<const hir::hir_function *>(nullptr);
@@ -229,8 +230,9 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
       std::max<size_t>(abi.has_value() ? abi->result.align : 8, 16));
   auto result = std::expected<bytecode::vm_result, bytecode::panic_reason>{};
   if (abi.has_value() && abi->returns_through_address) {
-    auto into = vm.run_into(index, std::span<std::byte>(bytes.data(), bytes.size()),
-                            std::span<const bytecode::slot_value>{});
+    auto into =
+        vm.run_into(index, std::span<std::byte>(bytes.data(), bytes.size()),
+                    std::span<const bytecode::slot_value>{});
     if (into.has_value()) {
       result = bytecode::vm_result{.has_value = true};
     } else {

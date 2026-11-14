@@ -52,8 +52,8 @@ void cinder_rt_str_find_into(void *result, const void *haystack,
 void cinder_rt_str_rfind_into(void *result, const void *haystack,
                               const void *needle) {
   namespace out = cinder::runtime::out;
-  write_find_result(result, cinder::runtime::str_rfind(
-                                out::view_of(haystack), out::view_of(needle)));
+  write_find_result(result, cinder::runtime::str_rfind(out::view_of(haystack),
+                                                       out::view_of(needle)));
 }
 
 void cinder_rt_str_reverse_into(void *result, const void *s) {
@@ -72,9 +72,8 @@ void cinder_rt_str_replace_into(void *result, const void *s, const void *from,
                                 const void *to) {
   namespace out = cinder::runtime::out;
   out::store_str(result, 0,
-                 cinder::runtime::str_replace(out::view_of(s),
-                                              out::view_of(from),
-                                              out::view_of(to)));
+                 cinder::runtime::str_replace(
+                     out::view_of(s), out::view_of(from), out::view_of(to)));
 }
 
 } // extern "C"

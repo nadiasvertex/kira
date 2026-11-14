@@ -345,14 +345,14 @@ auto checker::require_structural_operator(const ast::binary_expr &binary,
   // to call is `(int32, int32)`'s or `(int64, int64)`'s, so it is named
   // once they settle.
   if (mentions_type_var(target)) {
-    defer_method_call(
-        std::format("the `{}` operator", op_name), target,
-        std::vector<type_id>{},
-        [this, &binary, trait = std::string(trait_name),
-         op = std::string(op_name), wire_dispatch](type_id settled) -> void {
-          (void)require_operand_trait(binary, settled, trait, op,
-                                      wire_dispatch);
-        });
+    defer_method_call(std::format("the `{}` operator", op_name), target,
+                      std::vector<type_id>{},
+                      [this, &binary, trait = std::string(trait_name),
+                       op = std::string(op_name),
+                       wire_dispatch](type_id settled) -> void {
+                        (void)require_operand_trait(binary, settled, trait, op,
+                                                    wire_dispatch);
+                      });
     return k_unknown_type;
   }
   const auto shown = session_.types_.display(target);
@@ -445,7 +445,8 @@ auto checker::structural_unmet_help(const type_entry &entry, type_id element,
                         "{}:`.",
                         trait_name, held.name, trait_name, held.name);
   }
-  help[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(help[0])));
+  help[0] =
+      static_cast<char>(std::toupper(static_cast<unsigned char>(help[0])));
   return help;
 }
 
@@ -1387,15 +1388,18 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
       // A user type (a `list`) hands out its mutable sub-view through its
       // own `index_mut`, below; only a builtin container is upgraded here.
       const auto user_object = [&] -> bool {
-        const auto &operand_index = ast::cast<const ast::index_expr>(*unary.operand);
+        const auto &operand_index =
+            ast::cast<const ast::index_expr>(*unary.operand);
         if (operand_index.object == nullptr) {
           return false;
         }
-        const auto found = session_.node_types_.find(operand_index.object.get());
+        const auto found =
+            session_.node_types_.find(operand_index.object.get());
         if (found == session_.node_types_.end()) {
           return false;
         }
-        const auto &entry = session_.types_.entry(strip_refs(settle(found->second)));
+        const auto &entry =
+            session_.types_.entry(strip_refs(settle(found->second)));
         return (entry.kind == type_kind::struct_kind ||
                 entry.kind == type_kind::sum_kind ||
                 entry.kind == type_kind::opaque_kind) &&
@@ -1407,7 +1411,8 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
         const auto element = stripped_entry.args.empty()
                                  ? k_unknown_type
                                  : stripped_entry.args[0];
-        const auto view = session_.types_.builtin_generic("slice_mut", {element});
+        const auto view =
+            session_.types_.builtin_generic("slice_mut", {element});
         // The sub-view itself is the mutable one, so lowering builds a
         // `slice_mut[T]` and lends it.
         record_expr_type(*unary.operand, view);

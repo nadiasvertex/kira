@@ -149,7 +149,8 @@ public:
         if (found == value.fields.end()) {
           return mismatch(type);
         }
-        if (auto ok = write_bytes(member.type, found->second, at + member.offset);
+        if (auto ok =
+                write_bytes(member.type, found->second, at + member.offset);
             !ok.has_value()) {
           return ok;
         }
@@ -163,7 +164,8 @@ public:
       }
       for (std::size_t i = 0; i < value.elements.size(); ++i) {
         const auto &member = (*layout)->members[i];
-        if (auto ok = write_bytes(member.type, value.elements[i], at + member.offset);
+        if (auto ok =
+                write_bytes(member.type, value.elements[i], at + member.offset);
             !ok.has_value()) {
           return ok;
         }
@@ -187,14 +189,16 @@ public:
         return mismatch(type);
       }
       const auto *variant = (*layout)->find_variant(value.variant_tag);
-      if (variant == nullptr || variant->payload.size() != value.elements.size()) {
+      if (variant == nullptr ||
+          variant->payload.size() != value.elements.size()) {
         return mismatch(type);
       }
       store(at + (*layout)->tag_offset, runtime::k_sum_tag_size,
             slot_value{static_cast<std::uint64_t>(variant->tag)});
       for (std::size_t i = 0; i < value.elements.size(); ++i) {
         const auto &member = variant->payload[i];
-        if (auto ok = write_bytes(member.type, value.elements[i], at + member.offset);
+        if (auto ok =
+                write_bytes(member.type, value.elements[i], at + member.offset);
             !ok.has_value()) {
           return ok;
         }
@@ -264,8 +268,9 @@ public:
     case runtime::value_layout_kind::array: {
       auto values = std::vector<comptime::value>{};
       for (std::uint64_t i = 0; i < (*layout)->count; ++i) {
-        auto element = read_bytes((*layout)->element,
-                                  at + (static_cast<std::size_t>(i) * (*layout)->stride));
+        auto element =
+            read_bytes((*layout)->element,
+                       at + (static_cast<std::size_t>(i) * (*layout)->stride));
         if (!element.has_value()) {
           return std::unexpected(element.error());
         }
@@ -274,10 +279,11 @@ public:
       return comptime::value::make_list(std::move(values));
     }
     case runtime::value_layout_kind::sum: {
-      const auto tag = load(at + (*layout)->tag_offset, runtime::k_sum_tag_size).i;
-      const auto found = std::ranges::find(
-          (*layout)->variants, static_cast<std::int64_t>(tag),
-          &runtime::variant_layout::tag);
+      const auto tag =
+          load(at + (*layout)->tag_offset, runtime::k_sum_tag_size).i;
+      const auto found =
+          std::ranges::find((*layout)->variants, static_cast<std::int64_t>(tag),
+                            &runtime::variant_layout::tag);
       if (found == (*layout)->variants.end()) {
         return unsupported(type);
       }
@@ -381,19 +387,18 @@ private:
     }
     auto layout = layouts_->layout(type);
     if (!layout.has_value()) {
-      return std::unexpected(std::format(
-          "a value of type `{}` has no byte layout: {}", types_.display(type),
-          layout.error().message));
+      return std::unexpected(
+          std::format("a value of type `{}` has no byte layout: {}",
+                      types_.display(type), layout.error().message));
     }
     return *layout;
   }
 
   /// A `list[T]` is the library struct `{len, cap, data}`; its elements are
   /// one heap block at the element's stride, which the list owns.
-  [[nodiscard]] auto list_to_bytes(type_id type, type_id element,
-                                   const comptime::value &value,
-                                   const runtime::value_layout &layout,
-                                   std::uint8_t *at)
+  [[nodiscard]] auto
+  list_to_bytes(type_id type, type_id element, const comptime::value &value,
+                const runtime::value_layout &layout, std::uint8_t *at)
       -> std::expected<void, std::string> {
     if (value.kind != comptime::value_kind::list) {
       return mismatch(type);
@@ -412,7 +417,8 @@ private:
     auto *block =
         allocate(std::max<std::size_t>(stride * value.elements.size(), 1));
     for (std::size_t i = 0; i < value.elements.size(); ++i) {
-      if (auto ok = write_bytes(element, value.elements[i], block + (i * stride));
+      if (auto ok =
+              write_bytes(element, value.elements[i], block + (i * stride));
           !ok.has_value()) {
         return ok;
       }
@@ -441,8 +447,8 @@ private:
     const auto *block = pointer_of(load(at + data->offset, data->size));
     auto values = std::vector<comptime::value>{};
     for (std::uint64_t i = 0; i < count; ++i) {
-      auto value = read_bytes(
-          element, block + (static_cast<std::size_t>(i) * (*element_layout)->size));
+      auto value = read_bytes(element, block + (static_cast<std::size_t>(i) *
+                                                (*element_layout)->size));
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
@@ -452,7 +458,7 @@ private:
   }
 
   [[nodiscard]] auto scalar_to_slot(type_id type, numeric_kind kind,
-                                  const comptime::value &value)
+                                    const comptime::value &value)
       -> std::expected<slot_value, std::string> {
     if (kind == numeric_kind::boolean) {
       if (value.kind != comptime::value_kind::boolean) {
@@ -559,14 +565,16 @@ auto to_register(semantic::comptime_program &program, handle_table &handles,
                  runtime::value_layouts &layouts, semantic::type_id type,
                  const comptime::value &value)
     -> std::expected<bytecode::slot_value, std::string> {
-  return converter(program, handles, &handles, &layouts).to_register(type, value);
+  return converter(program, handles, &handles, &layouts)
+      .to_register(type, value);
 }
 
 auto from_register(semantic::comptime_program &program,
                    const handle_table &handles, runtime::value_layouts &layouts,
                    semantic::type_id type, bytecode::slot_value slot)
     -> std::expected<comptime::value, std::string> {
-  return converter(program, handles, nullptr, &layouts).from_register(type, slot);
+  return converter(program, handles, nullptr, &layouts)
+      .from_register(type, slot);
 }
 
 } // namespace cinder::comptime_vm

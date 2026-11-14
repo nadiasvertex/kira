@@ -121,7 +121,8 @@ auto vm_backend::run(semantic::comptime_program &program,
   auto &layouts = *compiled.storage->layouts;
   const auto &entry = compiled.module.functions.at(compiled.entry_index);
   if (!entry.abi.has_value() || entry.abi->params.size() != args.size()) {
-    return unsupported(std::format("`{}` has no storage calling convention", name));
+    return unsupported(
+        std::format("`{}` has no storage calling convention", name));
   }
   // Each argument travels as the entry's ABI says: in a register, or as the
   // address of bytes this run owns (the callee owns what they hold).
@@ -133,16 +134,17 @@ auto vm_backend::run(semantic::comptime_program &program,
       auto &bytes = argument_bytes.emplace_back(
           std::max<std::size_t>(transport.size, 16),
           std::max<std::size_t>(transport.align, 16));
-      if (auto ok = write_inline(program, handles, layouts,
-                                 compiled.param_types[i], args[i], bytes.data());
+      if (auto ok =
+              write_inline(program, handles, layouts, compiled.param_types[i],
+                           args[i], bytes.data());
           !ok.has_value()) {
         return unsupported(ok.error());
       }
       slots.push_back(bytecode::slot_value{static_cast<std::uint64_t>(
           reinterpret_cast<std::uintptr_t>(bytes.data()))});
     } else if (transport.size != 0) {
-      auto slot =
-          to_register(program, handles, layouts, compiled.param_types[i], args[i]);
+      auto slot = to_register(program, handles, layouts,
+                              compiled.param_types[i], args[i]);
       if (!slot.has_value()) {
         return unsupported(slot.error());
       }
@@ -170,11 +172,13 @@ auto vm_backend::run(semantic::comptime_program &program,
           if (site.arg_zero_sized[i]) {
             value = read_inline(program, handles, layouts, type, nullptr);
           } else if (site.arg_by_address[i]) {
-            value = read_inline(program, handles, layouts, type,
-                                reinterpret_cast<const std::byte *>(
-                                    static_cast<std::uintptr_t>(operands[next++].u)));
+            value = read_inline(
+                program, handles, layouts, type,
+                reinterpret_cast<const std::byte *>(
+                    static_cast<std::uintptr_t>(operands[next++].u)));
           } else {
-            value = from_register(program, handles, layouts, type, operands[next++]);
+            value = from_register(program, handles, layouts, type,
+                                  operands[next++]);
           }
           if (!value.has_value()) {
             return std::unexpected(value.error());
@@ -187,14 +191,15 @@ auto vm_backend::run(semantic::comptime_program &program,
           return std::unexpected(result.error());
         }
         if (result_at != nullptr) {
-          if (auto ok = write_inline(program, handles, layouts, site.result_type,
-                                     *result, result_at);
+          if (auto ok = write_inline(program, handles, layouts,
+                                     site.result_type, *result, result_at);
               !ok.has_value()) {
             return std::unexpected(ok.error());
           }
           return bytecode::slot_value{};
         }
-        return to_register(program, handles, layouts, site.result_type, *result);
+        return to_register(program, handles, layouts, site.result_type,
+                           *result);
       });
   const auto machine = bytecode::vm(compiled.module);
   const auto limits = bytecode::run_limits{
@@ -239,14 +244,14 @@ auto vm_backend::run(semantic::comptime_program &program,
     }
     return std::unexpected(std::move(failure));
   }
-  auto value =
-      entry.abi->returns_through_address
-          ? read_inline(program, handles, layouts, compiled.return_type,
-                        result_bytes.data())
-      : !result->has_value
-          ? read_inline(program, handles, layouts, compiled.return_type, nullptr)
-          : from_register(program, handles, layouts, compiled.return_type,
-                          result->value);
+  auto value = entry.abi->returns_through_address
+                   ? read_inline(program, handles, layouts,
+                                 compiled.return_type, result_bytes.data())
+               : !result->has_value
+                   ? read_inline(program, handles, layouts,
+                                 compiled.return_type, nullptr)
+                   : from_register(program, handles, layouts,
+                                   compiled.return_type, result->value);
   if (!value.has_value()) {
     return unsupported(value.error());
   }

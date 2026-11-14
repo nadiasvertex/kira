@@ -140,7 +140,8 @@ auto storage_env::is_copy(semantic::type_id type) const -> bool {
 
 auto storage_env::drop_plan(semantic::type_id type) const
     -> const semantic::drop_plan * {
-  const auto found = checked.drop.drop_plans.find(checked.types.strip_refinement(type));
+  const auto found =
+      checked.drop.drop_plans.find(checked.types.strip_refinement(type));
   return found == checked.drop.drop_plans.end() ? nullptr : &found->second;
 }
 
@@ -161,7 +162,8 @@ auto storage_env::pointee(semantic::type_id type) const
 
 auto storage_env::cell_reads_as_reference(semantic::type_id from,
                                           semantic::type_id to) const -> bool {
-  const auto &source = checked.types.entry(checked.types.strip_refinement(from));
+  const auto &source =
+      checked.types.entry(checked.types.strip_refinement(from));
   const auto &target = checked.types.entry(checked.types.strip_refinement(to));
   if (source.kind != semantic::type_kind::builtin_generic_kind ||
       (source.name != "cell" && source.name != "cell_mut") ||
@@ -223,8 +225,8 @@ auto is_safe_tail_call(const storage_function &function, size_t index) -> bool {
     return false;
   }
   const auto &call = function.ops[index];
-  if (call.kind != op_kind::call_into || call.is_drop || !call.callee.is_direct() ||
-      call.callee.host ||
+  if (call.kind != op_kind::call_into || call.is_drop ||
+      !call.callee.is_direct() || call.callee.host ||
       call.signature.takes_environment) {
     return false;
   }
@@ -232,8 +234,9 @@ auto is_safe_tail_call(const storage_function &function, size_t index) -> bool {
     return cls == pass_class::scalar || cls == pass_class::zero_sized;
   };
   if (!plain(call.signature.result.cls) ||
-      !std::ranges::all_of(call.signature.params,
-                           [&](const abi_value &param) { return plain(param.cls); }) ||
+      !std::ranges::all_of(
+          call.signature.params,
+          [&](const abi_value &param) { return plain(param.cls); }) ||
       !std::ranges::all_of(call.args, [&](const call_argument &arg) {
         return plain(arg.cls) && arg.value.kind != operand_kind::address_of;
       })) {
@@ -253,7 +256,8 @@ auto is_safe_tail_call(const storage_function &function, size_t index) -> bool {
     if (!op.value.has_value()) {
       return call.signature.result.cls == pass_class::zero_sized;
     }
-    return op.value->kind == operand_kind::read && op.value->where.steps.empty() &&
+    return op.value->kind == operand_kind::read &&
+           op.value->where.steps.empty() &&
            op.value->where.base == call.dest.base && call.dest.steps.empty();
   }
   return false;
@@ -333,8 +337,9 @@ namespace {
   case compute_kind::copy:
     return "copy " + render_operand(op.operands.at(0));
   case compute_kind::binary:
-    return std::string{"binary "} + std::string{ast::binary_op_name(op.binary)} +
-           " " + render_operand(op.operands.at(0)) + ", " +
+    return std::string{"binary "} +
+           std::string{ast::binary_op_name(op.binary)} + " " +
+           render_operand(op.operands.at(0)) + ", " +
            render_operand(op.operands.at(1));
   case compute_kind::unary:
     return std::string{"unary "} + std::string{ast::unary_op_name(op.unary)} +
@@ -343,22 +348,24 @@ namespace {
     return "cast " + render_operand(op.operands.at(0));
   case compute_kind::pointer_offset:
     return "offset " + render_operand(op.operands.at(0)) + ", " +
-           render_operand(op.operands.at(1)) + " * " + std::to_string(op.stride);
+           render_operand(op.operands.at(1)) + " * " +
+           std::to_string(op.stride);
   case compute_kind::checked_index:
     return "index " + render_operand(op.operands.at(0)) + " < " +
            render_operand(op.operands.at(1));
   case compute_kind::checked_end:
-    return "bound " + render_operand(op.operands.at(0)) + " <= " +
-           render_operand(op.operands.at(1));
+    return "bound " + render_operand(op.operands.at(0)) +
+           " <= " + render_operand(op.operands.at(1));
   }
   return "?";
 }
 
 [[nodiscard]] auto render_call(const storage_op &op) -> std::string {
   auto out = render_place(op.dest) + " = ";
-  out += op.callee.host        ? "host " + op.callee.name
-         : op.callee.is_direct() ? op.callee.name
-                                 : "(" + render_place(*op.callee.callable) + ")";
+  out += op.callee.host ? "host " + op.callee.name
+         : op.callee.is_direct()
+             ? op.callee.name
+             : "(" + render_place(*op.callee.callable) + ")";
   out += "(";
   auto first = true;
   for (const auto &arg : op.args) {
@@ -380,8 +387,8 @@ namespace {
 /// `<size>/<align> [<kind> <source> @<offset>, ...]`, the state or environment
 /// block a closure or generator fills.
 [[nodiscard]] auto render_captures(const storage_op &op) -> std::string {
-  auto out = std::to_string(op.env_size) + "/" + std::to_string(op.env_align) +
-             " [";
+  auto out =
+      std::to_string(op.env_size) + "/" + std::to_string(op.env_align) + " [";
   auto first = true;
   for (const auto &capture : op.captures) {
     out += first ? "" : ", ";
@@ -500,8 +507,8 @@ namespace {
 
 auto dump(const storage_function &function, const semantic::type_table &types)
     -> std::string {
-  auto out = "fn " + function.name + " " + format_signature(function.signature) +
-             "\n";
+  auto out =
+      "fn " + function.name + " " + format_signature(function.signature) + "\n";
   for (const auto &slot : function.slots) {
     out += "  s" + std::to_string(slot.id) + " " +
            storage_class_name(slot.cls) + " " +
@@ -512,9 +519,9 @@ auto dump(const storage_function &function, const semantic::type_table &types)
            (slot.cls == storage_class::closure_environment
                 ? std::string{slot.env_indirect ? " env->@" : " env@"} +
                       std::to_string(slot.env_offset)
-                : slot.cls == storage_class::coroutine_frame
-                      ? " state@" + std::to_string(slot.env_offset)
-                      : std::string{}) +
+            : slot.cls == storage_class::coroutine_frame
+                ? " state@" + std::to_string(slot.env_offset)
+                : std::string{}) +
            "\n";
   }
   for (size_t i = 0; i < function.ops.size(); ++i) {
@@ -533,4 +540,3 @@ auto dump(const storage_module &module, const semantic::type_table &types)
 }
 
 } // namespace cinder::hir
-

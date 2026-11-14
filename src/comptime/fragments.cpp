@@ -374,10 +374,10 @@ auto fragment_builder::materialize(const ast::node &node,
       if (!value.has_value()) {
         return value;
       }
-      cloned->args.push_back(ast::call_arg{
-          .span = arg.span,
-          .name = arg.name,
-          .value = as_owned<ast::expr>(std::move(*value))});
+      cloned->args.push_back(
+          ast::call_arg{.span = arg.span,
+                        .name = arg.name,
+                        .value = as_owned<ast::expr>(std::move(*value))});
     }
     return cloned;
   }

@@ -53,8 +53,8 @@ template <typename T> using checked = std::expected<T, codegen_error>;
 
 [[nodiscard]] auto fail(codegen_error_kind kind, const source_span &span,
                         std::string message) -> std::unexpected<codegen_error> {
-  return std::unexpected(codegen_error{
-      .kind = kind, .span = span, .message = std::move(message)});
+  return std::unexpected(
+      codegen_error{.kind = kind, .span = span, .message = std::move(message)});
 }
 
 /// The alignment that `offset` bytes past an `align`-aligned address still
@@ -130,7 +130,8 @@ struct module_context {
 }
 
 [[nodiscard]] auto class_of(module_context &mc, type_id type,
-                            const source_span &span) -> checked<hir::abi_value> {
+                            const source_span &span)
+    -> checked<hir::abi_value> {
   const auto found = hir::classify_value(mc.env.layouts, type);
   if (!found.has_value()) {
     return fail(codegen_error_kind::unsupported_type, span,
@@ -157,7 +158,8 @@ struct module_context {
 /// The type a scalar-class value has while it is computed with: `i1` for a
 /// `bool`, `ptr` for an address or handle, the numeric type otherwise.
 [[nodiscard]] auto value_type(module_context &mc, type_id type,
-                              const source_span &span) -> checked<llvm::Type *> {
+                              const source_span &span)
+    -> checked<llvm::Type *> {
   const auto value = class_of(mc, type, span);
   if (!value.has_value()) {
     return std::unexpected(value.error());
@@ -167,7 +169,8 @@ struct module_context {
   }
   if (value->cls != pass_class::scalar) {
     return fail(codegen_error_kind::unsupported_type, span,
-                std::format("`{}` is not a scalar value", mc.env.types().display(type)));
+                std::format("`{}` is not a scalar value",
+                            mc.env.types().display(type)));
   }
   const auto kind = kind_of(mc, type, span);
   if (!kind.has_value()) {
@@ -178,7 +181,8 @@ struct module_context {
 
 /// The type a scalar-class value has in memory: a `bool` is a byte.
 [[nodiscard]] auto memory_type(module_context &mc, type_id type,
-                               const source_span &span) -> checked<llvm::Type *> {
+                               const source_span &span)
+    -> checked<llvm::Type *> {
   const auto ty = value_type(mc, type, span);
   if (!ty.has_value()) {
     return ty;
@@ -230,7 +234,8 @@ struct module_context {
     return std::nullopt;
   }
   const auto &types = mc.env.types();
-  const auto kind = bytecode::numeric_kind_of(types, types.strip_refinement(result));
+  const auto kind =
+      bytecode::numeric_kind_of(types, types.strip_refinement(result));
   return kind.has_value() && bytecode::is_signed_integer(*kind)
              ? llvm::Attribute::SExt
              : llvm::Attribute::ZExt;
@@ -238,7 +243,8 @@ struct module_context {
 
 auto add_result_extension(module_context &mc, llvm::Function &function,
                           type_id result) -> void {
-  if (const auto extension = result_extension(mc, function.getReturnType(), result);
+  if (const auto extension =
+          result_extension(mc, function.getReturnType(), result);
       extension.has_value()) {
     function.addRetAttr(*extension);
   }
@@ -260,8 +266,8 @@ auto add_result_extension(module_context &mc, llvm::Function &function,
 
 /// The LLVM type a runtime symbol declares for a parameter or result of
 /// `kind` (`src/intrinsics.h`).
-[[nodiscard]] auto wire_type(llvm::LLVMContext &ctx, cinder::intrinsic_wire_kind kind)
-    -> llvm::Type * {
+[[nodiscard]] auto wire_type(llvm::LLVMContext &ctx,
+                             cinder::intrinsic_wire_kind kind) -> llvm::Type * {
   switch (kind) {
   case cinder::intrinsic_wire_kind::i32:
     return llvm::Type::getInt32Ty(ctx);
@@ -286,8 +292,8 @@ auto add_result_extension(module_context &mc, llvm::Function &function,
     -> llvm::Function * {
   const auto name = cinder::known_intrinsic_names.at(id);
   const auto into = cinder::intrinsic_builds_into(id);
-  const auto symbol =
-      into ? cinder::intrinsic_into_symbol(name) : "cinder_" + std::string(name);
+  const auto symbol = into ? cinder::intrinsic_into_symbol(name)
+                           : "cinder_" + std::string(name);
   if (auto *existing = mc.module.getFunction(symbol); existing != nullptr) {
     return existing;
   }
@@ -296,12 +302,15 @@ auto add_result_extension(module_context &mc, llvm::Function &function,
     params.push_back(llvm::PointerType::get(mc.ctx, 0));
   }
   for (size_t p = 0; p < cinder::known_intrinsic_arities.at(id); ++p) {
-    params.push_back(wire_type(mc.ctx, cinder::known_intrinsic_param_kinds.at(id).at(p)));
+    params.push_back(
+        wire_type(mc.ctx, cinder::known_intrinsic_param_kinds.at(id).at(p)));
   }
-  auto *result = into ? llvm::Type::getVoidTy(mc.ctx)
-                      : wire_type(mc.ctx, cinder::known_intrinsic_return_kinds.at(id));
+  auto *result =
+      into ? llvm::Type::getVoidTy(mc.ctx)
+           : wire_type(mc.ctx, cinder::known_intrinsic_return_kinds.at(id));
   return llvm::Function::Create(llvm::FunctionType::get(result, params, false),
-                                llvm::Function::ExternalLinkage, symbol, mc.module);
+                                llvm::Function::ExternalLinkage, symbol,
+                                mc.module);
 }
 
 class function_emitter {
@@ -347,13 +356,18 @@ private:
     return mc_.env.types();
   }
 
-  [[nodiscard]] auto i8() -> llvm::Type * { return llvm::Type::getInt8Ty(mc_.ctx); }
-  [[nodiscard]] auto i64() -> llvm::Type * { return llvm::Type::getInt64Ty(mc_.ctx); }
+  [[nodiscard]] auto i8() -> llvm::Type * {
+    return llvm::Type::getInt8Ty(mc_.ctx);
+  }
+  [[nodiscard]] auto i64() -> llvm::Type * {
+    return llvm::Type::getInt64Ty(mc_.ctx);
+  }
   [[nodiscard]] auto ptr_type() -> llvm::Type * {
     return llvm::PointerType::get(mc_.ctx, 0);
   }
 
-  [[nodiscard]] auto constant(llvm::Type *ty, uint64_t value) -> llvm::Constant * {
+  [[nodiscard]] auto constant(llvm::Type *ty, uint64_t value)
+      -> llvm::Constant * {
     return llvm::ConstantInt::get(ty, value);
   }
 
@@ -448,16 +462,17 @@ private:
           return fail(codegen_error_kind::unsupported_construct, slot.span,
                       "a parameter slot has no operand");
         }
-        auto *incoming = llvm_fn_->getArg(
-            static_cast<unsigned>(*operand_of_slot[slot.id]));
+        auto *incoming =
+            llvm_fn_->getArg(static_cast<unsigned>(*operand_of_slot[slot.id]));
         if (hir::is_indirect(value->cls)) {
           here = home{.ptr = incoming, .align = value->align};
           break;
         }
         here = home{.ptr = frame_bytes(value->size, value->align),
                     .align = value->align};
-        if (auto ok = store_scalar(location{.base = here.ptr, .align = here.align},
-                                   slot.type, incoming);
+        if (auto ok =
+                store_scalar(location{.base = here.ptr, .align = here.align},
+                             slot.type, incoming);
             !ok.has_value()) {
           return ok;
         }
@@ -493,11 +508,11 @@ private:
                       "an environment slot in a function without an "
                       "environment operand");
         }
-        auto *at = slot.env_offset == 0
-                       ? environment_
-                       : builder_.CreateInBoundsGEP(
-                             i8(), environment_,
-                             {constant(i64(), slot.env_offset)});
+        auto *at =
+            slot.env_offset == 0
+                ? environment_
+                : builder_.CreateInBoundsGEP(
+                      i8(), environment_, {constant(i64(), slot.env_offset)});
         if (slot.env_indirect) {
           // Captured by reference: the environment holds the variable's
           // address, and what is reached through it has unknown alignment.
@@ -509,8 +524,9 @@ private:
                                        runtime::k_word_size)),
                       .align = 1};
         } else {
-          here = home{.ptr = at,
-                      .align = aligned_at(k_environment_align, slot.env_offset)};
+          here =
+              home{.ptr = at,
+                   .align = aligned_at(k_environment_align, slot.env_offset)};
         }
         break;
       }
@@ -518,9 +534,9 @@ private:
         // A static is its own LLVM global, which every function reaches.
         const auto found = mc_.statics.find(slot.name);
         if (found == mc_.statics.end()) {
-          return fail(codegen_error_kind::unsupported_construct, slot.span,
-                      std::format("no module declares the static `{}`",
-                                  slot.name));
+          return fail(
+              codegen_error_kind::unsupported_construct, slot.span,
+              std::format("no module declares the static `{}`", slot.name));
         }
         here = home{.ptr = found->second.bytes, .align = found->second.align};
         break;
@@ -541,8 +557,8 @@ private:
   /// The alignment an access of `natural` bytes at `loc` may claim.
   [[nodiscard]] static auto access_align(const location &loc, size_t natural)
       -> llvm::Align {
-    return llvm::Align(
-        std::max<size_t>(1, std::min(natural, aligned_at(loc.align, loc.offset))));
+    return llvm::Align(std::max<size_t>(
+        1, std::min(natural, aligned_at(loc.align, loc.offset))));
   }
 
   [[nodiscard]] auto pointer_at(const location &loc) -> llvm::Value * {
@@ -564,8 +580,9 @@ private:
     auto current = slot.type;
     for (const auto &step : where.steps) {
       if (step.kind == projection_kind::deref) {
-        auto *pointer = builder_.CreateAlignedLoad(
-            ptr_type(), pointer_at(loc), access_align(loc, runtime::k_word_size));
+        auto *pointer =
+            builder_.CreateAlignedLoad(ptr_type(), pointer_at(loc),
+                                       access_align(loc, runtime::k_word_size));
         loc = location{.base = pointer, .offset = 0, .align = 1};
         current = mc_.env.pointee(current).value_or(semantic::k_unknown_type);
         continue;
@@ -639,7 +656,8 @@ private:
     if (value->getType()->isIntegerTy(1)) {
       value = builder_.CreateZExt(value, i8());
     }
-    builder_.CreateAlignedStore(value, pointer_at(loc), access_align(loc, *size));
+    builder_.CreateAlignedStore(value, pointer_at(loc),
+                                access_align(loc, *size));
     return {};
   }
 
@@ -751,12 +769,11 @@ private:
       if (!condition.has_value()) {
         return std::unexpected(condition.error());
       }
-      const auto reason =
-          op.contract == hir::check_kind::precondition
-              ? bytecode::panic_reason::precondition_violated
-          : op.contract == hir::check_kind::postcondition
-              ? bytecode::panic_reason::postcondition_violated
-              : bytecode::panic_reason::invariant_violated;
+      const auto reason = op.contract == hir::check_kind::precondition
+                              ? bytecode::panic_reason::precondition_violated
+                          : op.contract == hir::check_kind::postcondition
+                              ? bytecode::panic_reason::postcondition_violated
+                              : bytecode::panic_reason::invariant_violated;
       scalars_.guard_panic(builder_.CreateNot(*condition, "contract.violated"),
                            reason);
       return {};
@@ -869,7 +886,8 @@ private:
     if (!kind.has_value()) {
       return std::unexpected(kind.error());
     }
-    if (op.unary == ast::unary_op::neg && value.kind == operand_kind::constant &&
+    if (op.unary == ast::unary_op::neg &&
+        value.kind == operand_kind::constant &&
         value.literal == token_kind::int_lit) {
       // `-128` as `int8`: the literal's magnitude alone does not fit the
       // type, so the negation is folded here instead of trapping at run time.
@@ -977,7 +995,8 @@ private:
 
   /// Copies element 0 over the rest of the array by doubling the written
   /// prefix: about log2(count) copies, each of a constant size and offset.
-  [[nodiscard]] auto emit_zero_fill(const hir::storage_op &op) -> checked<void> {
+  [[nodiscard]] auto emit_zero_fill(const hir::storage_op &op)
+      -> checked<void> {
     const auto layout = layout_of(mc_, op.dest.type, op.span);
     if (!layout.has_value()) {
       return std::unexpected(layout.error());
@@ -989,14 +1008,14 @@ private:
     if (!to.has_value()) {
       return std::unexpected(to.error());
     }
-    builder_.CreateMemSet(pointer_at(*to),
-                          llvm::ConstantInt::get(i8(), 0),
+    builder_.CreateMemSet(pointer_at(*to), llvm::ConstantInt::get(i8(), 0),
                           constant(i64(), (*layout)->size),
                           access_align(*to, (*layout)->align));
     return {};
   }
 
-  [[nodiscard]] auto emit_replicate(const hir::storage_op &op) -> checked<void> {
+  [[nodiscard]] auto emit_replicate(const hir::storage_op &op)
+      -> checked<void> {
     const auto layout = layout_of(mc_, op.dest.type, op.span);
     if (!layout.has_value()) {
       return std::unexpected(layout.error());
@@ -1098,8 +1117,9 @@ private:
     }
     const auto found = mc_.functions.find(target);
     if (found == mc_.functions.end()) {
-      return fail(codegen_error_kind::unknown_callee, op.span,
-                  std::format("`{}` is not a function of this program", target));
+      return fail(
+          codegen_error_kind::unknown_callee, op.span,
+          std::format("`{}` is not a function of this program", target));
     }
     auto *callee = found->second;
     const auto dest = locate(op.dest);
@@ -1117,8 +1137,9 @@ private:
                               op.callee.name, args.size(), callee->arg_size()));
     }
     auto *call = call_function(builder_, callee, args);
-    const auto direct_result = !op.signature.returns_through_address() &&
-                               op.signature.result.cls != pass_class::zero_sized;
+    const auto direct_result =
+        !op.signature.returns_through_address() &&
+        op.signature.result.cls != pass_class::zero_sized;
     if (op.tail_call) {
       return finish_tail_call(callee, call, direct_result);
     }
@@ -1132,8 +1153,9 @@ private:
   /// `musttail` when LLVM can guarantee it: the same return type, calling
   /// convention, and parameter types as this function. Otherwise it is a
   /// `tail` hint, which is still correct but may use stack.
-  [[nodiscard]] auto finish_tail_call(llvm::Function *callee, llvm::CallInst *call,
-                                      bool direct_result) -> checked<void> {
+  [[nodiscard]] auto finish_tail_call(llvm::Function *callee,
+                                      llvm::CallInst *call, bool direct_result)
+      -> checked<void> {
     auto same_params = callee->arg_size() == llvm_fn_->arg_size();
     for (size_t i = 0; same_params && i < callee->arg_size(); ++i) {
       same_params = callee->getArg(static_cast<unsigned>(i))->getType() ==
@@ -1216,13 +1238,14 @@ private:
       return ok;
     }
     auto *call = builder_.CreateCall(*type, entry, args);
-    const auto direct_result = !op.signature.returns_through_address() &&
-                               op.signature.result.cls != pass_class::zero_sized;
+    const auto direct_result =
+        !op.signature.returns_through_address() &&
+        op.signature.result.cls != pass_class::zero_sized;
     if (!direct_result) {
       return {};
     }
-    if (const auto extension = result_extension(
-            mc_, (*type)->getReturnType(), op.signature.result.type);
+    if (const auto extension = result_extension(mc_, (*type)->getReturnType(),
+                                                op.signature.result.type);
         extension.has_value()) {
       call->addRetAttr(*extension);
     }
@@ -1235,21 +1258,23 @@ private:
       -> checked<void> {
     const auto entry = mc_.functions.find(key(op.entry));
     if (entry == mc_.functions.end()) {
-      return fail(codegen_error_kind::unknown_callee, op.span,
-                  std::format("`{}` is not a function of this module", op.entry));
+      return fail(
+          codegen_error_kind::unknown_callee, op.span,
+          std::format("`{}` is not a function of this module", op.entry));
     }
-    llvm::Value *glue = llvm::ConstantPointerNull::get(
-        llvm::PointerType::get(mc_.ctx, 0));
+    llvm::Value *glue =
+        llvm::ConstantPointerNull::get(llvm::PointerType::get(mc_.ctx, 0));
     if (!op.glue.empty()) {
       const auto found = mc_.functions.find(key(op.glue));
       if (found == mc_.functions.end()) {
-        return fail(codegen_error_kind::unknown_callee, op.span,
-                    std::format("`{}` is not a function of this module", op.glue));
+        return fail(
+            codegen_error_kind::unknown_callee, op.span,
+            std::format("`{}` is not a function of this module", op.glue));
       }
       glue = found->second;
     }
-    llvm::Value *environment = llvm::ConstantPointerNull::get(
-        llvm::PointerType::get(mc_.ctx, 0));
+    llvm::Value *environment =
+        llvm::ConstantPointerNull::get(llvm::PointerType::get(mc_.ctx, 0));
     if (op.env_size != 0) {
       const auto id = hir::runtime_intrinsic_id("rt_alloc");
       if (!id.has_value()) {
@@ -1268,8 +1293,8 @@ private:
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
     }
-    for (llvm::Value *word : {static_cast<llvm::Value *>(entry->second),
-                              environment, glue}) {
+    for (llvm::Value *word :
+         {static_cast<llvm::Value *>(entry->second), environment, glue}) {
       builder_.CreateAlignedStore(word, pointer_at(*dest),
                                   access_align(*dest, runtime::k_word_size));
       dest->offset += runtime::k_word_size;
@@ -1307,9 +1332,9 @@ private:
       }
       return store_scalar(into, capture.source.type, *held);
     }
-    builder_.CreateMemCpy(pointer_at(into), access_align(into, value->align),
-                          pointer_at(*source), access_align(*source, value->align),
-                          constant(i64(), value->size));
+    builder_.CreateMemCpy(
+        pointer_at(into), access_align(into, value->align), pointer_at(*source),
+        access_align(*source, value->align), constant(i64(), value->size));
     return {};
   }
 
@@ -1366,7 +1391,8 @@ private:
            (entry.name == "generator" || entry.name == "task");
   }
 
-  [[nodiscard]] auto read_place(const hir::place &where) -> checked<llvm::Value *> {
+  [[nodiscard]] auto read_place(const hir::place &where)
+      -> checked<llvm::Value *> {
     return operand_value(hir::operand{
         .kind = operand_kind::read, .where = where, .type = where.type});
   }
@@ -1377,13 +1403,14 @@ private:
         i8(), object, {constant(i64(), slot * runtime::k_word_size)});
   }
 
-  [[nodiscard]] auto load_word(llvm::Type *type, llvm::Value *object, size_t slot)
-      -> llvm::Value * {
+  [[nodiscard]] auto load_word(llvm::Type *type, llvm::Value *object,
+                               size_t slot) -> llvm::Value * {
     return builder_.CreateAlignedLoad(type, word_address(object, slot),
                                       llvm::Align(runtime::k_word_size));
   }
 
-  auto store_word(llvm::Value *object, size_t slot, llvm::Value *value) -> void {
+  auto store_word(llvm::Value *object, size_t slot, llvm::Value *value)
+      -> void {
     builder_.CreateAlignedStore(value, word_address(object, slot),
                                 llvm::Align(runtime::k_word_size));
   }
@@ -1414,16 +1441,17 @@ private:
     namespace co = runtime::coroutine;
     const auto entry = mc_.functions.find(key(op.entry));
     if (entry == mc_.functions.end()) {
-      return fail(codegen_error_kind::unknown_callee, op.span,
-                  std::format("`{}` is not a function of this module", op.entry));
+      return fail(
+          codegen_error_kind::unknown_callee, op.span,
+          std::format("`{}` is not a function of this module", op.entry));
     }
     const auto alloc = hir::runtime_intrinsic_id("rt_alloc");
     if (!alloc.has_value()) {
       return fail(codegen_error_kind::unsupported_construct, op.span,
                   "the runtime has no `rt_alloc`");
     }
-    llvm::Value *state = llvm::ConstantPointerNull::get(
-        llvm::PointerType::get(mc_.ctx, 0));
+    llvm::Value *state =
+        llvm::ConstantPointerNull::get(llvm::PointerType::get(mc_.ctx, 0));
     if (op.env_size != 0) {
       state = builder_.CreateCall(runtime_function(mc_, *alloc),
                                   {constant(i64(), op.env_size)});
@@ -1548,9 +1576,9 @@ private:
       auto *block = llvm::BasicBlock::Create(
           mc_.ctx, std::format("resume.{}", point), llvm_fn_);
       resume_blocks_.push_back(block);
-      table->addCase(llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(i64()),
-                                            point),
-                     block);
+      table->addCase(
+          llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(i64()), point),
+          block);
     }
     builder_.SetInsertPoint(start);
     return {};
@@ -1573,8 +1601,8 @@ private:
     if (!item.has_value()) {
       return std::unexpected(item.error());
     }
-    llvm::Value *address = llvm::ConstantPointerNull::get(
-        llvm::PointerType::get(mc_.ctx, 0));
+    llvm::Value *address =
+        llvm::ConstantPointerNull::get(llvm::PointerType::get(mc_.ctx, 0));
     if (item->cls != pass_class::zero_sized) {
       const auto where = locate(op.source);
       if (!where.has_value()) {
@@ -1600,13 +1628,11 @@ private:
       return fail(codegen_error_kind::unsupported_construct, op.span,
                   "a suspension point the dispatch does not name");
     }
-    const auto name = op.waits == hir::wait_mode::one
-                          ? "rt_task_await_poll"
-                          : op.waits == hir::wait_mode::crew
-                                ? "rt_crew_join_poll"
-                          : op.waits == hir::wait_mode::all
-                                ? "rt_task_await_all_poll"
-                                : "rt_task_await_any_poll";
+    const auto name = op.waits == hir::wait_mode::one    ? "rt_task_await_poll"
+                      : op.waits == hir::wait_mode::crew ? "rt_crew_join_poll"
+                      : op.waits == hir::wait_mode::all
+                          ? "rt_task_await_all_poll"
+                          : "rt_task_await_any_poll";
     const auto poll = hir::runtime_intrinsic_id(name);
     if (!poll.has_value()) {
       return fail(codegen_error_kind::unsupported_construct, op.span,
@@ -1627,7 +1653,8 @@ private:
     store_word(*object, co::k_resume_index_slot, constant(i64(), op.depth));
     auto *finished =
         builder_.CreateCall(runtime_function(mc_, *poll), *arguments);
-    auto *waiting = llvm::BasicBlock::Create(mc_.ctx, "await.pending", llvm_fn_);
+    auto *waiting =
+        llvm::BasicBlock::Create(mc_.ctx, "await.pending", llvm_fn_);
     auto *ready = llvm::BasicBlock::Create(mc_.ctx, "await.ready", llvm_fn_);
     builder_.CreateCondBr(
         builder_.CreateICmpNE(finished, constant(finished->getType(), 0)),
@@ -1654,8 +1681,7 @@ private:
     if (!where.has_value()) {
       return std::unexpected(where.error());
     }
-    const auto &group =
-        types().entry(types().strip_refinement(op.source.type));
+    const auto &group = types().entry(types().strip_refinement(op.source.type));
     return std::vector<llvm::Value *>{pointer_at(*where),
                                       constant(i64(), group.args.size())};
   }
@@ -1805,8 +1831,9 @@ private:
     const auto rmw = which == cinder::inline_intrinsic::atomic_fetch_add
                          ? llvm::AtomicRMWInst::Add
                          : llvm::AtomicRMWInst::Sub;
-    auto *old = builder_.CreateAtomicRMW(rmw, *ptr, *amount, llvm::MaybeAlign(8),
-                                         llvm::AtomicOrdering::AcquireRelease);
+    auto *old =
+        builder_.CreateAtomicRMW(rmw, *ptr, *amount, llvm::MaybeAlign(8),
+                                 llvm::AtomicOrdering::AcquireRelease);
     return store_scalar(*dest, op.dest.type, old);
   }
 
@@ -1840,9 +1867,11 @@ private:
         if (!value.has_value()) {
           return std::unexpected(value.error());
         }
-        const auto wire = cinder::known_intrinsic_param_kinds.at(id).at(position);
-        const auto converted = to_wire(
-            *value, op.signature.params.at(arg.source_index).type, wire, op.span);
+        const auto wire =
+            cinder::known_intrinsic_param_kinds.at(id).at(position);
+        const auto converted =
+            to_wire(*value, op.signature.params.at(arg.source_index).type, wire,
+                    op.span);
         if (!converted.has_value()) {
           return std::unexpected(converted.error());
         }
@@ -1855,8 +1884,9 @@ private:
         op.signature.result.cls == pass_class::zero_sized) {
       return {};
     }
-    const auto result = from_wire(call, op.dest.type,
-                                  cinder::known_intrinsic_return_kinds.at(id), op.span);
+    const auto result =
+        from_wire(call, op.dest.type,
+                  cinder::known_intrinsic_return_kinds.at(id), op.span);
     if (!result.has_value()) {
       return std::unexpected(result.error());
     }
@@ -1868,7 +1898,8 @@ private:
   /// an address or handle is already a pointer.
   [[nodiscard]] auto to_wire(llvm::Value *value, type_id type,
                              cinder::intrinsic_wire_kind wire,
-                             const source_span &span) -> checked<llvm::Value *> {
+                             const source_span &span)
+      -> checked<llvm::Value *> {
     using wire_kind = cinder::intrinsic_wire_kind;
     if (wire == wire_kind::ptr || wire == wire_kind::f32 ||
         wire == wire_kind::f64) {
@@ -1879,9 +1910,10 @@ private:
       return std::unexpected(kind.error());
     }
     const auto is_signed = bytecode::is_signed_integer(*kind);
-    const auto target = wire == wire_kind::i32
-                            ? (is_signed ? numeric_kind::i32 : numeric_kind::u32)
-                            : (is_signed ? numeric_kind::i64 : numeric_kind::u64);
+    const auto target =
+        wire == wire_kind::i32
+            ? (is_signed ? numeric_kind::i32 : numeric_kind::u32)
+            : (is_signed ? numeric_kind::i64 : numeric_kind::u64);
     return scalars_.cast(*kind, target, value);
   }
 
@@ -1890,7 +1922,8 @@ private:
   /// integers convert from the wire width, and a pointer stays a pointer.
   [[nodiscard]] auto from_wire(llvm::Value *value, type_id type,
                                cinder::intrinsic_wire_kind wire,
-                               const source_span &span) -> checked<llvm::Value *> {
+                               const source_span &span)
+      -> checked<llvm::Value *> {
     using wire_kind = cinder::intrinsic_wire_kind;
     if (wire == wire_kind::ptr || wire == wire_kind::f32 ||
         wire == wire_kind::f64) {
@@ -1901,12 +1934,14 @@ private:
       return std::unexpected(kind.error());
     }
     if (*kind == numeric_kind::boolean) {
-      return builder_.CreateICmpNE(value, llvm::ConstantInt::get(value->getType(), 0));
+      return builder_.CreateICmpNE(value,
+                                   llvm::ConstantInt::get(value->getType(), 0));
     }
     const auto is_signed = bytecode::is_signed_integer(*kind);
-    const auto source = wire == wire_kind::i32
-                            ? (is_signed ? numeric_kind::i32 : numeric_kind::u32)
-                            : (is_signed ? numeric_kind::i64 : numeric_kind::u64);
+    const auto source =
+        wire == wire_kind::i32
+            ? (is_signed ? numeric_kind::i32 : numeric_kind::u32)
+            : (is_signed ? numeric_kind::i64 : numeric_kind::u64);
     return scalars_.cast(source, *kind, value);
   }
 
@@ -2086,8 +2121,8 @@ private:
   builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", thunk));
   auto *args = thunk->getArg(0);
   auto *result = thunk->getArg(1);
-  const auto span = function.slots.empty() ? source_span{}
-                                           : function.slots.front().span;
+  const auto span =
+      function.slots.empty() ? source_span{} : function.slots.front().span;
 
   auto call_args = std::vector<llvm::Value *>{};
   if (function.signature.returns_through_address()) {
@@ -2104,8 +2139,8 @@ private:
     ++slot_index;
     if (hir::is_indirect(param.cls) || param.cls == pass_class::address ||
         param.cls == pass_class::handle) {
-      call_args.push_back(builder.CreateAlignedLoad(ptr_ty, slot_address,
-                                                    llvm::Align(8)));
+      call_args.push_back(
+          builder.CreateAlignedLoad(ptr_ty, slot_address, llvm::Align(8)));
       continue;
     }
     const auto stored = memory_type(mc, param.type, span);
@@ -2123,8 +2158,9 @@ private:
     call_args.push_back(loaded);
   }
   auto *call = call_function(builder, target, call_args);
-  const auto direct_result = !function.signature.returns_through_address() &&
-                             function.signature.result.cls != pass_class::zero_sized;
+  const auto direct_result =
+      !function.signature.returns_through_address() &&
+      function.signature.result.cls != pass_class::zero_sized;
   if (direct_result) {
     llvm::Value *value = call;
     if (value->getType()->isIntegerTy(1)) {
@@ -2139,8 +2175,9 @@ private:
 /// Registers one load-time constructor that runs each module's static init,
 /// in module order, through `llvm.global_ctors`: the C runtime runs it
 /// before `main`, and `jit_module::create` runs it in the JIT.
-[[nodiscard]] auto emit_static_ctor(
-    module_context &mc, std::span<const hir::storage_module *const> modules)
+[[nodiscard]] auto
+emit_static_ctor(module_context &mc,
+                 std::span<const hir::storage_module *const> modules)
     -> checked<void> {
   auto inits = std::vector<llvm::Function *>{};
   for (const auto *module : modules) {
@@ -2165,7 +2202,8 @@ private:
       llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), /*isVarArg=*/false),
       llvm::Function::InternalLinkage, "__cinder_storage_static_init",
       mc.module);
-  auto builder = llvm::IRBuilder<>(llvm::BasicBlock::Create(ctx, "entry", ctor));
+  auto builder =
+      llvm::IRBuilder<>(llvm::BasicBlock::Create(ctx, "entry", ctor));
   for (auto *init : inits) {
     builder.CreateCall(init, {});
   }
@@ -2174,8 +2212,8 @@ private:
   // `{ i32 priority, ptr fn, ptr data }`; the lowest priority, since nothing
   // else depends on running first.
   auto *ptr_ty = llvm::PointerType::get(ctx, 0);
-  auto *entry_ty = llvm::StructType::get(
-      ctx, {llvm::Type::getInt32Ty(ctx), ptr_ty, ptr_ty});
+  auto *entry_ty =
+      llvm::StructType::get(ctx, {llvm::Type::getInt32Ty(ctx), ptr_ty, ptr_ty});
   auto *array_ty = llvm::ArrayType::get(entry_ty, 1);
   auto *entry = llvm::ConstantStruct::get(
       entry_ty, {llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx), 65535),
@@ -2237,7 +2275,8 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
       auto *bytes = new llvm::GlobalVariable(
           llvm_module, bytes_type, /*isConstant=*/false,
           llvm::GlobalValue::InternalLinkage,
-          llvm::ConstantAggregateZero::get(bytes_type), "static." + global.name);
+          llvm::ConstantAggregateZero::get(bytes_type),
+          "static." + global.name);
       bytes->setAlignment(llvm::Align(align));
       mc.statics.emplace(global.name, module_context::static_storage{
                                           .bytes = bytes, .align = align});
@@ -2249,8 +2288,8 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
   // another module.
   for (const auto *module : modules) {
     for (const auto &function : module->functions) {
-      const auto span = function.slots.empty() ? source_span{}
-                                               : function.slots.front().span;
+      const auto span =
+          function.slots.empty() ? source_span{} : function.slots.front().span;
       const auto type = function_type_for(mc, function.signature, span);
       if (!type.has_value()) {
         return std::unexpected(type.error());
@@ -2287,7 +2326,8 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
           continue; // reached only through a `fn` value
         }
         const auto name = name_of(*module, function);
-        if (auto ok = emit_entry_thunk(mc, function, name, mc.functions.at(name));
+        if (auto ok =
+                emit_entry_thunk(mc, function, name, mc.functions.at(name));
             !ok.has_value()) {
           return std::unexpected(ok.error());
         }
@@ -2321,7 +2361,8 @@ auto compile_storage_module(const hir::storage_module &module,
     -> std::expected<compiled_module, codegen_error> {
   const auto *module_ptr = &module;
   return compile_storage_module(
-      std::span<const hir::storage_module *const>(&module_ptr, 1), env, options);
+      std::span<const hir::storage_module *const>(&module_ptr, 1), env,
+      options);
 }
 
 } // namespace cinder::llvm_codegen

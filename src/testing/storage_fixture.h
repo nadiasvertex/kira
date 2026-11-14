@@ -108,10 +108,9 @@ inline auto companion_names(std::string_view text) -> std::vector<std::string> {
 
 /// Lowers one checked module to HIR and then to storage form, refusing
 /// nothing.
-inline auto lower_storage_module(storage_program &program,
-                                 const ast::file &ast_file,
-                                 const std::string &module_name,
-                                 uint64_t max_frame_bytes)
+inline auto
+lower_storage_module(storage_program &program, const ast::file &ast_file,
+                     const std::string &module_name, uint64_t max_frame_bytes)
     -> std::pair<hir::ptr<hir::hir_module>, hir::storage_lowering> {
   auto lowered = hir::lower_module(ast_file, module_name, program.checked);
   if (!lowered.has_value()) {
@@ -158,9 +157,9 @@ inline auto verify_storage_program(const storage_program &program) -> void {
 /// module is named by its `module` declaration, or `sample` without one.
 /// `max_frame_bytes` is the lowering's frame limit; a test that wants to reach
 /// a backend's own limit raises it.
-inline auto build_storage_program(
-    const std::vector<fixture_source> &sources,
-    uint64_t max_frame_bytes = hir::k_max_frame_stack_bytes)
+inline auto
+build_storage_program(const std::vector<fixture_source> &sources,
+                      uint64_t max_frame_bytes = hir::k_max_frame_stack_bytes)
     -> std::unique_ptr<storage_program> {
   expect(!sources.empty(), "expected an entry module");
   auto out = std::make_unique<storage_program>();
@@ -177,7 +176,8 @@ inline auto build_storage_program(
     auto parser = cinder::parser(std::move(tokens), file->id(), out->diag);
     asts.push_back(parser.parse_file());
     if (out->diag.error_count() != 0) {
-      std::cerr << diagnostic_renderer(out->sources, false).render_all(out->diag);
+      std::cerr
+          << diagnostic_renderer(out->sources, false).render_all(out->diag);
       fail("expected fixture to parse cleanly");
     }
     parsed_modules.push_back(semantic::parsed_module{
@@ -210,8 +210,8 @@ inline auto build_storage_program(
   for (size_t i = 1; i < asts.size(); ++i) {
     out->companion_asts.push_back(std::move(asts[i]));
     const auto &ast_file = *out->companion_asts.back();
-    auto [module, lowering] =
-        lower_storage_module(*out, ast_file, name_of(ast_file), max_frame_bytes);
+    auto [module, lowering] = lower_storage_module(
+        *out, ast_file, name_of(ast_file), max_frame_bytes);
     out->companion_modules.push_back(std::move(module));
     out->companion_lowerings.push_back(std::move(lowering));
   }
@@ -235,7 +235,8 @@ inline auto build_storage_program(
     out->companion_modules[i] = std::move(all[i + 1]);
   }
   for (size_t i = 0; i < out->stdlib_modules.size(); ++i) {
-    out->stdlib_modules[i] = std::move(all[i + 1 + out->companion_modules.size()]);
+    out->stdlib_modules[i] =
+        std::move(all[i + 1 + out->companion_modules.size()]);
   }
   for (const auto &module : out->stdlib_modules) {
     if (std::ranges::find(reached, module->module_name) == reached.end()) {
@@ -258,9 +259,9 @@ inline auto build_storage_program(
 }
 
 /// Builds a program from one source, the usual fixture.
-inline auto build_storage_program(
-    const std::string &text,
-    uint64_t max_frame_bytes = hir::k_max_frame_stack_bytes)
+inline auto
+build_storage_program(const std::string &text,
+                      uint64_t max_frame_bytes = hir::k_max_frame_stack_bytes)
     -> std::unique_ptr<storage_program> {
   return build_storage_program(
       std::vector<fixture_source>{{.path = "sample.cn", .text = text}},
@@ -269,9 +270,9 @@ inline auto build_storage_program(
 
 /// Builds the fixture file `name` under `src/testdata/<dir>/` together with
 /// the companions it names.
-inline auto open_storage_program(
-    std::string_view dir, std::string_view name,
-    uint64_t max_frame_bytes = hir::k_max_frame_stack_bytes)
+inline auto
+open_storage_program(std::string_view dir, std::string_view name,
+                     uint64_t max_frame_bytes = hir::k_max_frame_stack_bytes)
     -> std::unique_ptr<storage_program> {
   auto sources = std::vector<fixture_source>{
       {.path = std::string(name), .text = read_program(dir, name)}};

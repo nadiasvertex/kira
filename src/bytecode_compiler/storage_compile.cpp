@@ -41,8 +41,8 @@ template <typename T> using checked = std::expected<T, compile_error>;
 
 [[nodiscard]] auto fail(compile_error_kind kind, const source_span &span,
                         std::string message) -> std::unexpected<compile_error> {
-  return std::unexpected(compile_error{
-      .kind = kind, .span = span, .message = std::move(message)});
+  return std::unexpected(
+      compile_error{.kind = kind, .span = span, .message = std::move(message)});
 }
 
 [[nodiscard]] auto align_up(size_t value, size_t align) -> size_t {
@@ -52,10 +52,10 @@ template <typename T> using checked = std::expected<T, compile_error>;
 /// Where a slot's bytes are while the function runs.
 struct home {
   enum class kind : uint8_t {
-    none,     ///< Zero-sized: no bytes.
-    reg,      ///< The value is in `reg`.
-    frame,    ///< Bytes in this frame; `reg` holds their address.
-    indirect, ///< Bytes in the caller's storage; `reg` holds their address.
+    none,      ///< Zero-sized: no bytes.
+    reg,       ///< The value is in `reg`.
+    frame,     ///< Bytes in this frame; `reg` holds their address.
+    indirect,  ///< Bytes in the caller's storage; `reg` holds their address.
     env_block, ///< Bytes in the closure's environment: `reg` holds the block's
                ///< address and `frame_offset` the distance into it.
   };
@@ -94,12 +94,11 @@ struct open_region {
 class function_emitter {
 public:
   function_emitter(std::string_view entry, const hir::storage_module &module,
-                   const hir::storage_function &function,
-                   hir::storage_env &env,
+                   const hir::storage_function &function, hir::storage_env &env,
                    const std::unordered_map<std::string, uint16_t> &index,
                    const std::unordered_map<std::string, uint32_t> &statics)
-      : entry_(entry), module_(module), fn_(function), env_(env),
-        index_(index), statics_(statics) {}
+      : entry_(entry), module_(module), fn_(function), env_(env), index_(index),
+        statics_(statics) {}
 
   /// The function-table key of a function of this module.
   [[nodiscard]] auto key(std::string_view name) const -> std::string {
@@ -144,7 +143,8 @@ private:
     return first;
   }
 
-  [[nodiscard]] static auto nth(virtual_reg first, size_t index) -> virtual_reg {
+  [[nodiscard]] static auto nth(virtual_reg first, size_t index)
+      -> virtual_reg {
     return virtual_reg{first.id + static_cast<uint32_t>(index)};
   }
 
@@ -193,8 +193,8 @@ private:
     return {};
   }
 
-  [[nodiscard]] auto emit_store(virtual_reg base, size_t offset, virtual_reg src,
-                                size_t size) -> checked<void> {
+  [[nodiscard]] auto emit_store(virtual_reg base, size_t offset,
+                                virtual_reg src, size_t size) -> checked<void> {
     const auto [near, low] = near_base(base, offset);
     emit_op(opcode::op_store_slot);
     emit_register(near);
@@ -226,7 +226,8 @@ private:
   }
 
   /// A register holding `base + offset`.
-  [[nodiscard]] auto offset_address(virtual_reg base, size_t offset) -> virtual_reg {
+  [[nodiscard]] auto offset_address(virtual_reg base, size_t offset)
+      -> virtual_reg {
     const auto [near, low] = near_base(base, offset);
     if (low == 0) {
       return near;
@@ -241,7 +242,8 @@ private:
 
   auto emit_jump_back_to(size_t target) -> void {
     emit_op(opcode::op_jump);
-    const auto after_operand = static_cast<int64_t>(writer_.current_offset()) + 4;
+    const auto after_operand =
+        static_cast<int64_t>(writer_.current_offset()) + 4;
     writer_.emit_i32(
         static_cast<int32_t>(static_cast<int64_t>(target) - after_operand));
   }
@@ -276,7 +278,8 @@ private:
 
   [[nodiscard]] auto kind_of(type_id type, const source_span &span)
       -> checked<numeric_kind> {
-    const auto kind = bytecode::numeric_kind_of(types(), types().strip_refinement(type));
+    const auto kind =
+        bytecode::numeric_kind_of(types(), types().strip_refinement(type));
     if (!kind.has_value()) {
       return fail(compile_error_kind::unsupported_type, span,
                   std::format("type `{}` has no numeric bytecode "
@@ -300,14 +303,14 @@ private:
     }
   }
 
-  [[nodiscard]] auto alloc_frame(size_t size, size_t align) -> checked<uint32_t> {
+  [[nodiscard]] auto alloc_frame(size_t size, size_t align)
+      -> checked<uint32_t> {
     frame_bytes_ = align_up(frame_bytes_, std::max<size_t>(align, 1));
     const auto offset = frame_bytes_;
     frame_bytes_ += size;
     if (frame_bytes_ > UINT32_MAX) {
-      return fail(compile_error_kind::encoding_limit_exceeded, fn_.slots.empty()
-                      ? source_span{}
-                      : fn_.slots.front().span,
+      return fail(compile_error_kind::encoding_limit_exceeded,
+                  fn_.slots.empty() ? source_span{} : fn_.slots.front().span,
                   std::format("`{}` needs more than {} bytes of frame storage",
                               fn_.name, UINT32_MAX));
     }
@@ -317,11 +320,10 @@ private:
   [[nodiscard]] auto prepare() -> checked<void> {
     const auto operands = fn_.signature.operands();
     if (operands.size() > UINT8_MAX) {
-      return fail(compile_error_kind::encoding_limit_exceeded, fn_.slots.empty()
-                      ? source_span{}
-                      : fn_.slots.front().span,
-                  std::format("`{}` takes more than {} operands", fn_.name,
-                              UINT8_MAX));
+      return fail(
+          compile_error_kind::encoding_limit_exceeded,
+          fn_.slots.empty() ? source_span{} : fn_.slots.front().span,
+          std::format("`{}` takes more than {} operands", fn_.name, UINT8_MAX));
     }
     param_count_ = static_cast<uint16_t>(operands.size());
     next_register_ = operands.size();
@@ -377,7 +379,8 @@ private:
                       "the result slot has no hidden result operand");
         }
         here = home{.where = home::kind::indirect,
-                    .reg = virtual_reg{static_cast<uint32_t>(*operand_of_slot[slot.id])}};
+                    .reg = virtual_reg{
+                        static_cast<uint32_t>(*operand_of_slot[slot.id])}};
         break;
       case hir::storage_class::parameter:
         if (zero && !taken) {
@@ -396,7 +399,8 @@ private:
         }
         if (!direct) {
           here = home{.where = home::kind::indirect,
-                      .reg = virtual_reg{static_cast<uint32_t>(*operand_of_slot[slot.id])}};
+                      .reg = virtual_reg{
+                          static_cast<uint32_t>(*operand_of_slot[slot.id])}};
         } else if (taken) {
           const auto offset = alloc_frame(value->size, value->align);
           if (!offset.has_value()) {
@@ -406,7 +410,8 @@ private:
           entry_stores.push_back(slot.id);
         } else {
           here = home{.where = home::kind::reg,
-                      .reg = virtual_reg{static_cast<uint32_t>(*operand_of_slot[slot.id])}};
+                      .reg = virtual_reg{
+                          static_cast<uint32_t>(*operand_of_slot[slot.id])}};
         }
         break;
       case hir::storage_class::frame_local:
@@ -457,9 +462,9 @@ private:
         // A static lives in the program's static storage, reached through a
         // register set once at entry.
         if (!statics_.contains(slot.name)) {
-          return fail(compile_error_kind::internal_error, slot.span,
-                      std::format("no module declares the static `{}`",
-                                  slot.name));
+          return fail(
+              compile_error_kind::internal_error, slot.span,
+              std::format("no module declares the static `{}`", slot.name));
         }
         here = home{.where = home::kind::indirect, .reg = alloc_register()};
         statics.push_back(slot.id);
@@ -507,7 +512,8 @@ private:
       }
       // The incoming register is the parameter's operand register.
       const auto incoming = std::ranges::find(fn_.param_slots, id);
-      const auto source_index = static_cast<size_t>(incoming - fn_.param_slots.begin());
+      const auto source_index =
+          static_cast<size_t>(incoming - fn_.param_slots.begin());
       auto position = size_t{0};
       for (const auto &operand : operands) {
         if (operand.role == hir::abi_operand_role::argument &&
@@ -517,8 +523,9 @@ private:
         ++position;
       }
       current_span_ = slot.span;
-      if (auto ok = emit_store(homes_[id].reg, 0,
-                               virtual_reg{static_cast<uint32_t>(position)}, *size);
+      if (auto ok =
+              emit_store(homes_[id].reg, 0,
+                         virtual_reg{static_cast<uint32_t>(position)}, *size);
           !ok.has_value()) {
         return ok;
       }
@@ -580,7 +587,8 @@ private:
       const auto &projection = where.steps[step];
       if (projection.kind == projection_kind::deref) {
         const auto pointer = alloc_register();
-        if (auto ok = emit_load(pointer, loc.reg, loc.offset, 8); !ok.has_value()) {
+        if (auto ok = emit_load(pointer, loc.reg, loc.offset, 8);
+            !ok.has_value()) {
           return std::unexpected(ok.error());
         }
         loc = location{.where = location::kind::memory, .reg = pointer};
@@ -663,7 +671,8 @@ private:
     }
     // A load zero-extends; a signed integer is held sign-extended in its
     // register, so restore that for the instructions that read it whole.
-    const auto kind = bytecode::numeric_kind_of(types(), types().strip_refinement(type));
+    const auto kind =
+        bytecode::numeric_kind_of(types(), types().strip_refinement(type));
     if (kind.has_value() && bytecode::is_signed_integer(*kind) &&
         bytecode::bit_width(*kind) < 64) {
       emit_op(opcode::op_cast);
@@ -697,8 +706,9 @@ private:
 
   /// The register holding a scalar operand's value, built in `into` when it
   /// needs a register of its own.
-  [[nodiscard]] auto operand_value(const hir::operand &value,
-                                   std::optional<virtual_reg> into = std::nullopt)
+  [[nodiscard]] auto
+  operand_value(const hir::operand &value,
+                std::optional<virtual_reg> into = std::nullopt)
       -> checked<virtual_reg> {
     switch (value.kind) {
     case operand_kind::constant: {
@@ -837,8 +847,8 @@ private:
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
     }
-    const auto target = dest->where == location::kind::reg ? dest->reg
-                                                          : alloc_register();
+    const auto target =
+        dest->where == location::kind::reg ? dest->reg : alloc_register();
     switch (op.computation) {
     case hir::compute_kind::constant: {
       hir::operand literal{.kind = operand_kind::constant,
@@ -1054,11 +1064,13 @@ private:
     if (!kind.has_value()) {
       return std::unexpected(kind.error());
     }
-    if (op.unary == ast::unary_op::neg && value.kind == operand_kind::constant &&
+    if (op.unary == ast::unary_op::neg &&
+        value.kind == operand_kind::constant &&
         value.literal == token_kind::int_lit) {
       // `-128` as `int8`: negate the literal's magnitude here, since the
       // magnitude alone does not fit and would trip the run-time guard.
-      const auto magnitude = encode_literal(value.literal, value.text, op.span, *kind);
+      const auto magnitude =
+          encode_literal(value.literal, value.text, op.span, *kind);
       if (!magnitude.has_value()) {
         return std::unexpected(magnitude.error());
       }
@@ -1069,14 +1081,16 @@ private:
     if (!src.has_value()) {
       return std::unexpected(src.error());
     }
-    emit_op(op.unary == ast::unary_op::neg ? opcode::op_neg : opcode::op_bitnot);
+    emit_op(op.unary == ast::unary_op::neg ? opcode::op_neg
+                                           : opcode::op_bitnot);
     emit_register(target);
     emit_register(*src);
     writer_.emit_numeric_kind(*kind);
     return {};
   }
 
-  [[nodiscard]] auto emit_zero_fill(const hir::storage_op &op) -> checked<void> {
+  [[nodiscard]] auto emit_zero_fill(const hir::storage_op &op)
+      -> checked<void> {
     const auto value = class_of(op.dest.type, op.span);
     if (!value.has_value()) {
       return std::unexpected(value.error());
@@ -1138,7 +1152,8 @@ private:
 
   /// Copies element 0 over the rest of the array by doubling the written
   /// prefix: about log2(count) copies, each of a constant size and offset.
-  [[nodiscard]] auto emit_replicate(const hir::storage_op &op) -> checked<void> {
+  [[nodiscard]] auto emit_replicate(const hir::storage_op &op)
+      -> checked<void> {
     const auto layout = layout_of(op.dest.type, op.span);
     if (!layout.has_value()) {
       return std::unexpected(layout.error());
@@ -1224,16 +1239,16 @@ private:
                   "a sum was not in addressable storage");
     }
     const auto tag = alloc_register();
-    if (auto ok = emit_load(tag, source->reg,
-                            source->offset + (*layout)->tag_offset,
-                            runtime::k_sum_tag_size);
+    if (auto ok =
+            emit_load(tag, source->reg, source->offset + (*layout)->tag_offset,
+                      runtime::k_sum_tag_size);
         !ok.has_value()) {
       return ok;
     }
     const auto expected = alloc_register();
     emit_const(expected, slot_value{static_cast<uint64_t>(variant->tag)});
-    const auto target = dest->where == location::kind::reg ? dest->reg
-                                                          : alloc_register();
+    const auto target =
+        dest->where == location::kind::reg ? dest->reg : alloc_register();
     emit_op(opcode::op_eq);
     emit_register(target);
     emit_register(tag);
@@ -1265,8 +1280,9 @@ private:
     }
     const auto found = index_.find(target);
     if (found == index_.end()) {
-      return fail(compile_error_kind::unknown_callee, op.span,
-                  std::format("`{}` is not a function of this program", target));
+      return fail(
+          compile_error_kind::unknown_callee, op.span,
+          std::format("`{}` is not a function of this program", target));
     }
     const auto operands = op.signature.operands();
     const auto block = fill_call_block(op, operands.size());
@@ -1291,9 +1307,9 @@ private:
     const auto direct_result =
         !op.signature.returns_through_address() &&
         op.signature.result.cls != pass_class::zero_sized;
-    const auto result =
-        direct_result && dest->where == location::kind::reg ? dest->reg
-                                                            : alloc_register();
+    const auto result = direct_result && dest->where == location::kind::reg
+                            ? dest->reg
+                            : alloc_register();
     emit_op(opcode::op_call);
     emit_register(result);
     writer_.emit_u16(found->second);
@@ -1339,9 +1355,9 @@ private:
     const auto direct_result =
         !op.signature.returns_through_address() &&
         op.signature.result.cls != pass_class::zero_sized;
-    const auto result =
-        direct_result && dest->where == location::kind::reg ? dest->reg
-                                                            : alloc_register();
+    const auto result = direct_result && dest->where == location::kind::reg
+                            ? dest->reg
+                            : alloc_register();
     emit_op(opcode::op_call_function);
     emit_register(result);
     emit_register(entry);
@@ -1359,15 +1375,17 @@ private:
       -> checked<void> {
     const auto entry = index_.find(key(op.entry));
     if (entry == index_.end()) {
-      return fail(compile_error_kind::unknown_callee, op.span,
-                  std::format("`{}` is not a function of this module", op.entry));
+      return fail(
+          compile_error_kind::unknown_callee, op.span,
+          std::format("`{}` is not a function of this module", op.entry));
     }
     auto glue_word = uint64_t{0};
     if (!op.glue.empty()) {
       const auto glue = index_.find(key(op.glue));
       if (glue == index_.end()) {
-        return fail(compile_error_kind::unknown_callee, op.span,
-                    std::format("`{}` is not a function of this module", op.glue));
+        return fail(
+            compile_error_kind::unknown_callee, op.span,
+            std::format("`{}` is not a function of this module", op.glue));
       }
       glue_word = uint64_t{glue->second} + 1;
     }
@@ -1394,7 +1412,8 @@ private:
     }
     const auto word = alloc_register();
     emit_const(word, slot_value{static_cast<uint64_t>(entry->second)});
-    if (auto ok = emit_store(dest->reg, dest->offset, word, 8); !ok.has_value()) {
+    if (auto ok = emit_store(dest->reg, dest->offset, word, 8);
+        !ok.has_value()) {
       return ok;
     }
     if (auto ok = emit_store(dest->reg, dest->offset + 8, environment, 8);
@@ -1425,7 +1444,8 @@ private:
       return std::unexpected(value.error());
     }
     if (!hir::is_indirect(value->cls)) {
-      const auto held = read_location(*source, capture.source.type, std::nullopt);
+      const auto held =
+          read_location(*source, capture.source.type, std::nullopt);
       if (!held.has_value()) {
         return std::unexpected(held.error());
       }
@@ -1451,9 +1471,10 @@ private:
     }
     if (types().entry(types().strip_refinement(op.dest.type)).kind !=
         semantic::type_kind::fn_kind) {
-      return fail(compile_error_kind::unsupported_construct, op.span,
-                  std::format("`drop_in_place` of `{}` has no bytecode form yet",
-                              types().display(op.dest.type)));
+      return fail(
+          compile_error_kind::unsupported_construct, op.span,
+          std::format("`drop_in_place` of `{}` has no bytecode form yet",
+                      types().display(op.dest.type)));
     }
     const auto where = locate(op.dest);
     if (!where.has_value()) {
@@ -1487,7 +1508,8 @@ private:
 
   /// The register holding the pointer of the coroutine (or the scalar) at
   /// `where`.
-  [[nodiscard]] auto read_place(const hir::place &where) -> checked<virtual_reg> {
+  [[nodiscard]] auto read_place(const hir::place &where)
+      -> checked<virtual_reg> {
     return operand_value(hir::operand{
         .kind = operand_kind::read, .where = where, .type = where.type});
   }
@@ -1509,8 +1531,9 @@ private:
     namespace co = runtime::coroutine;
     const auto entry = index_.find(key(op.entry));
     if (entry == index_.end()) {
-      return fail(compile_error_kind::unknown_callee, op.span,
-                  std::format("`{}` is not a function of this module", op.entry));
+      return fail(
+          compile_error_kind::unknown_callee, op.span,
+          std::format("`{}` is not a function of this module", op.entry));
     }
     const auto state = alloc_register();
     if (op.env_size != 0) {
@@ -1564,8 +1587,8 @@ private:
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
     }
-    const auto target = dest->where == location::kind::reg ? dest->reg
-                                                          : alloc_register();
+    const auto target =
+        dest->where == location::kind::reg ? dest->reg : alloc_register();
     emit_op(opcode::op_coroutine_resume);
     emit_register(target);
     emit_register(*object);
@@ -1612,9 +1635,9 @@ private:
       return std::unexpected(dest.error());
     }
     if (!hir::is_indirect(value->cls)) {
-      const auto held = read_location(
-          location{.where = location::kind::memory, .reg = item},
-          op.dest.type, std::nullopt);
+      const auto held =
+          read_location(location{.where = location::kind::memory, .reg = item},
+                        op.dest.type, std::nullopt);
       if (!held.has_value()) {
         return std::unexpected(held.error());
       }
@@ -1722,13 +1745,11 @@ private:
     // One task is polled by its handle. A group is a tuple of handles that
     // the runtime reads in place, so it gets the tuple's address and the
     // number of members.
-    const auto name = op.waits == hir::wait_mode::one
-                          ? "rt_task_await_poll"
-                          : op.waits == hir::wait_mode::crew
-                                ? "rt_crew_join_poll"
-                          : op.waits == hir::wait_mode::all
-                                ? "rt_task_await_all_poll"
-                                : "rt_task_await_any_poll";
+    const auto name = op.waits == hir::wait_mode::one    ? "rt_task_await_poll"
+                      : op.waits == hir::wait_mode::crew ? "rt_crew_join_poll"
+                      : op.waits == hir::wait_mode::all
+                          ? "rt_task_await_all_poll"
+                          : "rt_task_await_any_poll";
     const auto id = hir::runtime_intrinsic_id(name);
     if (!id.has_value()) {
       return fail(compile_error_kind::internal_error, op.span,
@@ -1833,8 +1854,8 @@ private:
     }
     const auto none = alloc_register();
     emit_const(none, slot_value{uint64_t{0}});
-    const auto target = dest->where == location::kind::reg ? dest->reg
-                                                          : alloc_register();
+    const auto target =
+        dest->where == location::kind::reg ? dest->reg : alloc_register();
     emit_op(opcode::op_ne);
     emit_register(target);
     emit_register(item);
@@ -1857,8 +1878,8 @@ private:
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
     }
-    const auto target = dest->where == location::kind::reg ? dest->reg
-                                                          : alloc_register();
+    const auto target =
+        dest->where == location::kind::reg ? dest->reg : alloc_register();
     // An atomic read: the scheduler may write the status on another thread.
     emit_op(opcode::op_coroutine_cancelled);
     emit_register(target);
@@ -1992,9 +2013,9 @@ private:
     }
     const auto direct_result =
         op.signature.result.cls != pass_class::zero_sized;
-    const auto result =
-        direct_result && dest->where == location::kind::reg ? dest->reg
-                                                            : alloc_register();
+    const auto result = direct_result && dest->where == location::kind::reg
+                            ? dest->reg
+                            : alloc_register();
     emit_op(opcode::op_call_intrinsic);
     emit_register(result);
     writer_.emit_u8(static_cast<uint8_t>(id));
@@ -2035,11 +2056,12 @@ private:
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
     }
-    const auto direct_result = !site.result_by_address &&
-                               op.signature.result.cls != pass_class::zero_sized;
-    const auto result =
-        direct_result && dest->where == location::kind::reg ? dest->reg
-                                                            : alloc_register();
+    const auto direct_result =
+        !site.result_by_address &&
+        op.signature.result.cls != pass_class::zero_sized;
+    const auto result = direct_result && dest->where == location::kind::reg
+                            ? dest->reg
+                            : alloc_register();
     const auto index = writer_.add_host_site(std::move(site));
     emit_op(opcode::op_host_call);
     emit_register(result);
@@ -2057,17 +2079,17 @@ private:
   /// built in caller storage, then each argument (a scalar or address in its
   /// register, a descriptor or aggregate as the address of the slot holding
   /// it).
-  [[nodiscard]] auto fill_call_block(
-      const hir::storage_op &op, size_t count,
-      std::optional<virtual_reg> environment = std::nullopt)
+  [[nodiscard]] auto
+  fill_call_block(const hir::storage_op &op, size_t count,
+                  std::optional<virtual_reg> environment = std::nullopt)
       -> checked<virtual_reg> {
     if (count > UINT8_MAX) {
-      return fail(compile_error_kind::encoding_limit_exceeded, op.span,
-                  std::format("a call passes more than {} operands", UINT8_MAX));
+      return fail(
+          compile_error_kind::encoding_limit_exceeded, op.span,
+          std::format("a call passes more than {} operands", UINT8_MAX));
     }
-    const auto block = count == 0
-                           ? alloc_register()
-                           : alloc_group(static_cast<uint32_t>(count));
+    const auto block = count == 0 ? alloc_register()
+                                  : alloc_group(static_cast<uint32_t>(count));
     auto position = size_t{0};
     if (environment.has_value()) {
       emit_move(nth(block, position++), *environment);
@@ -2123,7 +2145,8 @@ private:
     }
     const auto len = alloc_register();
     emit_const(len, slot_value{static_cast<uint64_t>(op.text.size())});
-    if (auto ok = emit_store(dest->reg, dest->offset, len, 8); !ok.has_value()) {
+    if (auto ok = emit_store(dest->reg, dest->offset, len, 8);
+        !ok.has_value()) {
       return ok;
     }
     const auto data = alloc_register();
@@ -2223,7 +2246,8 @@ private:
   // ------------------------------------------------------------------
 
   [[nodiscard]] auto finish() -> checked<bytecode::bytecode_function> {
-    const auto span = fn_.slots.empty() ? source_span{} : fn_.slots.front().span;
+    const auto span =
+        fn_.slots.empty() ? source_span{} : fn_.slots.front().span;
     const auto input = allocation_input{
         .virtual_count = static_cast<uint32_t>(next_register_),
         .pinned_prefix = param_count_,
@@ -2268,7 +2292,8 @@ private:
     }
     function.abi = std::move(abi);
 
-    if (auto layout = check_operand_layout(function, input.instruction_offsets, span);
+    if (auto layout =
+            check_operand_layout(function, input.instruction_offsets, span);
         !layout.has_value()) {
       return std::unexpected(layout.error());
     }
@@ -2337,10 +2362,10 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
                             hir::storage_env &env)
     -> std::expected<bytecode::bytecode_module, compile_error> {
   if (modules.empty()) {
-    return std::unexpected(compile_error{
-        .kind = compile_error_kind::internal_error,
-        .span = {},
-        .message = "a program needs an entry module"});
+    return std::unexpected(
+        compile_error{.kind = compile_error_kind::internal_error,
+                      .span = {},
+                      .message = "a program needs an entry module"});
   }
   const auto &entry = modules.front()->name;
   auto total = size_t{0};
@@ -2359,8 +2384,9 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
   auto next = uint16_t{0};
   for (const auto *module : modules) {
     for (const auto &function : module->functions) {
-      index.emplace(hir::program_function_name(entry, module->name, function.name),
-                    next++);
+      index.emplace(
+          hir::program_function_name(entry, module->name, function.name),
+          next++);
     }
   }
   auto out = bytecode::bytecode_module{.module_name = entry};
@@ -2371,10 +2397,10 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
     for (const auto &global : module->globals) {
       const auto layout = env.layouts.layout(global.type);
       if (!layout.has_value()) {
-        return std::unexpected(compile_error{
-            .kind = compile_error_kind::unsupported_type,
-            .span = global.span,
-            .message = layout.error().message});
+        return std::unexpected(
+            compile_error{.kind = compile_error_kind::unsupported_type,
+                          .span = global.span,
+                          .message = layout.error().message});
       }
       const auto align = std::max<size_t>((*layout)->align, 1);
       static_bytes = (static_bytes + align - 1) / align * align;
@@ -2402,8 +2428,8 @@ auto compile_storage_module(std::span<const hir::storage_module *const> modules,
               .compile();
       if (!compiled.has_value()) {
         auto error = compiled.error();
-        error.message = std::format("in `{}.{}`: {}", module->name, function.name,
-                                    error.message);
+        error.message = std::format("in `{}.{}`: {}", module->name,
+                                    function.name, error.message);
         return std::unexpected(std::move(error));
       }
       out.functions.push_back(std::move(*compiled));

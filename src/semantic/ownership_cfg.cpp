@@ -167,8 +167,8 @@ struct root_name {
 /// (`checked_types::generic_lambda_instances`). Each copy is a closure of
 /// its own, moved and dropped on its own, so each is a local of its own
 /// under this key. The `$` keeps it apart from every name a program spells.
-[[nodiscard]] auto copy_key(std::string_view name,
-                            const ast::lambda_expr *copy) -> std::string {
+[[nodiscard]] auto copy_key(std::string_view name, const ast::lambda_expr *copy)
+    -> std::string {
   return std::format("{}${}", name, static_cast<const void *>(copy));
 }
 
@@ -242,11 +242,11 @@ auto place_root(const ast::expr &expr, bool &projected,
       if (current->has_error) {
         return std::nullopt;
       }
-      return root_name{
-          .name = use_name(ast::cast<ast::ident_expr>(*current).name, current,
-                           checked),
-          .span = current->span,
-          .node = current};
+      return root_name{.name =
+                           use_name(ast::cast<ast::ident_expr>(*current).name,
+                                    current, checked),
+                       .span = current->span,
+                       .node = current};
     case ast::node_kind::module_path_expr: {
       const auto &path = ast::cast<ast::module_path_expr>(*current);
       if (path.segments.empty()) {
@@ -1972,7 +1972,8 @@ private:
       -> use_mode {
     const auto found = checked_.lowering.operator_dispatches.find(&binary);
     if (found == checked_.lowering.operator_dispatches.end() ||
-        found->second.decl == nullptr || found->second.decl->params.size() < 2) {
+        found->second.decl == nullptr ||
+        found->second.decl->params.size() < 2) {
       return use_mode::read;
     }
     const auto type = type_of(found->second.decl->params[1].pattern.get());
@@ -2523,8 +2524,7 @@ private:
       // and this closure borrows it from there. The enclosing capture is
       // what the owner sees, through `note_capture`.
       const auto type = captured_type(capture.name);
-      if (!type.has_value() || !movable(*type) || task_block_ ||
-          task_probe_) {
+      if (!type.has_value() || !movable(*type) || task_block_ || task_probe_) {
         return false;
       }
       if (written) {
@@ -2543,7 +2543,8 @@ private:
           .name = capture.name, .node = capture.node, .is_mut = written});
       return true;
     }
-    access(*local, written ? access_kind::borrow_mut : access_kind::borrow_shared,
+    access(*local,
+           written ? access_kind::borrow_mut : access_kind::borrow_shared,
            capture.span);
     const auto loan =
         new_loan(*local, written, loan_origin::capture, capture.span);

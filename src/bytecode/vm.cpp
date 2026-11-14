@@ -1341,15 +1341,19 @@ auto intrinsic_rt_crew_len(std::span<const slot_value> args) -> slot_value {
       sched::crew_size(reinterpret_cast<sched::crew *>(args[0].u))); // NOLINT
 }
 
-auto intrinsic_rt_str_scalar_at(std::span<const slot_value> args) -> slot_value {
-  return slot_value{static_cast<uint64_t>(cinder::runtime::cinder_rt_str_scalar_at(
-      reinterpret_cast<const char *>(args[0].u), args[1].u, args[2].u))}; // NOLINT
+auto intrinsic_rt_str_scalar_at(std::span<const slot_value> args)
+    -> slot_value {
+  return slot_value{
+      static_cast<uint64_t>(cinder::runtime::cinder_rt_str_scalar_at(
+          reinterpret_cast<const char *>(args[0].u), args[1].u,
+          args[2].u))}; // NOLINT
 }
 
 auto intrinsic_rt_str_scalar_width(std::span<const slot_value> args)
     -> slot_value {
   return slot_value{cinder::runtime::cinder_rt_str_scalar_width(
-      reinterpret_cast<const char *>(args[0].u), args[1].u, args[2].u)}; // NOLINT
+      reinterpret_cast<const char *>(args[0].u), args[1].u,
+      args[2].u)}; // NOLINT
 }
 
 auto intrinsic_rt_crew_task(std::span<const slot_value> args) -> slot_value {
@@ -2142,9 +2146,8 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto offset = ops.imm32();
-        f.registers[dst] =
-            ptr_to_slot(reinterpret_cast<std::byte *>(global_bytes_.data()) +
-                        offset);
+        f.registers[dst] = ptr_to_slot(
+            reinterpret_cast<std::byte *>(global_bytes_.data()) + offset);
         f.pc = ops.pos();
         break;
       }
@@ -2179,9 +2182,9 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto argc = ops.imm8();
         f.pc = ops.pos();
         const auto entry = static_cast<size_t>(f.registers[entry_reg].u);
-        const std::vector<slot_value> call_args(
-            f.registers.begin() + first_arg,
-            f.registers.begin() + first_arg + argc);
+        const std::vector<slot_value> call_args(f.registers.begin() + first_arg,
+                                                f.registers.begin() +
+                                                    first_arg + argc);
         push_frame(frames, module_.functions.at(entry), call_args, true, dst);
         continue; // `f` is invalidated by push_frame's push_back.
       }
@@ -2269,14 +2272,13 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto generator_reg = ops.reg();
         f.pc = ops.pos();
         // Atomic: the scheduler may write the status from another thread.
-        f.registers[dst] = store_bool(
-            std::atomic_ref(
-                slots_of(f.registers[generator_reg])
-                    [runtime::coroutine::k_status_slot]
-                        .u)
-                .load(std::memory_order_acquire) ==
-            runtime::coroutine::raw(
-                runtime::coroutine::status::cancel_requested));
+        f.registers[dst] =
+            store_bool(std::atomic_ref(slots_of(f.registers[generator_reg])
+                                           [runtime::coroutine::k_status_slot]
+                                               .u)
+                           .load(std::memory_order_acquire) ==
+                       runtime::coroutine::raw(
+                           runtime::coroutine::status::cancel_requested));
         break;
       }
       case opcode::op_coroutine_finish: {
@@ -2284,7 +2286,8 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto generator_reg = ops.reg();
         f.pc = ops.pos();
         std::atomic_ref(
-            slots_of(f.registers[generator_reg])[runtime::coroutine::k_status_slot]
+            slots_of(
+                f.registers[generator_reg])[runtime::coroutine::k_status_slot]
                 .u)
             .store(runtime::coroutine::raw(runtime::coroutine::status::done),
                    std::memory_order_release);
