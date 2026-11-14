@@ -1,7 +1,7 @@
 module codegen_stress.field_of_call_and_guard_temporary
 
 # expect: 494
-# storage-max-live-blocks: 0
+# max-live-blocks: 0
 
 # A field moved out of a call's result: the result is a temporary that owns
 # the field, so the move takes it and only the other field drops. A match

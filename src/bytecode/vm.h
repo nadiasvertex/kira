@@ -73,7 +73,7 @@ struct vm_failure {
 class vm {
 public:
   explicit vm(const bytecode_module &module)
-      : module_(module), globals_(module.global_count),
+      : module_(module),
         global_bytes_((module.global_byte_size + sizeof(global_block) - 1) /
                       sizeof(global_block)) {}
 
@@ -84,10 +84,10 @@ public:
   /// a checked-arithmetic violation, divide-by-zero, `op_panic`, or a
   /// call-depth limit violation.
   ///
-  /// `globals_` (below) persists across separate `run` calls on the same
-  /// `vm` instance — the driver relies on this to run `module.
-  /// static_init_function` once, then call the program's real entry point
-  /// with the globals it filled in still populated (see `interpret.cpp`).
+  /// The statics' bytes (`global_bytes_`, below) persist across separate
+  /// `run` calls on the same `vm` instance: a host runs each of
+  /// `module.static_initializers` once, then the program's entry point, which
+  /// reads the statics they built (see `interpret.cpp`).
   [[nodiscard]] auto run(uint16_t function_index,
                          std::span<const slot_value> args) const
       -> std::expected<vm_result, panic_reason>;
@@ -96,7 +96,7 @@ public:
   /// calling thread: the task scheduler's workers call this through the
   /// runner the VM spawns tasks with. Each poll gets its own call frames, so
   /// any number of threads can poll different tasks of one `vm` at once; the
-  /// module is read-only and `globals_` is the only state they share.
+  /// module is read-only and the statics are the only state they share.
   /// Returns the step function's status word (`runtime::coroutine::status`).
   /// A panic in the task is thrown as `panic_error`, for the scheduler to
   /// record as the task's failure.
@@ -145,15 +145,11 @@ private:
       -> std::expected<vm_result, vm_failure>;
 
   const bytecode_module &module_;
-  /// The module-wide global-value table `op_load_global`/`op_store_global`
-  /// index into — see `bytecode_module::global_count`'s doc comment.
-  /// `mutable` because `run` is `const` (mirroring every other call's
-  /// read-only view of `module_`) but a global write is, by construction,
-  /// the one piece of state a `run` call is allowed to mutate for a later
-  /// `run` call to observe.
-  mutable std::vector<slot_value> globals_;
-  /// Storage-form statics (`op_global_addr`). Sized once here and never
+  /// The statics' bytes (`op_global_addr`). Sized once here and never
   /// resized, so an address into it stays valid for the `vm`'s life.
+  /// `mutable` because `run` is `const` (mirroring every other call's
+  /// read-only view of `module_`) but a static's bytes are the one piece of
+  /// state a `run` call may change for a later `run` call to observe.
   struct alignas(16) global_block {
     std::byte bytes[16];
   };

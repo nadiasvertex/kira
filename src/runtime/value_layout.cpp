@@ -5,9 +5,59 @@
 #include <optional>
 #include <utility>
 
-#include "src/runtime/layout.h"
 
 namespace cinder::runtime {
+
+auto builtin_scalar_layout(std::string_view name)
+    -> std::optional<scalar_layout> {
+  if (name == "bool" || name == "int8" || name == "uint8" || name == "byte") {
+    return scalar_layout{.size_bytes = 1, .align_bytes = 1};
+  }
+  if (name == "int16" || name == "uint16") {
+    return scalar_layout{.size_bytes = 2, .align_bytes = 2};
+  }
+  if (name == "int32" || name == "uint32" || name == "char") {
+    return scalar_layout{.size_bytes = 4, .align_bytes = 4};
+  }
+  if (name == "int64" || name == "uint64" || name == "isize" ||
+      name == "usize" || name == "float64") {
+    return scalar_layout{.size_bytes = 8, .align_bytes = 8};
+  }
+  // Quoted syntax: a handle, in compile-time code only.
+  if (name == "expr" || name == "stmt" || name == "def_expr" ||
+      name == "type_expr") {
+    return scalar_layout{.size_bytes = 8, .align_bytes = 8};
+  }
+  if (name == "float32") {
+    return scalar_layout{.size_bytes = 4, .align_bytes = 4};
+  }
+  if (name == "int128" || name == "uint128") {
+    return scalar_layout{.size_bytes = 16, .align_bytes = 16};
+  }
+  if (name == "unit" || name == "never") {
+    // `never` has no values, so no bytes; a call that returns it does not
+    // return, and the storage form marks what follows unreachable.
+    return scalar_layout{.size_bytes = 0, .align_bytes = 1};
+  }
+  // float128 and every non-scalar builtin fall through to `nullopt` — same
+  // float128 gap `numeric_kind_of` documents.
+  return std::nullopt;
+}
+
+auto uninit_slot_count(const semantic::type_table &types,
+                       const semantic::type_entry &entry)
+    -> std::optional<uint64_t> {
+  if (entry.args.size() < 2) {
+    return std::nullopt;
+  }
+  const auto &count = types.entry(entry.args[1]);
+  if (count.kind != semantic::type_kind::const_value_kind || !count.value.is_constant() ||
+      count.value.constant < 0) {
+    return std::nullopt;
+  }
+  return static_cast<uint64_t>(count.value.constant);
+}
+
 
 namespace {
 
@@ -340,12 +390,27 @@ auto value_layouts::compute(type_id id)
       return place_array(entry.args[0], *count);
     }
     if (entry.name == "option" || entry.name == "result") {
-      const auto shape = shapes_.find(id);
-      if (shape == shapes_.end()) {
+      if (const auto shape = shapes_.find(id); shape != shapes_.end()) {
+        return place_sum(shape->second.variants);
+      }
+      // The prelude sums' variants follow from their arguments, so an
+      // instance interned after checking (a `for` loop's `option[T]` from
+      // `next()`) is laid out without a checker record.
+      const auto is_option = entry.name == "option" && entry.args.size() == 1;
+      const auto is_result = entry.name == "result" && entry.args.size() == 2;
+      if (!is_option && !is_result) {
         return std::unexpected(fail(layout_error_kind::unresolved, id,
                                     "the checker recorded no variants for it"));
       }
-      return place_sum(shape->second.variants);
+      auto variants = std::vector<semantic::variant_shape>{};
+      if (is_option) {
+        variants.push_back({.name = "some", .payload = {entry.args[0]}});
+        variants.push_back({.name = "none", .payload = {}});
+      } else {
+        variants.push_back({.name = "ok", .payload = {entry.args[0]}});
+        variants.push_back({.name = "err", .payload = {entry.args[1]}});
+      }
+      return place_sum(variants);
     }
     return std::unexpected(
         fail(layout_error_kind::unsupported, id,

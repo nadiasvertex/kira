@@ -5,3 +5,5 @@ def main() -> float64:
     var as_f32 = x as float32
     var as_f64 = as_f32 as float64
     return as_f64 * 2.0
+
+# expect: 4631107791820423168

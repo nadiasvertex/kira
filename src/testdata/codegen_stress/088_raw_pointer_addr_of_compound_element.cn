@@ -1,8 +1,9 @@
 module codegen_stress.raw_pointer_addr_of_compound_element
 
 # `&mut p[i]`/`&p[i]` on a raw pointer whose element type is *compound*
-# (heap-boxed on both backends: a struct, sum, tuple, array — anything
-# `is_heap_pointer_value` says yes to) — regression for a real bug found
+# (heap-boxed on both backends in the pointer form, removed since: a struct,
+# sum, tuple, array — anything `is_heap_pointer_value` said yes to) —
+# regression for a real bug found
 # building `list[T]`'s `index[range[usize]]` impl (`src/std/list.cn`,
 # `&mut self.data[i.start]`), which crashed `std.algo`'s `sort_by` over a
 # `list[(int32, int32)]` with a bad-memory-access SIGBUS on the bytecode

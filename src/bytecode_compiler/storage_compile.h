@@ -4,19 +4,17 @@
 #include <span>
 
 #include "src/bytecode/chunk.h"
-#include "src/bytecode_compiler/compile.h"
+#include "src/bytecode_compiler/compile_error.h"
 #include "src/hir/storage.h"
 
 namespace cinder::bytecode_compiler {
 
 // ==========================================================================
-//  Bytecode from the shared storage form (representation v2).
+//  Bytecode from the shared storage form.
 //
-//  `compile_function` and `compile_module` in `compile.h` build bytecode from
-//  typed HIR, where every aggregate is a pointer to a heap block. This
-//  compiler builds it from `hir::storage_function`s instead: an aggregate or
-//  descriptor lives as inline bytes in its owner, and a call builds its result
-//  directly in storage the caller supplies.
+//  This compiler builds bytecode from `hir::storage_function`s: an aggregate
+//  or descriptor lives as inline bytes in its owner, and a call builds its
+//  result directly in storage the caller supplies.
 //
 //  Where values live:
 //
@@ -36,9 +34,7 @@ namespace cinder::bytecode_compiler {
 //  non-zero-sized source parameter. `bytecode_function::abi` records the
 //  sizes and classes so a host can call a function with the right storage.
 //
-//  The two representations must not meet in one program, so a module compiled
-//  here is called only by modules compiled here. Nothing in the driver selects
-//  this compiler yet.
+//  The driver runs programs and compile-time code through this compiler.
 // ==========================================================================
 
 /// Compiles a program of several modules into one bytecode module. The first

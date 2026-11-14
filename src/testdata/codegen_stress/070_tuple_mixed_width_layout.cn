@@ -10,7 +10,7 @@ module main
 # offset, so a regression back to uniform slots reads the wrong bytes and
 # this file's total moves off 127 rather than silently staying right.
 #
-# Two tiers deriving their layout from the same `src/runtime/layout.h`
+# Two tiers deriving their layout from the same `src/runtime/value_layout.h`
 # agreeing with each other proves nothing here (CLAUDE.md) -- both would
 # agree on the same wrong uniform-slot answer just as readily. `# expect: 127`
 # pins down the actual computed value instead.

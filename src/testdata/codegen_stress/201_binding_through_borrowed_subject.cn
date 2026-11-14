@@ -1,7 +1,7 @@
 module codegen_stress.binding_through_borrowed_subject
 
 # expect: 3860
-# storage-max-live-blocks: 0
+# max-live-blocks: 0
 
 # `match &h.hook` on an owned `h` borrows the field, so the binding `f` names
 # the closure in place (ch. 3) and never owns it. Each closure owns a list it

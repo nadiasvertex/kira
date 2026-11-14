@@ -35,7 +35,7 @@ public:
         function_ = function.get();
         for (const auto &param : function->params) {
           if (param.name == "self" && !is_ref(param.type) &&
-              types_.is_heap_represented(param.type)) {
+              types_.is_compound_value(param.type)) {
             report(function->span, std::format("`self` is typed `{}`, not a "
                                                "reference",
                                                types_.display(param.type)));
@@ -942,17 +942,9 @@ private:
     if (call.target != nullptr) {
       for (const auto &param : call.target->params) {
         const auto found = checked_.node_types.find(param.pattern.get());
-        auto type = found != checked_.node_types.end()
-                        ? found->second
-                        : semantic::k_unknown_type;
-        // A runtime intrinsic receives a heap value's own pointer where its
-        // signature says `&T`: the runtime reads and writes through the
-        // block, never the caller's slot.
-        if (call.target->modifiers.is_intrinsic && is_ref(type) &&
-            types_.is_heap_represented(types_.entry(type).result)) {
-          type = types_.entry(type).result;
-        }
-        out.push_back(type);
+        out.push_back(found != checked_.node_types.end()
+                          ? found->second
+                          : semantic::k_unknown_type);
       }
       return out;
     }

@@ -48,7 +48,7 @@ namespace cinder {
 //  subtly wrong.
 // ==========================================================================
 enum class intrinsic_wire_kind : uint8_t {
-  ptr, ///< An opaque heap pointer — `src/runtime/layout.h`'s convention.
+  ptr, ///< An address: a descriptor's, a destination's, or a raw pointer.
   i32, ///< A native 32-bit integer; also stands for a widened `bool`/`uint8`.
   i64, ///< A native 64-bit integer; also stands for `usize`.
   f32, ///< A native IEEE-754 32-bit float, bit-preserving (no promotion).
@@ -68,8 +68,8 @@ struct intrinsic_signature {
   /// the storage compilers call the `_into` symbol (`intrinsic_into_symbol`),
   /// which takes the destination address as a hidden first argument and
   /// returns nothing. The runtime writes the whole value, padding included,
-  /// and allocates no wrapper for it. `result` stays `ptr` for the older
-  /// compilers, which call the symbol that returns a heap block.
+  /// and allocates no wrapper for it. `result` is `ptr`, the destination's
+  /// wire kind.
   bool into = false;
 };
 
@@ -87,7 +87,7 @@ intrinsic(std::string_view name, intrinsic_wire_kind result,
 }
 
 /// An intrinsic whose result is built in caller storage (see
-/// `intrinsic_signature::into`). Its older symbol still returns a heap block.
+/// `intrinsic_signature::into`). Only its `_into` symbol exists.
 [[nodiscard]] consteval auto
 into_intrinsic(std::string_view name,
                std::initializer_list<intrinsic_wire_kind> params)
@@ -260,9 +260,8 @@ inline constexpr std::array<intrinsic_signature, 69> known_intrinsics = {{
     intrinsic("rt_errno_would_block", wire::i32,
               {}), // rt_errno_would_block (),
     // `for c in s` over a `str` (`src/runtime/string_ops.h`): the scalar at a
-    // byte offset, and how many bytes it takes. The storage form calls these
-    // with the descriptor's data and length words; the typed-HIR compilers
-    // have opcodes and their own declarations for the same symbols.
+    // byte offset, and how many bytes it takes, called with the descriptor's
+    // data and length words.
     intrinsic("rt_str_scalar_at", wire::i32,
               {wire::ptr, wire::i64,
                wire::i64}), // rt_str_scalar_at (data, len, offset),

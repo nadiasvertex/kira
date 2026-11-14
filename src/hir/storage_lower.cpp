@@ -2152,9 +2152,11 @@ private:
         }
         size = (*layout)->size;
         align = (*layout)->align;
-        if (size == 0) {
-          return refuse(lambda.span,
-                        "a closure that captures a zero-sized value");
+        // A zero-sized capture takes no bytes, so an environment of nothing
+        // else is empty and has no glue to run a drop.
+        if (size == 0 && owned.contains(capture.symbol)) {
+          return refuse(lambda.span, "a closure that takes ownership of a "
+                                     "zero-sized value that needs a drop");
         }
         entry.kind = owned.contains(capture.symbol) ? capture_kind::move
                                                     : capture_kind::copy;
@@ -2229,6 +2231,11 @@ private:
         return refuse(lambda.span,
                       "a closure that takes ownership of a value captured by "
                       "an enclosing closure");
+      }
+      // A zero-sized capture has no bytes to copy into the environment.
+      if (const auto size = env_.layouts.size_of(entry.type);
+          size.has_value() && *size == 0) {
+        continue;
       }
       op.captures.push_back(closure_capture{
           .source = whole(source), .kind = entry.kind, .offset = entry.offset});
@@ -2828,30 +2835,6 @@ private:
     return {};
   }
 
-  /// Argument `i` of `call` as the storage form passes it. The legacy form
-  /// hands a runtime intrinsic a heap value's own pointer where its
-  /// signature says `&T`, so HIR passes `*x` there
-  /// (`make_references_explicit`); in the storage form `T` is inline, and
-  /// the intrinsic is given the reference `x` its signature names.
-  [[nodiscard]] auto call_arg(const hir_call &call, size_t i) const
-      -> const hir_expr & {
-    const auto &arg = *call.args[i];
-    if (call.target == nullptr || !call.target->modifiers.is_intrinsic ||
-        i >= call.target->params.size() ||
-        arg.kind != hir_node_kind::hir_unary ||
-        as<hir_unary>(arg).op != ast::unary_op::deref) {
-      return arg;
-    }
-    const auto &operand = *as<hir_unary>(arg).operand;
-    const auto declared =
-        env_.checked.node_types.find(call.target->params[i].pattern.get());
-    if (declared == env_.checked.node_types.end() ||
-        declared->second != operand.type) {
-      return arg;
-    }
-    return operand;
-  }
-
   /// `rt_crew_task(c, i)`, which `c.errors()` lowers to, names a task the
   /// crew still owns: it goes into a local that owns nothing, and the task's
   /// result is read in place, which leaves it there only for a `copy` result.
@@ -2939,7 +2922,7 @@ private:
       params.push_back(i == 0 && owned_receiver != nullptr ? owned_receiver->type
                        : i == 0 && borrowed_receiver.has_value()
                            ? *borrowed_receiver
-                           : call_arg(call, i).type);
+                           : call.args[i]->type);
     }
     auto signature = classify_signature(env_.layouts, params, call.type);
     if (!signature.has_value()) {
@@ -2981,7 +2964,7 @@ private:
     auto outgoing = std::vector<storage_id>{};
     for (size_t i = 0; i < call.args.size(); ++i) {
       const auto &arg =
-          i == 0 && owned_receiver != nullptr ? *owned_receiver : call_arg(call, i);
+          i == 0 && owned_receiver != nullptr ? *owned_receiver : *call.args[i];
       const auto &param = signature->params[i];
       auto lowered = call_argument{.source_index = i, .cls = param.cls};
       if (i == 0 && borrowed_receiver.has_value()) {
@@ -3912,10 +3895,78 @@ private:
     case hir_node_kind::hir_or_pattern:
       return emit_alternatives(as<hir_or_pattern>(pattern), 0, next.where, todo,
                                success, failure);
+    case hir_node_kind::hir_range_pattern:
+      return emit_range_test(as<hir_range_pattern>(pattern), next, std::move(todo),
+                             success, failure);
     default:
       return refuse(span, "this kind of pattern is not part of storage "
                           "lowering yet");
     }
+  }
+
+  /// `lo..hi`, `lo..=hi`, `lo..` or `..hi` on a scalar: one comparison per
+  /// bound, the lower first, each nested in the one before.
+  [[nodiscard]] auto emit_range_test(const hir_range_pattern &range,
+                                     const obligation &next,
+                                     std::vector<obligation> todo,
+                                     const continuation &success,
+                                     const continuation &failure) -> result {
+    const auto span = range.span;
+    const auto cls = class_of(next.where.type, span);
+    if (!cls.has_value()) {
+      return std::unexpected(cls.error());
+    }
+    if (*cls != pass_class::scalar) {
+      return refuse(span, "a range pattern on `" +
+                              types().display(next.where.type) + "`");
+    }
+    auto bounds = std::vector<std::pair<ast::binary_op, operand>>{};
+    if (range.start != nullptr) {
+      auto low = lower_operand(*range.start, false);
+      if (!low.has_value()) {
+        return std::unexpected(low.error());
+      }
+      bounds.emplace_back(ast::binary_op::gt_eq, std::move(*low));
+    }
+    if (range.end != nullptr) {
+      auto high = lower_operand(*range.end, false);
+      if (!high.has_value()) {
+        return std::unexpected(high.error());
+      }
+      bounds.emplace_back(range.inclusive ? ast::binary_op::lt_eq
+                                          : ast::binary_op::lt,
+                          std::move(*high));
+    }
+    return emit_bound_tests(bounds, 0, next.where, todo, success, failure, span);
+  }
+
+  /// The comparisons of a range pattern from `index` on, then the rest of
+  /// the pattern's tests.
+  [[nodiscard]] auto
+  emit_bound_tests(const std::vector<std::pair<ast::binary_op, operand>> &bounds,
+                   size_t index, const place &where,
+                   const std::vector<obligation> &todo,
+                   const continuation &success, const continuation &failure,
+                   const source_span &span) -> result {
+    if (index == bounds.size()) {
+      return emit_tests(todo, success, failure);
+    }
+    return branch_on(
+        span,
+        [&](const place &flag) {
+          auto op = storage_op{.kind = op_kind::compute};
+          op.dest = flag;
+          op.computation = compute_kind::binary;
+          op.binary = bounds[index].first;
+          op.operands.push_back(read_of(where, false));
+          op.operands.push_back(bounds[index].second);
+          emit(std::move(op), span);
+        },
+        [&] {
+          return emit_bound_tests(bounds, index + 1, where, todo, success,
+                                  failure, span);
+        },
+        failure);
   }
 
   /// `a | b | c`: each alternative is tried in turn against the same part of

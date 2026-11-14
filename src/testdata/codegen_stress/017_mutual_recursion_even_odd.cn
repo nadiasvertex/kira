@@ -12,3 +12,5 @@ def is_odd(n: int32) -> bool:
 
 def main() -> bool:
     return is_even(20) and is_odd(7) and not is_even(13)
+
+# expect: 1

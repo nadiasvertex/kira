@@ -17,3 +17,5 @@ def main() -> int64:
     let base = 40
     let g: fn(int32) -> int32 = k => bump(k) + base
     return call_it(g, 1) as int64
+
+# expect: 42

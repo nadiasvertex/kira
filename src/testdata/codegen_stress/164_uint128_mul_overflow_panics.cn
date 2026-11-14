@@ -7,3 +7,5 @@ def main() -> int64:
     var x: uint128 = 18446744073709551616
     x = x * x
     return x as int64
+
+# expect-panic: integer overflow

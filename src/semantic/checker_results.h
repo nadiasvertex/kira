@@ -721,15 +721,14 @@ struct lowering_results {
       folded_comptime_calls;
   /// Every `size_of[T]()` / `align_of[T]()` call, mapped to the type it
   /// asks about. The *answer* is deliberately not stored here: a type's
-  /// size and alignment are `src/runtime/layout.h`'s to define — it is the
+  /// size and alignment are `runtime::value_layouts`' to define — the
   /// single source both backends read their layouts from — and
   /// `//src/runtime` depends on this library, so the checker cannot call
   /// into it without a cycle. The checker therefore resolves only the
-  /// question (which type, which query), and `hir::lower_call` answers it
-  /// against `runtime::layout_of` and splices in an integer literal. That
-  /// also keeps the two in step by construction: a `size_of[T]()` can never
-  /// disagree with the stride the same `T` actually occupies in a struct
-  /// field or list element, because both come from the one function.
+  /// question (which type, which query); `hir::lower_call` carries it on
+  /// the literal, and the storage form answers it. That keeps the two in
+  /// step by construction: a `size_of[T]()` can never disagree with the
+  /// stride the same `T` occupies in a struct field or list element.
   std::unordered_map<const ast::call_expr *, layout_query> layout_queries;
   /// Every `ptr_cast[U](p)` call, mapped to the pointer type it produces.
   /// A raw pointer's runtime representation is an address and nothing else,
@@ -749,9 +748,9 @@ struct lowering_results {
   std::unordered_set<const ast::call_expr *> slice_from_raw_parts_calls;
   /// Every `uninit[T, N]()` call, mapped to the buffer it asks for: the
   /// element type and the slot count. Like `layout_queries`, the *size* is
-  /// deliberately not stored — `hir::lower_call` derives both the byte size
-  /// and the alignment from `runtime::layout_of(T)`, so a `uninit[T, N]`'s
-  /// stride can never disagree with the stride a `*mut T` through it uses.
+  /// deliberately not stored — the buffer is laid out from its
+  /// `uninit[T, N]` type by `runtime::value_layouts`, so its stride can
+  /// never disagree with the stride a `*mut T` through it uses.
   std::unordered_map<const ast::call_expr *, stack_buffer_request>
       stack_buffers;
   /// One top-level `static let` reified as real backing data — an array,

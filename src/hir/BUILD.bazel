@@ -47,9 +47,8 @@ cc_library(
         "//src:intrinsics",
         "//src/comptime",
         "//src/parser:parser",
-        # `size_of[T]()`/`align_of[T]()` fold here, against the same
-        # `runtime::layout_of` both backends read every field offset and
-        # element stride from — see `lower_call`'s `layout_queries` branch.
+        # `uninit[T, N]` slot counts, the scheduler pools, and the storage
+        # form's `runtime::value_layouts`.
         "//src/runtime:runtime",
         "//src/semantic:semantic",
         "//src/util",

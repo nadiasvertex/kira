@@ -10,9 +10,8 @@
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"
-#include "src/bytecode_compiler/compile.h"
 #include "src/bytecode_compiler/storage_compile.h"
-#include "src/driver/storage_program.h"
+#include "src/hir/storage_program.h"
 #include "src/hir/lower.h"
 #include "src/runtime/aligned_buffer.h"
 #include "src/runtime/scheduler.h"
@@ -183,22 +182,15 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
             function_name)};
   }
 
-  const auto storage = storage_form_enabled();
-  auto program = std::unique_ptr<storage_program>{};
-  if (storage) {
-    auto prepared = prepare_storage_program(modules, checked);
-    if (!prepared.has_value()) {
-      return run_outcome{.succeeded = false,
-                         .message = std::format("failed to compile `{}`: {}",
-                                                function_name, prepared.error())};
-    }
-    program = std::move(*prepared);
+  auto program = hir::prepare_storage_program(modules, checked);
+  if (!program.has_value()) {
+    return run_outcome{.succeeded = false,
+                       .message = std::format("failed to compile `{}`: {}",
+                                              function_name, program.error())};
   }
-  auto compiled =
-      storage ? bytecode_compiler::compile_storage_module(
-                    std::span<const hir::storage_module *const>(program->modules),
-                    *program->env)
-              : bytecode_compiler::compile_module(modules, types);
+  auto compiled = bytecode_compiler::compile_storage_module(
+      std::span<const hir::storage_module *const>((*program)->modules),
+      *(*program)->env);
   if (!compiled) {
     return run_outcome{.succeeded = false,
                        .message = std::format("failed to compile `{}` to "
@@ -217,14 +209,8 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
 
   const auto vm = bytecode::vm{*compiled};
   // Builds every static's value before the entry point can read any of
-  // them: the storage form has one initializer per module, writing the
-  // module's globals; the pointer form one for the program, writing `vm`'s
-  // own `globals_`, which persist across `run` calls on the same instance.
-  auto initializers = compiled->static_initializers;
-  if (!storage && compiled->static_init_function.has_value()) {
-    initializers = {*compiled->static_init_function};
-  }
-  for (const auto init : initializers) {
+  // them: one initializer per module, writing the module's globals.
+  for (const auto init : compiled->static_initializers) {
     auto init_result = vm.run(init, std::span<const bytecode::slot_value>{});
     if (!init_result) {
       return run_outcome{
@@ -242,9 +228,7 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
       std::max<size_t>(result_size, 16),
       std::max<size_t>(abi.has_value() ? abi->result.align : 8, 16));
   auto result = std::expected<bytecode::vm_result, bytecode::panic_reason>{};
-  if (!storage) {
-    result = vm.run(index, std::span<const bytecode::slot_value>{});
-  } else if (abi.has_value() && abi->returns_through_address) {
+  if (abi.has_value() && abi->returns_through_address) {
     auto into = vm.run_into(index, std::span<std::byte>(bytes.data(), bytes.size()),
                             std::span<const bytecode::slot_value>{});
     if (into.has_value()) {

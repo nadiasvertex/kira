@@ -123,7 +123,7 @@ assemble(semantic::comptime_program &program, const std::string &entry_module,
   auto pending = std::deque<semantic::comptime_function>{};
 
   // Every reified `static let` the lowered code reads, built once before the
-  // call runs (`bytecode_module::static_init_function`). Its value can call a
+  // call runs (`bytecode_module::static_initializers`). Its value can call a
   // `from_array` constructor, which is lowered like any other function.
   auto globals = std::vector<hir::hir_static_global>{};
   auto global_names = std::unordered_set<std::string>{};

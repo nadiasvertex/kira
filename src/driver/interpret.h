@@ -13,9 +13,9 @@ namespace cinder::driver {
 /// Outcome of executing `cli_config::run_function` when `cli_config::run` is
 /// set. The run is a distinct step layered on top of
 /// `compile_report::hir_modules`, not folded into `error_count`: a program
-/// that lowers cleanly can still fail to run, for example when the bytecode
-/// compiler rejects a construct it does not lower yet (see
-/// `src/bytecode_compiler/compile.h`).
+/// that lowers cleanly can still fail to run, for example when the storage
+/// form or the bytecode compiler rejects a construct it does not lower yet
+/// (see `src/bytecode_compiler/storage_compile.h`).
 struct run_outcome {
   bool panicked = false;  ///< The function panicked; the CLI exits with
                           ///< `bytecode::k_panic_exit_code`.
@@ -59,8 +59,8 @@ namespace cinder::driver {
 ///
 /// @param modules The entry module (`modules.front()`, which owns
 /// `function_name`) plus every module `hir::find_reachable_modules` found it
-/// transitively needs — passed straight through to
-/// `bytecode_compiler::compile_module`'s multi-module overload.
+/// transitively needs, lowered to the storage form together and compiled by
+/// `bytecode_compiler::compile_storage_module`.
 /// @param checked The checked program the modules' HIR indexes into; the
 /// modules are lowered to the storage form (`prepare_storage_program`).
 /// @param function_name Name of the zero-argument function to execute.

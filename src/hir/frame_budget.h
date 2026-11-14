@@ -6,6 +6,7 @@
 
 #include "src/hir/nodes.h"
 #include "src/parser/source_location.h"
+#include "src/runtime/value_layout.h"
 
 namespace cinder::hir {
 
@@ -41,10 +42,15 @@ struct frame_budget_violation {
 /// detail that differs between tiers and is bounded by a few bytes per
 /// buffer, so it is not part of the rule.
 ///
+/// A buffer is as large as its `uninit[T, N]` type's layout in `layouts`; a
+/// buffer whose type has no layout counts nothing here, and the storage form
+/// reports it.
+///
 /// Run on freshly lowered HIR. `inline_small_calls` never copies a callee
 /// that contains a buffer into its caller, so inlining cannot push a frame
 /// over the budget after this check has passed.
-[[nodiscard]] auto find_frame_budget_violations(hir_module &module)
+[[nodiscard]] auto find_frame_budget_violations(hir_module &module,
+                                                runtime::value_layouts &layouts)
     -> std::vector<frame_budget_violation>;
 
 } // namespace cinder::hir

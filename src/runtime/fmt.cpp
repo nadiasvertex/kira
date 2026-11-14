@@ -15,21 +15,6 @@
 
 namespace {
 
-[[nodiscard]] auto alloc_slots(size_t count) -> uint64_t * {
-  return static_cast<uint64_t *>(cinder_heap_alloc(count * sizeof(uint64_t)));
-}
-
-[[nodiscard]] auto make_str(std::string_view text) -> uint64_t * {
-  auto *bytes = static_cast<char *>(cinder_heap_alloc(text.size()));
-  if (!text.empty()) {
-    std::memcpy(bytes, text.data(), text.size());
-  }
-  auto *header = alloc_slots(2);
-  header[0] = static_cast<uint64_t>(text.size());
-  header[1] = reinterpret_cast<uint64_t>(bytes); // NOLINT
-  return header;
-}
-
 [[nodiscard]] auto view_of(const uint64_t *str_header) -> std::string_view {
   const auto *data = reinterpret_cast<const char *>(str_header[1]); // NOLINT
   return {data, static_cast<size_t>(str_header[0])};
@@ -58,8 +43,7 @@ namespace {
   return out;
 }
 
-// The text each formatting intrinsic produces. The heap-block entry points and
-// the `_into` ones below both call these.
+// The text each formatting intrinsic produces.
 
 [[nodiscard]] auto concat_text(std::string_view a, std::string_view b)
     -> std::string {
@@ -165,10 +149,6 @@ namespace {
 
 extern "C" {
 
-auto cinder_rt_str_concat(uint64_t *a, uint64_t *b) -> uint64_t * {
-  return make_str(concat_text(view_of(a), view_of(b)));
-}
-
 auto cinder_rt_str_len_scalars(uint64_t *s) -> uint64_t {
   const auto view = view_of(s);
   size_t count = 0;
@@ -180,37 +160,6 @@ auto cinder_rt_str_len_scalars(uint64_t *s) -> uint64_t {
     ++count;
   }
   return count;
-}
-
-auto cinder_rt_str_repeat_char(uint32_t codepoint, uint64_t count)
-    -> uint64_t * {
-  return make_str(repeat_text(codepoint, count));
-}
-
-auto cinder_rt_str_truncate_scalars(uint64_t *s, uint64_t count) -> uint64_t * {
-  return make_str(truncate_text(view_of(s), count));
-}
-
-auto cinder_rt_fmt_radix_digits(uint64_t value, uint32_t radix,
-                                uint32_t uppercase) -> uint64_t * {
-  return make_str(radix_text(value, radix, uppercase != 0));
-}
-
-auto cinder_rt_fmt_f64_fixed(double value, uint64_t precision) -> uint64_t * {
-  return make_str(fixed_text(value, precision));
-}
-
-auto cinder_rt_fmt_f64_sci(double value, uint64_t precision, uint32_t uppercase)
-    -> uint64_t * {
-  return make_str(scientific_text(value, precision, uppercase != 0));
-}
-
-auto cinder_rt_fmt_f64_general(double value, uint64_t precision) -> uint64_t * {
-  return make_str(general_text(value, precision));
-}
-
-auto cinder_rt_fmt_char_from_codepoint(uint32_t codepoint) -> uint64_t * {
-  return make_str(codepoint_text(codepoint));
 }
 
 // The `_into` entry points (see `src/runtime/result_out.h`): the `str` result

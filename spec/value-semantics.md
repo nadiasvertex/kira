@@ -11,15 +11,15 @@ tuple, and sum allocations described in [todo items 17 and 18](todo.md), while
 preserving ownership, borrowing, evaluation order, and exactly-once drops on the
 bytecode VM and LLVM backends.
 
-This is an implementation plan. T-01 is complete (findings in
-[value-semantics-t01-findings.md](value-semantics-t01-findings.md)), T-02 is
-complete, T-03 and T-04 are complete for straight-line code, T-04a adds `if` and
-`while` to the storage form, and T-05 and T-06 are partly done (storage-form
-bytecode and LLVM compilers exist but are not wired into the driver), and T-07
-is partly done (runtime intrinsics write results into caller storage), and T-08
-is partly done (raw memory holds aggregates inline in the storage form), and T-09
-is partly done (closures, patterns, generators, `await`, `await par`/`await race`, `on` blocks); status is under each task below. T-10 through T-14
-have not been implemented.
+This plan is implemented (2026-11-14). Every task is complete; T-01's findings
+are in [value-semantics-t01-findings.md](value-semantics-t01-findings.md). The
+storage form is the compiler's only runtime representation: both backends,
+compile-time execution, and `size_of`/`align_of` read one set of inline layouts,
+and the pointer-per-aggregate form is gone. Todo items 17 and 18 are resolved.
+The few constructs still refused by name, and two gaps found along the way, are
+listed under T-14 below with their todo items. Each task's details section keeps
+its dated status notes; where an older note lists work as not done, the T-14
+section says what closed it.
 
 ## Objectives & Scope
 
@@ -480,7 +480,9 @@ person. Status: `[x]` complete, `[~]` partly done (the task's details section li
 is done and what is not), `[ ]` not started. H = required for correctness/completion;
 M = required integration and documentation.
 
-Progress as of 2026-11-12: T-01 to T-04a are complete. T-05 to T-09 are partly done on
+Progress as of 2026-11-14: every task is complete (see T-14 for how the items the
+older notes below list as not done were closed). The rest of this section is a
+dated log. Progress as of 2026-11-12: T-01 to T-04a are complete. T-05 to T-09 are partly done on
 both storage-form backends (bytecode VM and LLVM), which now compile a program of
 several modules with calls between them. T-09 covers closures, patterns (with guards),
 generators, tasks and `await`, `par`/`race`/`on`, droppable task results, `crew`
@@ -586,16 +588,16 @@ splice are not ownership-checked (item 23).
 | [x] | T-03 | Add shared storage form and aggregate ABI | Compiler implementer | H | T-02 | Verified destination/transfer plans cover calls and constructions. |
 | [x] | T-04 | Integrate ownership, references, and drops | Compiler implementer | H | T-03 | Moves, borrows, partial initialization, and drops agree with places. |
 | [x] | T-04a | Add structured control flow to the storage form | Compiler implementer | H | T-04 | `if`, `while`, `break`, `continue`, and early `return` lower and verify with joined initialization and drop state. |
-| [~] | T-05 | Implement VM frame values and result destinations | Compiler implementer | H | T-04a | VM executes nested aggregate calls without shell allocations. |
-| [~] | T-06 | Implement LLVM values and result destinations | Compiler implementer | H | T-04a | LLVM/JIT/AOT use the shared ABI and pass the same value cases. |
-| [~] | T-07 | Migrate runtime intrinsic boundaries | Compiler implementer | H | T-05, T-06 | Runtime operations write aggregate results into owned destinations. |
-| [~] | T-08 | Migrate containers, statics, and compile-time execution | Compiler implementer | H | T-07 | Nested elements, raw memory, globals, and hosted calls use identical layouts. |
-| [~] | T-09 | Migrate captures, generators, and task results | Compiler implementer | H | T-08 | Suspension/cancellation and large results preserve ownership and stable addresses. |
-| [~] | T-10 | Complete mandatory RVO propagation | Compiler implementer | H | T-09 | All listed expression forms construct directly with inlining disabled. |
+| [x] | T-05 | Implement VM frame values and result destinations | Compiler implementer | H | T-04a | VM executes nested aggregate calls without shell allocations. |
+| [x] | T-06 | Implement LLVM values and result destinations | Compiler implementer | H | T-04a | LLVM/JIT/AOT use the shared ABI and pass the same value cases. |
+| [x] | T-07 | Migrate runtime intrinsic boundaries | Compiler implementer | H | T-05, T-06 | Runtime operations write aggregate results into owned destinations. |
+| [x] | T-08 | Migrate containers, statics, and compile-time execution | Compiler implementer | H | T-07 | Nested elements, raw memory, globals, and hosted calls use identical layouts. |
+| [x] | T-09 | Migrate captures, generators, and task results | Compiler implementer | H | T-08 | Suspension/cancellation and large results preserve ownership and stable addresses. |
+| [x] | T-10 | Complete mandatory RVO propagation | Compiler implementer | H | T-09 | All listed expression forms construct directly with inlining disabled. |
 | [x] | T-11 | Implement shared NRVO | Compiler implementer | H | T-10 | Eligible locals use result storage; rejected cases use correct inline moves. |
-| [~] | T-12 | Enforce final frame budgets and tail-call safety | Compiler implementer | H | T-11 | Final storage plans are bounded, aligned, and lifetime-safe. |
+| [x] | T-12 | Enforce final frame budgets and tail-call safety | Compiler implementer | H | T-11 | Final storage plans are bounded, aligned, and lifetime-safe. |
 | [x] | T-13 | Prove leak removal and backend parity | Compiler implementer | H | T-12 | Ownership-checked regressions and structural/allocation gates pass on both tiers. |
-| [ ] | T-14 | Remove legacy representation and update references | Compiler implementer | M | T-13 | Old aggregate boxing paths gone; todo/specs describe verified behavior. |
+| [x] | T-14 | Remove legacy representation and update references | Compiler implementer | M | T-13 | Old aggregate boxing paths gone; todo/specs describe verified behavior. |
 
 ## Task Details
 
@@ -1295,6 +1297,90 @@ Scalar tail calls (done 2026-11-13, item 4). A call HIR marks as a tail call sta
 4. Update affected Bazel targets and metadata versions. Refresh the context graph
    after the code migration with `graft build` and review the resulting diff.
 
+**Status: done (2026-11-14).** The pointer-per-aggregate representation is gone,
+and the storage form is the only path from HIR to code.
+
+Removed:
+
+- The typed-HIR bytecode compiler (`bytecode_compiler/compile.{h,cpp}`) and LLVM
+  generator (`llvm_codegen/codegen.cpp`), the pointer layouts
+  (`runtime/layout.{h,cpp}` and their test), the driver's `CINDER_STORAGE_FORM`
+  switch, and `storage_corpus_test`, whose corpus checks moved into
+  `codegen_stress_test`.
+- The heap-block form of every intrinsic that builds an aggregate or `str`: the
+  VM's handlers, the runtime's non-`_into` symbols, and their helpers. Only the
+  `_into` functions remain, shared by both tiers. `op_call_intrinsic` on one of
+  them is refused at run time rather than calling a missing handler.
+- The VM's register-image globals (`vm::globals_`, `global_count`,
+  `static_init_function`) and the compile-time converters to and from them.
+- The temporary ABI adapter for intrinsic arguments: HIR no longer passes `*x`
+  where an intrinsic declares `&T`, so the storage lowerer no longer undoes it.
+- `type_table::refinement_base_named`, used only by the pointer layouts.
+  `is_heap_represented` is renamed `is_compound_value`; it now states a typing
+  rule (a compound value may be used through `&` without `*`, and a method on a
+  compound type borrows `self`), not a representation.
+
+Kept as genuine heap owners: a `list`'s or `vec`'s element buffer, a `shared`
+block, a closure environment, a coroutine object and its state block, and the
+bytes of a run-time `str` (todo item 24).
+
+Moved to the inline layouts: `uninit[T, N]` buffers are sized from their type,
+and `size_of`/`align_of` carry only their question in HIR. This fixed a real bug:
+the frame budget measured an aggregate `uninit` element as one 8-byte pointer,
+so a buffer of 33000 four-`int64` structs (1056000 bytes) passed the friendly
+program-error check and reached the storage backstop, which reported it as a
+compiler gap. `cli_test` now checks that case; shrinking the measured size made
+it fail.
+
+Fixed while closing older open items: range patterns (`lo..hi`, `lo..=hi`, `lo..`,
+`..hi`) lower (corpus 203), and a closure may capture a zero-sized value
+(corpus 204).
+
+The older notes' open items were closed as follows:
+
+- T-05 and T-06: strings, globals, indexing and ranges, scalar tail calls,
+  128-bit integers, the AOT entry, and the driver switch are done; the old
+  compilers and `emit_alloc_slots` are removed. `drop_in_place` is refused for
+  anything but a `fn` value, a generator, or a task, which are the only types
+  HIR emits it for. `float128` has no representation (todo item 5). Aggregate
+  equality turned out to be a checker gap, not a representation one (todo item
+  28 below).
+- T-07: tasks, the reactor, and the scheduler run through the storage form;
+  `match`, string literals, and fields of call results lower; the atomics are
+  inline operations; the legacy wrapper symbols are removed.
+- T-08: `std.mem`, `vec[T]`, and `list[T]` run through the storage form (all 76
+  `std_test` programs pass); `uninit` buffers are frame storage; a field
+  assignment through a `&mut` binding (`r.b = 50`) compiles and runs.
+- T-09: `crew` blocks, functions used as values, and generic and inlined lambdas
+  lower. A closure that takes ownership of a value captured by an enclosing
+  closure is still refused, but no valid program reaches it: the ownership
+  check rejects moving a value out of a closure's environment. A closure that
+  takes ownership of a zero-sized value with a drop is refused by name (todo
+  item 29).
+- T-10: slices and tuple drop plans are done. An assignment builds its
+  replacement apart, which the plan allows for whole-value reassignment, and
+  `break`/`continue` inside a value under construction are refused, which no
+  surface syntax reaches.
+- T-12: frames stay constant in loops, `uninit` buffers count toward the frame
+  plan, and only scalar tail calls reuse the frame, which the frame-limits rule
+  requires until aggregate tail calls are proven safe. Slots do not share bytes;
+  reusing frame ranges by lifetime would make frames smaller but is not needed
+  for the frames to be bounded.
+
+Found and recorded:
+
+- Todo item 28: `==` on a tuple, fixed array, or `option` type-checks and then
+  fails as an internal verifier error. The pointer form compared two heap
+  pointers, so it was never right. The specification does not say whether these
+  types compare element-wise; that decision comes before a fix.
+- Todo item 29: the zero-sized capture with a drop, above.
+
+Verification: `bazelisk test //...` passes all 54 targets, including the corpus
+of 205 programs on both tiers with inlining on and off. Chapters 38, 42, 62 and
+65–68 now describe the single value model; the other chapters the plan names
+describe language behavior, which did not change. Module metadata (`.kmeta`) records
+no representation, so its schema version is unchanged.
+
 ## New Code
 
 The following names describe the intended implementation boundaries. Add small
@@ -1391,5 +1477,5 @@ automatically instrument generated code.
 - [x] Implement T-03 (shared storage form and aggregate ABI).
 - [x] Implement T-04 (ownership, references, and drops) for straight-line code.
 - [x] Implement T-04a (structured control flow in the storage form).
-- [ ] Implement T-05 through T-14 and record passing verification before closing
+- [x] Implement T-05 through T-14 and record passing verification before closing
   the corresponding todo items.

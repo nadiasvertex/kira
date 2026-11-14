@@ -1,3 +1,0 @@
-module sample
-def main() -> result[int32, str]:
-    return @ok(1)

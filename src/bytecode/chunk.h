@@ -94,12 +94,11 @@ struct bytecode_function {
   uint32_t register_count = 0;
   std::vector<uint8_t> code;
   std::vector<slot_value> constants;
-  /// String-literal bytes referenced by `op_load_str_const` (opcodes.h).
+  /// String-literal bytes referenced by `op_str_const_data` (opcodes.h).
   /// Kept separate from `constants` (which only holds scalar `slot_value`s)
   /// since a string's bytes have no fixed width — this function outlives
-  /// any VM run built from it, so `op_load_str_const` can point a heap
-  /// `str` value's data slot directly at one of these entries without
-  /// copying its bytes into the arena.
+  /// any VM run built from it, so a `str` descriptor's data can point
+  /// directly at one of these entries without copying its bytes.
   std::vector<std::string> string_constants;
   /// Indexed by `op_host_call`'s `site` operand.
   std::vector<host_site> host_sites;
@@ -136,27 +135,11 @@ struct bytecode_function {
 struct bytecode_module {
   std::string module_name;
   std::vector<bytecode_function> functions;
-  /// Size of the module-wide global-value table `op_load_global`/
-  /// `op_store_global` index into — one slot per reified `static let` across
-  /// every module compiled together (see `checked_types::static_global_defs`
-  /// and `hir_static_global`). `vm` sizes its `globals_` vector from this at
-  /// construction. Zero for a program with no eligible aggregate statics —
-  /// by far the common case today.
-  size_t global_count = 0;
-  /// Index into `functions` of the synthesized routine that builds every
-  /// global's backing value once (compiling each module's `hir_static_
-  /// global`s exactly the way an ordinary array/list literal compiles,
-  /// finishing with `op_store_global` per global). `nullopt` when
-  /// `global_count == 0` — nothing to initialize, so no such function was
-  /// synthesized. The driver must run this function once, before the
-  /// program's real entry point, using the same `vm` instance so the
-  /// globals it fills in stay visible to that later run.
-  std::optional<uint16_t> static_init_function;
-  /// Storage-form programs: the bytes of every module's statics, laid out
+  /// The bytes of every module's statics, laid out
   /// at offsets the compiler chose (`op_global_addr`), each at its type's
   /// alignment. The `vm` allocates them zeroed and 16-byte aligned.
   size_t global_byte_size = 0;
-  /// Storage-form programs: the function that builds each module's statics
+  /// The function that builds each module's statics
   /// (`hir::k_static_init_name`), in module order. A host runs each once,
   /// on the `vm` it will use, before anything else.
   std::vector<uint16_t> static_initializers;
@@ -222,7 +205,7 @@ public:
   [[nodiscard]] auto add_constant(slot_value value) -> uint32_t;
 
   /// Appends `text` to this function's string-constant table, returning its
-  /// index for `op_load_str_const`. Never deduplicates, for the same reason
+  /// index for `op_str_const_data`. Never deduplicates, for the same reason
   /// `add_constant` doesn't.
   [[nodiscard]] auto add_string_constant(std::string text) -> uint32_t;
 

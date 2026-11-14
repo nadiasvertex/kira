@@ -2,3 +2,5 @@ module codegen_stress.string_return_deep_equality
 
 def main() -> str:
     return "the quick brown fox"
+
+# expect-text: "the quick brown fox"

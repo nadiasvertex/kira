@@ -11,7 +11,8 @@ namespace {
 
 /// Adds `node`'s buffers to `frame`, stopping at lambda bodies — those are
 /// measured as frames of their own, queued on `lambdas`.
-auto collect_buffers(hir_node &node, std::vector<frame_buffer> &frame,
+auto collect_buffers(hir_node &node, runtime::value_layouts &layouts,
+                     std::vector<frame_buffer> &frame,
                      std::vector<hir_lambda *> &lambdas) -> void {
   if (node.kind == hir_node_kind::hir_lambda) {
     lambdas.push_back(&dynamic_cast<hir_lambda &>(node));
@@ -19,19 +20,21 @@ auto collect_buffers(hir_node &node, std::vector<frame_buffer> &frame,
   }
   if (node.kind == hir_node_kind::hir_stack_buffer) {
     const auto &buffer = dynamic_cast<const hir_stack_buffer &>(node);
-    frame.push_back(
-        frame_buffer{.span = buffer.span, .byte_size = buffer.byte_size});
+    if (const auto size = layouts.size_of(buffer.type); size.has_value()) {
+      frame.push_back(frame_buffer{.span = buffer.span, .byte_size = *size});
+    }
   }
   for_each_child(node, [&](auto &slot) -> void {
-    collect_buffers(*slot, frame, lambdas);
+    collect_buffers(*slot, layouts, frame, lambdas);
   });
 }
 
 auto check_frame(const std::string &name, source_span span, hir_node &body,
+                 runtime::value_layouts &layouts,
                  std::vector<frame_budget_violation> &out) -> void {
   auto buffers = std::vector<frame_buffer>{};
   auto lambdas = std::vector<hir_lambda *>{};
-  collect_buffers(body, buffers, lambdas);
+  collect_buffers(body, layouts, buffers, lambdas);
 
   auto total = uint64_t{0};
   for (const auto &buffer : buffers) {
@@ -46,20 +49,21 @@ auto check_frame(const std::string &name, source_span span, hir_node &body,
   for (auto *lambda : lambdas) {
     if (lambda->body != nullptr) {
       check_frame(std::format("a lambda in {}", name), lambda->span,
-                  *lambda->body, out);
+                  *lambda->body, layouts, out);
     }
   }
 }
 
 } // namespace
 
-auto find_frame_budget_violations(hir_module &module)
+auto find_frame_budget_violations(hir_module &module,
+                                  runtime::value_layouts &layouts)
     -> std::vector<frame_budget_violation> {
   auto violations = std::vector<frame_budget_violation>{};
   for (auto &fn : module.functions) {
     if (fn->body != nullptr) {
       check_frame(std::format("`{}`", fn->name), fn->span, *fn->body,
-                  violations);
+                  layouts, violations);
     }
   }
   return violations;

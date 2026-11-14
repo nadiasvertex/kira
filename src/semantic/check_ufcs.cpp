@@ -1673,8 +1673,8 @@ auto checker::infer_explicit_generic_call(const ast::call_expr &call)
 /// Recognizes `size_of[T]()`, `align_of[T]()` and `needs_drop[T]()`, the
 /// type queries answered at lowering time, and records which type each asks
 /// about
-/// (`checked_types::layout_queries`) for `hir::lower_call` to answer
-/// against `runtime::layout_of`. Both are prelude names with no
+/// (`checked_types::layout_queries`) for the storage form to answer
+/// against `runtime::value_layouts`. Both are prelude names with no
 /// declaration anywhere — `size_of` used to type-check to `usize` here and
 /// then reach lowering with nothing behind it, which is why
 /// `size_of[int32]()` reported "no concrete checked type is available for

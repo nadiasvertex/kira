@@ -24,7 +24,7 @@
 #include "src/parser/ast_traversal.h"
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
-#include "src/runtime/layout.h"
+#include "src/runtime/value_layout.h"
 #include "src/runtime/scheduler.h"
 #include "src/semantic/checker_results.h"
 #include "src/semantic/module_index.h"
@@ -2581,23 +2581,11 @@ auto lowerer::lower_call(const ast::call_expr &call)
     return lower_literal(*folded->second);
   }
 
-  // `uninit[T, N]()` — a frame-local buffer of `N` slots sized for `T`.
-  // The size comes from `runtime::layout_of`, the same function `size_of[T]`
-  // and every element stride read from, so the buffer's capacity is exactly
-  // `N` elements as indexed through it.
+  // `uninit[T, N]()` — a frame-local buffer of `N` elements of `T`, laid out
+  // by the storage form from its type.
   if (const auto buffer = checked_.lowering.stack_buffers.find(&call);
       buffer != checked_.lowering.stack_buffers.end()) {
-    const auto layout =
-        runtime::layout_of(checked_.types, buffer->second.element);
-    if (!layout.has_value()) {
-      return fail(lowering_error_kind::unresolved_type, call.span,
-                  std::format("`{}` has no known size, so a buffer of it "
-                              "cannot be laid out",
-                              checked_.types.display(buffer->second.element)));
-    }
-    return ok_expr(make<hir_stack_buffer>(
-        call.span, *type, layout->size_bytes * buffer->second.count,
-        layout->align_bytes));
+    return ok_expr(make<hir_stack_buffer>(call.span, *type));
   }
 
   // `ptr_cast[U](p)` — a pure retype. The lowered operand node *is* the
@@ -2644,11 +2632,10 @@ auto lowerer::lower_call(const ast::call_expr &call)
   }
 
   // `size_of[T]()` / `align_of[T]()` — the checker resolved *which* type
-  // each asks about (`checked_types::layout_queries`); the answer comes
-  // from `runtime::layout_of`, the one function both backends already read
-  // every field offset and element stride out of. Answering it here rather
-  // than in the checker is what makes `size_of[T]()` agree with `T`'s real
-  // stride by construction instead of by coincidence.
+  // each asks about (`checked_types::layout_queries`); the storage form
+  // answers it from `runtime::value_layouts`, the layouts both backends read
+  // every field offset and element stride out of, so `size_of[T]()` agrees
+  // with `T`'s real stride by construction.
   if (const auto query = checked_.lowering.layout_queries.find(&call);
       query != checked_.lowering.layout_queries.end()) {
     if (query->second.operand == k_unknown_type ||
@@ -2669,19 +2656,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
           checked_.drop.drop_plans.contains(query->second.operand) ? "true"
                                                                    : "false"));
     }
-    const auto layout =
-        runtime::layout_of(checked_.types, query->second.operand);
-    if (!layout.has_value()) {
-      return fail(lowering_error_kind::unresolved_type, call.span,
-                  std::format("`{}` has no known size or alignment",
-                              checked_.types.display(query->second.operand)));
-    }
-    const auto answer =
-        query->second.kind == semantic::layout_query_kind::size_of
-            ? layout->size_bytes
-            : layout->align_bytes;
-    auto size = ptr<hir_literal>(make<hir_literal>(
-        call.span, *type, token_kind::int_lit, std::to_string(answer)));
+    auto size = ptr<hir_literal>(
+        make<hir_literal>(call.span, *type, token_kind::int_lit, ""));
     size->question = layout_question{
         .wants_alignment =
             query->second.kind != semantic::layout_query_kind::size_of,

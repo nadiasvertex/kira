@@ -13,7 +13,6 @@ cc_library(
         "arena.cpp",
         "fmt.cpp",
         "io.cpp",
-        "layout.cpp",
         "platform.cpp",
         "platform_query.cpp",
         "reactor.cpp",
@@ -28,7 +27,6 @@ cc_library(
         "coroutine.h",
         "fmt.h",
         "io.h",
-        "layout.h",
         "platform.h",
         "platform_query.h",
         "reactor.h",
@@ -94,21 +92,6 @@ cc_test(
     srcs = ["arena_test.cpp"],
     deps = [
         ":runtime",
-        "//src/testing",
-    ],
-)
-
-cc_test(
-    name = "layout_test",
-    srcs = ["layout_test.cpp"],
-    data = [
-        "//src:runtime_layout_test_files",
-    ],
-    deps = [
-        "//src/comptime_vm",
-        ":runtime",
-        "//src/parser:parser",
-        "//src/semantic:semantic",
         "//src/testing",
     ],
 )

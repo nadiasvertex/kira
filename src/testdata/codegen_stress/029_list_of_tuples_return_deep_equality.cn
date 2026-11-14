@@ -8,4 +8,6 @@ def main() -> list[(int32, int32)]:
 
 # The returned list owns its backing block, which is still live when
 # `main` returns.
-# storage-max-live-blocks: 1
+# max-live-blocks: 1
+
+# expect-text: [(0, 0), (1, 1), (2, 4), (3, 9), (4, 16)]

@@ -336,25 +336,21 @@ public:
   /// place the predicate has to be discharged (`checker::check_narrowing`).
   [[nodiscard]] auto strip_refinement(type_id id) const -> type_id;
 
-  /// Whether a value of type `id` *is* a pointer at run time.
+  /// Whether `id` is a compound value: `str`, the prelude generics (`list`,
+  /// `option`, `result`, ...), tuple, fixed array, struct, sum, and
+  /// `fn`/closure. The numbers, `bool`, `char` and `unit` are not.
   ///
-  /// The heap-backed set `src/runtime/layout.h` describes: `str`, the
-  /// prelude generics (`list`, `option`, `result`, ...), tuple, fixed
-  /// array, struct, sum, and `fn`/closure. Everything else — the numbers,
-  /// `bool`, `char`, `unit` — lives inline at its natural width.
-  ///
-  /// One definition, because two subsystems ask it and a disagreement
-  /// between them is not a cosmetic drift: `llvm_codegen`'s `is_heap_type`
-  /// decides whether a value is an opaque `ptr`, and the rule just below
-  /// decides whether typing may ignore a `&`. A backend that thought
-  /// `&int32` was a passthrough while typing thought it was an address is
-  /// exactly the silent arithmetic-on-a-pointer bug (`spec/todo.md` 21).
-  [[nodiscard]] auto is_heap_represented(type_id id) const -> bool;
+  /// A language rule, not a representation: every value is laid out inline
+  /// (`runtime::value_layouts`). Typing lets a compound value be used
+  /// through a `&` without a `*` (`reference_is_transparent`), and a method
+  /// on a compound type borrows its `self`, where a scalar `self` is passed
+  /// by value (`checker::self_param_type`).
+  [[nodiscard]] auto is_compound_value(type_id id) const -> bool;
 
   /// Whether a `&` to `referent` has the same runtime representation as the
   /// value itself, so typing may treat the two alike.
   ///
-  /// True for everything `is_heap_represented` covers — `&xs` on a `list`
+  /// True for everything `is_compound_value` covers — `&xs` on a `list`
   /// costs no instruction, which is why `xs.len()` through a `&list[T]`
   /// parameter is the same code as through an owned one, the transparency
   /// the borrowing chapter describes. A number is the other case: `&n`
@@ -386,24 +382,6 @@ public:
   ///
   /// Interning, so the result is an ordinary type id like any other.
   [[nodiscard]] auto erase_refinements(type_id id) -> type_id;
-
-  /// The base type of the refinement *declared* under `name`, if exactly one
-  /// is — `int32` for a `type positive = int32 where self > 0`.
-  ///
-  /// Exists for `runtime/layout.cpp`, which resolves a struct field's type
-  /// from its declared AST name and has no module index to look a user type
-  /// up in. Without this, a field typed `positive` would fall through to
-  /// layout's "some named type, therefore heap-referenced" default and be
-  /// given 8 bytes instead of the 4 its `int32` base actually occupies —
-  /// harmless for an ordinary struct (writer and reader agree), but wrong for
-  /// a `packed` one, whose whole purpose is an exact byte layout.
-  ///
-  /// `nullopt` when no refinement is declared under `name`, and also when
-  /// *several* are (two modules may each declare a `positive` over different
-  /// bases): a name alone cannot disambiguate them, and guessing a layout is
-  /// worse than declining to.
-  [[nodiscard]] auto refinement_base_named(std::string_view name) const
-      -> std::optional<type_id>;
 
   /// Whether `id` is `unknown`, `error`, or a type parameter — anything the
   /// checker treats as "don't know, don't complain."

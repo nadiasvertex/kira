@@ -35,7 +35,7 @@ pub type shared[T] = { inner: *mut shared_block[T] }
 - `shared[T].new(v)` allocates a block, moves `v` into it, and sets the count to 1. `shared e` is the same call written as an expression, and the bare form `shared.new(e)` solves `T` from its argument.
 - `clone()` atomically increments the count and returns a second handle to the same block. `drop` atomically decrements it; the handle that takes the count to zero runs the value's drop glue and frees the block.
 - `strong_count()` reports the number of live handles.
-- A handle is one pointer wide. Its `shared_block` is held by reference like any struct, so code in `std.shared` writes the whole block into its slot instead of assigning the fields of an unwritten slot.
+- A handle is one pointer wide. The `shared_block` lives inline in the heap allocation the handle points at, and `std.shared` writes a new block there as one whole value.
 - Reading through a handle uses [`deref`](18-traits.md#deref). `clone` is found on the handle before the target's own `clone`, so `h.clone()` always adds a handle and never copies the value. A target's own method of the same name is reached with `(*h).clone()`.
 - `shared` is a keyword that is also accepted as a module path segment and a type declaration name. The type name is not in the prelude and needs `use std.shared.shared`; the `shared e` expression form needs no import.
 

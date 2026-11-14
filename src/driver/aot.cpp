@@ -14,7 +14,7 @@
 #include "src/llvm_codegen/aot.h"
 #include "src/llvm_codegen/codegen.h"
 #include "src/llvm_codegen/storage_codegen.h"
-#include "src/driver/storage_program.h"
+#include "src/hir/storage_program.h"
 #include "src/util/path.h"
 
 namespace fs = std::filesystem;
@@ -67,23 +67,15 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
                  std::string_view function_name, const fs::path &output_path,
                  std::string_view program_name, optimization_level level)
     -> build_outcome {
-  const auto storage = storage_form_enabled();
-  auto program = std::unique_ptr<storage_program>{};
-  if (storage) {
-    auto prepared = prepare_storage_program(modules, checked);
-    if (!prepared.has_value()) {
-      return build_outcome{.succeeded = false,
-                           .message = std::format("failed to compile `{}`: {}",
-                                                  function_name,
-                                                  prepared.error())};
-    }
-    program = std::move(*prepared);
+  auto program = hir::prepare_storage_program(modules, checked);
+  if (!program.has_value()) {
+    return build_outcome{.succeeded = false,
+                         .message = std::format("failed to compile `{}`: {}",
+                                                function_name, program.error())};
   }
-  auto compiled =
-      storage ? llvm_codegen::compile_storage_module(
-                    std::span<const hir::storage_module *const>(program->modules),
-                    *program->env)
-              : llvm_codegen::compile_module(modules, checked.types);
+  auto compiled = llvm_codegen::compile_storage_module(
+      std::span<const hir::storage_module *const>((*program)->modules),
+      *(*program)->env);
   if (!compiled) {
     return build_outcome{
         .succeeded = false,

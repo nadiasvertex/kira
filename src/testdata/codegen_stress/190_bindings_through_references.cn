@@ -4,13 +4,10 @@ module codegen_stress.bindings_through_references
 # points at (chapter 3): it is not moved out, and through a `&mut` subject a
 # write to it changes the referent.
 #
-# The pointer-per-aggregate tiers copy a `copy` payload into the binding, so
-# the write in `bump` is lost there and they answer 1028. The storage form
-# writes the referent and answers 1029; `# storage-expect:` holds the answer
-# chapter 3 asks for.
+# A copy of a `copy` payload instead would lose the write in `bump` and give
+# 1028; writing the referent gives 1029, the answer chapter 3 asks for.
 #
-# expect: 1028
-# storage-expect: 1029
+# expect: 1029
 
 def grow(o: &mut option[list[int64]]) -> unit:
     match o:

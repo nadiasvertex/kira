@@ -5319,6 +5319,20 @@ auto test_compile_sources_enforces_frame_stack_budget() -> void {
          "as a compiler gap");
   expect(over.hir_modules.size() == 1 && over.hir_modules[0].lowered,
          "expected the module itself to have lowered before the check");
+
+  // A buffer of a struct counts the struct's inline bytes (32 per `quad`),
+  // not one word per element.
+  const auto aggregate = compile(
+      "aggregate",
+      read_program("compile_sources_enforces_frame_stack_budget_3.cn"));
+  expect(aggregate.error_count == 1 &&
+             aggregate.diagnostics.find("this buffer takes 1056000 bytes") !=
+                 std::string::npos &&
+             aggregate.diagnostics.find("gap in the compiler") ==
+                 std::string::npos,
+         std::format("expected a 33000-`quad` buffer to be over the budget at "
+                     "its inline size, got:\n{}",
+                     aggregate.diagnostics));
 }
 
 } // namespace

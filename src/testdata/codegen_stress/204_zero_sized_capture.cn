@@ -1,0 +1,22 @@
+module codegen_stress.zero_sized_capture
+
+# A closure may capture a value whose type has no bytes. The capture takes no
+# room in the environment, so a closure whose only capture is zero-sized has
+# an empty environment and allocates nothing for it, and one that also
+# captures a `list` keeps the list at the start of its environment.
+
+type marker = {}
+
+def weight(m: &marker) -> int64:
+    return 3
+
+def main() -> int64:
+    let solo = marker{}
+    let only = move () => weight(&solo) * 100
+    let mixed_marker = marker{}
+    let xs: list[int64] = [5, 6, 7, 8]
+    let mixed = move () => weight(&mixed_marker) * 10 + int64(xs.len())
+    return only() + mixed() + only()
+
+# 300 + (30 + 4) + 300
+# expect: 634

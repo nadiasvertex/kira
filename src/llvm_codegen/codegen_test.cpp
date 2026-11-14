@@ -1,7 +1,12 @@
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <format>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -18,7 +23,9 @@
 #include "src/hir/link.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
+#include "src/hir/storage_program.h"
 #include "src/llvm_codegen/codegen.h"
+#include "src/llvm_codegen/storage_codegen.h"
 #include "src/llvm_codegen/jit_support.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
@@ -113,7 +120,6 @@ auto check_fixture(const std::string &text) -> checked_fixture {
 }
 
 struct jit_fixture {
-  checked_fixture fixture;
   lc::jit_module jit;
 };
 
@@ -121,22 +127,135 @@ struct jit_fixture {
 // reaches: `xs.push(x)` on a `list[T]` is a real call into
 // `src/std/list.cn`, so the callee has to be in the compiled set for the
 // JIT to have anything to call.
-auto jit_fixture_for(const std::string &text) -> jit_fixture {
-  auto fixture = check_fixture(text);
+/// Lowers `reachable` to the storage form and compiles it to LLVM with an
+/// entry thunk per function, as the driver does. The storage program and the
+/// HIR modules are kept until the test exits.
+auto compile_storage(std::span<const hir::hir_module *const> reachable,
+                     cinder::semantic::checked_types &checked)
+    -> lc::compiled_module {
+  static auto keep = std::vector<std::unique_ptr<hir::storage_program>>{};
+  auto program = hir::prepare_storage_program(reachable, checked);
+  expect(program.has_value(),
+         program.has_value()
+             ? std::string{}
+             : "expected fixture to lower to the storage form: " +
+                   program.error());
+  auto compiled = lc::compile_storage_module(
+      std::span<const hir::storage_module *const>((*program)->modules),
+      *(*program)->env, lc::storage_codegen_options{.entry_thunks = true});
+  expect(compiled.has_value(),
+         compiled.has_value()
+             ? std::string{}
+             : "expected fixture to compile to an llvm::Module: " +
+                   compiled.error().message);
+  keep.push_back(std::move(*program));
+  return std::move(*compiled);
+}
+
+/// Compiles a checked single-file fixture, module `sample`, with every stdlib
+/// module it reaches: `xs.push(x)` on a `list[T]` is a real call into
+/// `src/std/list.cn`. The fixture must outlive the result.
+auto compile_checked(checked_fixture &fixture) -> lc::compiled_module {
+  static auto keep = std::vector<hir::ptr_vec<hir::hir_module>>{};
   auto entry = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(entry.has_value(), "expected fixture to lower to HIR");
-  auto modules = hir::ptr_vec<hir::hir_module>{};
+  auto &modules = keep.emplace_back();
   modules.push_back(std::move(*entry));
   const auto *entry_module = modules.front().get();
   cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
                                         modules);
   const auto reachable = hir::find_reachable_modules(*entry_module, modules);
-  auto compiled = lc::compile_module(reachable, fixture.checked.types);
-  expect(compiled.has_value(),
-         "expected fixture to compile to an llvm::Module");
-  auto jit = lc::jit_module::create(std::move(*compiled));
+  return compile_storage(reachable, fixture.checked);
+}
+
+/// A fixture checked and kept until the test exits.
+auto kept_fixture(const std::string &text) -> checked_fixture & {
+  static auto keep = std::vector<std::unique_ptr<checked_fixture>>{};
+  keep.push_back(std::make_unique<checked_fixture>(check_fixture(text)));
+  return *keep.back();
+}
+
+auto jit_fixture_for(const std::string &text) -> jit_fixture {
+  auto &fixture = kept_fixture(text);
+  auto jit = lc::jit_module::create(compile_checked(fixture));
   expect(jit.has_value(), "expected the compiled module to JIT successfully");
-  return jit_fixture{.fixture = std::move(fixture), .jit = std::move(*jit)};
+  return jit_fixture{.jit = std::move(*jit)};
+}
+
+/// Runs the zero-argument function `name` through its entry thunk and reads a
+/// scalar result of `kind` (`nullopt` for `unit`) from the bytes it wrote.
+auto run_jit(const lc::jit_module &jit, std::string_view name,
+             std::optional<bc::numeric_kind> kind)
+    -> std::expected<lc::jit_result, bc::panic_reason> {
+  alignas(16) auto bytes = std::array<std::byte, 16>{};
+  const auto ran = jit.run_storage(name, std::span<const uint64_t>{}, bytes.data());
+  if (!ran.has_value()) {
+    return std::unexpected(ran.error());
+  }
+  auto out = lc::jit_result{.has_value = kind.has_value()};
+  if (!kind.has_value()) {
+    return out;
+  }
+  const auto read = [&]<typename T>(T) {
+    auto value = T{};
+    std::memcpy(&value, bytes.data(), sizeof(T));
+    return value;
+  };
+  switch (*kind) {
+  case bc::numeric_kind::i8:
+    out.value = bc::slot_value{int64_t{read(int8_t{})}};
+    break;
+  case bc::numeric_kind::i16:
+    out.value = bc::slot_value{int64_t{read(int16_t{})}};
+    break;
+  case bc::numeric_kind::i32:
+    out.value = bc::slot_value{int64_t{read(int32_t{})}};
+    break;
+  case bc::numeric_kind::u8:
+  case bc::numeric_kind::boolean:
+    out.value = bc::slot_value{uint64_t{read(uint8_t{})}};
+    break;
+  case bc::numeric_kind::u16:
+    out.value = bc::slot_value{uint64_t{read(uint16_t{})}};
+    break;
+  case bc::numeric_kind::u32:
+  case bc::numeric_kind::character:
+    out.value = bc::slot_value{uint64_t{read(uint32_t{})}};
+    break;
+  case bc::numeric_kind::f32:
+    out.value = bc::slot_value{static_cast<double>(read(float{}))};
+    break;
+  case bc::numeric_kind::f64:
+    out.value = bc::slot_value{read(double{})};
+    break;
+  case bc::numeric_kind::i128:
+  case bc::numeric_kind::u128:
+    out.value = bc::slot_value{read(static_cast<unsigned __int128>(0))};
+    break;
+  default:
+    out.value = bc::slot_value{read(uint64_t{})};
+    break;
+  }
+  return out;
+}
+
+/// Runs the zero-argument function `name` and returns the `size` bytes of its
+/// result, built at an address the test owns, which starts zeroed.
+auto run_jit_bytes(const lc::jit_module &jit, std::string_view name, size_t size)
+    -> std::vector<std::byte> {
+  auto bytes = std::vector<std::byte>(std::max<size_t>(size, 16));
+  const auto ran = jit.run_storage(name, std::span<const uint64_t>{}, bytes.data());
+  expect(ran.has_value(), std::format("expected {}() to succeed", name));
+  return bytes;
+}
+
+/// The `T` stored at `offset` in `bytes`.
+template <typename T>
+auto read_at(const std::vector<std::byte> &bytes, size_t offset) -> T {
+  expect(offset + sizeof(T) <= bytes.size(), "expected a read inside the value");
+  auto out = T{};
+  std::memcpy(&out, bytes.data() + offset, sizeof(T));
+  return out;
 }
 
 // Mirrors src/bytecode_compiler/compile_test.cpp's own
@@ -146,9 +265,17 @@ auto jit_fixture_for(const std::string &text) -> jit_fixture {
 auto jit_fixture_for_multi(
     const std::vector<std::pair<std::string, std::string>> &files,
     std::string_view entry_module_name) -> jit_fixture {
-  auto fixture = checked_fixture{};
+  // Kept until the test exits, with the program compiled from it.
+  struct session {
+    checked_fixture fixture;
+    std::vector<cinder::ast::ptr<cinder::ast::file>> ast_files;
+    hir::ptr_vec<hir::hir_module> modules;
+  };
+  static auto keep = std::vector<std::unique_ptr<session>>{};
+  auto &kept = *keep.emplace_back(std::make_unique<session>());
+  auto &fixture = kept.fixture;
   fixture.stdlib = cinder::testing::parse_stdlib(fixture.sources, fixture.diag);
-  auto ast_files = std::vector<cinder::ast::ptr<cinder::ast::file>>{};
+  auto &ast_files = kept.ast_files;
   auto parsed_modules = fixture.stdlib.modules;
   auto file_ids = std::vector<cinder::file_id_type>{};
 
@@ -180,7 +307,7 @@ auto jit_fixture_for_multi(
       parsed_modules, fixture.diag, file_has_errors, &comptime);
   expect_checked_cleanly(fixture.sources, fixture.diag);
 
-  auto modules = hir::ptr_vec<hir::hir_module>{};
+  auto &modules = kept.modules;
   for (size_t i = 0; i < files.size(); ++i) {
     auto lowered =
         hir::lower_module(*ast_files[i], files[i].first, fixture.checked);
@@ -200,7 +327,6 @@ auto jit_fixture_for_multi(
   for (auto &functor_module : *functor_modules) {
     modules.push_back(std::move(functor_module));
   }
-  fixture.ast_file = std::move(ast_files.front());
 
   const hir::hir_module *entry = nullptr;
   for (const auto &module : modules) {
@@ -211,12 +337,9 @@ auto jit_fixture_for_multi(
   expect(entry != nullptr, "expected to find the entry module by name");
 
   const auto reachable = hir::find_reachable_modules(*entry, modules);
-  auto compiled = lc::compile_module(reachable, fixture.checked.types);
-  expect(compiled.has_value(),
-         "expected the cross-module fixture to compile to an llvm::Module");
-  auto jit = lc::jit_module::create(std::move(*compiled));
+  auto jit = lc::jit_module::create(compile_storage(reachable, fixture.checked));
   expect(jit.has_value(), "expected the compiled module to JIT successfully");
-  return jit_fixture{.fixture = std::move(fixture), .jit = std::move(*jit)};
+  return jit_fixture{.jit = std::move(*jit)};
 }
 
 // Counts every `llvm::CallInst` in `module` marked `musttail`
@@ -248,13 +371,8 @@ auto count_musttail_calls_to(llvm::Module &module, std::string_view callee_name)
 }
 
 auto test_self_recursive_tail_call_gets_musttail() -> void {
-  auto fixture =
-      check_fixture(read_program("self_recursive_tail_call_gets_musttail.cn"));
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(module.has_value(), "expected fixture to lower to HIR");
-  auto compiled = lc::compile_module(**module, fixture.checked.types);
-  expect(compiled.has_value(),
-         "expected fixture to compile to an llvm::Module");
+  auto &fixture = kept_fixture(read_program("self_recursive_tail_call_gets_musttail.cn"));
+  auto compiled = std::optional<lc::compiled_module>{compile_checked(fixture)};
 
   expect(count_musttail_calls_to(*compiled->module, "count_down") == 1,
          "expected the self-recursive `return count_down(...)` to compile "
@@ -265,7 +383,7 @@ auto test_self_recursive_tail_call_gets_musttail() -> void {
   // the LLVM tier.
   auto jit = lc::jit_module::create(std::move(*compiled));
   expect(jit.has_value(), "expected the compiled module to JIT successfully");
-  auto result = jit->run("main", bc::numeric_kind::i32);
+  auto result = run_jit(*jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected a million-deep musttail chain not to "
                              "overflow the native stack");
   expect(result->value.i == 1'000'000,
@@ -278,7 +396,7 @@ auto test_small_integer_returns_carry_extension_attributes() -> void {
   // `signext`/`zeroext`, an optimized caller saw garbage above bit 8 of an
   // `int8` result (todo item 19). The musttail self-call checks that call
   // sites carry the callee's return attributes, which LLVM requires.
-  auto fixture = check_fixture(R"(module sample
+  auto &fixture = kept_fixture(R"(module sample
 
 def narrow(n: int32, acc: int8) -> int8:
     if n == 0:
@@ -299,11 +417,7 @@ def main() -> int8:
         return narrow(200, 0) +% (unsigned_narrow() as int8) +% (wide() as int8)
     return 0
 )");
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(module.has_value(), "expected fixture to lower to HIR");
-  auto compiled = lc::compile_module(**module, fixture.checked.types);
-  expect(compiled.has_value(),
-         "expected fixture to compile to an llvm::Module");
+  auto compiled = std::optional<lc::compiled_module>{compile_checked(fixture)};
 
   const auto ret_has = [&](std::string_view name,
                            llvm::Attribute::AttrKind kind) {
@@ -327,7 +441,7 @@ def main() -> int8:
 
   auto jit = lc::jit_module::create(std::move(*compiled));
   expect(jit.has_value(), "expected the compiled module to JIT successfully");
-  auto result = jit->run("main", bc::numeric_kind::i8);
+  auto result = run_jit(*jit, "main", bc::numeric_kind::i8);
   expect(result.has_value(), "expected `main` to run");
   // 200 +% 200 +% 1 in int8: -56 + -56 + 1 = -111.
   expect(result->value.i == -111,
@@ -339,13 +453,9 @@ auto test_indirect_call_through_closure_never_gets_musttail() -> void {
   // every indirect/closure call, even one in tail position, from
   // `is_tail_call` (see hir::mark_tail_calls), so codegen has no marked
   // call here to ever emit `musttail` for.
-  auto fixture = check_fixture(
+  auto &fixture = kept_fixture(
       read_program("indirect_call_through_closure_never_gets_musttail.cn"));
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(module.has_value(), "expected fixture to lower to HIR");
-  auto compiled = lc::compile_module(**module, fixture.checked.types);
-  expect(compiled.has_value(),
-         "expected fixture to compile to an llvm::Module");
+  auto compiled = std::optional<lc::compiled_module>{compile_checked(fixture)};
 
   auto musttail_count = size_t{0};
   for (auto &fn : *compiled->module) {
@@ -365,13 +475,8 @@ auto test_indirect_call_through_closure_never_gets_musttail() -> void {
 }
 
 auto test_intrinsic_call_never_gets_musttail() -> void {
-  auto fixture =
-      check_fixture(read_program("intrinsic_call_never_gets_musttail.cn"));
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(module.has_value(), "expected fixture to lower to HIR");
-  auto compiled = lc::compile_module(**module, fixture.checked.types);
-  expect(compiled.has_value(),
-         "expected fixture to compile to an llvm::Module");
+  auto &fixture = kept_fixture(read_program("intrinsic_call_never_gets_musttail.cn"));
+  auto compiled = std::optional<lc::compiled_module>{compile_checked(fixture)};
 
   expect(count_musttail_calls_to(*compiled->module, "cinder_rt_panic") == 0,
          "expected a call to an `intrinsic def` to never compile to "
@@ -380,35 +485,35 @@ auto test_intrinsic_call_never_gets_musttail() -> void {
 
 auto test_add_compiles_and_runs() -> void {
   auto jf = jit_fixture_for(load_fixture("add.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42, "expected 10 + 32 == 42");
 }
 
 auto test_implicit_tail_expression_is_the_return_value() -> void {
   auto jf = jit_fixture_for(load_fixture("implicit_tail_expression.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42, "expected 21 * 2 == 42");
 }
 
 auto test_if_expression_selects_branch_value() -> void {
   auto jf = jit_fixture_for(load_fixture("if_expression.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 14, "expected abs(-7) + abs(7) == 14");
 }
 
 auto test_intrinsic_call_resolves_to_native_symbol() -> void {
-  // `intrinsic def rt_stdout() -> raw_fd` has no body — `compile_call`
+  // `intrinsic def rt_stdout() -> raw_fd` has no body — the storage codegen
   // recognizes the call by name (src/intrinsics.h) and emits a call to the
-  // `cinder_rt_stdout` C-ABI symbol (declared in `compile_module`,
-  // implemented in `src/runtime/io.cpp`) instead of failing with
-  // `unknown_callee`. JIT-resolved here via `//src/runtime:runtime`
+  // `cinder_rt_stdout_into` C-ABI symbol (implemented in
+  // `src/runtime/io.cpp`), which builds the `raw_fd` in the caller's
+  // storage. JIT-resolved here via `//src/runtime:runtime`
   // (`:jit_support`'s real `deps`, not just `data`) linking `io.cpp`'s
   // `alwayslink`'d object into this test binary's own process.
   auto jf = jit_fixture_for(load_fixture("intrinsic_call.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i64);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i64);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 1, "expected main()'s rt_stdout().value to be 1");
 }
@@ -420,7 +525,7 @@ auto test_int128_main_returns_both_halves() -> void {
   auto jf = jit_fixture_for("module sample\n"
                             "def main() -> int128:\n"
                             "    return -18446744073709551621\n");
-  auto result = jf.jit.run("main", bc::numeric_kind::i128);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i128);
   expect(result.has_value(), "expected an int128 main() to succeed");
   const auto expected = -((static_cast<__int128>(1) << 64) + 5);
   expect(static_cast<__int128>(result->value.w) == expected,
@@ -432,11 +537,11 @@ auto test_intrinsic_result_constructs_and_matches_through_real_syntax()
   // The LLVM-tier counterpart of
   // src/bytecode_compiler/compile_test.cpp's identically-named test: opens
   // a guaranteed-missing file through the real `intrinsic def rt_open` and
-  // real `match @ok(fd)/@err(e)` syntax, proving `cinder_rt_open`'s
-  // `result[raw_fd, io_errno]` heap-pointer return value round-trips
-  // through this backend's own sum-type construction/matching codegen.
+  // real `match @ok(fd)/@err(e)` syntax, proving the `result[raw_fd,
+  // io_errno]` that `cinder_rt_open_into` builds in caller storage matches
+  // through this backend's own sum-type codegen.
   auto jf = jit_fixture_for(load_fixture("intrinsic_result.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() not to panic");
   expect(result->value.i == 2,
          "expected main() to match the `@err(e)` arm for a missing file");
@@ -457,7 +562,7 @@ auto test_implicit_tail_match_and_if_are_the_return_value() -> void {
   // block with `unreachable`, tripping LLVM's verifier
   // ("Terminator found in the middle of a basic block").
   auto jf = jit_fixture_for(load_fixture("implicit_tail_match_and_if.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 111222402,
          "expected classify(true)*1e6 + classify(false)*1e3 + grade(95)*1e2 "
@@ -473,7 +578,7 @@ auto test_unit_match_tail_call_stores_a_placeholder() -> void {
   // placeholder instead. Reaching `main`'s `return 7` at all proves the
   // module compiled without hanging.
   auto jf = jit_fixture_for(load_fixture("unit_match_tail_call.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 7,
          "expected main() to return 7 after two unit-typed match dispatches");
@@ -481,21 +586,21 @@ auto test_unit_match_tail_call_stores_a_placeholder() -> void {
 
 auto test_while_loop_sums_one_to_n() -> void {
   auto jf = jit_fixture_for(load_fixture("while_loop.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 55, "expected sum(1..=10) == 55");
 }
 
 auto test_recursive_call_computes_factorial() -> void {
   auto jf = jit_fixture_for(load_fixture("recursive_factorial.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 120, "expected factorial(5) == 120");
 }
 
 auto test_and_or_short_circuit_to_correct_value() -> void {
   auto jf = jit_fixture_for(load_fixture("and_or_short_circuit.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::boolean);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::boolean);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 1,
          "expected the combined classification to be true");
@@ -503,14 +608,14 @@ auto test_and_or_short_circuit_to_correct_value() -> void {
 
 auto test_cast_widens_int_to_float() -> void {
   auto jf = jit_fixture_for(load_fixture("cast_int_to_float.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::f64);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::f64);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.f == 21.0, "expected int32(21) as float64 == 21.0");
 }
 
 auto test_checked_add_panics_on_overflow_end_to_end() -> void {
   auto jf = jit_fixture_for(load_fixture("checked_add_overflow.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i8);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i8);
   expect(!result.has_value(), "expected int8 100+100 to overflow and panic");
   expect(result.error() == bc::panic_reason::integer_overflow,
          "expected the panic reason to be integer_overflow");
@@ -518,56 +623,44 @@ auto test_checked_add_panics_on_overflow_end_to_end() -> void {
 
 auto test_checked_div_panics_on_divide_by_zero() -> void {
   auto jf = jit_fixture_for(load_fixture("checked_div_by_zero.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(!result.has_value(), "expected division by zero to panic");
   expect(result.error() == bc::panic_reason::integer_divide_by_zero,
          "expected the panic reason to be integer_divide_by_zero");
 }
 
 auto test_string_literal_round_trips_through_the_heap() -> void {
-  // Mirrors src/bytecode_compiler/compile_test.cpp's own str test exactly
-  // (same fixture, same "hello" content, same {len; data} slot layout) —
-  // `run_ptr_result` gives a real in-process pointer to the JIT's heap
-  // value, just like the bytecode VM's own return value does, so both
-  // tiers' str construction can be checked against the same expected bytes.
+  // Mirrors src/bytecode_compiler/compile_test.cpp's own str test: a `str` is
+  // an inline `{len, data}` descriptor whose data points at the literal's
+  // constant bytes.
   auto jf = jit_fixture_for(load_fixture("string_literal.cn"));
-  auto result = jf.jit.run_ptr_result("main");
-  expect(result.has_value(), "expected main() to succeed");
-  const auto *slots = reinterpret_cast<const bc::heap_word *>(
-      static_cast<uintptr_t>(result->value.u));
-  expect(slots[0].u == 5, "expected \"hello\" to report length 5");
-  const auto *data =
-      reinterpret_cast<const char *>(static_cast<uintptr_t>(slots[1].u));
+  const auto bytes = run_jit_bytes(jf.jit, "main", 16);
+  expect(read_at<uint64_t>(bytes, 0) == 5, "expected \"hello\" to report length 5");
+  const auto *data = reinterpret_cast<const char *>(
+      static_cast<uintptr_t>(read_at<uint64_t>(bytes, 8)));
   expect(std::string_view(data, 5) == "hello",
-         "expected the str's data slot to point at \"hello\"'s bytes");
+         "expected the str's data to point at \"hello\"'s bytes");
 }
 
 auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
-  // Mirrors src/bytecode_compiler/compile_test.cpp's own sum type test:
-  // now that `match` is implemented, both tiers can decode the same
-  // {tag; payload} heap layout for the same `make(3.5)` call and agree on
-  // the tag/payload encoding, not just on "it compiles".
+  // Mirrors src/bytecode_compiler/compile_test.cpp's own sum type test: a
+  // `u64` tag at offset 0, then the `float64` payload at offset 8.
   auto jf = jit_fixture_for(load_fixture("sum_type_variant.cn"));
-  auto result = jf.jit.run_ptr_result("main");
-  expect(result.has_value(), "expected main() to succeed");
-  const auto *slots = reinterpret_cast<const bc::heap_word *>(
-      static_cast<uintptr_t>(result->value.u));
-  expect(slots[0].i == 0, "expected @circle to encode as tag 0");
-  expect(slots[1].f == 3.5, "expected the payload slot to hold 3.5");
+  const auto bytes = run_jit_bytes(jf.jit, "main", 16);
+  expect(read_at<int64_t>(bytes, 0) == 0, "expected @circle to encode as tag 0");
+  expect(read_at<double>(bytes, 8) == 3.5,
+         "expected the payload to hold 3.5 at offset 8");
 }
 
 auto test_sum_type_unit_variant_encodes_its_tag() -> void {
   auto jf = jit_fixture_for(load_fixture("sum_type_unit_variant.cn"));
-  auto result = jf.jit.run_ptr_result("main");
-  expect(result.has_value(), "expected main() to succeed");
-  const auto *slots = reinterpret_cast<const bc::heap_word *>(
-      static_cast<uintptr_t>(result->value.u));
-  expect(slots[0].i == 1, "expected @empty to encode as tag 1");
+  const auto bytes = run_jit_bytes(jf.jit, "main", 16);
+  expect(read_at<int64_t>(bytes, 0) == 1, "expected @empty to encode as tag 1");
 }
 
 auto test_calls_another_function_in_the_same_module() -> void {
   auto jf = jit_fixture_for(load_fixture("function_calls.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 25, "expected sum_of_squares(3, 4) == 25");
 }
@@ -579,7 +672,7 @@ auto test_calls_a_function_in_another_module() -> void {
           {"app", read_program("calls_a_function_in_another_module_2.cn")},
       },
       "app");
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected a call across module boundaries to run");
   expect(result->value.i == 42,
          "expected main() to return tools.double(21) == 42");
@@ -602,7 +695,7 @@ auto test_calls_into_a_materialized_functor_instantiation() -> void {
                       "calls_into_a_materialized_functor_instantiation_2.cn")},
       },
       "app");
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(),
          "expected a call into an instantiated functor to run");
   expect(result->value.i == 42,
@@ -626,7 +719,7 @@ auto test_functor_body_with_type_and_static_members() -> void {
            read_program("functor_body_with_type_and_static_members_2.cn")},
       },
       "app");
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(),
          "expected a functor with type/static members to run");
   expect(result->value.i == 47,
@@ -648,7 +741,7 @@ auto test_functor_body_with_impl_and_extend_members() -> void {
            read_program("functor_body_with_impl_and_extend_members_2.cn")},
       },
       "app");
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(),
          "expected a functor with impl/extend members to run");
   expect(result->value.i == 63,
@@ -663,7 +756,7 @@ auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
                "calls_an_associated_function_via_a_type_qualified_path.cn")},
       },
       "app");
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(),
          "expected a type-qualified associated-function call to run");
   expect(result->value.i == 21,
@@ -687,7 +780,7 @@ auto test_calls_a_self_receiver_trait_default_method_across_modules() -> void {
                                "across_modules_2.cn")},
       },
       "app");
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(),
          "expected a cross-module trait-default method call to run");
   expect(result->value.i == 42,
@@ -696,7 +789,7 @@ auto test_calls_a_self_receiver_trait_default_method_across_modules() -> void {
 
 auto test_tuple_construction_and_projection() -> void {
   auto jf = jit_fixture_for(load_fixture("tuple_construction.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42,
          "expected the tuple's three elements to sum to 42");
@@ -704,21 +797,21 @@ auto test_tuple_construction_and_projection() -> void {
 
 auto test_struct_literal_and_field_access() -> void {
   auto jf = jit_fixture_for(load_fixture("struct_field_access.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42, "expected 18 + 24 == 42 via field access");
 }
 
 auto test_fixed_array_construction_and_indexing() -> void {
   auto jf = jit_fixture_for(load_fixture("fixed_array_indexing.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 30, "expected a[2] == 30");
 }
 
 auto test_packed_struct_field_access() -> void {
   auto jf = jit_fixture_for(load_fixture("packed_struct_layout.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i64);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i64);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 7'003'042,
          "expected combine(7, 3, 42) == 7003042 via a packed struct");
@@ -726,7 +819,7 @@ auto test_packed_struct_field_access() -> void {
 
 auto test_padded_struct_field_access() -> void {
   auto jf = jit_fixture_for(load_fixture("padded_struct_layout.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i64);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i64);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 7'003'042,
          "expected combine(7, 3, 42) == 7003042 via a default-padded struct");
@@ -736,14 +829,12 @@ auto test_packed_struct_has_no_padding_in_memory() -> void {
   // Mirrors src/bytecode_compiler/compile_test.cpp's own test exactly —
   // `combine()` above only proves field *values* round-trip correctly,
   // which a padded layout would do identically. This reads the JIT's own
-  // constructed struct's raw heap bytes directly, proving `packed`
+  // constructed struct's raw bytes directly, proving `packed`
   // actually removes alignment padding in the LLVM-compiled tier too, not
   // just the bytecode VM.
   auto jf = jit_fixture_for(load_fixture("packed_struct_layout.cn"));
-  auto result = jf.jit.run_ptr_result("make_fixed");
-  expect(result.has_value(), "expected make_fixed() to succeed");
-  const auto *bytes = reinterpret_cast<const uint8_t *>(
-      static_cast<uintptr_t>(result->value.u));
+  const auto raw = run_jit_bytes(jf.jit, "make_fixed", 16);
+  const auto *bytes = reinterpret_cast<const uint8_t *>(raw.data());
   // packed: magic@0 (2 bytes, LE), flags@2 (1 byte), len@3 (4 bytes, LE) —
   // back to back, no padding, 7 bytes total.
   expect(bytes[0] == 0x34 && bytes[1] == 0x12,
@@ -758,10 +849,8 @@ auto test_packed_struct_has_no_padding_in_memory() -> void {
 
 auto test_padded_struct_has_alignment_padding_in_memory() -> void {
   auto jf = jit_fixture_for(load_fixture("padded_struct_layout.cn"));
-  auto result = jf.jit.run_ptr_result("make_fixed");
-  expect(result.has_value(), "expected make_fixed() to succeed");
-  const auto *bytes = reinterpret_cast<const uint8_t *>(
-      static_cast<uintptr_t>(result->value.u));
+  const auto raw = run_jit_bytes(jf.jit, "make_fixed", 16);
+  const auto *bytes = reinterpret_cast<const uint8_t *>(raw.data());
   // default (padded) layout: magic@0 (2 bytes), flags@2 (1 byte), one
   // padding byte at offset 3 so len lands on its own 4-byte alignment
   // boundary at offset 4 — 8 bytes total, unlike the packed layout's 7.
@@ -769,8 +858,8 @@ auto test_padded_struct_has_alignment_padding_in_memory() -> void {
   expect(bytes[2] == 0xAB, "expected flags at offset 2");
   expect(bytes[3] == 0x00,
          "expected a zero padding byte at offset 3 ahead of len's own "
-         "4-byte alignment — a fresh allocation is zeroed, so an unused "
-         "padding byte reads back as 0");
+         "4-byte alignment — the result buffer starts zeroed and no field "
+         "is written there");
   expect(bytes[4] == 0xEF && bytes[5] == 0xBE && bytes[6] == 0xAD &&
              bytes[7] == 0xDE,
          "expected len at offset 4, after the alignment padding");
@@ -778,7 +867,7 @@ auto test_padded_struct_has_alignment_padding_in_memory() -> void {
 
 auto test_narrow_element_array_construction_and_indexing() -> void {
   auto jf = jit_fixture_for(load_fixture("narrow_element_array.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 60,
          "expected the first and last array[int16,5] elements (10 + 50) to "
@@ -789,15 +878,13 @@ auto test_narrow_element_array_has_no_padding_in_memory() -> void {
   // Value-only assertions (like `test_narrow_element_array_construction_and_
   // indexing` above) can't tell a natural-stride `array[int16,5]` apart from
   // one that wastes 8 bytes/element the way `slot_address`-based storage
-  // used to — this reads the JIT's own constructed array's raw heap bytes
+  // used to — this reads the JIT's own constructed array's raw bytes
   // directly to prove each `int16` element is packed at exactly a 2-byte
   // stride with no gap, mirroring the packed-struct memory-layout tests
   // above.
   auto jf = jit_fixture_for(load_fixture("narrow_element_array.cn"));
-  auto result = jf.jit.run_ptr_result("make_fixed");
-  expect(result.has_value(), "expected make_fixed() to succeed");
-  const auto *bytes = reinterpret_cast<const uint8_t *>(
-      static_cast<uintptr_t>(result->value.u));
+  const auto raw = run_jit_bytes(jf.jit, "make_fixed", 16);
+  const auto *bytes = reinterpret_cast<const uint8_t *>(raw.data());
   expect(bytes[0] == 0x11 && bytes[1] == 0x11, "expected element 0 (0x1111) "
                                                "at byte offset 0, little-"
                                                "endian");
@@ -815,7 +902,7 @@ auto test_narrow_element_array_has_no_padding_in_memory() -> void {
 
 auto test_violated_precondition_panics() -> void {
   auto jf = jit_fixture_for(load_fixture("contract_violation.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(!result.has_value(),
          "expected main()'s half(-8) to violate half's precondition");
   expect(result.error() == bc::panic_reason::precondition_violated,
@@ -828,7 +915,7 @@ auto test_violated_precondition_panics() -> void {
 // "checked once, before the first step" has to be proved here separately.
 auto test_violated_generator_precondition_panics() -> void {
   auto jf = jit_fixture_for(load_fixture("generator_precondition.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(!result.has_value(),
          "expected counter(-1) to violate counter's precondition");
   expect(result.error() == bc::panic_reason::precondition_violated,
@@ -837,7 +924,7 @@ auto test_violated_generator_precondition_panics() -> void {
 
 auto test_satisfied_generator_precondition_yields_normally() -> void {
   auto jf = jit_fixture_for(load_fixture("generator_precondition_holds.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(),
          "expected counter(3) to satisfy its own precondition");
   expect(result->value.i == 3,
@@ -851,7 +938,7 @@ auto test_satisfied_generator_precondition_yields_normally() -> void {
 // before the panic could be observed.
 auto test_violated_postcondition_in_diverging_tail_panics() -> void {
   auto jf = jit_fixture_for(load_fixture("contract_diverging_tail.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(!result.has_value(),
          "expected broken_abs(-7) to violate its postcondition");
   expect(result.error() == bc::panic_reason::postcondition_violated,
@@ -860,21 +947,21 @@ auto test_violated_postcondition_in_diverging_tail_panics() -> void {
 
 auto test_array_fill_form_repeats_the_same_value() -> void {
   auto jf = jit_fixture_for(load_fixture("array_fill.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 20, "expected four 5s to sum to 20");
 }
 
 auto test_match_dispatches_on_literal_and_wildcard_patterns() -> void {
   auto jf = jit_fixture_for(load_fixture("match_literal_wildcard.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 200, "expected classify(1) == 200");
 }
 
 auto test_match_or_pattern_matches_any_alternative() -> void {
   auto jf = jit_fixture_for(load_fixture("match_or_pattern.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::boolean);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::boolean);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 1, "expected is_small(2) && !is_small(5)");
 }
@@ -884,7 +971,7 @@ auto test_match_or_pattern_matches_any_alternative() -> void {
 // is a different `{ len; data }` block than the pattern's own literal.
 auto test_match_string_literal_pattern() -> void {
   auto jf = jit_fixture_for(load_fixture("match_string_pattern.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 102,
          R"(expected kind("yes")*100 + kind("")*10 + kind("no") == 102)");
@@ -892,7 +979,7 @@ auto test_match_string_literal_pattern() -> void {
 
 auto test_match_range_pattern() -> void {
   auto jf = jit_fixture_for(load_fixture("match_range_pattern.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 2, "expected bucket(20) == 2");
 }
@@ -903,14 +990,14 @@ auto test_match_guard_refines_a_pattern() -> void {
   // pattern-bound name (a known pre-existing lowering gap, out of scope
   // here).
   auto jf = jit_fixture_for(load_fixture("match_guard.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == -1, "expected sign(-7) == -1");
 }
 
 auto test_match_tuple_pattern_with_literal_and_binding() -> void {
   auto jf = jit_fixture_for(load_fixture("match_tuple_pattern.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 84,
          "expected describe(0, 42) + describe(18, 24) == 84");
@@ -918,7 +1005,7 @@ auto test_match_tuple_pattern_with_literal_and_binding() -> void {
 
 auto test_match_constructor_pattern_over_a_sum_type() -> void {
   auto jf = jit_fixture_for(load_fixture("match_constructor_pattern.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::f64);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::f64);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.f == 16.0,
          "expected area(@circle(4.0)) + area(@empty) == 16.0");
@@ -926,14 +1013,14 @@ auto test_match_constructor_pattern_over_a_sum_type() -> void {
 
 auto test_match_struct_pattern_destructures_named_fields() -> void {
   auto jf = jit_fixture_for(load_fixture("match_struct_pattern.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42, "expected 18 + 24 == 42 via struct pattern");
 }
 
 auto test_list_literal_construction_and_indexing() -> void {
   auto jf = jit_fixture_for(load_fixture("list_literal_indexing.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 30, "expected xs[2] == 30");
 }
@@ -954,7 +1041,7 @@ auto test_list_literal_construction_and_indexing() -> void {
 /// still checked here, in both tiers, against a computed value.
 auto test_list_index_out_of_bounds_is_refused() -> void {
   auto jf = jit_fixture_for(load_fixture("list_out_of_bounds.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 28,
          "expected xs[2] plus two out-of-range sentinels: 30 - 1 - 1 == 28");
@@ -962,7 +1049,7 @@ auto test_list_index_out_of_bounds_is_refused() -> void {
 
 auto test_list_fill_form_grows_to_a_runtime_count() -> void {
   auto jf = jit_fixture_for(load_fixture("list_fill.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 20,
          "expected four 5s (a runtime fill count) to sum to 20");
@@ -970,21 +1057,21 @@ auto test_list_fill_form_grows_to_a_runtime_count() -> void {
 
 auto test_list_for_loop_sums_every_element() -> void {
   auto jf = jit_fixture_for(load_fixture("list_for_loop.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 15, "expected 1+2+3+4+5 == 15");
 }
 
 auto test_while_let_loops_until_the_pattern_stops_matching() -> void {
   auto jf = jit_fixture_for(load_fixture("while_let_pattern.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 10, "expected 0+1+2+3+4 == 10");
 }
 
 auto test_let_else_diverges_on_a_failed_pattern() -> void {
   auto jf = jit_fixture_for(load_fixture("let_else_pattern.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 6,
          "expected unwrap_or(@present(7)) + unwrap_or(@absent) == 7 + -1");
@@ -992,7 +1079,7 @@ auto test_let_else_diverges_on_a_failed_pattern() -> void {
 
 auto test_list_comprehension_builds_and_reads_back_a_list() -> void {
   auto jf = jit_fixture_for(load_fixture("list_comprehension.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 14, "expected 0^2+1^2+2^2+3^2 == 14");
 }
@@ -1000,14 +1087,14 @@ auto test_list_comprehension_builds_and_reads_back_a_list() -> void {
 auto test_closure_captures_an_outer_parameter_and_is_called_indirectly()
     -> void {
   auto jf = jit_fixture_for(load_fixture("closure_capture.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 8, "expected make_adder(5)(3) == 8");
 }
 
 auto test_non_capturing_closure_is_called_indirectly() -> void {
   auto jf = jit_fixture_for(load_fixture("closure_noncapture.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42, "expected (x => x * 2)(21) == 42");
 }
@@ -1025,7 +1112,7 @@ auto test_non_capturing_closure_is_called_indirectly() -> void {
 auto test_generator_loop_with_yield_sums_values() -> void {
   auto jf =
       jit_fixture_for(read_program("generator_loop_with_yield_sums_values.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 10, "expected 0+1+2+3+4 == 10, the loop-"
                                 "condition local surviving every yield");
@@ -1034,7 +1121,7 @@ auto test_generator_loop_with_yield_sums_values() -> void {
 auto test_generator_branch_yields_only_matching_values() -> void {
   auto jf = jit_fixture_for(
       read_program("generator_branch_yields_only_matching_values.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 20, "expected 0+2+4+6+8 == 20");
 }
@@ -1042,7 +1129,7 @@ auto test_generator_branch_yields_only_matching_values() -> void {
 auto test_generator_bare_return_exhausts_early() -> void {
   auto jf =
       jit_fixture_for(read_program("generator_bare_return_exhausts_early.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 2,
          "expected a bare `return` to exhaust the generator before the "
@@ -1052,7 +1139,7 @@ auto test_generator_bare_return_exhausts_early() -> void {
 auto test_generator_next_after_exhaustion_stays_none() -> void {
   auto jf = jit_fixture_for(
       read_program("generator_next_after_exhaustion_stays_none.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 1,
          "expected the generator to stay exhausted on further next() calls "
@@ -1065,7 +1152,7 @@ auto test_generator_nonzero_initial_locals_survive_resume() -> void {
   // test — see its doc comment for the bug this guards against.
   auto jf = jit_fixture_for(
       read_program("generator_nonzero_initial_locals_survive_resume.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 309,
          "expected both generator-state locals to keep their real, "
@@ -1075,7 +1162,7 @@ auto test_generator_nonzero_initial_locals_survive_resume() -> void {
 auto test_for_loop_over_generator_sums_values() -> void {
   auto jf =
       jit_fixture_for(read_program("for_loop_over_generator_sums_values.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 10, "expected 0+1+2+3+4 == 10");
 }
@@ -1091,36 +1178,28 @@ auto test_for_loop_over_generator_sums_values() -> void {
 // ==========================================================================
 
 auto test_recursive_call_computes_factorial_at_o2() -> void {
-  auto fixture = check_fixture(load_fixture("recursive_factorial.cn"));
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(module.has_value(), "expected fixture to lower to HIR");
-  auto compiled = lc::compile_module(**module, fixture.checked.types);
-  expect(compiled.has_value(),
-         "expected fixture to compile to an llvm::Module");
+  auto &fixture = kept_fixture(load_fixture("recursive_factorial.cn"));
+  auto compiled = std::optional<lc::compiled_module>{compile_checked(fixture)};
   auto jit =
       lc::jit_module::create(std::move(*compiled), lc::optimization_level::o2);
   expect(jit.has_value(),
          "expected the -O2 compiled module to JIT successfully");
 
-  auto result = jit->run("main", bc::numeric_kind::i32);
+  auto result = run_jit(*jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected -O2's main() to succeed");
   expect(result->value.i == 120, "expected -O2's factorial(5) == 120, matching "
                                  "the -O0 result exactly");
 }
 
 auto test_checked_add_still_panics_on_overflow_at_o2() -> void {
-  auto fixture = check_fixture(load_fixture("checked_add_overflow.cn"));
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(module.has_value(), "expected fixture to lower to HIR");
-  auto compiled = lc::compile_module(**module, fixture.checked.types);
-  expect(compiled.has_value(),
-         "expected fixture to compile to an llvm::Module");
+  auto &fixture = kept_fixture(load_fixture("checked_add_overflow.cn"));
+  auto compiled = std::optional<lc::compiled_module>{compile_checked(fixture)};
   auto jit =
       lc::jit_module::create(std::move(*compiled), lc::optimization_level::o2);
   expect(jit.has_value(),
          "expected the -O2 compiled module to JIT successfully");
 
-  auto result = jit->run("main", bc::numeric_kind::i32);
+  auto result = run_jit(*jit, "main", bc::numeric_kind::i32);
   expect(!result.has_value(),
          "expected -O2's overflow panic to still fire, not be optimized away");
   expect(result.error() == bc::panic_reason::integer_overflow,
@@ -1151,7 +1230,7 @@ auto test_static_array_global_backs_two_independent_reads() -> void {
   // `LLJIT::initialize` call) before either call site reads `TABLE`.
   auto jf = jit_fixture_for(
       read_program("static_array_global_backs_two_independent_reads.cn"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  auto result = run_jit(jf.jit, "main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 70,
          "expected main()'s TABLE[3] + third(2) == 40 + 30 == 70 — both call "

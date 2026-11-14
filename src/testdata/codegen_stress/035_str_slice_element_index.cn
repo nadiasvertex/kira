@@ -13,3 +13,5 @@ def main() -> int64:
         total = total + (s[i] as int64) + (bytes[i] as int64)
         i = i + 1
     return total
+
+# expect: 396

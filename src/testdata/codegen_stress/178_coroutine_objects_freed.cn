@@ -1,9 +1,8 @@
 module codegen_stress.coroutine_objects_freed
 
 # expect: 0
-# max-live-blocks: 100
-# storage-max-live-blocks: 0
-# storage-max-allocations: 22000
+# max-live-blocks: 0
+# max-allocations: 22000
 
 # A coroutine object and its state block are freed once the program has
 # dropped it and the scheduler no longer refers to it. `await` consumes the

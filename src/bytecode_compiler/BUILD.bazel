@@ -3,13 +3,12 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 cc_library(
     name = "bytecode_compiler",
     srcs = [
-        "compile.cpp",
         "register_alloc.cpp",
         "scalar_encoding.cpp",
         "storage_compile.cpp",
     ],
     hdrs = [
-        "compile.h",
+        "compile_error.h",
         "register_alloc.h",
         "scalar_encoding.h",
         "storage_compile.h",

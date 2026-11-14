@@ -28,7 +28,7 @@ All three are in `std.traits` (`src/std/traits.cn`). `swap` and `replace` move v
 
 Four of these are not ordinary functions but compiler-answered forms, each taking its argument in brackets:
 
-- `size_of[T]()` and `align_of[T]()` fold at lowering time to the bytes a `T` occupies and the boundary it must start on, answered from `runtime::layout_of` — the one function both backends read every field offset and element stride from. Note that a struct, sum, `list` or other heap-referenced type answers 8: what such a value occupies *as a binding, field or element* is a pointer. That is the number a collection needs to stride its storage by. `size_of(expr)` is also accepted, asking about the expression's type; the expression is type-checked but never evaluated.
+- `size_of[T]()` and `align_of[T]()` are constants: the bytes a `T` occupies and the boundary it must start on, answered from the same layouts both backends read every field offset and element stride from. A value is stored inline, so a struct answers the size of its fields with their padding (`{ a: int32, b: int64 }` is 16), and a `list` or `str` answers the size of its own header. That is the number a collection needs to stride its storage by. `size_of(expr)` is also accepted, asking about the expression's type; the expression is type-checked but never evaluated.
 - `ptr_cast[U](p)` reinterprets a raw pointer as pointing at a `U`. Mutability follows the operand, so a cast can never gain the right to write.
 - `uninit[T, N]()` is a fixed-capacity, alignment-correct buffer of `N` slots sized for `T`, allocated in the enclosing frame rather than on the heap.
 

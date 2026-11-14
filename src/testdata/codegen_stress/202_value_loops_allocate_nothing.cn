@@ -1,8 +1,8 @@
 module codegen_stress.value_loops_allocate_nothing
 
 # expect: 96894999
-# storage-max-live-blocks: 0
-# storage-max-allocations: 2
+# max-live-blocks: 0
+# max-allocations: 2
 
 # spec/todo.md items 17 and 18: a range index's slice header, tuples, sums,
 # and `option`/generator results were heap blocks that nothing freed, so a

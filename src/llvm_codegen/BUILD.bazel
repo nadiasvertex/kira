@@ -18,7 +18,7 @@ cc_library(
 cc_library(
     name = "codegen",
     srcs = [
-        "codegen.cpp",
+        "optimize.cpp",
         "scalar_ops.cpp",
     ],
     hdrs = [
@@ -38,8 +38,8 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-# LLVM from the shared storage form (`spec/value-semantics.md`, T-06). Not
-# called by the driver yet; its test and the JIT harness are its only users.
+# LLVM from the shared storage form (`spec/value-semantics.md`, T-06): the
+# driver's `--build` and the JIT harness compile through it.
 cc_library(
     name = "storage_codegen",
     srcs = ["storage_codegen.cpp"],
@@ -113,6 +113,7 @@ cc_test(
         "//src/comptime_vm",
         ":aot",
         ":codegen",
+        ":storage_codegen",
         "//src/hir:hir",
         "//src/parser:parser",
         "//src/semantic:semantic",
@@ -133,6 +134,7 @@ cc_test(
         "//src/comptime_vm",
         ":codegen",
         ":jit_support",
+        ":storage_codegen",
         "//src/bytecode:bytecode",
         "//src/hir:hir",
         "//src/parser:parser",

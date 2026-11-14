@@ -2,6 +2,7 @@
 // bytecode compiler passes (`src/testing/storage_cases.h`), run through the JIT
 // at two optimization levels; the structural checks look at the IR itself.
 #include <array>
+#include <format>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -250,11 +251,17 @@ auto test_signatures_follow_the_internal_abi() -> void {
 }
 
 auto test_no_allocation_symbol_is_declared_or_called() -> void {
+  // Neither heap entry point: the runtime's `cinder_heap_alloc` nor the
+  // `rt_alloc` intrinsic's `cinder_rt_alloc`.
+  constexpr auto allocators = std::array<std::string_view, 2>{
+      "cinder_heap_alloc", "cinder_rt_alloc"};
   auto program = cinder::testing::build_storage_program(
       cinder::testing::read_program("bytecode_storage_test", "values.cn"));
   auto compiled = compile(*program);
-  expect(compiled.module->getFunction(llvm_codegen::kAllocSymbolName) == nullptr,
-         "expected no heap allocation entry point in the module");
+  for (const auto name : allocators) {
+    expect(compiled.module->getFunction(llvm::StringRef(name)) == nullptr,
+           std::format("expected no `{}` declaration in the module", name));
+  }
   for (const auto &function : *compiled.module) {
     for (const auto &block : function) {
       for (const auto &instruction : block) {
@@ -262,9 +269,11 @@ auto test_no_allocation_symbol_is_declared_or_called() -> void {
         if (call == nullptr || call->getCalledFunction() == nullptr) {
           continue;
         }
-        expect(call->getCalledFunction()->getName() !=
-                   llvm_codegen::kAllocSymbolName,
-               "expected no call to the heap allocator");
+        const auto callee = call->getCalledFunction()->getName();
+        for (const auto name : allocators) {
+          expect(callee != llvm::StringRef(name),
+                 "expected no call to the heap allocator");
+        }
       }
     }
   }

@@ -1300,143 +1300,143 @@
 050_bound_driven_inference.cn:92:12 [ident] int32
 050_bound_driven_inference.cn:92:12 [binary] int32
 050_bound_driven_inference.cn:92:22 [ident] int32
-052_element_assignment.cn:39:11 [binding_pat] &mut list[int32]
-052_element_assignment.cn:39:33 [binding_pat] int32
-052_element_assignment.cn:39:47 [named_type] unit
-052_element_assignment.cn:40:5 [var_stmt] usize
-052_element_assignment.cn:40:20 [literal] usize
-052_element_assignment.cn:41:11 [ident] usize
-052_element_assignment.cn:41:11 [binary] bool
-052_element_assignment.cn:41:15 [ident] &mut list[int32]
-052_element_assignment.cn:41:15 [field] fn(_) -> usize
-052_element_assignment.cn:41:15 [call] usize
-052_element_assignment.cn:42:9 [ident] &mut list[int32]
-052_element_assignment.cn:42:9 [index] int32
-052_element_assignment.cn:42:12 [ident] usize
-052_element_assignment.cn:42:17 [ident] &mut list[int32]
-052_element_assignment.cn:42:17 [index] int32
-052_element_assignment.cn:42:17 [binary] int32
-052_element_assignment.cn:42:20 [ident] usize
-052_element_assignment.cn:42:25 [ident] int32
-052_element_assignment.cn:43:9 [ident] usize
-052_element_assignment.cn:43:13 [ident] usize
-052_element_assignment.cn:43:13 [binary] usize
-052_element_assignment.cn:43:17 [literal] usize
-052_element_assignment.cn:46:11 [binding_pat] &list[int32]
-052_element_assignment.cn:46:32 [named_type] int32
-052_element_assignment.cn:47:5 [var_stmt] int32
-052_element_assignment.cn:47:15 [literal] int32
-052_element_assignment.cn:48:9 [binding_pat] int32
-052_element_assignment.cn:48:14 [ident] &list[int32]
-052_element_assignment.cn:49:9 [ident] int32
-052_element_assignment.cn:49:15 [ident] int32
-052_element_assignment.cn:49:15 [binary] int32
-052_element_assignment.cn:49:21 [ident] int32
-052_element_assignment.cn:50:12 [ident] int32
-052_element_assignment.cn:54:13 [binding_pat] &mut list[int32]
-052_element_assignment.cn:54:38 [named_type] unit
-052_element_assignment.cn:55:5 [var_stmt] usize
-052_element_assignment.cn:55:21 [literal] usize
+052_element_assignment.cn:40:11 [binding_pat] &mut list[int32]
+052_element_assignment.cn:40:33 [binding_pat] int32
+052_element_assignment.cn:40:47 [named_type] unit
+052_element_assignment.cn:41:5 [var_stmt] usize
+052_element_assignment.cn:41:20 [literal] usize
+052_element_assignment.cn:42:11 [ident] usize
+052_element_assignment.cn:42:11 [binary] bool
+052_element_assignment.cn:42:15 [ident] &mut list[int32]
+052_element_assignment.cn:42:15 [field] fn(_) -> usize
+052_element_assignment.cn:42:15 [call] usize
+052_element_assignment.cn:43:9 [ident] &mut list[int32]
+052_element_assignment.cn:43:9 [index] int32
+052_element_assignment.cn:43:12 [ident] usize
+052_element_assignment.cn:43:17 [ident] &mut list[int32]
+052_element_assignment.cn:43:17 [index] int32
+052_element_assignment.cn:43:17 [binary] int32
+052_element_assignment.cn:43:20 [ident] usize
+052_element_assignment.cn:43:25 [ident] int32
+052_element_assignment.cn:44:9 [ident] usize
+052_element_assignment.cn:44:13 [ident] usize
+052_element_assignment.cn:44:13 [binary] usize
+052_element_assignment.cn:44:17 [literal] usize
+052_element_assignment.cn:47:11 [binding_pat] &list[int32]
+052_element_assignment.cn:47:32 [named_type] int32
+052_element_assignment.cn:48:5 [var_stmt] int32
+052_element_assignment.cn:48:15 [literal] int32
+052_element_assignment.cn:49:9 [binding_pat] int32
+052_element_assignment.cn:49:14 [ident] &list[int32]
+052_element_assignment.cn:50:9 [ident] int32
+052_element_assignment.cn:50:15 [ident] int32
+052_element_assignment.cn:50:15 [binary] int32
+052_element_assignment.cn:50:21 [ident] int32
+052_element_assignment.cn:51:12 [ident] int32
+052_element_assignment.cn:55:13 [binding_pat] &mut list[int32]
+052_element_assignment.cn:55:38 [named_type] unit
 052_element_assignment.cn:56:5 [var_stmt] usize
-052_element_assignment.cn:56:21 [ident] &mut list[int32]
-052_element_assignment.cn:56:21 [field] fn(_) -> usize
-052_element_assignment.cn:56:21 [call] usize
-052_element_assignment.cn:56:21 [binary] usize
-052_element_assignment.cn:56:32 [literal] usize
-052_element_assignment.cn:57:11 [ident] usize
-052_element_assignment.cn:57:11 [binary] bool
-052_element_assignment.cn:57:16 [ident] usize
-052_element_assignment.cn:58:13 [binding_pat] int32
-052_element_assignment.cn:58:19 [ident] &mut list[int32]
-052_element_assignment.cn:58:19 [index] int32
-052_element_assignment.cn:58:22 [ident] usize
-052_element_assignment.cn:59:9 [ident] &mut list[int32]
-052_element_assignment.cn:59:9 [index] int32
-052_element_assignment.cn:59:12 [ident] usize
-052_element_assignment.cn:59:18 [ident] &mut list[int32]
-052_element_assignment.cn:59:18 [index] int32
-052_element_assignment.cn:59:21 [ident] usize
+052_element_assignment.cn:56:21 [literal] usize
+052_element_assignment.cn:57:5 [var_stmt] usize
+052_element_assignment.cn:57:21 [ident] &mut list[int32]
+052_element_assignment.cn:57:21 [field] fn(_) -> usize
+052_element_assignment.cn:57:21 [call] usize
+052_element_assignment.cn:57:21 [binary] usize
+052_element_assignment.cn:57:32 [literal] usize
+052_element_assignment.cn:58:11 [ident] usize
+052_element_assignment.cn:58:11 [binary] bool
+052_element_assignment.cn:58:16 [ident] usize
+052_element_assignment.cn:59:13 [binding_pat] int32
+052_element_assignment.cn:59:19 [ident] &mut list[int32]
+052_element_assignment.cn:59:19 [index] int32
+052_element_assignment.cn:59:22 [ident] usize
 052_element_assignment.cn:60:9 [ident] &mut list[int32]
 052_element_assignment.cn:60:9 [index] int32
 052_element_assignment.cn:60:12 [ident] usize
-052_element_assignment.cn:60:18 [ident] int32
-052_element_assignment.cn:61:9 [ident] usize
-052_element_assignment.cn:61:14 [ident] usize
-052_element_assignment.cn:61:14 [binary] usize
-052_element_assignment.cn:61:19 [literal] usize
+052_element_assignment.cn:60:18 [ident] &mut list[int32]
+052_element_assignment.cn:60:18 [index] int32
+052_element_assignment.cn:60:21 [ident] usize
+052_element_assignment.cn:61:9 [ident] &mut list[int32]
+052_element_assignment.cn:61:9 [index] int32
+052_element_assignment.cn:61:12 [ident] usize
+052_element_assignment.cn:61:18 [ident] int32
 052_element_assignment.cn:62:9 [ident] usize
 052_element_assignment.cn:62:14 [ident] usize
 052_element_assignment.cn:62:14 [binary] usize
 052_element_assignment.cn:62:19 [literal] usize
-052_element_assignment.cn:64:15 [named_type] int32
-052_element_assignment.cn:66:5 [var_stmt] list[int32]
-052_element_assignment.cn:66:18 [array] list[int32]
-052_element_assignment.cn:66:19 [literal] int32
-052_element_assignment.cn:66:22 [literal] int32
-052_element_assignment.cn:66:25 [literal] int32
-052_element_assignment.cn:67:5 [ident] list[int32]
-052_element_assignment.cn:67:5 [index] int32
-052_element_assignment.cn:67:12 [literal] usize
-052_element_assignment.cn:67:17 [literal] int32
-052_element_assignment.cn:68:9 [binding_pat] int32
-052_element_assignment.cn:68:22 [ident] list[int32]
-052_element_assignment.cn:68:22 [index] int32
-052_element_assignment.cn:68:22 [binary] int32
-052_element_assignment.cn:68:22 [binary] int32
-052_element_assignment.cn:68:29 [literal] usize
-052_element_assignment.cn:68:34 [ident] list[int32]
-052_element_assignment.cn:68:34 [index] int32
-052_element_assignment.cn:68:41 [literal] usize
-052_element_assignment.cn:68:46 [ident] list[int32]
-052_element_assignment.cn:68:46 [index] int32
-052_element_assignment.cn:68:53 [literal] usize
-052_element_assignment.cn:71:5 [var_stmt] list[int32]
-052_element_assignment.cn:71:16 [array] list[int32]
-052_element_assignment.cn:71:17 [literal] int32
-052_element_assignment.cn:71:20 [literal] int32
-052_element_assignment.cn:71:23 [literal] int32
-052_element_assignment.cn:71:26 [literal] int32
-052_element_assignment.cn:71:29 [literal] int32
-052_element_assignment.cn:72:5 [ident] fn(&mut list[int32], int32) -> unit
-052_element_assignment.cn:72:5 [call] unit
-052_element_assignment.cn:72:11 [unary] &mut list[int32]
-052_element_assignment.cn:72:16 [ident] list[int32]
-052_element_assignment.cn:72:22 [literal] int32
-052_element_assignment.cn:73:9 [binding_pat] int32
-052_element_assignment.cn:73:18 [ident] fn(&list[int32]) -> int32
-052_element_assignment.cn:73:18 [call] int32
-052_element_assignment.cn:73:24 [unary] &list[int32]
-052_element_assignment.cn:73:25 [ident] list[int32]
-052_element_assignment.cn:77:5 [ident] fn(&mut list[int32]) -> unit
-052_element_assignment.cn:77:5 [call] unit
-052_element_assignment.cn:77:13 [unary] &mut list[int32]
-052_element_assignment.cn:77:18 [ident] list[int32]
-052_element_assignment.cn:78:9 [binding_pat] int32
-052_element_assignment.cn:78:16 [ident] list[int32]
-052_element_assignment.cn:78:16 [index] int32
-052_element_assignment.cn:78:16 [binary] int32
-052_element_assignment.cn:78:16 [binary] int32
-052_element_assignment.cn:78:21 [literal] usize
-052_element_assignment.cn:78:26 [literal] int32
-052_element_assignment.cn:78:32 [ident] list[int32]
-052_element_assignment.cn:78:32 [index] int32
-052_element_assignment.cn:78:37 [literal] usize
-052_element_assignment.cn:82:9 [binding_pat] int32
-052_element_assignment.cn:82:17 [ident] fn(&list[int32]) -> int32
-052_element_assignment.cn:82:17 [call] int32
-052_element_assignment.cn:82:23 [unary] &list[int32]
-052_element_assignment.cn:82:24 [ident] list[int32]
-052_element_assignment.cn:84:12 [ident] int32
-052_element_assignment.cn:84:12 [binary] int32
-052_element_assignment.cn:84:12 [binary] int32
-052_element_assignment.cn:84:12 [binary] int32
-052_element_assignment.cn:84:12 [binary] int32
-052_element_assignment.cn:84:25 [literal] int32
-052_element_assignment.cn:84:31 [ident] int32
-052_element_assignment.cn:84:40 [ident] int32
-052_element_assignment.cn:84:47 [ident] int32
-052_element_assignment.cn:84:47 [binary] int32
-052_element_assignment.cn:84:55 [literal] int32
+052_element_assignment.cn:63:9 [ident] usize
+052_element_assignment.cn:63:14 [ident] usize
+052_element_assignment.cn:63:14 [binary] usize
+052_element_assignment.cn:63:19 [literal] usize
+052_element_assignment.cn:65:15 [named_type] int32
+052_element_assignment.cn:67:5 [var_stmt] list[int32]
+052_element_assignment.cn:67:18 [array] list[int32]
+052_element_assignment.cn:67:19 [literal] int32
+052_element_assignment.cn:67:22 [literal] int32
+052_element_assignment.cn:67:25 [literal] int32
+052_element_assignment.cn:68:5 [ident] list[int32]
+052_element_assignment.cn:68:5 [index] int32
+052_element_assignment.cn:68:12 [literal] usize
+052_element_assignment.cn:68:17 [literal] int32
+052_element_assignment.cn:69:9 [binding_pat] int32
+052_element_assignment.cn:69:22 [ident] list[int32]
+052_element_assignment.cn:69:22 [index] int32
+052_element_assignment.cn:69:22 [binary] int32
+052_element_assignment.cn:69:22 [binary] int32
+052_element_assignment.cn:69:29 [literal] usize
+052_element_assignment.cn:69:34 [ident] list[int32]
+052_element_assignment.cn:69:34 [index] int32
+052_element_assignment.cn:69:41 [literal] usize
+052_element_assignment.cn:69:46 [ident] list[int32]
+052_element_assignment.cn:69:46 [index] int32
+052_element_assignment.cn:69:53 [literal] usize
+052_element_assignment.cn:72:5 [var_stmt] list[int32]
+052_element_assignment.cn:72:16 [array] list[int32]
+052_element_assignment.cn:72:17 [literal] int32
+052_element_assignment.cn:72:20 [literal] int32
+052_element_assignment.cn:72:23 [literal] int32
+052_element_assignment.cn:72:26 [literal] int32
+052_element_assignment.cn:72:29 [literal] int32
+052_element_assignment.cn:73:5 [ident] fn(&mut list[int32], int32) -> unit
+052_element_assignment.cn:73:5 [call] unit
+052_element_assignment.cn:73:11 [unary] &mut list[int32]
+052_element_assignment.cn:73:16 [ident] list[int32]
+052_element_assignment.cn:73:22 [literal] int32
+052_element_assignment.cn:74:9 [binding_pat] int32
+052_element_assignment.cn:74:18 [ident] fn(&list[int32]) -> int32
+052_element_assignment.cn:74:18 [call] int32
+052_element_assignment.cn:74:24 [unary] &list[int32]
+052_element_assignment.cn:74:25 [ident] list[int32]
+052_element_assignment.cn:78:5 [ident] fn(&mut list[int32]) -> unit
+052_element_assignment.cn:78:5 [call] unit
+052_element_assignment.cn:78:13 [unary] &mut list[int32]
+052_element_assignment.cn:78:18 [ident] list[int32]
+052_element_assignment.cn:79:9 [binding_pat] int32
+052_element_assignment.cn:79:16 [ident] list[int32]
+052_element_assignment.cn:79:16 [index] int32
+052_element_assignment.cn:79:16 [binary] int32
+052_element_assignment.cn:79:16 [binary] int32
+052_element_assignment.cn:79:21 [literal] usize
+052_element_assignment.cn:79:26 [literal] int32
+052_element_assignment.cn:79:32 [ident] list[int32]
+052_element_assignment.cn:79:32 [index] int32
+052_element_assignment.cn:79:37 [literal] usize
+052_element_assignment.cn:83:9 [binding_pat] int32
+052_element_assignment.cn:83:17 [ident] fn(&list[int32]) -> int32
+052_element_assignment.cn:83:17 [call] int32
+052_element_assignment.cn:83:23 [unary] &list[int32]
+052_element_assignment.cn:83:24 [ident] list[int32]
+052_element_assignment.cn:85:12 [ident] int32
+052_element_assignment.cn:85:12 [binary] int32
+052_element_assignment.cn:85:12 [binary] int32
+052_element_assignment.cn:85:12 [binary] int32
+052_element_assignment.cn:85:12 [binary] int32
+052_element_assignment.cn:85:25 [literal] int32
+052_element_assignment.cn:85:31 [ident] int32
+052_element_assignment.cn:85:40 [ident] int32
+052_element_assignment.cn:85:47 [ident] int32
+052_element_assignment.cn:85:47 [binary] int32
+052_element_assignment.cn:85:55 [literal] int32
 054_static_dispatch_on_generic_types.cn:49:14 [binding_pat] self
 054_static_dispatch_on_generic_types.cn:49:27 [named_type] option[T]
 054_static_dispatch_on_generic_types.cn:54:14 [binding_pat] &mut upto
@@ -34205,12 +34205,12 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 050_bound_driven_inference.cn:90:19 [call] (f=arg)
 050_bound_driven_inference.cn:90:19 [call] ()
 050_bound_driven_inference.cn:91:18 [call] (it=arg)
-052_element_assignment.cn:41:15 [call] ()
-052_element_assignment.cn:56:21 [call] ()
-052_element_assignment.cn:72:5 [call] (xs=arg, by=arg)
-052_element_assignment.cn:73:18 [call] (xs=arg)
-052_element_assignment.cn:77:5 [call] (xs=arg)
-052_element_assignment.cn:82:17 [call] (xs=arg)
+052_element_assignment.cn:42:15 [call] ()
+052_element_assignment.cn:57:21 [call] ()
+052_element_assignment.cn:73:5 [call] (xs=arg, by=arg)
+052_element_assignment.cn:74:18 [call] (xs=arg)
+052_element_assignment.cn:78:5 [call] (xs=arg)
+052_element_assignment.cn:83:17 [call] (xs=arg)
 054_static_dispatch_on_generic_types.cn:71:30 [call] ()
 054_static_dispatch_on_generic_types.cn:71:30 [call] ()
 054_static_dispatch_on_generic_types.cn:72:13 [call] (value=arg)
@@ -35230,8 +35230,8 @@ std/unicode.cn:288:29 [call] (cp=arg)
 050_bound_driven_inference.cn:90:19 [call] codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32 recv
 050_bound_driven_inference.cn:90:19 [call] codegen_stress.bound_driven_inference::sum$map_iter_filter_iter_counter__int32___int32__int32_$int32 recv
 050_bound_driven_inference.cn:91:18 [call] codegen_stress.bound_driven_inference::tally$counter$int32
-052_element_assignment.cn:41:15 [call] std.list::list::len$list_int32_ recv
-052_element_assignment.cn:56:21 [call] std.list::list::len$list_int32_ recv
+052_element_assignment.cn:42:15 [call] std.list::list::len$list_int32_ recv
+052_element_assignment.cn:57:21 [call] std.list::list::len$list_int32_ recv
 054_static_dispatch_on_generic_types.cn:71:30 [call] codegen_stress.static_dispatch_on_generic_types::upto::next trait=iterator recv
 054_static_dispatch_on_generic_types.cn:72:13 [call] std.list::list::push$list_int32_ recv
 054_static_dispatch_on_generic_types.cn:72:13 [call] std.list::list::push$list_int32_ recv
@@ -35887,14 +35887,14 @@ std/unicode.cn:288:23 [binary] std.string::str::add recv
 
 ## index_dispatches (71)
 003_collections_lambdas.cn:11:23 [index] std.list::list::at$list_int32_$usize recv
-052_element_assignment.cn:42:17 [index] std.list::list::at$list_int32_$usize recv
-052_element_assignment.cn:58:19 [index] std.list::list::at$list_int32_$usize recv
-052_element_assignment.cn:59:18 [index] std.list::list::at$list_int32_$usize recv
-052_element_assignment.cn:68:22 [index] std.list::list::at$list_int32_$usize recv
-052_element_assignment.cn:68:34 [index] std.list::list::at$list_int32_$usize recv
-052_element_assignment.cn:68:46 [index] std.list::list::at$list_int32_$usize recv
-052_element_assignment.cn:78:16 [index] std.list::list::at$list_int32_$usize recv
-052_element_assignment.cn:78:32 [index] std.list::list::at$list_int32_$usize recv
+052_element_assignment.cn:43:17 [index] std.list::list::at$list_int32_$usize recv
+052_element_assignment.cn:59:19 [index] std.list::list::at$list_int32_$usize recv
+052_element_assignment.cn:60:18 [index] std.list::list::at$list_int32_$usize recv
+052_element_assignment.cn:69:22 [index] std.list::list::at$list_int32_$usize recv
+052_element_assignment.cn:69:34 [index] std.list::list::at$list_int32_$usize recv
+052_element_assignment.cn:69:46 [index] std.list::list::at$list_int32_$usize recv
+052_element_assignment.cn:79:16 [index] std.list::list::at$list_int32_$usize recv
+052_element_assignment.cn:79:32 [index] std.list::list::at$list_int32_$usize recv
 074_range_index_general_stride.cn:45:19 [index] std.list::list::at$list_int32_$range_usize_ recv
 074_range_index_general_stride.cn:46:19 [index] std.list::list::at$list_int32_$range_usize_ recv
 074_range_index_general_stride.cn:48:30 [index] std.list::list::at$list_int32_$range_usize_ recv
@@ -35959,10 +35959,10 @@ std/unicode.cn:261:58 [index] std.list::list::at$list_uint32_$range_usize_ recv
 std/unicode.cn:281:18 [index] std.list::list::at$list_uint32_$usize recv
 
 ## index_set_dispatches (9)
-052_element_assignment.cn:42:9 [index] std.list::list::set_at$list_int32_$usize recv
-052_element_assignment.cn:59:9 [index] std.list::list::set_at$list_int32_$usize recv
+052_element_assignment.cn:43:9 [index] std.list::list::set_at$list_int32_$usize recv
 052_element_assignment.cn:60:9 [index] std.list::list::set_at$list_int32_$usize recv
-052_element_assignment.cn:67:5 [index] std.list::list::set_at$list_int32_$usize recv
+052_element_assignment.cn:61:9 [index] std.list::list::set_at$list_int32_$usize recv
+052_element_assignment.cn:68:5 [index] std.list::list::set_at$list_int32_$usize recv
 112_index_borrow_and_write_wait.cn:26:5 [index] std.list::list::set_at$list_int64_$usize recv
 std/algo.cn:1756:13 [index] std.list::list::set_at$list_usize_$usize recv
 std/algo.cn:1762:13 [index] std.list::list::set_at$list_usize_$usize recv
@@ -35978,14 +35978,14 @@ std/iter.cn:162:27 [index] std.list::list::at_mut recv
 
 ## index_ref_dispatches (66)
 003_collections_lambdas.cn:11:23 [index] std.list::list::at_ref$list_int32_$usize recv
-052_element_assignment.cn:42:17 [index] std.list::list::at_ref$list_int32_$usize recv
-052_element_assignment.cn:58:19 [index] std.list::list::at_ref$list_int32_$usize recv
-052_element_assignment.cn:59:18 [index] std.list::list::at_ref$list_int32_$usize recv
-052_element_assignment.cn:68:22 [index] std.list::list::at_ref$list_int32_$usize recv
-052_element_assignment.cn:68:34 [index] std.list::list::at_ref$list_int32_$usize recv
-052_element_assignment.cn:68:46 [index] std.list::list::at_ref$list_int32_$usize recv
-052_element_assignment.cn:78:16 [index] std.list::list::at_ref$list_int32_$usize recv
-052_element_assignment.cn:78:32 [index] std.list::list::at_ref$list_int32_$usize recv
+052_element_assignment.cn:43:17 [index] std.list::list::at_ref$list_int32_$usize recv
+052_element_assignment.cn:59:19 [index] std.list::list::at_ref$list_int32_$usize recv
+052_element_assignment.cn:60:18 [index] std.list::list::at_ref$list_int32_$usize recv
+052_element_assignment.cn:69:22 [index] std.list::list::at_ref$list_int32_$usize recv
+052_element_assignment.cn:69:34 [index] std.list::list::at_ref$list_int32_$usize recv
+052_element_assignment.cn:69:46 [index] std.list::list::at_ref$list_int32_$usize recv
+052_element_assignment.cn:79:16 [index] std.list::list::at_ref$list_int32_$usize recv
+052_element_assignment.cn:79:32 [index] std.list::list::at_ref$list_int32_$usize recv
 074_range_index_general_stride.cn:50:51 [index] std.list::list::at_ref$list_int32_$usize recv
 074_range_index_general_stride.cn:50:59 [index] std.list::list::at_ref$list_int32_$usize recv
 074_range_index_general_stride.cn:50:67 [index] std.list::list::at_ref$list_int32_$usize recv
@@ -36054,8 +36054,8 @@ std/unicode.cn:281:18 [index] std.list::list::at_ref$list_uint32_$usize recv
 003_collections_lambdas.cn:4:19 [array] std.list::list::from_array$5$list_int32_ from array[int32, 5]
 045_ufcs.cn:104:16 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
 045_ufcs.cn:106:18 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
-052_element_assignment.cn:66:18 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
-052_element_assignment.cn:71:16 [array] std.list::list::from_array$5$list_int32_ from array[int32, 5]
+052_element_assignment.cn:67:18 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
+052_element_assignment.cn:72:16 [array] std.list::list::from_array$5$list_int32_ from array[int32, 5]
 054_static_dispatch_on_generic_types.cn:69:32 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
 054_static_dispatch_on_generic_types.cn:69:32 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
 074_range_index_general_stride.cn:44:27 [array] std.list::list::from_array$4$list_int32_ from array[int32, 4]
@@ -36177,7 +36177,7 @@ std/deriving.cn:93:39 [call] money
 ?:1987 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:1987 [for_stmt] next=::list_into_iter::next$list_into_iter_money_ elem=money owner=std.iter adapter=::list::into_iter$list_money_ -> list_into_iter[money]
 ?:1987 [for_stmt] next=list_into_iter::next elem=T owner=std.iter adapter=list::into_iter -> list_into_iter[T]
-?:2391 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
+?:2436 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:2986 [for_stmt] next=::map_iter::next$map_iter_counter__int32__int32_ elem=int32 owner=codegen_stress.generic_impl_iterator_adapter
 ?:3115 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:3267 [for_stmt] next=::doubler::next$doubler_map_iter_counter__int32__int32__ elem=int32 owner=codegen_stress.generic_impl_iterator_adapter

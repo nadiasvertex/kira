@@ -1,10 +1,8 @@
 module codegen_stress.array_element_drops
 
 # expect: 2150
-# storage-max-live-blocks: 0
-# The pointer-per-aggregate tiers never free a struct's shell block, 24 a
-# pass here; an element that is never dropped leaves 12 more a pass.
-# max-live-blocks: 1250
+# max-live-blocks: 0
+# An element that is never dropped leaves 12 blocks a pass.
 
 # An owned array drops each element it still holds, in index order, when it
 # goes out of scope: a local, a by-value parameter, a struct field, and an

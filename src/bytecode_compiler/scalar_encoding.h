@@ -6,7 +6,7 @@
 
 #include "src/bytecode/opcodes.h"
 #include "src/bytecode/value.h"
-#include "src/bytecode_compiler/compile.h"
+#include "src/bytecode_compiler/compile_error.h"
 #include "src/parser/ast.h"
 #include "src/parser/source_location.h"
 #include "src/parser/token.h"

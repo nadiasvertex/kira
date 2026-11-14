@@ -6,7 +6,8 @@ module codegen_stress.element_assignment
 # Both backends refused element assignment outright ("assigning to an index
 # target needs a heap/aggregate representation ... doesn't have yet"), even on
 # a plain local list with no references involved. Everything the store needs
-# already existed on the read side: `op_store_indexed` was implemented in the
+# already existed on the read side (in the pointer form, removed since):
+# `op_store_indexed` was implemented in the
 # VM, and `compile_element_location`/`compile_element_address` already
 # computed the bounds-checked address for `xs[i]` and `&mut xs[i]`. Only the
 # assignment path never reached for them. Both backends now route the store
@@ -25,7 +26,7 @@ module codegen_stress.element_assignment
 #
 # `# expect:` is not optional here. This is exactly the case CLAUDE.md warns
 # about: the two tiers read their layout rules from the same
-# `src/runtime/layout.h`, so cross-tier agreement is no evidence at all that
+# `src/runtime/value_layout.h`, so cross-tier agreement is no evidence at all that
 # the address is right. A store that lands in the `{len, cap, data}` header
 # instead of the data block agrees perfectly between backends and is still
 # wrong. Only an independently computed expected value catches that — and

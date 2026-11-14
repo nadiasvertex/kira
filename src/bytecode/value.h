@@ -135,17 +135,16 @@ enum class numeric_kind : uint8_t {
 /// bits as an immediate operand baked in at compile time (see
 /// `numeric_kind`'s own doc comment on why runtime tagging would be
 /// redundant). `bool` is `i` 0/1; `char` is `i` holding a widened Unicode
-/// scalar value in `u32`'s range. Every non-scalar value is a pointer to a
-/// heap block laid out by `src/runtime/layout.h`, the same layout
-/// `llvm_codegen` uses, so a value created by either tier is valid in the
-/// other.
+/// scalar value in `u32`'s range. A compound value never lives in a
+/// register: it lives in frame, global or heap bytes laid out by
+/// `runtime::value_layouts` (the same layout `llvm_codegen` uses), and is
+/// reached by address.
 ///
 /// A register is 16 bytes so that an `int128`/`uint128` fits in one (`w`).
 /// Every narrower kind lives in the low 8 bytes (`i`/`u`/`f`, which alias
 /// the low half of `w` on the little-endian hosts this compiler targets),
 /// and every constructor writes all 16 bytes so the high half is never
-/// stale. Heap memory is *not* made of `slot_value`s: its uniform slots
-/// stay 8 bytes wide (`heap_word`), shared byte-for-byte with the LLVM tier.
+/// stale. Memory is *not* made of `slot_value`s.
 union slot_value {
   int64_t i;
   uint64_t u;
@@ -165,9 +164,9 @@ union slot_value {
 
 static_assert(sizeof(slot_value) == 16);
 
-/// One 8-byte slot of heap memory laid out by `src/runtime/layout.h` — the
-/// unit `slot_value` used to share before registers grew to 16 bytes. A
-/// 128-bit value in a uniform-slot block occupies two consecutive words.
+/// One 8-byte word of a runtime-owned object the VM reads by word: a
+/// coroutine or generator object (`src/runtime/coroutine.h`), or the
+/// `{ len, data }` words of a descriptor.
 union heap_word {
   int64_t i;
   uint64_t u;

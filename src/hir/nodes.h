@@ -188,9 +188,9 @@ struct hir_pattern : hir_node {
   /// positions it can derive that structurally: a tuple pattern's elements
   /// come from the tuple type's own `args`, an array pattern's from its
   /// element type. Two positions it cannot, because the answer needs
-  /// generic substitution that `runtime::layout.h` deliberately does not
-  /// do (see its header comment): a sum-type variant's payload, and a
-  /// struct's field. Lowering already resolves both — it must, to build
+  /// generic substitution the pattern alone does not carry: a sum-type
+  /// variant's payload, and a struct's field. Lowering already resolves
+  /// both — it must, to build
   /// the `hir_variant_payload`/`hir_field` place expression a binding
   /// reads through — so it records the type here rather than making each
   /// backend re-derive it. Only those positions set it today; everywhere
@@ -218,10 +218,10 @@ struct hir_param {
 /// Literal value with its checked type already resolved. The raw spelling
 /// is kept rather than pre-parsed into a machine value — same deferral as
 /// `ast::literal_expr` — so codegen picks the concrete representation once.
-/// The question a `size_of[T]()` or `align_of[T]()` literal answers. Its
-/// `value` is the answer under the legacy layouts (`runtime::layout_of`, where
-/// an aggregate is one boxed word); the storage form asks again, under the
-/// concrete layouts (`runtime::value_layouts`), where an aggregate is inline.
+/// The question a `size_of[T]()` or `align_of[T]()` literal answers. The
+/// storage form answers it from the concrete layouts
+/// (`runtime::value_layouts`): HIR is lowered before compile-time code has
+/// settled every shape, so the literal's `value` is empty until then.
 struct layout_question {
   bool wants_alignment = false; ///< `align_of` rather than `size_of`.
   type_id type = k_unknown_type;
@@ -510,28 +510,20 @@ struct hir_container_len : hir_expr {
         object(std::move(obj)) {}
 };
 
-/// A `uninit[T, N]()` buffer: `byte_size` bytes of frame-local storage,
-/// aligned to `align_bytes`. `type` is the `uninit[T, N]` itself, whose
-/// runtime representation is the buffer's base address.
+/// A `uninit[T, N]()` buffer: frame-local storage for `N` elements, zeroed.
+/// `type` is the `uninit[T, N]` itself; its layout
+/// (`runtime::value_layouts`) is `N` elements at `T`'s stride.
 ///
-/// The one aggregate in the language that is *not* heap-allocated. Both
-/// backends give it genuine stack storage — an `alloca` in the LLVM tier's
-/// entry block, a statically-sized frame-local byte range in the bytecode
-/// tier — because a fixed-capacity inline buffer whose storage came from the
-/// heap would defeat its only purpose (see `hir_stack_buffer`'s consumers in
-/// `spec/specification/04-stdlib/collections/47-small-list.md`).
-///
-/// The size is fixed at lowering time, so neither backend ever performs a
-/// dynamically-sized stack allocation: the bytecode tier sums every buffer
-/// in a function into one frame-local byte count reserved on entry, which is
-/// what keeps a buffer's address stable for the whole frame.
+/// Both backends give it genuine stack storage — an `alloca` in the LLVM
+/// tier's entry block, a statically-sized frame-local byte range in the
+/// bytecode tier — because a fixed-capacity inline buffer whose storage came
+/// from the heap would defeat its only purpose (see `hir_stack_buffer`'s
+/// consumers in `spec/specification/04-stdlib/collections/47-small-list.md`).
+/// The size is fixed by the type, so neither backend ever performs a
+/// dynamically-sized stack allocation.
 struct hir_stack_buffer : hir_expr {
-  uint64_t byte_size = 0;
-  uint64_t align_bytes = 8;
-
-  hir_stack_buffer(source_span s, type_id t, uint64_t size, uint64_t align)
-      : hir_expr(hir_node_kind::hir_stack_buffer, s, t), byte_size(size),
-        align_bytes(align) {}
+  hir_stack_buffer(source_span s, type_id t)
+      : hir_expr(hir_node_kind::hir_stack_buffer, s, t) {}
 };
 
 /// The address of element 0 of `object`'s data block — what `xs.as_ptr()`

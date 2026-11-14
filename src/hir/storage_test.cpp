@@ -1039,13 +1039,9 @@ auto test_scalar_and_unit_functions() -> void {
 
 auto test_unsupported_constructs_are_refused_by_name() -> void {
   auto f = build(read_program("forms.cn"));
-  const auto *matching = f->refusal("matching");
-  expect(matching != nullptr, "expected `match` to be refused");
-  expect(matching->kind ==
-             hir::storage_lower_error_kind::unsupported_construct,
-         "expected an unsupported-construct refusal");
-  expect(matching->message.find("kind of pattern") != std::string::npos,
-         "expected the refusal to name the construct");
+  // A range pattern is one comparison per bound.
+  expect(f->refusal("matching") == nullptr,
+         "expected a range pattern to lower");
   // A string literal is a descriptor over static bytes, built in place.
   expect(f->refusal("shout") == nullptr, "expected a string literal to lower");
   expect_ops(*f, "shout", {"string s0 = \"hello\"", "return"});
@@ -1066,7 +1062,7 @@ auto test_unsupported_constructs_are_refused_by_name() -> void {
          "expected waiting on a set of tasks to lower");
   expect(f->refusal("triple") == nullptr,
          "expected a task that waits on nothing to lower");
-  expect(f->lowering.module.find("matching") == nullptr,
+  expect(f->lowering.module.find("collecting_owned") == nullptr,
          "expected a refused function to be absent, not half lowered");
 }
 

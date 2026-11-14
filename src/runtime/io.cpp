@@ -16,18 +16,8 @@
 
 namespace {
 
-[[nodiscard]] auto alloc_slots(size_t count) -> uint64_t * {
-  return static_cast<uint64_t *>(cinder_heap_alloc(count * sizeof(uint64_t)));
-}
-
 [[nodiscard]] auto raw_fd_of(const uint64_t *fd_struct) -> int {
   return static_cast<int>(static_cast<int64_t>(fd_struct[0]));
-}
-
-[[nodiscard]] auto make_raw_fd(int64_t fd) -> uint64_t * {
-  auto *slots = alloc_slots(1);
-  slots[0] = static_cast<uint64_t>(fd);
-  return slots;
 }
 
 [[nodiscard]] auto bytes_of(const uint64_t *header) -> std::span<char> {
@@ -35,25 +25,7 @@ namespace {
   return {data, static_cast<size_t>(header[0])};
 }
 
-[[nodiscard]] auto make_result_ok(uint64_t payload) -> uint64_t * {
-  auto *slots = alloc_slots(2);
-  slots[0] = 0;
-  slots[1] = payload;
-  return slots;
-}
-
-[[nodiscard]] auto make_result_err(int errno_code) -> uint64_t * {
-  auto *code_struct = alloc_slots(1);
-  code_struct[0] = static_cast<uint64_t>(static_cast<int64_t>(errno_code));
-  auto *slots = alloc_slots(2);
-  slots[0] = 1;
-  slots[1] = reinterpret_cast<uint64_t>(code_struct); // NOLINT
-  return slots;
-}
-
-/// A system call's outcome: its value, or the `errno` it failed with. Both the
-/// older heap-block entry points and the `_into` ones below run these, so the
-/// two cannot disagree about what a call does.
+/// A system call's outcome: its value, or the `errno` it failed with.
 using outcome = std::expected<int64_t, int>;
 
 [[nodiscard]] auto failed() -> outcome { return std::unexpected(errno); }
@@ -124,60 +96,6 @@ using outcome = std::expected<int64_t, int>;
 } // namespace
 
 extern "C" {
-
-auto cinder_rt_stdin() -> uint64_t * { return make_raw_fd(0); }
-auto cinder_rt_stdout() -> uint64_t * { return make_raw_fd(1); }
-auto cinder_rt_stderr() -> uint64_t * { return make_raw_fd(2); }
-
-auto cinder_rt_open(uint64_t *path, uint64_t *opts_struct) -> uint64_t * {
-  const auto path_bytes = bytes_of(path);
-  const auto opened = open_file(
-      std::string_view(path_bytes.data(), path_bytes.size()),
-      reinterpret_cast<const uint8_t *>(opts_struct)); // NOLINT
-  if (!opened) {
-    return make_result_err(opened.error());
-  }
-  return make_result_ok(reinterpret_cast<uint64_t>(make_raw_fd(*opened))); // NOLINT
-}
-
-auto cinder_rt_close(uint64_t *fd) -> uint64_t * {
-  const auto closed = close_file(raw_fd_of(fd));
-  return closed ? make_result_ok(0) : make_result_err(closed.error());
-}
-
-auto cinder_rt_read(uint64_t *fd, uint64_t *buf) -> uint64_t * {
-  const auto n = read_file(raw_fd_of(fd), bytes_of(buf));
-  return n ? make_result_ok(static_cast<uint64_t>(*n))
-           : make_result_err(n.error());
-}
-
-auto cinder_rt_write(uint64_t *fd, uint64_t *buf) -> uint64_t * {
-  const auto n = write_file(raw_fd_of(fd), bytes_of(buf));
-  return n ? make_result_ok(static_cast<uint64_t>(*n))
-           : make_result_err(n.error());
-}
-
-auto cinder_rt_flush(uint64_t * /*fd*/) -> uint64_t * {
-  // No userspace buffering layer sits above the raw ::read/::write syscalls
-  // above, so there is nothing for this tier to flush either.
-  return make_result_ok(0);
-}
-
-auto cinder_rt_pipe() -> uint64_t * {
-  const auto ends = make_pipe();
-  if (!ends) {
-    return make_result_err(ends.error());
-  }
-  auto *pair = alloc_slots(2);
-  pair[0] = static_cast<uint64_t>(int64_t{(*ends)[0]});
-  pair[1] = static_cast<uint64_t>(int64_t{(*ends)[1]});
-  return make_result_ok(reinterpret_cast<uint64_t>(pair)); // NOLINT
-}
-
-auto cinder_rt_set_nonblocking(uint64_t *fd) -> uint64_t * {
-  const auto done = make_nonblocking(raw_fd_of(fd));
-  return done ? make_result_ok(0) : make_result_err(done.error());
-}
 
 auto cinder_rt_errno_would_block() -> int32_t { return EAGAIN; }
 

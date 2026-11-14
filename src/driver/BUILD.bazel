@@ -13,7 +13,6 @@ cc_library(
         "parse_stage.cpp",
         "run_build_stage.cpp",
         "static_if_stage.cpp",
-        "storage_program.cpp",
         "test_discovery.cpp",
     ],
     hdrs = [
@@ -28,7 +27,6 @@ cc_library(
       "parse_stage.h",
       "run_build_stage.h",
       "static_if_stage.h",
-      "storage_program.h",
       "test_discovery.h",
     ],
     copts = [

@@ -17,10 +17,9 @@ namespace cinder::hir {
 /// compiles at (one file/module = one compiled unit).
 ///
 /// This is a read-only discovery pass, not a linker: nothing here mutates or
-/// moves any `hir_module`/`hir_function` — `bytecode_compiler::compile_module`
-/// and `llvm_codegen::compile_module`'s multi-module overloads consume the
-/// returned pointers directly, computing each cross-module call's dispatch
-/// key from `owner_module` at compile time instead. Because discovery never
+/// moves any `hir_module`/`hir_function` — `hir::prepare_storage_program`
+/// consumes the returned pointers directly, and each backend computes a
+/// cross-module call's dispatch key from `owner_module` at compile time. Because discovery never
 /// touches the underlying HIR, the same `all_modules` can be reused any
 /// number of times (e.g. once for `--run`, once for `--build`, in the same
 /// invocation).

@@ -313,7 +313,7 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
   }
   case hir_node_kind::hir_stack_buffer: {
     const auto &n = dynamic_cast<const hir_stack_buffer &>(node);
-    return hir::make<hir_stack_buffer>(span, type, n.byte_size, n.align_bytes);
+    return hir::make<hir_stack_buffer>(span, type);
   }
   case hir_node_kind::hir_container_data: {
     const auto &n = dynamic_cast<const hir_container_data &>(node);

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -19,10 +20,8 @@ namespace cinder::runtime {
 //
 //  Every value owns its bytes in place: a struct, tuple, fixed array, or sum
 //  is the concatenation of its members, with explicit offsets and padding.
-//  `layout.h` still describes the pointer-per-aggregate representation that
-//  the backends use today; this header describes the one they migrate to
-//  (`spec/value-semantics.md`). Nothing in the compiler reads these layouts
-//  yet, so the two models never describe the same type at the same time.
+//  Both backends, the storage form, and compile-time value conversion read
+//  their layouts from here (`spec/value-semantics.md`).
 //
 //  | Type family                | Bytes                                   |
 //  |----------------------------|-----------------------------------------|
@@ -143,6 +142,27 @@ struct layout_error {
   layout_error_kind kind = layout_error_kind::unsupported;
   std::string message;
 };
+
+/// The natural size and alignment of a builtin scalar.
+struct scalar_layout {
+  size_t size_bytes = 0;
+  size_t align_bytes = 1;
+};
+
+/// The natural size and alignment of the builtin scalar named `name`, or
+/// `nullopt` when `name` is not a scalar with a byte layout (`float128`,
+/// `str`, and every non-builtin name).
+[[nodiscard]] auto builtin_scalar_layout(std::string_view name)
+    -> std::optional<scalar_layout>;
+
+/// The `N` of a `uninit[T, N]`, or `nullopt` when the slot count is not a
+/// definite compile-time constant (an un-instantiated generic template).
+/// `N` is a const-generic *value* argument, so it lives in the entry's
+/// second type argument as a `const_value_kind` rather than in `array_size`
+/// the way a fixed `array[T, N]`'s length does.
+[[nodiscard]] auto uninit_slot_count(const semantic::type_table &types,
+                                     const semantic::type_entry &entry)
+    -> std::optional<uint64_t>;
 
 /// Computes and caches the layout of concrete types.
 ///

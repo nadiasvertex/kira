@@ -10,6 +10,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -26,7 +27,9 @@
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
 #include "src/llvm_codegen/aot.h"
+#include "src/hir/storage_program.h"
 #include "src/llvm_codegen/codegen.h"
+#include "src/llvm_codegen/storage_codegen.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
@@ -101,9 +104,21 @@ auto compile_to_object(const std::string &text, const fs::path &object_path)
   auto lowered = hir::lower_module(*ast_file, "sample", checked);
   expect(lowered.has_value(), "expected fixture to lower to HIR");
 
-  auto compiled = lc::compile_module(**lowered, checked.types);
+  const auto modules = std::array<const hir::hir_module *, 1>{lowered->get()};
+  auto program = hir::prepare_storage_program(modules, checked);
+  expect(program.has_value(),
+         program.has_value()
+             ? std::string{}
+             : "expected fixture to lower to the storage form: " +
+                   program.error());
+  auto compiled = lc::compile_storage_module(
+      std::span<const hir::storage_module *const>((*program)->modules),
+      *(*program)->env);
   expect(compiled.has_value(),
-         "expected fixture to compile to an llvm::Module");
+         compiled.has_value()
+             ? std::string{}
+             : "expected fixture to compile to an llvm::Module: " +
+                   compiled.error().message);
 
   auto emitted =
       lc::emit_object_file(std::move(*compiled), "main", object_path.string());
@@ -121,19 +136,25 @@ auto build_and_run(const fs::path &dir, const std::string &cinder_source)
   const auto output_path = dir / "program";
 
   compile_to_object(cinder_source, object_path);
-  // `cinder_heap_alloc` (`src/runtime/allocator.h`'s real implementation, not
-  // linked into this hand-built test binary) backs
-  // every heap allocation a compiled program's struct/array/str/list
-  // construction needs — a plain `malloc` stands in here, matching this
-  // stub's own "not about the real runtime's behavior, just about
-  // producing a linkable, runnable object" scope.
+  // `cinder_rt_alloc`/`cinder_rt_free` (`src/runtime/allocator.h`'s real
+  // implementation, not linked into this hand-built test binary) back every
+  // heap block a compiled program allocates (a generator's coroutine, a
+  // list's elements) — `calloc`/`free` stand in here, matching this stub's
+  // own "not about the real runtime's behavior, just about producing a
+  // linkable, runnable object" scope.
   write_file(stub_path, "#include <stdint.h>\n"
                         "#include <stdlib.h>\n"
                         "void cinder_codegen_panic(unsigned char reason) {\n"
                         "  exit(100 + reason);\n"
                         "}\n"
-                        "void *cinder_heap_alloc(uint64_t bytes) {\n"
+                        "uint64_t *cinder_rt_alloc(uint64_t bytes) {\n"
                         "  return calloc(1, bytes);\n"
+                        "}\n"
+                        "uint64_t *cinder_rt_free(uint64_t *ptr, uint64_t "
+                        "bytes) {\n"
+                        "  (void)bytes;\n"
+                        "  free(ptr);\n"
+                        "  return 0;\n"
                         "}\n"
                         // Dropping a generator asks the task scheduler
                         // whether it owns the coroutine first. This stub

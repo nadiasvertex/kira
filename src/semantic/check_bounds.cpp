@@ -327,14 +327,14 @@ auto checker::concept_category(const ast::concept_decl &concept_decl)
 }
 
 /// The type of a method's `self` parameter. `self` is always borrowed
-/// (ch. 14): a heap-represented `self` is a `&T`, or a `&mut T` when
+/// (ch. 14): a compound `self` is a `&T`, or a `&mut T` when
 /// written `mut self`, so that a borrow of it is the address of the
 /// caller's place (`spec/todo.md` item 20). A scalar `self` is passed by
 /// value, which reads the same.
 auto checker::self_param_type(const ast::param &param) -> type_id {
   if (session_.types_.is_unknown(function_.self_type_) ||
       function_.self_type_ == k_error_type ||
-      !session_.types_.is_heap_represented(function_.self_type_)) {
+      !session_.types_.is_compound_value(function_.self_type_)) {
     return function_.self_type_;
   }
   const auto *binding =

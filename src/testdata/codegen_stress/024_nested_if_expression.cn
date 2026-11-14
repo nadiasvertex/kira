@@ -5,3 +5,5 @@ def classify(x: int32) -> int32:
 
 def main() -> int32:
     return classify(-5) * 1000 + classify(0) * 100 + classify(50) * 10 + classify(500)
+
+# expect: -988

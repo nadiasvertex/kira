@@ -1,3 +1,0 @@
-module sample
-def main() -> option[int32]:
-    return @some(1)

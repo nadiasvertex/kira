@@ -11,12 +11,13 @@
 
 namespace cinder::comptime_vm {
 
-// Moves values between the compile-time evaluator and the VM. A compile-time
-// value carries no exact type (an integer is just an integer), so each
-// conversion is given the type the checker gave it, and builds or reads the
-// VM's representation of that type: scalars in the slot itself, everything
-// else in heap memory laid out by `src/runtime/layout.h`, exactly as compiled
-// code builds it.
+// Moves values between the compiler and code it runs on the VM. A
+// compile-time value carries no exact type (an integer is just an integer),
+// so each conversion is given the type the checker gave it, and builds or
+// reads that type's inline bytes (`src/runtime/value_layout.h`), exactly as
+// compiled code builds them: a scalar, address or handle travels in a
+// register, and only the data behind an address (a `str`'s bytes, a `list`'s
+// elements, a reference's referent) is on the heap.
 //
 // Supported: integers, floats, `bool`, `char`, `unit`, `str`, tuples, arrays,
 // `list[T]`, structs, user sum types, `option` and `result`, nested in any
@@ -34,14 +35,7 @@ struct handle_table {
 [[nodiscard]] auto is_handle_type(const semantic::type_table &types,
                                   semantic::type_id type) -> bool;
 
-/// `value` as a VM value of `type`. A value held by handle is added to
-/// `handles`.
-[[nodiscard]] auto to_vm(semantic::comptime_program &program,
-                         handle_table &handles, semantic::type_id type,
-                         const comptime::value &value)
-    -> std::expected<bytecode::slot_value, std::string>;
-
-/// Storage form: writes `value` as the inline bytes of a `type` at `at`,
+/// Writes `value` as the inline bytes of a `type` at `at`,
 /// which has room for its layout (`layouts`). Data behind an address (a
 /// `str`'s bytes, a `list`'s elements, a reference's referent) is allocated
 /// on the heap. A value held by handle is added to `handles`.
@@ -52,14 +46,14 @@ struct handle_table {
                                 const comptime::value &value, std::byte *at)
     -> std::expected<void, std::string>;
 
-/// Storage form: the `type` whose inline bytes are at `at`.
+/// The `type` whose inline bytes are at `at`.
 [[nodiscard]] auto read_inline(semantic::comptime_program &program,
                                const handle_table &handles,
                                runtime::value_layouts &layouts,
                                semantic::type_id type, const std::byte *at)
     -> std::expected<comptime::value, std::string>;
 
-/// Storage form: `value` as the register a `type` that travels by value (a
+/// `value` as the register a `type` that travels by value (a
 /// scalar, address or handle) is passed in.
 [[nodiscard]] auto to_register(semantic::comptime_program &program,
                                handle_table &handles,
@@ -68,19 +62,13 @@ struct handle_table {
                                const comptime::value &value)
     -> std::expected<bytecode::slot_value, std::string>;
 
-/// Storage form: the register `slot` holding a `type`, as a compile-time
+/// The register `slot` holding a `type`, as a compile-time
 /// value.
 [[nodiscard]] auto from_register(semantic::comptime_program &program,
                                  const handle_table &handles,
                                  runtime::value_layouts &layouts,
                                  semantic::type_id type,
                                  bytecode::slot_value slot)
-    -> std::expected<comptime::value, std::string>;
-
-/// The VM value `slot` of `type` as a compile-time value.
-[[nodiscard]] auto from_vm(semantic::comptime_program &program,
-                           const handle_table &handles, semantic::type_id type,
-                           bytecode::slot_value slot)
     -> std::expected<comptime::value, std::string>;
 
 } // namespace cinder::comptime_vm
