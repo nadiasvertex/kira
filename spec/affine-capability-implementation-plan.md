@@ -284,6 +284,16 @@ T25 applies declared interfaces, including recursive ones, as local checking ass
 T26 discharges those assumptions by checking every body in a recursive dependency group;
 T29/T38 prevent any group with an unverified implementation from reaching execution.
 
+Omitted effect, origin, and outcome clauses request sound, conservative inference from
+checked source bodies, including public definitions. T26 must infer and verify complete
+summaries and check optional programmer constraints; recursive candidates must be verified
+for the whole group. T37 exports the checked interfaces, without requiring callers to inspect
+bodies. Native/opaque interfaces require sufficient declarations or sound defaults.
+T53 must explain missing information or conservative approximations, why they prevent the
+requested use, and the smallest relevant annotation or legal code change. Request author
+input only when inference and sound defaults cannot establish the required contract;
+never infer copying, freezing, or new authority merely to make a contract fit.
+
 T38 initially rejects experimental execution paths that lack T42–T45 support. It must not
 fall back to legacy lowering to keep those paths running.
 
@@ -450,8 +460,10 @@ and owning ancestors in the input and every possible output forest. Include deta
 parents, newly attached descendants, callbacks, hidden token targets, closure captures, and
 cleanup effects. Transferring a handle does not by itself mutate its region contents.
 
-Missing write annotations mean a conservative permitted mutable footprint, never an empty
-one. Reject interfaces that cannot bound this footprint. An explicit empty write bound still
+Infer omitted source-level write bounds from checked bodies; omission alone never establishes
+an empty bound. Without a narrower checked summary, use the conservative permitted mutable
+footprint. Request the missing information for interfaces that cannot bound this footprint.
+An explicit empty write bound still
 permits declared transitions, which may invalidate facts or availability. Mutating a fresh
 independent copy does not invalidate the original storage's facts.
 

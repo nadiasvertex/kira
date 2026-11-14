@@ -801,14 +801,35 @@ each one; matching cannot restore authority or facts invalidated since the call.
 the outcome or joining branches requires the existing capability and cleanup normalization,
 so incompatible states cannot leave hidden cleanup obligations behind unavailable bindings.
 
-Omitting a precise write annotation never means `writes {}`. The conservative summary is
-all mutable storage reachable through authority the call may exercise, including authority
+For source definitions with checked bodies, omitted effect, result-origin, and outcome
+clauses request sound, conservative contract inference, including for public definitions.
+Programmer-written clauses are optional constraints that every implementation must satisfy.
+The elaborated interface contains a complete checked summary either way; callers do not
+inspect bodies. Inferred summaries can change with an implementation and require dependent
+code to be rechecked. Explicit constraints can pin the guarantees an author wants to preserve.
+
+Inference need not determine a single exact origin: a sound union of possible dependencies
+is valid when it accounts for all outcomes and cleanup obligations. Recursive groups may use
+bounded inference or conservative candidate summaries, but every body must establish its
+summary before the group is accepted. If inference cannot establish a sufficient contract,
+request only the missing information. Native or opaque boundaries need sufficient explicit
+contracts or sound interface defaults; unavailable bodies cannot justify extra precision.
+
+An omitted write annotation is not an unchecked `writes {}` promise. When no narrower checked
+summary is available, the conservative write bound covers all mutable storage reachable
+through authority the call may exercise, including authority
 inside captures, stored edit loans, and sealed tokens. Such reachability follows those
 capabilities' targets as well as ownership edges; it is not just the ownership tree of the
 outer argument. A call whose permitted mutable reach cannot be bounded by its interface is
 rejected in this core. Mutable global or external state requires an explicit capability and
 effect contract; it cannot be an undeclared source of mutation. External-state facts need
 their own stability contract and are not covered by heap-version preservation alone.
+
+Diagnostics explain the inferred bound or missing relationship, its source operations, and
+why it prevents the requested use. Show the smallest relevant annotation or code change and
+where it belongs. A suggested constraint remains an obligation to check; it cannot assert
+away a real conflicting loan, effect, or ownership transition. Inference never silently
+inserts independent copies, freezes, or stronger authority to make a program pass.
 
 An empty write summary must be checked against the whole body and its transitive calls.
 It rules out writes to pre-existing storage; declared transitions still apply, and it does

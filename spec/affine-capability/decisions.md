@@ -61,7 +61,8 @@ it does not promise termination or eventual cleanup for diverging programs.
 
 ## Q2 — Ownership default and explicit copying
 
-Status: ownership-default decision accepted on 2026-11-14; Q2 is partially resolved.
+Status: ownership-default and contract-inference policies accepted on 2026-11-14;
+Q2 is partially resolved. Detailed surface spellings remain candidates.
 Owning task: T08. Dependent tasks: T30–T36 and the affected library migrations.
 
 ### Decision
@@ -106,6 +107,27 @@ Copy-by-default would preserve the caller's source for copyable inputs, but woul
 potentially expensive construction and require witnesses for ordinary generic value passing.
 It would still need a separate transfer route for resources. Explicit copy construction
 retains the independence guarantees without making it the default operation.
+
+### Contract inference and programmer constraints
+
+Infer sound, conservative effect, result-origin, and outcome contracts from checked source
+bodies by default. Public definitions do not require handwritten contracts merely because
+they are public. Export the complete checked summaries so callers never need to inspect a
+body. Conservative alternatives are valid when they account for all capabilities, retained
+loans, initialization, and cleanup; ambiguity does not automatically require an annotation.
+
+Allow programmer-written constraints to pin desired guarantees. Check inferred behavior
+against every supplied constraint. Unconstrained inferred summaries may change with their
+implementation, requiring dependent code to be rechecked. Recursive groups can infer or
+use conservative candidate summaries, with every body verified before acceptance. Opaque
+or native boundaries require sufficient explicit contracts or sound interface defaults.
+
+When inference cannot establish a sufficient contract, explain what information is missing,
+why the current conservative summary prevents the requested operation, and where the author
+can supply the smallest relevant constraint. Show a legal code change when the body cannot
+satisfy that constraint. This is part of the compiler-as-a-teacher mission: annotations are
+checked promises, not escape hatches from safety rules. Never infer copying, freezing, or
+new authority merely to resolve missing contract information.
 
 ### Remaining scope and obligations
 
