@@ -1,9 +1,9 @@
 # Affine capability surface mapping
 
 Status: accepted experimental-subset spellings for declarations, receivers, loans, transfer,
-freeze, copying, the `copy` constraint, and local bindings. Contract inference and optional
-programmer constraints are accepted policies; the worked contract clauses remain syntax
-candidates. This document does not amend
+freeze, copying, the `copy` constraint, single-element views, and local bindings. Contract
+inference and optional programmer constraints are accepted policies; the worked contract
+clauses remain syntax candidates. This document does not amend
 the implemented grammar or establish T08 completion. See [Q2 decisions](decisions.md#q2--ownership-default-and-explicit-copying)
 and the [worked translation](translations.md).
 
@@ -25,6 +25,60 @@ Inspection and edit parameters request borrowing, inspection duplication, or reb
 specified by the core conversion table. The shorthand reference types have the same authority,
 loan identity, and lifetime obligations as their explicit capability forms. They do not
 introduce a second borrowing model or independent-copy witness for scoped handles.
+
+## Collection views and borrowed slots
+
+Collapse `cell[T]` into `inspect[T]` and `mut cell[T]` into `edit[T]` in the experimental
+design. Single-element views use the same capability types, loan rules, and inferred result
+origins as other borrowed values. They are not a separate family of builtin types.
+
+| Existing view | Capability mapping |
+|---|---|
+| `cell[T]` | `inspect[T]`, also spelled `&T` |
+| `mut cell[T]` / internal `cell_mut[T]` | `edit[T]`, also spelled `&mut T` |
+| `slice[T]` | Scoped observation of a contiguous range, carrying its length |
+| `mut slice[T]` | Scoped editing of a contiguous range, carrying its length |
+| `str` | Scoped observation of UTF-8 text |
+
+Keep the existing slice and text spellings. Range views remain distinct from single-value
+loans because they describe a range and its shape. Their stored and returned loans carry
+the same origin and granting-chain dependencies; no lifetime annotations are introduced.
+
+A single-element capability may target an initialized storage slot. For an element of type
+`own[resource]`, `edit[own[resource]]` lends the owner slot inside the collection, whereas
+`edit[resource]` lends the resource's contents. A slot capability records the checked
+containing allocation and element path, with authority derived from the collection. A child
+edit cannot be reinterpreted as an edit of its owner's slot.
+
+`*slot` designates the borrowed place. `exchange(*slot, incoming)` replaces its contents and
+returns the previous value, transferring cleanup obligations without requiring `copy`.
+`*slot = incoming` performs checked replacement and cleans the previous value. A plain read
+does not extract an owner or leave a borrowed slot empty; it follows the capability-dependent
+load and observation rules. A stored edit handle may exercise this authority even when the
+handle binding uses `let`.
+
+Element-borrowing collection APIs return `inspect[T]` or `edit[T]`; for example, an
+`at_mut` operation returning a slot view returns `edit[T]`. Its checked contract must
+establish the slot origin, permitted replacement, and lifetime dependencies. The live loan
+prevents conflicting element access and collection changes that could invalidate it,
+including relocation, removal, or destruction. The initial core still uses whole-allocation
+conflicts; different indices do not establish disjoint edit authority.
+
+Single-element `&items[i]` and `&mut items[i]` use the checked element-borrowing operations
+and yield `inspect[T]` and `edit[T]` for stored element type `T`. For an owner element,
+the slot type therefore includes `own`; borrowing its child contents is a separate projection.
+Borrow dispatch returns the capability itself, not a reference to a temporary view handle.
+
+Different collection implementations can expose the same capability while keeping their
+element type known. This hides collection layout, not element types or loan dependencies.
+Heterogeneous element types require a sum or a separately checked trait-object abstraction;
+`cell` is not an element-type-erasure mechanism.
+
+Legacy mode retains its current cell types and methods until migration. Compatibility
+spellings, if retained in the new mode, must have exactly the corresponding capability
+semantics. Migrate `get` to a permitted load or observation, with independent copying
+explicit; migrate `set` to checked replacement. See the
+[worked slot example](translations.md#worked-example-a-borrowed-collection-slot).
 
 ## Receivers
 
@@ -181,8 +235,8 @@ spelling alone establishes thread-transfer safety.
 
 ## Remaining Q2 choices
 
-- Full view mappings, callable contract spellings, closure call-mode and capture spellings,
-  and contract forms beyond the worked replacement example.
+- Remaining range-view operation and conversion mappings, callable contract spellings,
+  closure call-mode and capture spellings, and contract forms beyond the worked examples.
 - Complete translations and grammar integration for the advertised experimental subset.
 
 Q2 remains partially resolved. This surface mapping changes no normative or implemented

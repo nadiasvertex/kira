@@ -62,8 +62,8 @@ it does not promise termination or eventual cleanup for diverging programs.
 ## Q2 — Ownership default and explicit copying
 
 Status: ownership-default, contract-inference, basic surface-spelling, `copy`/`copy_owned`
-operation names, and the `copy` constraint name accepted on 2026-11-14. Q2 remains partially
-resolved; further mappings and contract spellings are pending.
+operation names, the `copy` constraint name, and single-element view consolidation accepted
+on 2026-11-14. Q2 remains partially resolved; further mappings and contract spellings are pending.
 Owning task: T08. Dependent tasks: T30–T36 and the affected library migrations.
 
 ### Decision
@@ -197,11 +197,40 @@ Legacy mode retains its existing concept until adoption. Audit existing generic 
 their actual operations during migration; an old `copy` bound is not evidence for the new
 witness. No compiler implementation or normative grammar changes are made by this decision.
 
+### Single-element views and borrowed slots
+
+Collapse `cell[T]` into `inspect[T]` and `mut cell[T]` into `edit[T]`. Single-element views
+use the existing capability types and inferred loan origins. Preserve `slice[T]`,
+`mut slice[T]`, and `str` as range views carrying their shape and authority.
+
+A capability may lend an initialized slot: `edit[own[T]]` targets the owner slot in a
+containing collection, whereas `edit[T]` targets the child's represented contents. The slot
+loan carries its containing allocation, checked path, granting chain, and lifetime
+dependencies. Child authority alone cannot replace the owner's slot in its parent.
+`*slot` designates the borrowed place; `exchange(*slot, incoming)` transfers the previous
+value out and the replacement in without requiring `copy` or leaving an empty element.
+Assignment through the slot performs checked replacement and cleanup. Loads never silently
+duplicate owner tokens. A slot loan preserves the initial core's whole-allocation conflicts.
+
+Element-borrowing APIs expose `inspect[T]` or `edit[T]` with checked origins and replacement
+authority. Different collection implementations can share that interface while retaining
+the element type and loan dependencies. Heterogeneous element types need a sum or a
+separately checked trait-object abstraction; cell types do not provide element-type erasure.
+
+Legacy cell types and methods remain in legacy mode until migration. Any transitional aliases
+in the new mode must have the exact capability semantics. Library migration reviews element
+and range indexing separately, preserving range result shape, and replaces cell `get`/`set`
+with permitted loads/observations and checked replacement. The
+[worked slot translation](translations.md#worked-example-a-borrowed-collection-slot)
+records the generic helper, ownership flow, and rejection cases. Formal and implementation
+validation of slot provenance, replacement validity, and dependent loans remains required.
+
 ### Remaining scope and obligations
 
-Q2 still needs full view mappings, callable and capture spellings, and remaining contract
-forms. The worked `from`, `writes`, `outcome`, `entry`, `transfers`, and `preserves` clauses
-remain syntax candidates with the accepted inference policy. The legacy implicit-duplication
+Q2 still needs remaining range-view operation and conversion mappings, callable and capture
+spellings, and remaining contract forms. The worked `from`, `writes`, `outcome`, `entry`,
+`transfers`, and `preserves` clauses remain syntax candidates with the accepted inference
+policy. The legacy implicit-duplication
 classification and the structural independent-copy witness must remain distinct despite
 the mode-specific reuse of the `copy` constraint name.
 

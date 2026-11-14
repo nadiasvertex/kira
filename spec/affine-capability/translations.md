@@ -203,3 +203,109 @@ an annotation cannot make a false transfer or preservation claim true.
 The clauses shown here cover this example. Sealed protocol-token transitions, persistent
 freeze results, loans stored into caller-owned objects, higher-order calls, and more complex
 outcome alternatives still require representative translations before Q2 or T08 is complete.
+
+## Worked example: a borrowed collection slot
+
+This example uses the accepted single-element view consolidation. `inspect[T]` and `edit[T]`
+replace `cell[T]` and `mut cell[T]`; a slot loan records its containing allocation and checked
+path. Reuse the `resource` type above. No function below requires a `copy` constraint.
+Contracts are inferred from checked bodies; none needs a handwritten clause for this example.
+
+```cinder
+def replace[T](slot: edit[T], incoming: T) -> T:
+    return exchange(*slot, incoming)
+
+def replace_first(
+    items: edit[list[own[resource]]],
+    incoming: own[resource]
+) -> own[resource]:
+    let slot: edit[own[resource]] = items.at_mut(0)
+    return replace(slot, incoming)
+
+def exercise_slots(
+    items: list[own[resource]],
+    incoming: own[resource]
+) -> int64:
+    let previous = replace_first(&mut items, incoming)
+    let previous_id = previous.id
+    drop(previous)
+    return previous_id
+```
+
+The element-access API shape is `list[T].at_mut(index) -> edit[T]`, with a result loan
+derived from the collection receiver. An element observation API returns `inspect[T]`.
+For single-element indexing, `&items[i]` and `&mut items[i]` expose those slot capabilities
+directly; they do not borrow a temporary handle returned by the collection method.
+These are library interface requirements, not unchecked compiler intrinsics selected by
+method name. The collection must prove that its exposed slot supports the promised
+operations and cannot relocate or disappear while the loan is live. Bounds checks follow
+the collection's checked contract; the trace below assumes index 0 exists and lookup returns
+normally. This does not select a recoverable-versus-fatal bounds failure policy.
+
+`*slot` is a place expression: it designates the slot without moving the value stored there.
+The compiler elaborates the exchange using the edit's stored place provenance. It does not
+load an owner token, move it out, and subsequently assign a replacement. Assignment through
+`*slot` instead uses the checked replacement/cleanup operation when the old value is not
+wanted as a result. Binding the edit handle with `let` does not revoke its target authority.
+
+### Slot authority versus child authority
+
+| Capability | Target and permitted operation |
+|---|---|
+| `inspect[own[resource]]` | Observe the stored owner slot under capability-dependent load rules; cannot extract or replace its owner |
+| `edit[own[resource]]` | Edit the collection slot; checked exchange can return its old owner and install a new one |
+| `edit[resource]` | Edit the child resource's contents; cannot replace the owner stored in the collection |
+
+The slot loan is grounded in the allocation containing the element and its element path.
+The child loan is grounded in the resource's allocation. Both retain the relevant granting
+and ancestor dependencies. An expected type or matching machine address cannot convert
+child authority into slot authority. Inline elements do not acquire disjoint edit rights
+merely because their indices differ.
+
+### Ownership flow and core trace
+
+Let the first slot initially own A, and let `incoming` own B. On normal return:
+
+| Storage or carrier | Before exchange | After exchange |
+|---|---|---|
+| `items[0]` | Owner of A | Owner of B |
+| `incoming` parameter in `replace` | Owner of B | Unavailable |
+| Return carrier from `replace` | Uninitialized | Owner of A |
+
+1. `replace_first` reborrows the caller's collection edit. `at_mut` creates a dependent slot
+   edit with the checked backing allocation, element path, and stored type `own[resource]`.
+   The result summary preserves those dependencies after the method's argument carriers end.
+2. Passing `slot` to `replace` makes a dependent edit reborrow; it does not transfer or
+   duplicate the original edit handle. `incoming` transfers into the ordinary `T` parameter.
+3. Prepare the destination and result carrier, then check initialization, replacement validity,
+   all live loans, and ownership-edge changes against the pre-transition forest. In one
+   exchange commit, move A's owner to the result and B's owner into the initialized slot.
+   Update affected storage versions and ancestor effects. No resource cleanup runs in this
+   exchange, and no user code or modeled failure occurs between removal and installation.
+4. Return A's owner through `replace_first`. The return value carries its own resource
+   lifetime and cleanup obligations, with no dependency on the collection slot merely
+   because it came from that slot. End dependent reborrows only after their carriers retire.
+5. `exercise_slots` reads A's scalar ID and explicitly disposes A. Its list still owns B;
+   normal scope cleanup disposes B and the other remaining elements exactly once.
+
+The generic helper depends only on the element type and checked slot authority. A hash table
+or tree exposing an equivalent slot capability can use the same helper. This hides collection
+representation without erasing element types or loan dependencies. A sum or a separately
+checked trait-object abstraction is needed when the elements themselves have different
+concrete types. Range access continues to return a range view, not an edit of a temporary
+slice descriptor.
+
+### Required rejection cases
+
+- Pass only an `edit[resource]` to replace an `own[resource]` element: the required slot
+  authority is absent.
+- Read the stored owner by value or leave the borrowed slot empty: a loan does not grant
+  ownership extraction.
+- Keep a returned or stored slot view for later use and grow, remove from, move, or destroy
+  its collection in a way that invalidates the view: the surviving loan blocks that action.
+- Exchange while an outgoing child has a conflicting surviving loan, or install a replacement
+  borrowing from that child: check the pre-transition forest and reject the invalid transfer.
+- Create simultaneous edit views of two inline elements using only unequal indices: the
+  initial core still treats their containing allocation as the conflict footprint.
+- Export a slot view from a collection that cannot preserve its lifetime or representation
+  under the advertised replacement operations: the collection's method contract cannot check.

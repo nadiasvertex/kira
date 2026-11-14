@@ -184,8 +184,8 @@ include carrier availability and loan dependencies as well as affine authority.
 | `move(h)` | Affine handle available; owner transfer passes the forest conflict rules | Transfer handle; source unavailable |
 | `take_field(h,p)` | Initialized structural product field; direct owner authority; permitted field removal | Move field into a result carrier and mark the source field empty |
 | `init_field(h,p,x)` | Empty structural product field; direct owner authority; compatible replacement and permitted edge update | Transfer the new value into the field and mark it initialized |
-| `begin_inspect(h,l)` | Live read authority; permitted observation loan or reborrow | Scoped observation; suspend conflicting owner actions |
-| `begin_edit(h,l)` | Live exclusive authority; permitted edit loan or reborrow | Scoped edit; suspend conflicting originating authority |
+| `begin_inspect(h,l)` | Live read authority over the checked target place; permitted observation loan or reborrow | Scoped observation; preserve the target path and suspend conflicting owner actions |
+| `begin_edit(h,l)` | Live exclusive authority over the checked target place; permitted edit loan or reborrow | Scoped edit; preserve the target path and suspend conflicting originating authority |
 | `retire(c)` | No future use; cleanup and origin-lifetime obligations satisfied | Invalidate the value slot and remove its carrier entries |
 | `end_loan(l)` | No live carrier or dependent loan of `l` | Restore authority only where no remaining loan suspends it |
 | `freeze(h)` | Fully initialized unique owner; permitted forest transition; contents and cleanup are recursively freezable | Consume owner, mark region frozen, return `shared_read` |
@@ -349,6 +349,47 @@ reinterpret code checked with writable or consuming capture access as read-only 
 initial core rejects freezing a closure whose exposed call contract requires edit or ownership
 of its environment, or whose captures cannot be frozen. A read-only closure may be frozen only
 when its body remains valid under the shared projection rules.
+
+### Borrowed slots and collection views
+
+The experimental surface collapses single-element `cell[T]` and `mut cell[T]` views into
+`inspect[T]` and `edit[T]`. These capabilities can target an initialized storage slot as
+well as an allocation's represented contents. A path-bearing slot loan has schematic form
+`inspect(l,r,p,T)` or `edit(l,r,p,T)`: `r` is the allocation containing the slot, `p` its
+checked path, and `T` the type stored there. This extends the handle notation, not the set
+of authority modes. The loan also records its granting chain and lifetime dependencies.
+
+The target of `begin_inspect` or `begin_edit` may be a checked place `(h,p)` selected through
+live granting authority. Resolve its allocation, bounds, initialization, and permitted
+access before creating the loan. An address or a claimed type alone cannot supply this
+authority. A collection exposes only slots whose permitted operations preserve its checked
+representation and abstraction contracts. Inline element paths retain whole-allocation
+conflicts; selecting different indices is not a proof of disjointness.
+
+For an element represented as `own(s,U)`, an `edit[own[U]]` of its slot is grounded in the
+containing allocation and permits checked replacement or exchange of that stored owner.
+An `edit[U]` of the child instead targets `s` and cannot replace its parent's ownership
+edge. Contents projection and slot borrowing remain distinct operations even though both
+produce the existing capability types. No expected type may invent the missing authority.
+
+Surface `*slot` designates the loan's checked place without moving its contents. Loads follow
+the ordinary capability-dependent projection rules; an inspection of an owner slot never
+loads an ownership token by value. `exchange(*slot, incoming)` selects the slot carried by
+the edit and invokes checked exchange; assignment through it invokes checked `store` and
+cleanup. Neither permits extraction that leaves borrowed storage empty. Exchange checks the
+pre-transition ownership forest, replacement validity, loans, effects, and initialization
+exactly as when its destination is selected directly from the container.
+
+Returning, storing, reborrowing, or explicitly transferring a slot capability preserves its
+place provenance and loan dependencies. A live slot loan prevents collection operations
+that invalidate its target or granting chain, including relocation, removal, and destruction.
+Retiring the originating handle alone cannot end a loan still carried by a result or field.
+
+Range views retain the surface spellings `slice[T]`, `mut slice[T]`, and `str`. They carry
+their range shape and scoped observation or edit authority under the same loan rules.
+Single-element capabilities hide collection representation while keeping `T` known; sums
+or a separately checked trait-object abstraction provide heterogeneous element types.
+Legacy cell semantics remain confined to legacy mode during migration.
 
 ## Checked value copying
 
@@ -1206,6 +1247,10 @@ Exchange, removal, and consuming-match validation must include noncopyable eleme
 | Pop a noncopyable resource through an edit | Accepted: transfer it into the result without copying it or running its destructor |
 | Drop a sequence after popping an element | Clean only remaining elements; the removed element's obligation belongs to its result carrier |
 | Exchange an owned child with an independent replacement | Return the old owner and install the new owner; both obligations remain accounted for |
+| Return a collection slot as `edit[own[T]]` and exchange through it in an unconstrained generic helper | Accepted with valid slot provenance and replacement authority; preserve initialization, return the old owner, and require no copy witness |
+| Store or return a slot loan, then relocate, remove, or destroy its containing collection before its later use | Rejected: the surviving carrier retains the slot's origin and granting dependencies |
+| Read an owner token by value or leave an empty element through a borrowed slot | Rejected: observation and edit do not grant ownership extraction |
+| Select two different inline indices and claim simultaneous disjoint edits | Rejected in the initial core: paths still conflict at the containing allocation |
 | Use only an edit of a child allocation to exchange its owner's slot in the parent | Rejected: that slot requires authority over the containing allocation |
 | Exchange with a replacement that borrows the outgoing owner | Rejected when the loan prevents transferring that owner |
 | Pop while the last element has a live observation or edit loan | Rejected: removal cannot invalidate or bypass the loan |
