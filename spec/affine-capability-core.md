@@ -18,8 +18,10 @@ Independent copying and freezing are explicit requests. Surface `copy(x)` elabor
 core `copy_value` and constructs an equivalent value of the same surface type with independent
 mutable storage. `copy_owned(h)` materializes represented contents in a fresh owned root and
 returns `own[T]` for represented `T`. Both preserve their sources and require the relevant
-structural copy witnesses. Copying a frozen handle retains its existing target;
-`copy_owned` instead constructs a fresh owner of the target's represented contents.
+structural copy witnesses, exposed by the `copy` constraint. This constraint permits explicit
+construction and does not change implicit-duplication rules. Copying a frozen handle retains
+its existing target; `copy_owned` instead constructs a fresh owner of the target's represented
+contents.
 Immutable strings and frozen subobjects may share backing storage when lifetime management
 is preserved. Freezing consumes an owner
 and permanently removes mutable authority over its region and owned descendants.
@@ -361,6 +363,18 @@ Explicit independent copying or materialization requires a structural copy witne
 Ordinary ownership transfer does not require one, including for generic parameters. The initial core
 derives this witness from the type's representation and checked component operations; a
 user function named `copy`, `copy_owned`, or `clone` does not supply one by declaration alone.
+
+The experimental surface names this structural requirement `copy`. For `copy(x)`, it applies
+to the source value type; for `copy_owned(h)`, it applies to represented `T`. An owner with a
+witness still moves by default. Implicit duplication is a separate compiler-tracked property,
+not a second public constraint named `copyable` or `duplicate`. In particular, an inspection
+can duplicate under its loan rules without satisfying `copy` in this initial core.
+
+This meaning replaces the legacy `copy` concept's implicit-duplication classification only
+in the experimental mode. Legacy bounds cannot supply structural witnesses; migration must
+check the operations each generic body actually needs. Ordinary mode retains its existing
+semantics until adoption.
+
 The witness specifies a value relation `equiv_T` and a construction recipe with these obligations on
 every successful return, where `H_in` and `H_out` are the input and output heaps:
 
@@ -1147,6 +1161,8 @@ Copy validation must distinguish equivalent contents from independent storage:
 
 | Situation | Expected result |
 |---|---|
+| Require `copy` for an owner type with structurally copyable contents | Accepted when the witness is derived; ordinary value passing still transfers the owner |
+| Use inspection duplication or a legacy `copy` classification as evidence for structural `copy` | Rejected: duplication does not establish the independent-copy witness |
 | Copy a record and its owned mutable children into fresh regions, preserving all contents | Accepted when component witnesses and observation authority are valid |
 | Return a fresh buffer with different elements from the source | Rejected: freshness does not establish value equivalence |
 | Allocate a fresh record but reuse its source's mutable child | Rejected: the result's mutable reach is not fresh |

@@ -1,8 +1,9 @@
 # Affine capability surface mapping
 
 Status: accepted experimental-subset spellings for declarations, receivers, loans, transfer,
-freeze, copying, and local bindings. Contract inference and optional programmer constraints are accepted
-policies; the worked contract clauses remain syntax candidates. This document does not amend
+freeze, copying, the `copy` constraint, and local bindings. Contract inference and optional
+programmer constraints are accepted policies; the worked contract clauses remain syntax
+candidates. This document does not amend
 the implemented grammar or establish T08 completion. See [Q2 decisions](decisions.md#q2--ownership-default-and-explicit-copying)
 and the [worked translation](translations.md).
 
@@ -117,9 +118,27 @@ independently and permitted by the recipe.
 
 `copy` elaborates to the core `copy_value` operation. The fresh-owner core operation is
 named `copy_owned` as well. The operation is selected by its resolved identity and checked
-witness, not by the spelling of an arbitrary user-declared function. The existing `copy`
-concept remains distinct from this value-level operation and from the independent-copy
-witness, whose constraint name is still pending.
+witness, not by the spelling of an arbitrary user-declared function.
+
+### The `copy` constraint
+
+Use `copy` as the language-provided structural constraint for explicit independent copying.
+As a constraint it requires the checked witness for the constrained type; as an operation,
+`copy(x)` requests construction using that witness. `copy_owned(h)` requires this constraint
+on represented `T`, while `copy(x)` requires it on the source value type.
+
+An `own[T]` value can satisfy `copy` when its contents support checked copying, while still
+moving by default. The constraint permits explicit construction and never enables implicit
+copying or duplication of the original ownership token. An inspection may duplicate under
+its loan rules while failing `copy`; these are separate compiler-checked properties.
+
+In the experimental mode, retire the legacy `copy` concept's meaning of implicit duplication.
+Keep implicit duplication as a compiler-tracked property; introduce no public `copyable` or
+`duplicate` constraint. Legacy mode retains its current meaning until adoption. Migration
+must audit existing `copy` bounds according to their uses rather than treating the shared
+spelling as equivalent semantics.
+
+### Copying through capabilities
 
 ```cinder
 # frozen: shared_read[config]; config has a structural copy witness
@@ -162,8 +181,6 @@ spelling alone establishes thread-transfer safety.
 
 ## Remaining Q2 choices
 
-- The distinct structural witness constraint name. Legacy `copy` classification and
-  arbitrary `clone` methods do not establish independent-copy witnesses.
 - Full view mappings, callable contract spellings, closure call-mode and capture spellings,
   and contract forms beyond the worked replacement example.
 - Complete translations and grammar integration for the advertised experimental subset.

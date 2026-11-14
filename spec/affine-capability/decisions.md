@@ -61,9 +61,9 @@ it does not promise termination or eventual cleanup for diverging programs.
 
 ## Q2 — Ownership default and explicit copying
 
-Status: ownership-default, contract-inference, basic surface-spelling, and `copy`/`copy_owned`
-naming decisions accepted on 2026-11-14. Q2 remains partially resolved; witness naming and
-further mappings are pending.
+Status: ownership-default, contract-inference, basic surface-spelling, `copy`/`copy_owned`
+operation names, and the `copy` constraint name accepted on 2026-11-14. Q2 remains partially
+resolved; further mappings and contract spellings are pending.
 Owning task: T08. Dependent tasks: T30–T36 and the affected library migrations.
 
 ### Decision
@@ -179,13 +179,31 @@ operation whose name does not identify its authority or result-type distinction.
 The [surface mapping](surface.md) gives the accepted spellings and examples. These decisions
 do not amend the normative grammar or implement the new mode.
 
+### Structural copy constraint
+
+Use `copy` as the public structural constraint requiring a checked independent-copy witness.
+The constraint and the operation `copy(x)` describe the same capability at the type and value
+levels. `copy_owned(h)` requires the witness for represented `T`, rather than the source
+handle type. An owner satisfying `copy` still moves by default; the constraint never changes
+ordinary value passing into implicit construction or duplicates its ownership token.
+
+Retire the legacy `copy` concept's implicit-duplication meaning in the experimental mode.
+The compiler continues to track permitted duplication, including retention and loan rules,
+as a separate property. No public `copyable` or `duplicate` constraint is introduced. This
+avoids giving nearly identical names to different guarantees and follows the preference for
+verbs. Inspection duplication, for example, does not establish the structural `copy` witness.
+
+Legacy mode retains its existing concept until adoption. Audit existing generic bounds by
+their actual operations during migration; an old `copy` bound is not evidence for the new
+witness. No compiler implementation or normative grammar changes are made by this decision.
+
 ### Remaining scope and obligations
 
-Q2 still needs a distinct structural witness constraint name, full view mappings,
-callable and capture spellings, and remaining
-contract forms. The worked `from`, `writes`, `outcome`, `entry`, `transfers`, and `preserves`
-clauses remain syntax candidates with the accepted inference policy. The existing `copy`
-concept and the structural independent-copy witness must remain distinct.
+Q2 still needs full view mappings, callable and capture spellings, and remaining contract
+forms. The worked `from`, `writes`, `outcome`, `entry`, `transfers`, and `preserves` clauses
+remain syntax candidates with the accepted inference policy. The legacy implicit-duplication
+classification and the structural independent-copy witness must remain distinct despite
+the mode-specific reuse of the `copy` constraint name.
 
 T08 must validate the remaining choices with representative translations. Structural copy,
 separation, freeze, lifetime, and cleanup proofs remain required even though copying is
