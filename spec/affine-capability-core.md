@@ -387,6 +387,26 @@ Retiring the originating handle alone cannot end a loan still carried by a resul
 
 Range views retain the surface spellings `slice[T]`, `mut slice[T]`, and `str`. They carry
 their range shape and scoped observation or edit authority under the same loan rules.
+Range construction records its backing allocation, checked range, and granting dependencies;
+it does not create fresh storage or independent region authority. Bounds and initialization
+must be established, with UTF-8 boundary checks for text. Observation is the default surface
+range operation; editing requires an explicit edit request and valid edit authority. Range
+borrow dispatch produces a range capability rather than a loan to a temporary descriptor.
+
+Observation range carriers duplicate only while preserving their loan dependencies. Mutable
+range carriers are affine: ordinary value binding transfers them, while declared range
+parameters select observation or edit reborrowing for bare arguments. Explicit transfer
+preserves the existing loan identity and granting chain. A surviving returned or stored
+subrange keeps its origin and conflicting-authority suspension obligations after the helper
+or original carrier retires. Range bounds alone never establish disjoint inline edits in the
+initial whole-allocation conflict model. Element-slot projection from a mutable range of
+`own[T]` yields an edit of the stored owner slot, not ownership extraction or child-only authority.
+
+A scoped range over frozen backing preserves its source lifetime obligation. It cannot
+implicitly become independently retained; persistent frozen-range representation and an
+explicit checked operation remain surface-design questions. Existing retained single-value
+projection rules do not erase the dependencies of a scoped range.
+
 Single-element capabilities hide collection representation while keeping `T` known; sums
 or a separately checked trait-object abstraction provide heterogeneous element types.
 Legacy cell semantics remain confined to legacy mode during migration.
@@ -1219,6 +1239,19 @@ Copy validation must distinguish equivalent contents from independent storage:
 | Use a user-defined clone that mutates the source as an implicit copy | Rejected even if it returns equivalent contents in fresh storage |
 | Materialize a frozen record with an owned child using `copy_owned` | Accepted when both root and reconstructed owned child are fresh and contents are equivalent |
 | Retarget a captured bounds proof from the source region to the copy without a derivation | Rejected: region and version identities are not interchangeable |
+
+Range-view validation must exercise shape, authority, and surviving dependencies:
+
+| Situation | Expected result |
+|---|---|
+| Slice with a bare range or explicit observation | Produce a scoped observation range with checked bounds and origin dependencies; expected editing cannot strengthen it |
+| Slice with an explicit edit request | Produce a mutable range only with valid edit authority and no conflicting loans |
+| Pass an existing mutable range to observation and edit range helpers | Reborrow in the declared mode; preserve any dependencies retained in results or fields |
+| Bind a mutable range by value or explicitly transfer it | Move its affine authority and preserve dependencies; reject subsequent use of the source binding |
+| Request simultaneous edit subranges based only on nonoverlapping bounds | Rejected in the initial whole-allocation model |
+| Borrow an element slot from a mutable range of owners | Yield edit authority over the stored owner slot; checked replacement requires no copy witness |
+| Form an out-of-bounds range, invalid UTF-8 boundary, or range over uninitialized elements | Require discharge or runtime enforcement of the corresponding validity obligations |
+| Treat a scoped range over frozen backing as independently retained | Rejected: scoped source dependencies remain in force |
 
 Cleanup validation must cover both resource accounting and the authority used by disposal:
 

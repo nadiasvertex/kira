@@ -62,8 +62,9 @@ it does not promise termination or eventual cleanup for diverging programs.
 ## Q2 — Ownership default and explicit copying
 
 Status: ownership-default, contract-inference, basic surface-spelling, `copy`/`copy_owned`
-operation names, the `copy` constraint name, and single-element view consolidation accepted
-on 2026-11-14. Q2 remains partially resolved; further mappings and contract spellings are pending.
+operation names, the `copy` constraint name, single-element view consolidation, and scoped
+range-view construction and passing accepted on 2026-11-14. Q2 remains partially resolved;
+further mappings and contract spellings are pending.
 Owning task: T08. Dependent tasks: T30–T36 and the affected library migrations.
 
 ### Decision
@@ -225,9 +226,34 @@ with permitted loads/observations and checked replacement. The
 records the generic helper, ownership flow, and rejection cases. Formal and implementation
 validation of slot provenance, replacement validity, and dependent loans remains required.
 
+### Scoped range views
+
+Accept observation by default for `items[start .. end]` and explicit observation with
+`&items[start .. end]`, both yielding `slice[T]`. `&mut items[start .. end]` requests
+`mut slice[T]`. The result is the range capability, not a reference to a temporary descriptor;
+expected types cannot silently strengthen observation into editing. Text observation slicing
+yields `str` with checked UTF-8 boundaries. All ranges require valid bounds, initialized
+storage, checked authority, and origin dependencies; slicing neither copies elements nor
+owns the backing storage.
+
+Existing mutable views reborrow for bare arguments: observation for `slice[T]` parameters,
+editing for `mut slice[T]` parameters. Ordinary binding moves a mutable view, while `&>view`
+explicitly transfers its authority and invalidates its source binding. Observation duplication,
+reborrow, and transfer preserve the corresponding loan dependencies. Returned and stored
+subranges keep their source borrowed; conflicting authority remains suspended as required.
+
+Different subrange bounds do not establish disjoint edits under the initial whole-allocation
+model. A mutable range of owners lends owner slots, preserving the distinction between
+`edit[own[T]]` and child `edit[T]`. Frozen backing permits scoped observation, but does not
+implicitly make the range independently retained. Persistent frozen-range representation
+and explicit operations remain open. The
+[range translation](translations.md#worked-example-range-views-and-reborrowing)
+records the accepted construction, passing, and rejection cases. Formal validation and
+implementation remain pending.
+
 ### Remaining scope and obligations
 
-Q2 still needs remaining range-view operation and conversion mappings, callable and capture
+Q2 still needs persistent frozen-range representation and operations, callable and capture
 spellings, and remaining contract forms. The worked `from`, `writes`, `outcome`, `entry`,
 `transfers`, and `preserves` clauses remain syntax candidates with the accepted inference
 policy. The legacy implicit-duplication

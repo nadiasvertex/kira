@@ -1,8 +1,8 @@
 # Affine capability surface mapping
 
 Status: accepted experimental-subset spellings for declarations, receivers, loans, transfer,
-freeze, copying, the `copy` constraint, single-element views, and local bindings. Contract
-inference and optional programmer constraints are accepted policies; the worked contract
+freeze, copying, the `copy` constraint, single-element and range views, and local bindings.
+Contract inference and optional programmer constraints are accepted policies; the worked contract
 clauses remain syntax candidates. This document does not amend
 the implemented grammar or establish T08 completion. See [Q2 decisions](decisions.md#q2--ownership-default-and-explicit-copying)
 and the [worked translation](translations.md).
@@ -79,6 +79,43 @@ spellings, if retained in the new mode, must have exactly the corresponding capa
 semantics. Migrate `get` to a permitted load or observation, with independent copying
 explicit; migrate `set` to checked replacement. See the
 [worked slot example](translations.md#worked-example-a-borrowed-collection-slot).
+
+## Range construction and passing
+
+Use observation by default for range indexing, with explicit editing when requested:
+
+| Expression | Result for stored element type `T` |
+|---|---|
+| `items[start .. end]` | `slice[T]` |
+| `&items[start .. end]` | `slice[T]`, explicitly requesting observation |
+| `&mut items[start .. end]` | `mut slice[T]`, explicitly requesting editing |
+
+Borrow dispatch yields the range capability itself, not a reference to a temporary slice
+descriptor. An expected mutable result type cannot reinterpret an observation range as an
+edit. All forms require checked source authority, valid bounds, initialized storage, and
+loan provenance. Text observation slicing yields `str` and additionally checks UTF-8
+boundaries; this decision introduces no mutable text-view spelling. Slicing copies no
+elements and takes no ownership of the backing storage.
+
+Range parameters follow the corresponding single-element capability modes. A bare existing
+mutable view passed to a `slice[T]` parameter makes an observation reborrow; passing it to a
+`mut slice[T]` parameter makes an edit reborrow. A read-only view cannot satisfy a mutable
+parameter. Explicit requests retain their stated authority and mismatches are diagnosed.
+Observation views may duplicate under the loan rules, preserving their dependencies.
+Ordinary value binding of a mutable view moves it; `&>view` explicitly transfers its existing
+edit authority and makes the source binding unavailable. Transfer preserves the granting
+chain and dependencies and does not transfer ownership of the backing collection.
+
+Returned or stored subranges retain their source and granting-chain dependencies. Conflicting
+authority is suspended for the dependent loan's lifetime, including after a helper returns.
+Subrange bounds do not prove disjoint editing in the initial whole-allocation conflict model.
+For `mut slice[own[T]]`, borrowing an element slot yields `edit[own[T]]`; replacing its owner
+uses the checked slot rules rather than extracting ownership through a load.
+
+Slicing frozen storage can produce a scoped observation view, subject to the source lifetime
+obligation. It does not implicitly produce an independently retained range. The representation
+and explicit operation for persistent frozen ranges remain open. See the
+[range translation](translations.md#worked-example-range-views-and-reborrowing).
 
 ## Receivers
 
@@ -235,7 +272,7 @@ spelling alone establishes thread-transfer safety.
 
 ## Remaining Q2 choices
 
-- Remaining range-view operation and conversion mappings, callable contract spellings,
+- Persistent frozen-range representation and operations, callable contract spellings,
   closure call-mode and capture spellings, and contract forms beyond the worked examples.
 - Complete translations and grammar integration for the advertised experimental subset.
 

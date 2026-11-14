@@ -309,3 +309,77 @@ slice descriptor.
   initial core still treats their containing allocation as the conflict footprint.
 - Export a slot view from a collection that cannot preserve its lifetime or representation
   under the advertised replacement operations: the collection's method contract cannot check.
+
+## Worked example: range views and reborrowing
+
+These functions use the accepted scoped range mapping. Their checked contracts are inferred;
+no lifetime or origin annotations are needed. The normal-return trace assumes at least three
+elements in `data`, so the middle range is nonempty. Bounds checks remain required; this
+example does not choose a recoverable-error or fatal-error policy.
+
+```cinder
+def middle(xs: inspect[list[int32]]) -> slice[int32]:
+    return xs[1 .. xs.len() - 1]
+
+def middle_mut(xs: edit[list[int32]]) -> mut slice[int32]:
+    return &mut xs[1 .. xs.len() - 1]
+
+def first(xs: slice[int32]) -> int32:
+    return xs[0]
+
+def clear_first(xs: mut slice[int32]) -> unit:
+    xs[0] = 0
+
+def exercise_ranges(data: edit[list[int32]]) -> int32:
+    let window = middle_mut(data)
+    let before = first(window)
+    clear_first(window)
+    let moved = &>window
+    let after = first(moved)
+    return before + after
+```
+
+`xs[a .. b]` and `&xs[a .. b]` both request observation and yield `slice[T]` for
+stored element type `T`. `&mut xs[a .. b]` requests editing and yields `mut slice[T]`.
+The range capability carries its shape and backing provenance directly; the explicit borrow
+does not borrow a temporary descriptor. Text observation slicing instead yields `str` and
+checks UTF-8 boundaries as well as bounds. No range construction copies elements.
+
+The mutable trace has the following authority flow:
+
+1. `middle_mut(data)` reborrows the incoming edit and creates a checked subrange. Its inferred
+   result origin preserves the backing allocation and granting chain after the call returns.
+   Conflicting use of `data` stays suspended while that returned loan survives.
+2. `first(window)` makes an observation reborrow for the `slice[int32]` parameter. The scalar
+   load returns an independent `int32`; the temporary observation can end after the call.
+3. `clear_first(window)` makes an edit reborrow for the `mut slice[int32]` parameter. The store
+   uses checked element-slot authority, with the usual write effects and version invalidation.
+4. `&>window` transfers the mutable range and its existing dependencies to `moved`. `window`
+   becomes unavailable. An ordinary `let moved = window` would also move it.
+5. The final `first(moved)` observes the same backing range and reads zero from its first
+   element. When no carrier or dependent view needs the range loan, conflicting authority
+   through `data` can resume. Ending the range loan does not destroy the backing collection.
+
+If a helper returns or stores a dependent subrange, its loan survives the helper call and
+continues to suspend conflicting authority. Observation-view duplication preserves all such
+dependencies. For `mut slice[own[resource]]`, element borrowing yields `edit[own[resource]]`,
+so the preceding slot-replacement example applies without a copy witness.
+
+### Required rejection cases
+
+- Infer editing for `xs[a .. b]` merely because a mutable range is expected: the expression
+  requests observation; the diagnostic should point to `&mut xs[a .. b]` when editing is legal.
+- Pass a read-only range to a mutable range parameter, or silently weaken an explicit editing
+  request to fit an observation parameter: explicit authority requests remain distinct.
+- Use `window` after transferring it, or exercise conflicting parent authority while a returned
+  or stored dependent range remains live: the carrier and granting-chain rules still apply.
+- Create simultaneous edit subranges using only nonoverlapping bounds: the initial model
+  uses the whole backing allocation as its conflict footprint.
+- Slice outside valid bounds, form an invalid UTF-8 text boundary, or access uninitialized
+  elements: the checked range obligations must be discharged or checked at runtime.
+- Treat a scoped range over frozen storage as independently retained and release a source
+  handle required by its loan: frozen contents do not erase source lifetime dependencies.
+
+An independently retained frozen range still needs an explicit operation and a suitable
+representation; this example does not select either. Scoped loans also do not permit freezing
+the backing collection through the view or implicitly materializing an owned copy.
