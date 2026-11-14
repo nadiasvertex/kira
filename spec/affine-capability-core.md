@@ -49,8 +49,9 @@ Thread transfer additionally requires that the representation and external resou
 ## Core objects
 
 Use abstract region identities `r`, loan identities `l`, types `T`, and immutable value
-identities `v`. Initially each region is a whole allocation; field-disjoint borrowing is an
-extension. Regions owned exclusively form an ownership forest. Cyclic mutable ownership,
+identities `v`. Each region identifies an allocation; checked named-field paths and range
+partitions refine access footprints without creating new allocation identities. Regions
+owned exclusively form an ownership forest. Cyclic mutable ownership,
 interior mutation, raw pointers, and concurrent mutation are outside this core.
 
 ```text
@@ -61,7 +62,7 @@ value types A ::= scalar | product(A...) | sum(A...) | sequence(A) | shared_read
 region state S ::= unique | frozen | dead
 
 operations ::= new | project | load | store | move | take_field | init_field
-             | exchange | remove_last | match_move
+             | exchange | remove_last | match_move | split_at
              | freeze | copy_value | copy_owned
              | begin_inspect | begin_edit | retire | end_loan | call | drop
 ```
@@ -186,6 +187,7 @@ include carrier availability and loan dependencies as well as affine authority.
 | `init_field(h,p,x)` | Empty structural product field; direct owner authority; compatible replacement and permitted edge update | Transfer the new value into the field and mark it initialized |
 | `begin_inspect(h,l)` | Live read authority over the checked target place; permitted observation loan or reborrow | Scoped observation; preserve the target path and suspend conflicting owner actions |
 | `begin_edit(h,l)` | Live exclusive authority over the checked target place; permitted edit loan or reborrow | Scoped edit; preserve the target path and suspend conflicting originating authority |
+| `split_at(h,k)` | Live mutable range; checked split position; valid initialized backing and permitted reborrow | Two affine edit ranges partitioning the visible range; preserve backing and granting dependencies, suspend conflicting parent authority |
 | `retire(c)` | No future use; cleanup and origin-lifetime obligations satisfied | Invalidate the value slot and remove its carrier entries |
 | `end_loan(l)` | No live carrier or dependent loan of `l` | Restore authority only where no remaining loan suspends it |
 | `freeze(h)` | Fully initialized unique owner; permitted forest transition; contents and cleanup are recursively freezable | Consume owner, mark region frozen, return `shared_read` |
@@ -216,7 +218,7 @@ held directly by local values or capability tokens are roots. Inline fields use 
 containing allocation identity. Shared handles and scoped loans are not ownership edges;
 freezing converts exclusive edges into retained frozen edges under the projection rules.
 
-Define the footprint of authority rooted at `r` and the overlap relation in the current
+Define the footprint of whole-region authority rooted at `r` and its overlap relation in the current
 heap state as follows:
 
 ```text
@@ -224,13 +226,15 @@ tree(r)       = { r } union { s | r -> ... -> s }
 overlap(r, s) = tree(r) intersects tree(s)
 ```
 
-In an ownership forest, overlap means that the roots are equal or one owns the other
-transitively. A loan targeting `r` protects `tree(r)`, not merely the bytes allocated at
-`r`. Thus a parent inspection prevents editing an owned descendant, and a child loan
+For whole-region authority, overlap means that the roots are equal or one owns the other
+transitively. A loan targeting all of `r` protects `tree(r)`, not merely the bytes allocated at
+`r`. Checked place footprints refine this relation as specified below. A parent inspection
+prevents editing an owned descendant, and a child loan
 constrains operations on every owning ancestor. The checker must prove nonoverlap before
 treating abstract regions as independent; different symbolic names alone are insufficient.
 
-An access is checked against every active overlapping loan according to this table:
+An access is checked against every active loan whose footprint overlaps its requested
+footprint according to this table:
 
 | Requested access at `r` | Overlapping `inspect` loan | Overlapping `edit` loan |
 |---|---|---|
@@ -248,7 +252,7 @@ Observation of frozen storage may instead follow retained frozen edges under the
 rules, preserving the granting loan's lifetime dependency and granting no edit authority.
 All other loans,
 including sibling and dependent loans, still participate in the conflict check. In
-particular, a parent edit cannot be used on an overlapping region while a child reborrow
+particular, a parent edit cannot be used on an overlapping footprint while a child reborrow
 is active. Suspended loans remain reservations against unrelated authority; suspension
 does not make their storage available to another owner or borrower.
 
@@ -259,17 +263,32 @@ or restoring its grantor; it cannot bypass a suspension imposed by a dependent r
 Ending a loan requires all its carriers and dependent loans to be dead. Authority resumes
 only to the extent permitted by every other remaining loan.
 
-For this initial core, a read or write of an allocation conservatively uses its entire
-`tree(r)` footprint, even when the operation names only one inline scalar field. A
-projection may select a separately allocated owned child as its target without taking
-a separate loan of the entire parent. Selecting that child checks the source capability,
-the target conflict rules, and the lifetime of the ownership path; it grants no other
-access to the parent. Loans of distinct owned child allocations can therefore coexist
-when their trees are disjoint and the granting authorities permit them. Distinct inline
-fields still overlap because they belong to the same allocation.
+An access to a checked place `(r,p)` uses that place's footprint: its inline storage and
+the exclusive descendants owned through that place. The empty path covers the entire
+allocation and its owned tree. A path overlaps itself and every prefix or descendant path.
+Paths that first diverge at distinct named fields of the same structural product are
+disjoint, including their exclusively owned descendants. This applies recursively to nested
+products and closure fields when projection is permitted by the abstraction contract.
+Different names for abstract regions, sum variants, unequal indices, or arbitrary subrange
+bounds do not establish separation. Indexed access conservatively covers its containing
+sequence footprint unless it inherits a narrower checked partition from `split_at`.
+Named-field refinement cannot bypass that conservative indexing rule.
+
+Place provenance includes the resolved target and granting chain, not just a syntactic path:
+two fields carrying loans of the same external storage do not make those targets disjoint.
+Likewise, following a stored shared handle preserves its frozen target and lifetime rules.
+Private representation fields are available only through checked abstraction contracts.
+
+A projection can select a named field or separately allocated owned child without first
+borrowing the whole parent. It checks source authority over the selected footprint and the
+lifetime of the ownership path, granting no other access to the parent. Sibling loans can
+coexist when their footprints are disjoint; an enclosing edit remains usable on unaffected
+siblings but cannot perform overlapping accesses. A method requiring an edit of all of
+`self` still conflicts with a live field loan. Moving, freezing, destroying, or replacing
+the whole parent covers every field and descendant, regardless of field separation.
 
 Changing an ownership edge is also an access, not bookkeeping that bypasses loans.
-Insertion or replacement requires write authority for the containing allocation;
+Insertion or replacement requires write authority for the containing owner slot;
 transferring an incoming owner and removing or destroying an outgoing owner must each
 satisfy their own conflict checks. Check these conditions in the pre-transition forest,
 then require the resulting forest and all surviving loans to remain well formed. No
@@ -338,8 +357,9 @@ These path-bearing views are schematic extensions of the handle notation above.
 Projection composes along a path and never strengthens its source authority, except that
 loading an existing shared handle duplicates that handle's own authority. Loans through owned
 children also constrain their owning ancestors: dropping, freezing, or replacing an ancestor
-cannot invalidate a live projected loan. In this initial core, projecting an inline field
-borrows its whole allocation; sibling fields do not acquire disjoint edit permissions.
+cannot invalidate a live projected loan. Projecting an inline named field preserves its
+allocation identity while narrowing authority to its checked place footprint; sibling named
+fields may have simultaneous loans under the separation rules above.
 
 Abstract types expose only projections and operations justified by the declaring module's
 checked capability contract; private fields do not bypass these rules. Closure captures obey
@@ -363,8 +383,9 @@ The target of `begin_inspect` or `begin_edit` may be a checked place `(h,p)` sel
 live granting authority. Resolve its allocation, bounds, initialization, and permitted
 access before creating the loan. An address or a claimed type alone cannot supply this
 authority. A collection exposes only slots whose permitted operations preserve its checked
-representation and abstraction contracts. Inline element paths retain whole-allocation
-conflicts; selecting different indices is not a proof of disjointness.
+representation and abstraction contracts. Inline element paths conservatively conflict
+within their containing sequence or inherited split partition; selecting different indices
+alone is not a proof of disjointness.
 
 For an element represented as `own(s,U)`, an `edit[own[U]]` of its slot is grounded in the
 containing allocation and permits checked replacement or exchange of that stored owner.
@@ -398,9 +419,10 @@ range carriers are affine: ordinary value binding transfers them, while declared
 parameters select observation or edit reborrowing for bare arguments. Explicit transfer
 preserves the existing loan identity and granting chain. A surviving returned or stored
 subrange keeps its origin and conflicting-authority suspension obligations after the helper
-or original carrier retires. Range bounds alone never establish disjoint inline edits in the
-initial whole-allocation conflict model. Element-slot projection from a mutable range of
-`own[T]` yields an edit of the stored owner slot, not ownership extraction or child-only authority.
+or original carrier retires. Range bounds alone never establish disjoint inline edits;
+only the checked partition operation below supplies range separation. Element-slot projection
+from a mutable range of `own[T]` yields an edit of the stored owner slot, not ownership
+extraction or child-only authority.
 
 A scoped range over frozen backing preserves its source lifetime obligation. It cannot
 implicitly become independently retained. Existing retained single-value projection rules
@@ -409,6 +431,42 @@ do not erase the dependencies of a scoped range.
 Single-element capabilities hide collection representation while keeping `T` known; sums
 or a separately checked trait-object abstraction provide heterogeneous element types.
 Legacy cell semantics remain confined to legacy mode during migration.
+
+### Checked mutable range splitting
+
+`split_at(h,k)` reborrows one mutable range of length `n` into two affine edit ranges with
+visible intervals `[0,k)` and `[k,n)`, relative to `h`. Establish `0 <= k <= n` before
+creating either result, by checked evidence or a runtime bounds check. A failing check
+creates neither child loan and leaves the source loan unchanged; argument evaluation has
+its ordinary effects. The operation requires valid source authority, initialized elements,
+and no conflicting outstanding loans over the range being split.
+
+The primitive establishes a checked partition identity with two disjoint child footprints,
+both dependent on the granting loan and the original backing lifetime. It creates no new
+allocation or ownership token and copies no elements. The children cover exactly the
+visible source range; arbitrary user assertions or independently computed bounds cannot
+mint partition evidence. The primitive rule, including bounds validation, must be proved;
+the caller need not supply a disjointness proof.
+
+Each child's element slots and exclusively owned descendants lie within that child's
+authority. This does not separate external targets reached through stored loans. Subranges,
+returned or stored views, and nested splits preserve partition ancestry and all granting
+dependencies. Splitting one child does not suspend its disjoint sibling. Transfers preserve
+loan identity and partition evidence; duplicating an edit remains forbidden. Conflicting
+parent authority stays suspended while any child or dependent loan survives. Ending one
+child restores only authority not blocked by remaining loans; whole-range access resumes
+only after all conflicting descendants end.
+
+Control-flow joins and loop summaries preserve these separation relationships and possible
+backing origins. A partition identity from one branch or iteration cannot be relabeled to
+claim separation from an unrelated loan. If every incoming state does not justify a claimed
+separation, the joined state must conservatively treat the footprints as possibly overlapping.
+
+Splits at zero and at `n`, including splitting an empty range, are valid. Empty results carry
+their bounds and lifetime dependencies but authorize no element access. Neither child may
+grow its visible bounds or relocate, remove, freeze, or destroy the backing storage. Slot
+replacement retains the ordinary representation, cleanup, and pre-transition forest checks.
+The operation introduces no mutable text view or exception to UTF-8 validity rules.
 
 ## Retained frozen ranges
 
@@ -663,6 +721,26 @@ plus checked code: a consuming call takes its environment by ownership, a mutati
 call takes an edit loan, and a read-only reusable call takes observation authority. Capturing
 a loan preserves its lifetime obligation; capturing ownership preserves affine usage.
 
+The accepted experimental surface exposes these entries as `fn(self, ...)`,
+`fn(mut self, ...)`, and `fn(self: own[Self], ...)`. Infer the required entry authority
+from a source lambda body and check optional explicit constraints. The environment receiver
+is implicit at invocation and separate from how a higher-order function receives the
+callable: borrowing an editing entry permits reusable calls, and taking ownership of that
+callable does not make each invocation consuming. Reborrowing a captured edit requires
+editing access to the environment; moving a captured owner out requires consumption.
+An observing entry may still write through an explicit edit argument. Omitted surface
+receivers preserve sufficient checked or sound conservative call-mode information; they
+do not establish an observing entry. Call-mode information must survive stored/forwarded
+callables and portable summaries without exposing private capture layout.
+
+Experimental capture lists use value capture `[x]`, observation `[&x]`, editing/reborrow
+`[&mut x]`, and no captures `[]`. An explicit list limits the available enclosing locals;
+without a list, capture required variables by value under the same rules. Affine values
+move and other values duplicate only under checked capability rules; all stored loans and
+cleanup obligations remain accounted for. Neither escape analysis nor an expected callable
+constraint silently changes value capture into borrowing. Explicit borrowed captures must
+satisfy their own lifetime obligations, including when the closure escapes.
+
 ## Initialization and cleanup
 
 Every initialized resource-bearing slot has a cleanup obligation, including a duplicable
@@ -685,7 +763,7 @@ products have no custom whole-value cleanup. It requires direct ownership of the
 allocation or local aggregate, an initialized selected field, and the forest and lifetime
 checks for removing that field. It transfers the field's value, loan dependencies, and
 cleanup obligation to the result and leaves an empty slot. Independently initialized
-remaining fields can still be selected, subject to the same whole-allocation loan conflicts.
+remaining fields can still be selected, subject to checked place-footprint loan conflicts.
 `init_field` fills an empty slot without cleaning it first. Only after all fields are filled
 may the parent be used as a whole again. Both operations update ownership edges and storage
 versions. Extraction that leaves an empty field through `edit`, `inspect`, or `shared_read`
@@ -783,7 +861,8 @@ Carriers, loan dependencies, ownership edges, and cleanup obligations move toget
 owned child transfers from the container to the result's ownership description, without
 duplicating its owner. Stored loans retain their original origins. Versions of the changed
 container and affected ancestors are refreshed under the existing footprint rules; a moved
-child's contents are not thereby copied or changed. No field-disjoint borrowing is implied.
+child's contents are not thereby copied or changed. This transfer creates no additional
+field or range separation beyond the checked place and partition rules.
 
 Abstract containers expose these operations only through a checked representation contract
 in their declaring module. Operation bodies must preserve the representation invariant and
@@ -868,6 +947,12 @@ core; freezing must not silently discard its destructor or defer it until the la
 release. Custom frozen finalizers or conversions that discharge such obligations before
 freezing require additional checked rules and are outside this core.
 
+Release-only custom cleanup and nonfreezable scalar interior-mutation cells are deferred.
+A future cleanup extension must check recursive release obligations and preserve observable
+cleanup semantics; a label alone cannot authorize freezing. A future interior-mutation
+extension must specify alias authority, fact invalidation, callback effects, and closure
+sharing without weakening permanent freeze. Neither extension is assumed by library migration.
+
 ## Call footprints and fact preservation
 
 Each callable contract includes a finite summary of possible storage effects and any proved
@@ -886,6 +971,10 @@ its representation. The summary distinguishes:
 
 These summaries bound behavior; they do not grant authority. Every write and transition
 still needs the corresponding capability and must pass loan-conflict and lifetime checks.
+Checked field paths and range partition provenance refine access footprints across calls.
+A whole-receiver requirement still borrows the whole receiver; an implementation cannot
+silently narrow it by inspecting the callee body at a call site. Contracts and their imported
+summaries preserve any field or partition separation needed by the caller.
 `W` includes writes performed transitively by callees, callbacks, and cleanup. Contracts for
 indirect calls and higher-order parameters carry such summaries too; an implementation
 cannot be substituted if it exceeds the declared effects or fails the promised result and
@@ -975,6 +1064,17 @@ An input-derived result need not retain a counter loan merely because the callba
 the counter; any environment or other carrier retaining that edit still keeps its loan live.
 The write bound neither grants authority nor chooses an environment call mode.
 
+The origin bound `from self` permits dependencies supplied through the callable environment;
+`from {part, self}` permits dependencies from the input, the environment, or both. It does
+not imply that all results borrow environment storage. Borrowing a captured owner requires
+the dependencies supporting that ownership to remain live. Returning a duplicate of a
+captured observation preserves its original target, granting chain, and dependencies;
+it need not retain the environment when the checked summary preserves that relation.
+Opaque or less precise interfaces may conservatively retain additional dependencies, never
+drop actual ones. Portable summaries must preserve enough of these relations to justify
+their claimed precision without exposing capture layout. A consuming call cannot return
+a loan of captured storage destroyed by invocation cleanup merely by declaring `from self`.
+
 Diagnostics explain the inferred bound or missing relationship, its source operations, and
 why it prevents the requested use. Show the smallest relevant annotation or code change and
 where it belongs. A suggested constraint remains an obligation to check; it cannot assert
@@ -994,7 +1094,9 @@ cleanup must be tracked against that incoming region even though the source bind
 
 For fact checking, `version(r)` identifies the current observable contents of `r` and its
 exclusively owned subtree. A write conservatively refreshes versions for its whole permitted
-allocation footprint and all owning ancestors. Thus changing a child invalidates a fact
+allocation footprint and all owning ancestors. This versioning may remain allocation-wide
+even when access authority is field- or partition-specific: disjoint access does not itself
+promise preservation of a fact about a sibling. Thus changing a child invalidates a fact
 about its parent's contents even if the parent's own bytes did not change. Shared frozen
 edges do not make frozen data mutable. Facts about a separately retained frozen child
 remain valid when a mutable parent changes its handle to that child, but facts connecting
@@ -1205,7 +1307,11 @@ owned sibling of `child`. Each rejection below assumes the loan has a later live
 | End a parent loan while its child reborrow survives | Rejected even if the parent handle has no further direct use |
 | Inspect both `parent` and `grandchild` | Accepted: overlapping observations are compatible |
 | Directly project edits of `child` and its separately allocated sibling from their owner | Accepted when neither grant is suspended by another loan |
-| Edit two inline fields of `parent` independently | Rejected: both target the same allocation |
+| Edit two distinct named inline fields of `parent` independently | Accepted with checked field paths and valid granting authority |
+| Iterate over `self.items` while updating `self.total` directly | Accepted when the iterator borrows only `items` and the fields and effects are disjoint |
+| Keep a field loan, then access the same field or a prefix through competing edit authority | Rejected: equal and prefix paths overlap |
+| Keep a field loan, then call a method requiring an edit of all of `self` | Rejected: the receiver requirement overlaps the field |
+| Use distinct fields carrying aliases of the same mutable target as evidence of separation | Rejected: resolved target provenance governs conflicts |
 | Edit an unrelated ownership tree | Accepted when disjointness is established |
 | Release a shared handle that is the lifetime origin of a live inspection | Rejected despite immutable storage |
 
@@ -1219,6 +1325,10 @@ and `mutate_then_inspect` mutates an edit parameter and returns a derived inspec
 | Retire every inspection copy, end the loan, then mutate its former target | Accepted when no other loan conflicts |
 | Use an inspection binding after its carrier was retired and its loan ended | Rejected even if its former type remains known |
 | Capture an inspection in a closure, retire the original binding, then mutate before calling the closure | Rejected: the capture is a live carrier |
+| Capture an owner by value and return a view with `from self` | Move the source owner and preserve the returned view's supporting ownership dependencies; reject closure cleanup or replacement that invalidates the live view |
+| Capture an observation by value and return its duplicate | Preserve the original target and dependencies; a sufficiently precise checked summary need not retain the closure |
+| Capture an observation of an outer owner and return a dependent view | Preserve external source dependencies through both the capture and result |
+| Return a view of captured storage destroyed by a consuming invocation | Rejected even with `from self`; an origin annotation cannot authorize dead storage |
 | Move a container holding an inspection, then mutate before using the destination | Rejected: moving preserves the stored loan dependency |
 | Evaluate `observe_pair(&x, mutate_then_inspect(&mut x))` from left to right | Rejected: the first argument keeps its inspection active when the second requests editing |
 | Bind the result of `return_view(&x)`, then mutate before using that result | Rejected: returning transfers the dependency before argument retirement |
@@ -1305,7 +1415,14 @@ Range-view validation must exercise shape, authority, and surviving dependencies
 | Slice with an explicit edit request | Produce a mutable range only with valid edit authority and no conflicting loans |
 | Pass an existing mutable range to observation and edit range helpers | Reborrow in the declared mode; preserve any dependencies retained in results or fields |
 | Bind a mutable range by value or explicitly transfer it | Move its affine authority and preserve dependencies; reject subsequent use of the source binding |
-| Request simultaneous edit subranges based only on nonoverlapping bounds | Rejected in the initial whole-allocation model |
+| Request simultaneous edit subranges based only on nonoverlapping bounds | Rejected: bounds alone supply no checked partition |
+| Split one mutable range with `split_at`, then edit both children | Accepted after bounds validation, with disjoint child footprints and shared backing dependencies |
+| Split at zero or length, including an empty range | Accepted; empty children authorize no element access |
+| Split outside the visible source bounds | Reject or fail the runtime check before creating either child loan |
+| Split one child again while editing the other child | Accepted when inherited footprints are disjoint |
+| Return or store a split child, then use conflicting parent authority before its last use | Rejected even after the original child handle retires |
+| End one split child, then edit the entire parent while the other survives | Rejected; only unblocked authority can resume |
+| Forge a partition from bounds, widen a child, or duplicate its edit | Rejected: none supplies the required authority |
 | Borrow an element slot from a mutable range of owners | Yield edit authority over the stored owner slot; checked replacement requires no copy witness |
 | Form an out-of-bounds range, invalid UTF-8 boundary, or range over uninitialized elements | Require discharge or runtime enforcement of the corresponding validity obligations |
 | Treat a scoped range over frozen backing as independently retained | Rejected: scoped source dependencies remain in force |
@@ -1346,7 +1463,7 @@ Exchange, removal, and consuming-match validation must include noncopyable eleme
 | Return a collection slot as `edit[own[T]]` and exchange through it in an unconstrained generic helper | Accepted with valid slot provenance and replacement authority; preserve initialization, return the old owner, and require no copy witness |
 | Store or return a slot loan, then relocate, remove, or destroy its containing collection before its later use | Rejected: the surviving carrier retains the slot's origin and granting dependencies |
 | Read an owner token by value or leave an empty element through a borrowed slot | Rejected: observation and edit do not grant ownership extraction |
-| Select two different inline indices and claim simultaneous disjoint edits | Rejected in the initial core: paths still conflict at the containing allocation |
+| Select two different inline indices and claim simultaneous disjoint edits without inherited split separation | Rejected: unequal indices alone do not separate footprints |
 | Use only an edit of a child allocation to exchange its owner's slot in the parent | Rejected: that slot requires authority over the containing allocation |
 | Exchange with a replacement that borrows the outgoing owner | Rejected when the loan prevents transferring that owner |
 | Pop while the last element has a live observation or edit loan | Rejected: removal cannot invalidate or bypass the loan |

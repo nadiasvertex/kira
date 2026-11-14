@@ -308,7 +308,7 @@ slice descriptor.
 - Exchange while an outgoing child has a conflicting surviving loan, or install a replacement
   borrowing from that child: check the pre-transition forest and reject the invalid transfer.
 - Create simultaneous edit views of two inline elements using only unequal indices: the
-  initial core still treats their containing allocation as the conflict footprint.
+  views conflict within their containing sequence or inherited split partition.
 - Export a slot view from a collection that cannot preserve its lifetime or representation
   under the advertised replacement operations: the collection's method contract cannot check.
 
@@ -375,8 +375,8 @@ so the preceding slot-replacement example applies without a copy witness.
   request to fit an observation parameter: explicit authority requests remain distinct.
 - Use `window` after transferring it, or exercise conflicting parent authority while a returned
   or stored dependent range remains live: the carrier and granting-chain rules still apply.
-- Create simultaneous edit subranges using only nonoverlapping bounds: the initial model
-  uses the whole backing allocation as its conflict footprint.
+- Create simultaneous edit subranges using only nonoverlapping bounds: only checked split
+  provenance establishes independent range partitions.
 - Slice outside valid bounds, form an invalid UTF-8 text boundary, or access uninitialized
   elements: the checked range obligations must be discharged or checked at runtime.
 - Treat a scoped range over frozen storage as independently retained and release a source
@@ -385,6 +385,68 @@ so the preceding slot-replacement example applies without a copy witness.
 The library `.slice()` method creates an independently retained frozen range as shown below.
 Scoped loans do not permit freezing the backing collection through the view or implicitly
 materializing an owned copy.
+
+## Worked example: named-field borrowing and range splitting
+
+Assume `self` has edit authority over a structural product with fields `items` and `total`,
+the iterator borrows only `items`, and arithmetic is valid under the selected integer rules:
+
+```cinder
+for x in self.items:
+    self.total += x
+```
+
+Elaboration projects an inspection rooted at the checked `items` path and retains the
+iterator's dependencies for their actual lifetimes. Loading and storing `total` uses its
+distinct named-field footprint; no temporary whole-`self` loan is introduced for that
+projection. An owned backing allocation reached through `items` remains protected from
+relocation or destruction. The scalar load of `x` carries no loan after loading. Effects
+include the write to `total`; allocation-wide versions may invalidate prior facts about
+`self` even though the field access is permitted. Loop exit disposes iterator state under
+the ordinary sequential-generator and cleanup rules.
+
+For splitting, assume `data` is a live `mut slice[int32]` with four initialized elements.
+The following schematic trace uses the accepted built-in call; names denote the pair's
+components, without selecting additional destructuring syntax:
+
+```text
+(left, right) = split_at(data, 2)
+(head, tail) = split_at(left, 1)
+write head[0] = 10
+write tail[0] = 20
+write right[0] = 30
+```
+
+1. Check `2 <= length(data)` and the source authority. Create a partition and child loans
+   for `[0,2)` and `[2,4)`, dependent on `data` and its backing lifetime. The source handle
+   stays bound, with conflicting authority suspended.
+2. Check the nested split relative to `left`. Its children cover `[0,1)` and `[1,2)` in the
+   original backing. They inherit the outer partition, so both remain disjoint from `right`.
+3. Each write borrows an initialized slot within its own partition, applies the ordinary
+   representation and effect checks, and invalidates the required versions. No element
+   copying, owner extraction, or fresh backing allocation occurs.
+4. A helper may return a child or dependent view, preserving its partition and granting
+   dependencies in its result contract. Retiring a local descriptor does not end that loan.
+5. End each child loan only after its carriers and descendants retire. Authority resumes
+   only where no remaining loan conflicts; whole-range access through `data` requires all
+   conflicting children to end. Disposing views never disposes the backing elements.
+
+Required acceptance cases include nested named fields, independent named-field edits,
+splits at zero and length, empty input, and a split child transferred through a helper while
+its disjoint sibling remains usable. Required rejection cases include:
+
+- Borrow a field and then access the same path or a prefix through competing edit authority,
+  replace/drop/freeze the parent, or call a method requiring a whole-parent edit.
+- Treat two fields containing aliases of the same external mutable target as disjoint.
+- Borrow two arbitrary indices or subranges independently using bounds as the only evidence.
+- Split outside the visible range: reject statically or fail the bounds check before either
+  result exists, with no partial split state.
+- Widen a child, duplicate its edit, or use it to invalidate the backing storage.
+- End one child and access the whole parent while its sibling or a returned descendant
+  remains live; transferring or retiring the original child handle cannot evade this check.
+
+These translations are T08 coverage requirements, not evidence that proofs or compiler
+implementation are complete.
 
 ## Worked example: retained frozen ranges
 
@@ -513,9 +575,9 @@ let limited = part => part[0 .. min(limit, part.len())]
 let selected = select(items[0 .. items.len()], limited)
 ```
 
-The inferred result still depends only on that call's `part`. This choice does not settle
-how `limit` is captured or the callable's environment call mode; those remain separate Q2
-choices. In contrast, this callback cannot satisfy the input-only origin bound:
+The inferred result still depends only on that call's `part`. The implicit value capture
+duplicates the scalar `limit`, and reading it permits an observing entry. In contrast,
+this callback cannot satisfy the input-only origin bound:
 
 ```cinder
 # elsewhere: slice[int32], from an unrelated source
@@ -534,7 +596,8 @@ contract to account for the captured dependency
 ```
 
 Changing the contract must retain the real lifetime dependency and satisfy the caller's
-uses; an annotation cannot hide it. Capture-origin contract spellings remain open.
+uses; an annotation cannot hide it. Capture origins use `from self`, or a mixed bound such
+as `from {part, self}`, as worked through below.
 
 No `writes nothing` promise follows from this result-origin bound. The complete inferred or
 explicit interface still accounts for effects, transitions, capture dependencies, and
@@ -549,8 +612,8 @@ and exported metadata. Formal validation and implementation remain pending.
 
 ## Worked example: callback write bounds
 
-This example uses accepted experimental write-bound spellings. It does not settle closure
-call modes or the affine mapping of capture-list syntax, and is not an implemented fixture.
+This example uses accepted experimental write-bound and capture spellings. Callable
+receivers are worked through below. This is not an implemented fixture.
 An explicit counter argument keeps the two relationships visible:
 
 ```cinder
@@ -575,7 +638,7 @@ not a counter dependency; the counter can be reused once its other loans permit.
 argument capabilities must still be compatible: these clauses cannot authorize a counter
 edit that conflicts with the input observation.
 
-Alternatively, capture the counter. Using the existing capture-list syntax provisionally:
+Alternatively, capture an edit of the counter explicitly:
 
 ```cinder
 var calls: usize = 0
@@ -624,3 +687,166 @@ Required validation covers declaration and callable parsing, rejected empty-brac
 omitted versus explicit constraints, writes through captured edits, transitive helper and
 cleanup effects, compatibility of result origins with independent counter writes, and
 propagation of actual region footprints through higher-order calls and metadata.
+
+## Worked example: callable receivers
+
+This example uses accepted experimental callable receiver and capture spellings. It is
+not an implemented fixture. Capture-derived result origins are worked through below.
+
+Reuse `counted_prefix` from the write-bound example. A callback that captures an edit of
+`calls` and passes a reborrow to that helper needs editing access to its environment on
+each invocation. Its inferred contract is:
+
+```cinder
+fn(mut self, part: slice[int32]) -> slice[int32]
+    from part writes {self}
+```
+
+The environment receiver is implicit at invocation. `select` borrows the callback for
+editing and invokes its reusable editing entry:
+
+```cinder
+def select(
+    input: slice[int32],
+    choose: &mut fn(mut self, part: slice[int32]) -> slice[int32]
+        from part writes {self},
+) -> slice[int32]:
+    return choose(input)
+
+var calls: usize = 0
+var choose = [&mut calls] part => counted_prefix(part, &mut calls)
+
+let first = select(items[0 .. items.len()], choose)
+let second = select(items[0 .. items.len()], choose)
+```
+
+Assume valid initialized `items` storage, compatible input and counter capabilities, and
+increments within the chosen arithmetic bounds. Infer `select`'s result origin from `input`
+and its write bound through `choose`; neither needs another source annotation. The outer
+`&mut` in the parameter type specifies how `select` receives the callback. The inner
+`mut self` specifies what invoking its entry requires. Bare arguments automatically select
+the declared borrowing mode, so both calls reborrow `choose` without moving it.
+
+For each call, establish an environment edit reborrow, then reborrow the captured edit
+for `counted_prefix`. Retire those call-local reborrows after their last required use.
+The returned slice carries the input's backing, grant-chain, and lifetime dependencies;
+it does not acquire a dependency on the callback environment or counter merely from
+passing through the call. Thus the second call remains valid even if `first` is used
+afterward. The closure still carries the counter edit, and direct access to `calls`
+must wait until that loan and any other conflicting dependencies retire.
+
+A function may instead take ownership of the same editing callback, invoke it repeatedly,
+and dispose of it. Owning the callback does not change its entry into a consuming call.
+Conversely, a callback with `fn(self: own[Self], ...)` consumes its environment when invoked;
+observation or editing loans cannot supply that ownership. Attempting to call the counter
+callback through observation must identify the captured edit reborrow and explain that
+the invocation requires editing access. A consuming callback supplied to the borrowed
+`select` must similarly be rejected with guidance about the ownership it requires.
+
+The complete receiver family reuses method syntax: `fn(self, ...)` observes,
+`fn(mut self, ...)` edits, and `fn(self: own[Self], ...)` consumes the environment.
+Source lambdas infer the required receiver from their bodies; optional callable constraints
+are checked. Omitting a receiver preserves inferred or sound conservative call-mode
+information rather than promising observation. `Self` denotes the environment type without
+requiring a particular heap representation or exposing capture fields.
+
+Call modes do not replace effects or result origins. An observing callback can write
+through an explicit edit argument. A consuming callback can move a captured owner into its
+result without a write to pre-existing storage, so `writes nothing` does not establish
+an observing entry. Neither a receiver nor a write bound grants missing authority.
+
+Required validation covers inferred and explicit receivers, implicit call-site receivers,
+borrowed versus owned callback parameters, repeated editing calls with earlier input-derived
+results still live, preserved capture loans, rejected editing through observation, rejected
+consumption through loans, and call-mode summaries preserved through values and metadata.
+
+## Worked example: capture origins
+
+These examples use accepted experimental capture and origin spellings. They are not
+implemented fixtures. Each snippet starts with independent initialized `items` storage
+of type `own[list[int32]]`; all ranges are checked under the chosen bounds rules.
+
+First, capture ownership and return a view of the captured list:
+
+```cinder
+let reader = [items] () => items[0 .. min(3, items.len())]
+let selected = reader()
+```
+
+Creating the closure moves `items`, including its authority and cleanup obligation, into
+the environment. The source binding becomes unavailable even though invocation only
+observes the captured list. The compiler infers the callable contract:
+
+```cinder
+fn(self) -> slice[int32] from self
+    writes nothing
+```
+
+The returned view requires the dependencies supporting that captured ownership to remain
+live. Releasing or replacing the closure cannot destroy the list while `selected` has a
+later use. Multiple observing calls remain compatible, and moving a carrier must preserve
+all required ownership and lifetime relationships. `from self` is optional here because
+the source body supplies enough information to infer the result origin.
+
+Second, explicitly borrow the external owner:
+
+```cinder
+let reader = [&items] () => items[0 .. min(3, items.len())]
+let selected = reader()
+```
+
+The inferred callable also permits `from self`, but the environment contains an observation
+rather than the owner. The original owner remains outside the closure. The capture and any
+dependent result keep the external source's required loans live, preventing conflicting
+mutation or destruction. Escaping the closure cannot extend that source's lifetime; a
+borrow of storage destroyed on return must be rejected.
+
+Third, capture an existing observation and return its duplicate:
+
+```cinder
+let saved = items[0 .. items.len()]
+let reader = [saved] () => saved
+let selected = reader()
+```
+
+Value capture duplicates `saved` under the checked observation-duplication rules, preserving
+its original target, grant chain, and lifetime dependencies. Returning it duplicates that
+observation again. A sufficiently precise checked summary records that `selected` needs
+the original backing dependencies rather than the closure's storage. Retiring the closure
+therefore need not invalidate `selected`. A less precise boundary may conservatively retain
+additional dependencies, but cannot drop the dependencies on `items` or assume a fresh loan
+origin merely because the view passed through an environment.
+
+The origin bound `from self` permits dependencies supplied through captures; it does not
+unconditionally borrow the environment's own storage. Portable summaries preserve sufficient
+dependency relations to justify the claimed precision without exposing capture field names.
+
+A callback returning either its argument or captured storage uses a mixed bound:
+
+```cinder
+fn(self, part: slice[int32]) -> slice[int32] from {part, self}
+    writes nothing
+```
+
+The result can carry dependencies from either source or both. An input-only `from part`
+constraint still rejects a possible capture-derived result. Optional explicit constraints
+check inferred contracts rather than changing captures or manufacturing new authority.
+
+The same value-capture policy applies without a list: infer the required enclosing variables
+and move affine values or duplicate according to checked capability rules. `[&mut x]`
+explicitly captures an edit loan or reborrow; capturing an existing edit as `[x]` instead
+moves that affine handle. `[]` admits no enclosing captures, and an explicit list excludes
+unlisted enclosing locals. Neither escape analysis nor an expected callable type silently
+changes a value capture into a borrow. No independent copy is introduced to keep a source
+usable; that requires an explicit copy operation with its own witness.
+
+Diagnostics should identify the captured owner or external lender supporting a returned
+view, explain which use keeps its dependency live, and point to the conflicting destruction,
+replacement, or mutation. If an opaque boundary lacks a needed relationship, show the
+smallest useful contract or ownership change. A consuming callable that returns a loan of
+captured storage destroyed by invocation cleanup is rejected even with `from self`.
+
+Required validation covers all explicit capture forms and omitted lists, source availability,
+closed-list enforcement, escaping borrowed lifetimes, captured ownership versus stored
+observations, mixed origins, checked summary preservation through forwarding and metadata,
+conservative boundary behavior, and rejection of views of storage destroyed by cleanup.

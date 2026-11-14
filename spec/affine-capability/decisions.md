@@ -64,9 +64,10 @@ it does not promise termination or eventual cleanup for diverging programs.
 Status: ownership-default, contract-inference, basic surface-spelling, `copy`/`copy_owned`
 operation names, the `copy` constraint name, single-element view consolidation, scoped
 range-view construction and passing, retained frozen ranges with library `.slice()`,
-callable parameter names/result-origin bounds, and write bounds including `writes nothing`
-and the callable environment root `self` accepted on 2026-11-14. Q2 remains partially resolved;
-further mappings and contract spellings are pending.
+callable parameter names/result-origin bounds, write bounds including `writes nothing` and
+the callable environment root `self`, callable receiver spellings with inferred lambda
+call modes, capture lists with value defaults, and `from self` capture origins accepted on
+2026-11-14. Q2 remains partially resolved; further mappings and contract spellings are pending.
 Owning task: T08. Dependent tasks: T30–T36 and the affected library migrations.
 
 ### Decision
@@ -213,7 +214,8 @@ dependencies. Child authority alone cannot replace the owner's slot in its paren
 `*slot` designates the borrowed place; `exchange(*slot, incoming)` transfers the previous
 value out and the replacement in without requiring `copy` or leaving an empty element.
 Assignment through the slot performs checked replacement and cleanup. Loads never silently
-duplicate owner tokens. A slot loan preserves the initial core's whole-allocation conflicts.
+duplicate owner tokens. A slot loan preserves its checked place footprint and any inherited
+range partition; unequal indices alone do not establish separation.
 
 Element-borrowing APIs expose `inspect[T]` or `edit[T]` with checked origins and replacement
 authority. Different collection implementations can share that interface while retaining
@@ -244,8 +246,9 @@ explicitly transfers its authority and invalidates its source binding. Observati
 reborrow, and transfer preserve the corresponding loan dependencies. Returned and stored
 subranges keep their source borrowed; conflicting authority remains suspended as required.
 
-Different subrange bounds do not establish disjoint edits under the initial whole-allocation
-model. A mutable range of owners lends owner slots, preserving the distinction between
+Different subrange bounds alone do not establish disjoint edits. Use the checked `split_at`
+primitive for independent child edit ranges. A mutable range of owners lends owner slots,
+preserving the distinction between
 `edit[own[T]]` and child `edit[T]`. Frozen backing permits scoped observation, but does not
 implicitly make the range independently retained. The
 [range translation](translations.md#worked-example-range-views-and-reborrowing)
@@ -301,8 +304,8 @@ actual incompatible source when a callback cannot satisfy the requested contract
 The [callback translation](translations.md#worked-example-callback-result-origins) records
 inferred implementation and forwarding contracts, compatible scalar captures, and rejection
 of a result borrowed from a capture. This accepts the result-origin spelling provisionally
-for the experiment; capture-origin spellings and closure call modes
-remain open. Formal validation and implementation remain pending.
+for the experiment; capture-derived results also use the environment-origin forms below.
+Formal validation and implementation remain pending.
 
 ### Write bounds and the no-write spelling
 
@@ -328,10 +331,60 @@ existing policy. The [counter callback translation](translations.md#worked-examp
 records explicit and captured counters. These are experimental design choices; parser,
 contract verification, and runtime validation remain pending.
 
+### Callable receivers and inferred call modes
+
+Accept optional leading callable receivers `fn(self, ...)`, `fn(mut self, ...)`, and
+`fn(self: own[Self], ...)` for observing reusable, editing reusable, and consuming entries.
+The receiver is implicit when invoking the callable. `Self` names the callable environment
+type without choosing its allocation representation; contract `self` names that environment.
+
+Infer the required receiver from source lambda bodies and check optional explicit constraints.
+Capturing an edit and reborrowing it on invocation requires editing access to the environment;
+moving a captured owner out requires a consuming entry. Omitted receivers retain checked
+inferred or sound conservative call-mode information, rather than promising observation.
+
+Keep the callable's parameter passing mode separate from its entry receiver. In
+`&mut fn(mut self, part: slice[int32]) -> slice[int32] from part writes {self}`, the outer
+edit borrows the callable, while `mut self` states the authority needed to invoke it.
+Taking ownership of an editing callable still permits repeated calls before disposal.
+Observation cannot invoke an editing entry, and a borrowed callable cannot satisfy a
+consuming entry by an implicit owner transfer or copy.
+
+The [call-mode translation](translations.md#worked-example-callable-receivers) records
+sequential calls of a captured-counter callback while its earlier input-derived result
+remains live. Result origins and captured loans retain their independent obligations.
+Call modes do not imply write bounds: an observing entry can write through an explicit
+edit argument, and `writes nothing` need not imply observation. Formal validation and
+implementation remain pending.
+
+### Capture spellings and environment result origins
+
+Accept `[x]`, `[&x]`, `[&mut x]`, and `[]` as value capture, observation capture, edit
+capture/reborrow, and no captures. An explicit list limits access to its listed enclosing
+locals. Without a list, infer required variables and use the same value-capture rules:
+move affine values and duplicate only values with checked duplication rules. Preserve all
+loan dependencies and cleanup obligations. Independent copying is explicit, and borrowing
+is explicit rather than selected by escape analysis or an expected callback type.
+
+Accept `from self` for dependencies supplied through the callable environment and
+`from {part, self}` for input/environment combinations. Infer source contracts and check
+optional constraints; the environment root does not reveal private capture layout.
+
+Preserve the difference between borrowing storage owned by a capture and duplicating an
+already captured observation. The former must keep supporting ownership dependencies alive;
+the latter can retain its original dependencies without retaining the closure when the
+checked summary preserves that relationship. Less precise interfaces may conservatively
+retain additional dependencies, never erase actual dependencies. `from self` is an origin
+bound, not an unconditional loan on the environment or permission to escape dead storage.
+A borrowed capture that outlives its source or a result borrowed from storage destroyed by
+invocation cleanup remains invalid. The [capture translation](translations.md#worked-example-capture-origins)
+records the three storage relationships and mixed origins. Formal validation and
+implementation remain pending.
+
 ### Remaining scope and obligations
 
-Q2 still needs capture-origin contracts, closure call/capture spellings, and remaining
-contract forms. Beyond the accepted callable result-origin and write-bound forms, the worked
+Q2 still needs remaining contract forms and legacy compatibility mappings.
+Beyond the accepted callable result-origin and write-bound forms, the worked
 `from`, `outcome`, `entry`,
 `transfers`, and `preserves` clauses remain syntax candidates with the accepted inference
 policy. The legacy implicit-duplication
@@ -342,6 +395,48 @@ T08 must validate the remaining choices with representative translations. Struct
 separation, freeze, lifetime, and cleanup proofs remain required even though copying is
 explicit. This decision completes no implementation task and changes no current compiler
 or normative-language behavior.
+
+## Named-field borrowing and mutable range splitting
+
+Status: accepted for the initial experimental core; formalization and implementation pending.
+
+Keep allocation identity for lifetime, ownership, and reclamation, and refine loan/access
+footprints by checked named-field paths. Distinct fields of the same structural product may
+be borrowed independently, including nested fields and their exclusively owned descendants.
+Equal and prefix paths overlap. Whole-parent moves, replacement, freezing, destruction, and
+whole-receiver calls still conflict with affected field loans. Aliases carried in separate
+fields retain their actual target provenance; field names do not separate those targets.
+Private projections must satisfy abstraction contracts. Fact invalidation may remain
+allocation-wide; permission to edit a sibling does not imply preservation of sibling facts.
+
+Accept built-in `split_at(view, index)` for `mut slice[T]`, returning a pair of mutable ranges
+by reborrowing the source. Validate the index within the visible source bounds before
+creating either child. The core primitive establishes partition evidence and preserves the
+backing identity, granting chain, and lifetime dependencies. Both children are affine;
+nested splits preserve ancestry, and returned/stored descendants keep conflicting parent
+authority suspended. Empty partitions are valid and authorize no element access. Arbitrary
+slicing and unequal indices do not independently establish disjoint edit authority.
+
+These decisions belong in T02–T04 and the T08 translations before T05–T07 proofs, then in
+T11–T16, contracts/metadata, and T48–T50 migration. They do not establish the required safety
+lemmas or change the current compiler. See the [worked translations](translations.md#worked-example-named-field-borrowing-and-range-splitting).
+
+## Deferred ergonomic extensions
+
+Release-only custom cleanup as a route to freezing is deferred. The initial rule still
+requires recursively freezable contents and a checked structural frozen-release recipe;
+mandatory custom unique cleanup blocks freezing. A future extension must establish recursive
+obligation accounting, permitted effects, and observable cleanup timing without invoking
+arbitrary mutable destructors on frozen storage. T48/T49 must record unsupported container
+cases rather than presume this extension exists.
+
+Nonfreezable scalar interior mutability is deferred. Before acceptance it needs explicit
+alias authority, write effects and version invalidation, restrictions on borrowing contents,
+and a closure-sharing model distinct from permanent frozen sharing. No new type name or
+exception to inspection/freeze rules is accepted here.
+
+The accepted absence of a public duplication bound remains unchanged. Generic independent
+copying continues to use explicit `copy` operations and the structural witness constraint.
 
 ## Remaining gates
 

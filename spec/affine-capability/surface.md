@@ -3,7 +3,9 @@
 Status: accepted experimental-subset spellings for declarations, receivers, loans, transfer,
 freeze, copying, the `copy` constraint, single-element and scoped/retained range views,
 the library `.slice()` API, local bindings, callable parameter names/result-origin bounds,
-and write bounds including `writes nothing` and the callable environment root `self`.
+write bounds including `writes nothing` and the callable environment root `self`, and
+observing/editing/consuming callable receivers with inferred lambda call modes, capture
+lists with value-capture defaults, and capture-derived result origins using `from self`.
 Contract inference and optional programmer constraints are accepted policies; the worked contract
 clauses beyond the accepted result-origin and write-bound forms remain syntax candidates.
 This document does not amend the implemented grammar or establish T08 completion.
@@ -66,8 +68,8 @@ Element-borrowing collection APIs return `inspect[T]` or `edit[T]`; for example,
 `at_mut` operation returning a slot view returns `edit[T]`. Its checked contract must
 establish the slot origin, permitted replacement, and lifetime dependencies. The live loan
 prevents conflicting element access and collection changes that could invalidate it,
-including relocation, removal, or destruction. The initial core still uses whole-allocation
-conflicts; different indices do not establish disjoint edit authority.
+including relocation, removal, or destruction. Different indices alone do not establish
+disjoint edit authority; element views preserve any inherited checked split partition.
 
 Single-element `&items[i]` and `&mut items[i]` use the checked element-borrowing operations
 and yield `inspect[T]` and `edit[T]` for stored element type `T`. For an owner element,
@@ -113,13 +115,36 @@ chain and dependencies and does not transfer ownership of the backing collection
 
 Returned or stored subranges retain their source and granting-chain dependencies. Conflicting
 authority is suspended for the dependent loan's lifetime, including after a helper returns.
-Subrange bounds do not prove disjoint editing in the initial whole-allocation conflict model.
+Subrange bounds alone do not prove disjoint editing; use the checked `split_at` operation.
 For `mut slice[own[T]]`, borrowing an element slot yields `edit[own[T]]`; replacing its owner
 uses the checked slot rules rather than extracting ownership through a load.
 
 Slicing frozen storage can produce a scoped observation view, subject to the source lifetime
 obligation. It does not implicitly produce an independently retained range. See the
 [range translation](translations.md#worked-example-range-views-and-reborrowing).
+
+## Named-field borrowing and mutable range splitting
+
+Borrow distinct named fields directly with the existing `&` and `&mut` spellings. No new
+field-borrow syntax is needed. Checked structural field paths can separate siblings without
+inventing allocations. A loop borrowing only `self.items` may update `self.total` directly
+when its effects respect that separation. A call requiring an edit of the whole receiver
+still conflicts with the live field loan. Private fields and aliases retain their ordinary
+abstraction and provenance rules; arbitrary indices do not become disjoint field paths.
+
+Use built-in `split_at(view, index)` with a `mut slice[T]` to obtain a pair of `mut slice[T]`
+results. The bare source reborrows in edit mode; it is not consumed or copied. Both children
+retain the source's backing lifetime and granting dependencies. Bounds are relative to the
+visible source range and checked before results are exposed. Runtime failure follows the
+selected bounds-failure policy; this decision adds neither an error type nor unwinding.
+
+The children permit simultaneous edits of their disjoint portions. Splitting one child again
+preserves separation from the other. Conflicting use of the parent is suspended while a
+child or dependent view survives, including across returns or storage in another value.
+Transferring a child preserves those obligations. Splits at zero or length are valid;
+empty results cannot lend an element. Ordinary slicing cannot manufacture split authority,
+and no mutable text view is introduced. See the
+[worked translation](translations.md#worked-example-named-field-borrowing-and-range-splitting).
 
 ## Retained frozen ranges
 
@@ -343,7 +368,7 @@ a useful relationship.
 An input-only result bound permits captures used for computation, such as a scalar length
 limit. It rejects a result borrowed from captured storage. Result origins do not constrain
 writes: effects, transitions, captures, and cleanup still require complete checked summaries.
-Closure call/capture modes and capture-origin spellings remain open. See the
+Capture-derived results use the environment-origin forms described below. See the
 [callback translation](translations.md#worked-example-callback-result-origins).
 
 ## Write bounds and callable environments
@@ -386,10 +411,103 @@ summaries still account for changes to availability, ownership, and cleanup. An 
 clause never silently establishes `writes nothing`, and a `from` clause never implies it.
 See the [counter callback translation](translations.md#worked-example-callback-write-bounds).
 
+## Callable receivers and call modes
+
+Use an optional leading environment receiver in a callable type, reusing method receiver
+spellings:
+
+| Callable type | Authority required to invoke it |
+|---|---|
+| `fn(self, ...) -> R` | Observation of the environment; reusable |
+| `fn(mut self, ...) -> R` | Editing access to the environment; reusable |
+| `fn(self: own[Self], ...) -> R` | Ownership of the environment; invocation consumes it |
+
+The receiver is implicit at the call site: `choose(input)` supplies only the ordinary
+arguments. Here `Self` denotes the callable's environment type; this spelling does not
+require a heap allocation or expose private capture layout. `self` in the callable contract
+denotes the same environment root used by write bounds.
+
+Infer the required receiver authority from a source lambda's body, including uses through
+helpers and cleanup. Reading a captured scalar permits observation; reborrowing a captured
+edit requires editing access; moving a captured owner out requires consumption. Check
+optional explicit callable constraints against the inferred entry and report which capture
+use needs stronger authority. An omitted receiver retains sufficient inferred or sound
+conservative call-mode information; it does not silently promise an observing entry.
+
+Parameter passing mode and invocation mode remain separate:
+
+```cinder
+choose: &mut fn(mut self, part: slice[int32]) -> slice[int32]
+    from part writes {self}
+```
+
+The outer `&mut` borrows the callback for editing; the inner `mut self` describes the
+authority its call entry requires. A function can instead take ownership of an editing
+callback and invoke it repeatedly before disposing of it. Owning the callback does not
+make each invocation consuming. Borrowed observation cannot invoke an editing entry, and
+borrowing cannot satisfy a consuming entry by implicitly copying or transferring its owner.
+
+Calls reborrow the environment as required. An input-only result does not retain the
+environment loan merely because the callback produced it, so sequential calls are possible
+while earlier input-derived results remain live, provided all other loans permit. Captured
+loans retain their own dependencies until their carriers retire.
+
+Call mode, result origins, and write bounds are independent. An observing entry may write
+through an explicit edit argument; `writes nothing` does not establish an observing entry
+or prevent a consuming ownership transition. No call-mode constraint grants missing
+authority. Frozen callable entries still require separate checking under frozen projections.
+See the [call-mode translation](translations.md#worked-example-callable-receivers).
+
+## Captures and environment-derived results
+
+Keep the existing capture-list shapes with the experimental capability semantics:
+
+| Capture | Meaning |
+|---|---|
+| `[x]` | Capture the value: move affine values; duplicate only under checked duplication rules |
+| `[&x]` | Capture an observation loan |
+| `[&mut x]` | Capture an edit loan or dependent edit reborrow |
+| `[]` | Capture nothing |
+
+An explicit list is closed: only listed enclosing locals are available to the lambda.
+Without a list, infer the required enclosing variables and apply the same value-capture
+rule. An owner or edit handle moves; a scalar or duplicable observation follows its checked
+duplication rules. All dependencies and cleanup obligations survive capture. Independent
+copying is never implicit. Borrowing is explicit and does not change according to escape
+analysis or an expected callable constraint. An escaping borrowed capture must still have
+a valid lifetime; request a legal ownership or retention change rather than silently
+changing its capture mode.
+
+Use `from self` to permit result dependencies supplied through the callable environment:
+
+```cinder
+fn(self) -> slice[int32] from self
+    writes nothing
+
+fn(self, part: slice[int32]) -> slice[int32] from {part, self}
+```
+
+The mixed form permits dependencies from either source or both. These are optional checked
+constraints; source lambdas infer captures, receiver authority, origins, and effects.
+`self` is local to the callable contract and does not expose private capture names.
+
+The bound does not automatically attach every result to the environment's storage. A view
+of an owner captured by value retains the dependencies supporting that captured ownership;
+releasing or replacing the closure cannot invalidate a live result. A returned duplicate of
+an already captured observation instead retains its original backing, grant-chain, and
+lifetime dependencies. When sufficient checked summaries preserve that relationship, the
+returned observation need not keep the closure alive. A less precise interface may retain
+additional dependencies conservatively, but may never discard the actual ones.
+
+Capture by observation keeps the external source's dependencies live through the capture
+and any dependent results. Neither `from self` nor a consuming receiver permits a result
+to borrow storage destroyed by invocation cleanup. Returning ownership or a separately
+retained capability is checked under its own rules. See the
+[capture translation](translations.md#worked-example-capture-origins).
+
 ## Remaining Q2 choices
 
-- Capture-origin contract spellings, closure call-mode and capture spellings, and contract
-  forms beyond the worked examples.
+- Contract forms beyond the worked examples and remaining legacy compatibility mappings.
 - Complete translations and grammar integration for the advertised experimental subset.
 
 Q2 remains partially resolved. This surface mapping changes no normative or implemented

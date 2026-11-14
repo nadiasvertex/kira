@@ -31,6 +31,20 @@ Split these modules as needed without weakening requirement coverage. Keep the r
 model independent of the later C++ verifier's implementation routines. Executing the model
 provides test evidence; the correspondence theorems require kernel-checked proofs.
 
+The initial model includes checked named-field footprints and mutable-range partitions from
+`split_at`. `State.lean` must distinguish allocation identity from access footprints and
+preserve resolved targets, ownership paths, partition ancestry, and granting dependencies.
+`Primitives.lean` must validate split bounds before creating either child, including empty
+and nested partitions. `Contracts.lean` must preserve those dependencies through calls,
+returned/stored views, and imported abstractions. `Safety.lean` must establish separation,
+conflicting-parent suspension, and lifetime safety for field and partition accesses, with
+whole-parent transitions still checked against every affected loan. Conservative
+allocation-wide fact invalidation remains permitted. T08 supplies positive and negative
+translations before these proofs; range bounds alone are not separation evidence.
+
+Release-only custom cleanup for freezing and nonfreezable scalar interior mutability remain
+outside the initial proof claim. No theorem may assume either extension is available.
+
 ## Reproducible checking contract
 
 T01 must select a release supporting the following workflow and validate the commands from
