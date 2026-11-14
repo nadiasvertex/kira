@@ -138,8 +138,20 @@ filegroup(
 )
 
 filegroup(
-    name = "runtime_layout_test_files",
-    srcs = glob(["testdata/runtime_layout_test/*.cn"]),
+    name = "bytecode_storage_test_files",
+    srcs = glob(["testdata/bytecode_storage_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "hir_storage_test_files",
+    srcs = glob(["testdata/hir_storage_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "value_layout_test_files",
+    srcs = glob(["testdata/value_layout_test/*.cn"]),
     visibility = ["//visibility:public"],
 )
 
@@ -274,6 +286,9 @@ cc_test(
 cc_test(
     name = "codegen_stress_test",
     size = "medium",
+    # The corpus takes close to five minutes on both tiers; under a full
+    # `bazelisk test //...` it can pass the medium timeout.
+    timeout = "long",
     srcs = ["codegen_stress_test.cpp"],
     data = [
         ":codegen_stress_corpus",
@@ -286,9 +301,9 @@ cc_test(
         "//src/bytecode:vm",
         "//src/bytecode_compiler:bytecode_compiler",
         "//src/hir:hir",
-        "//src/parser:parser",
-        "//src/llvm_codegen:codegen",
         "//src/llvm_codegen:jit_support",
+        "//src/llvm_codegen:storage_codegen",
+        "//src/parser:parser",
         "//src/runtime:runtime",
         "//src/semantic:semantic",
         "//src/testing",

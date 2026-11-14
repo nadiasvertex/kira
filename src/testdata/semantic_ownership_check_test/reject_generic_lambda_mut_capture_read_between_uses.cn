@@ -1,0 +1,12 @@
+module reject_generic_lambda_mut_capture_read_between_uses
+
+# Every use of a generic lambda carries its capture borrows, so `total`
+# cannot be read between two uses.
+def main() -> int64:
+    var total: int64 = 0
+    let add = [&mut total] (x) =>:
+        total = total + x
+    add(5)
+    let seen = total
+    add(1)
+    return seen

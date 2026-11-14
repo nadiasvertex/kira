@@ -1,0 +1,32 @@
+module codegen_stress.unread_fallible_task_drops_result
+
+# expect: 4510
+# max-live-blocks: 0
+
+# A task that can fail holds `result[value, error]` once it finishes. When its
+# handle drops without a `get()`, the handle drops that held result, whichever
+# variant it is; a handle whose result was read holds nothing. Each pass builds
+# fresh lists, so a held result that is never dropped (or one dropped as the
+# wrong variant) shows up in the block count.
+
+async def build(n: int64) -> result[list[int64], list[int64]]:
+    var out = list[int64].new()
+    out.push(n)
+    if n % 2 == 1:
+        return @err(out)
+    return @ok(out)
+
+async def main() -> int64:
+    var total: int64 = 0
+    var k: int64 = 0
+    while k < 10:
+        let (read, unread_ok, unread_err) = crew c:
+            let r = c.spawn(build(k * 2))
+            let a = c.spawn(build(k * 2 + 100))
+            let b = c.spawn(build(k * 2 + 101))
+            (r, a, b)
+        total = total + match read.get():
+            @ok(xs) => xs[0] * 100 + 1
+            @err(_) => -1
+        k = k + 1
+    return total - 4500

@@ -7,7 +7,7 @@ module codegen_stress.crew_every_exit_joins
 # did straight afterwards. The waits run on the cpu pool so that a child is
 # still going when the parent reaches its exit.
 
-use std.mem.{alloc, atomic_fetch_add}
+use std.mem.{alloc, atomic_fetch_add, free}
 use std.shared.shared
 
 type counter = {
@@ -18,6 +18,12 @@ type counter = {
 impl send for counter:
 
 impl share for counter:
+
+# The counter owns its cell, which is freed when the last `shared` handle to
+# it drops.
+impl drop for counter:
+    machine def drop(mut self):
+        free(self.cell, 1)
 
 extend counter:
     machine def make() -> counter:

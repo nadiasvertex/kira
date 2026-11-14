@@ -263,6 +263,11 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
                                 trait_name, entry.name, trait_name));
     return k_error_type;
   }
+  if (is_structural_comparand(entry) &&
+      (trait_name == "eq" || trait_name == "ord")) {
+    return require_structural_operator(binary, target, trait_name, op_name,
+                                       wire_dispatch);
+  }
   if (entry.kind == type_kind::builtin_kind) {
     // Only comparisons reach here with `eq`/`ord`; every other trait is an
     // arithmetic operator's (`ast::overload_trait_of`).
@@ -322,6 +327,146 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
     return k_error_type;
   }
   return k_unknown_type;
+}
+
+auto checker::is_structural_comparand(const type_entry &entry) -> bool {
+  return entry.kind == type_kind::tuple_kind ||
+         entry.kind == type_kind::array_kind ||
+         (entry.kind == type_kind::builtin_generic_kind &&
+          (entry.name == "option" || entry.name == "result"));
+}
+
+auto checker::require_structural_operator(const ast::binary_expr &binary,
+                                          type_id target,
+                                          std::string_view trait_name,
+                                          std::string_view op_name,
+                                          bool wire_dispatch) -> type_id {
+  // `(1, 2) == (1, 3)` before the literals have their type: the instance
+  // to call is `(int32, int32)`'s or `(int64, int64)`'s, so it is named
+  // once they settle.
+  if (mentions_type_var(target)) {
+    defer_method_call(
+        std::format("the `{}` operator", op_name), target,
+        std::vector<type_id>{},
+        [this, &binary, trait = std::string(trait_name),
+         op = std::string(op_name), wire_dispatch](type_id settled) -> void {
+          (void)require_operand_trait(binary, settled, trait, op,
+                                      wire_dispatch);
+        });
+    return k_unknown_type;
+  }
+  const auto shown = session_.types_.display(target);
+  const auto entry = session_.types_.entry(target);
+  const auto noun = structural_noun(entry);
+  if (trait_name != "eq") {
+    auto help = std::format("{} has `==` and `!=`, but no order is defined "
+                            "on it. Compare the parts you mean to order by.",
+                            noun);
+    help[0] =
+        static_cast<char>(std::toupper(static_cast<unsigned char>(help[0])));
+    error_with_help(
+        binary.span,
+        std::format("operator `{}` is not defined for `{}`", op_name, shown),
+        std::format("{} has no order", noun), help);
+    return k_error_type;
+  }
+  const auto *method = structural_impl_of(target, "eq", "eq");
+  if (method == nullptr) {
+    error_with_help(
+        binary.span,
+        std::format("operator `{}` is not defined for `{}`", op_name, shown),
+        entry.kind == type_kind::tuple_kind
+            ? std::format("this tuple has {} elements", entry.args.size())
+            : std::format("`{}` does not implement `eq`", shown),
+        entry.kind == type_kind::tuple_kind
+            ? std::string("`==` on tuples is defined for up to 12 elements. "
+                          "Compare the elements, or use a struct with "
+                          "`deriving eq`.")
+            : std::format("Compare the parts of {} yourself.", noun));
+    return k_error_type;
+  }
+  if (const auto unmet = unmet_impl_bound(*method, target)) {
+    error_with_help(
+        binary.span,
+        std::format("operator `{}` is not defined for `{}`", op_name, shown),
+        std::format("`{}` has no `{}`", session_.types_.display(unmet->first),
+                    unmet->second),
+        structural_unmet_help(entry, unmet->first, unmet->second));
+    return k_error_type;
+  }
+  // A template's operand is still written in its parameters; each instance
+  // wires its own (`defer_operator_dispatch`).
+  if (!wire_dispatch || binary.lhs == nullptr ||
+      mentions_template_param(target)) {
+    return k_unknown_type;
+  }
+  const auto *callee =
+      instantiate_impl_method_for(binary, *method, entry, target);
+  session_.operator_dispatches_[&binary] =
+      resolved_callee{.decl = callee != nullptr ? callee : method->decl,
+                      .owner_module = method->owner->module_name,
+                      .impl_target_type = callee != nullptr ? "" : entry.name,
+                      .receiver = binary.lhs.get()};
+  return resolve_operator_return_type(target, "eq", *method);
+}
+
+auto checker::structural_noun(const type_entry &entry) -> std::string {
+  switch (entry.kind) {
+  case type_kind::tuple_kind:
+    return "a tuple";
+  case type_kind::array_kind:
+    return "an array";
+  default:
+    return std::format("{} `{}`", entry.name == "option" ? "an" : "a",
+                       entry.name);
+  }
+}
+
+auto checker::structural_parts(const type_entry &entry) -> std::string_view {
+  return entry.kind == type_kind::tuple_kind ||
+                 entry.kind == type_kind::array_kind
+             ? "element by element"
+             : "the values inside";
+}
+
+auto checker::structural_unmet_help(const type_entry &entry, type_id element,
+                                    std::string_view trait_name)
+    -> std::string {
+  const auto shown = session_.types_.display(element);
+  auto help = std::format(
+      "{} has `{}` when what it holds does: it compares {}, so `{}` needs "
+      "`{}`, and it does not implement it.",
+      structural_noun(entry), trait_name, structural_parts(entry), shown,
+      trait_name);
+  if (const auto &held = session_.types_.entry(strip_refs(element));
+      held.decl != nullptr && (held.kind == type_kind::struct_kind ||
+                               held.kind == type_kind::sum_kind)) {
+    help += std::format(" Add `deriving {}` to `{}`, or write `impl {} for "
+                        "{}:`.",
+                        trait_name, held.name, trait_name, held.name);
+  }
+  help[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(help[0])));
+  return help;
+}
+
+auto checker::structural_impl_of(type_id target, std::string_view trait_name,
+                                 std::string_view method_name)
+    -> const method_entry * {
+  build_method_table();
+  const auto &entry = session_.types_.entry(target);
+  const auto it = cache_.method_tables_.impl_by_builtin.find(entry.name);
+  if (it == cache_.method_tables_.impl_by_builtin.end()) {
+    return nullptr;
+  }
+  const auto lookup = method_lookup();
+  for (const auto &method : it->second) {
+    if (method.trait_name == trait_name &&
+        (method_name.empty() || method.decl->name == method_name) &&
+        lookup.target_pattern_matches(method.impl_target_pattern, target)) {
+      return &method;
+    }
+  }
+  return nullptr;
 }
 
 /// `true + true`, `'a' * 2`, `"a" - "b"`: an arithmetic operator on a
@@ -1239,14 +1384,34 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
     // know about.
     if (unary.operand != nullptr &&
         unary.operand->kind == ast::node_kind::index_expr) {
+      // A user type (a `list`) hands out its mutable sub-view through its
+      // own `index_mut`, below; only a builtin container is upgraded here.
+      const auto user_object = [&] -> bool {
+        const auto &operand_index = ast::cast<const ast::index_expr>(*unary.operand);
+        if (operand_index.object == nullptr) {
+          return false;
+        }
+        const auto found = session_.node_types_.find(operand_index.object.get());
+        if (found == session_.node_types_.end()) {
+          return false;
+        }
+        const auto &entry = session_.types_.entry(strip_refs(settle(found->second)));
+        return (entry.kind == type_kind::struct_kind ||
+                entry.kind == type_kind::sum_kind ||
+                entry.kind == type_kind::opaque_kind) &&
+               type_has_trait(entry, "index_mut");
+      };
       const auto &stripped_entry = session_.types_.entry(stripped);
       if (stripped_entry.kind == type_kind::builtin_generic_kind &&
-          stripped_entry.name == "slice") {
+          stripped_entry.name == "slice" && !user_object()) {
         const auto element = stripped_entry.args.empty()
                                  ? k_unknown_type
                                  : stripped_entry.args[0];
-        return session_.types_.ref_to(
-            session_.types_.builtin_generic("slice_mut", {element}), true);
+        const auto view = session_.types_.builtin_generic("slice_mut", {element});
+        // The sub-view itself is the mutable one, so lowering builds a
+        // `slice_mut[T]` and lends it.
+        record_expr_type(*unary.operand, view);
+        return session_.types_.ref_to(view, true);
       }
       // `&mut v[i]` on a user type: `v[i]` alone already dispatched to
       // `index`'s `at` (an ordinary read) by the `infer_expr` call above —

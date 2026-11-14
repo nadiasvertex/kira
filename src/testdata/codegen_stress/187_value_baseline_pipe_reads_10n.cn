@@ -1,0 +1,58 @@
+module codegen_stress.value_baseline_pipe_reads_10n
+
+# expect: 5038656
+
+# Ten times the length of `186_value_baseline_pipe_reads_n.cn`; see that file.
+# The windows of 5000 passes sum to 5038528; the tail adds 16 + 112.
+# 5038528 + 16 + 112 = 5038656.
+
+use std.io.{pipe, reader, writer}
+
+def round_trip(rounds: int32) -> int32:
+    match pipe():
+        @err(_) => return -1
+        @ok(ends) =>:
+            var r = ends.reader
+            var w = ends.writer
+            var total: int32 = 0
+            var i: int32 = 0
+            while i < rounds:
+                var out: array[byte, 8] = [0; 8]
+                var k: usize = 0
+                while k < 8:
+                    out[k] = ((i as usize + k) % 256) as byte
+                    k = k + 1
+                match w.write_all(&out[0..8]):
+                    @ok(_) =>:
+                        total = total
+                    @err(_) => return -2
+                var back: array[byte, 8] = [0; 8]
+                match r.read_exact(&mut back[0..8]):
+                    @ok(_) =>:
+                        total = total
+                    @err(_) => return -3
+                k = 0
+                while k < 8:
+                    total = total + (back[k] as int32)
+                    k = k + 1
+                i = i + 1
+            var tail: array[byte, 16] = [7; 16]
+            match w.write_all(&tail[0..16]):
+                @ok(_) =>:
+                    total = total
+                @err(_) => return -4
+            match w.close():
+                @ok(_) =>:
+                    total = total
+                @err(_) => return -5
+            var rest: list[byte] = []
+            match r.read_to_end(&mut rest):
+                @ok(n) =>:
+                    total = total + (n as int32)
+                @err(_) => return -6
+            for b in &rest:
+                total = total + ((*b) as int32)
+            return total
+
+def main() -> int32:
+    return round_trip(5000)

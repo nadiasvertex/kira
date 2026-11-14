@@ -5,3 +5,9 @@ def pairs(n: int32) -> list[(int32, int32)]:
 
 def main() -> list[(int32, int32)]:
     return pairs(5)
+
+# The returned list owns its backing block, which is still live when
+# `main` returns.
+# max-live-blocks: 1
+
+# expect-text: [(0, 0), (1, 1), (2, 4), (3, 9), (4, 16)]

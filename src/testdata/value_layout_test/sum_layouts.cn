@@ -1,0 +1,6 @@
+module sample
+type shape = @circle(float64) | @rect(int32, int32) | @empty
+type wide = @big(int128) | @small(int8)
+type flags = @yes | @no
+def main(s: shape, w: wide, f: flags, r: result[int32, str]) -> int32:
+    return 0

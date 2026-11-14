@@ -18,3 +18,5 @@ def main() -> int32:
     total = total + unwrap_or(@some(7), 0)
     total = total + unwrap_or(@none, 5)
     return total
+
+# expect: 331

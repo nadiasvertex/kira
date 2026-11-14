@@ -16,7 +16,9 @@ def main() -> int32:
     let a = vec2 { x: 1, y: 6 }
     let b = vec2 { x: 3, y: 2 }
     let sum = a + b
-    let quot = b / a
+    # `+` took `b` by value (its `other` parameter), so divide a fresh value.
+    let c = vec2 { x: 3, y: 2 }
+    let quot = c / a
     println("{sum.x} {sum.y}")
     println("{quot.x} {quot.y}")
     return 0

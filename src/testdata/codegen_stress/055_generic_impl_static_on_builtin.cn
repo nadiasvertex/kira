@@ -66,12 +66,12 @@ impl[T] from_iter[T] for holder[T]:
     static def from_iter[I](it: I) -> holder[T] where I: iterator[T]:
         var cursor = it
         var seen = 0
-        var final = cursor.next()
-        var cur = final
+        var final: option[T] = @none
+        var cur = cursor.next()
         while let @some(x) = cur:
             seen = seen + 1
-            final = @some(x)
             cur = cursor.next()
+            final = @some(x)
         return holder { last: final, count: seen }
 
 def collect[I, C, T](it: I) -> C where I: iterator[T], C: from_iter[T]:

@@ -1639,19 +1639,30 @@ auto checker::check_prelude_variant(std::string_view name,
   // is concrete, answer with the concrete instantiation: echoing the
   // abstract expectation back would tell rigid inference (`match_params`)
   // nothing, leaving `B` unsolvable at a call that plainly determines it.
+  // A payload whose type is a leaf (`@some(20)`, its literal not yet
+  // settled) is answered the same way, unless the expected slot is that
+  // leaf already: the leaf is what a sibling argument later settles, and
+  // echoing an unknown slot back would leave the payload with no type.
+  const auto answers_slot = [&](type_id slot) -> bool {
+    if (!session_.types_.is_unknown(slot)) {
+      return false;
+    }
+    if (!session_.types_.is_unknown(payload_found)) {
+      return true;
+    }
+    return leaf_ctxt_.is_meta(payload_found) && !leaf_ctxt_.is_meta(slot);
+  };
   if (expected_is("option") && (name == "some" || name == "none")) {
     if (name == "some" && !expected_entry.args.empty() &&
-        session_.types_.is_unknown(expected_entry.args[0]) &&
-        !session_.types_.is_unknown(payload_found)) {
+        answers_slot(expected_entry.args[0])) {
       return session_.types_.builtin_generic("option", {payload_found});
     }
     return expected;
   }
   if (expected_is("result") && (name == "ok" || name == "err")) {
-    if (!session_.types_.is_unknown(payload_found) &&
-        expected_entry.args.size() == 2) {
+    if (expected_entry.args.size() == 2) {
       const auto slot = name == "ok" ? size_t{0} : size_t{1};
-      if (session_.types_.is_unknown(expected_entry.args[slot])) {
+      if (answers_slot(expected_entry.args[slot])) {
         auto args = std::vector<type_id>{expected_entry.args[0],
                                          expected_entry.args[1]};
         args[slot] = payload_found;
@@ -1660,13 +1671,22 @@ auto checker::check_prelude_variant(std::string_view name,
     }
     return expected;
   }
+  // A slot nothing here says anything about is a fresh leaf, not `unknown`:
+  // `pick(@none, &mut o)` learns it from a sibling argument, and an unknown
+  // slot could never be solved.
+  const auto open_slot = [&](std::string_view what) -> type_id {
+    return leaf_ctxt_.fresh_type(
+        std::format("the {} type of this `@{}`", what, name),
+        source_location{.file_id = file_.file_id_, .span = span});
+  };
   if (name == "some" || name == "none") {
-    return session_.types_.builtin_generic("option", {payload_found});
+    return session_.types_.builtin_generic(
+        "option", {name == "none" ? open_slot("payload") : payload_found});
   }
   return session_.types_.builtin_generic(
       "result", name == "ok"
-                    ? std::vector<type_id>{payload_found, k_unknown_type}
-                    : std::vector<type_id>{k_unknown_type, payload_found});
+                    ? std::vector<type_id>{payload_found, open_slot("error")}
+                    : std::vector<type_id>{open_slot("value"), payload_found});
 }
 
 /// Finds a sum-type variant named `name` declared by the current module,

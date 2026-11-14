@@ -7,3 +7,5 @@ def factorial(n: int32) -> int32:
 
 def main() -> int32:
     return factorial(10)
+
+# expect: 3628800

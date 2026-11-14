@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <deque>
 #include <vector>
 
 #include "src/semantic/infer/infer_ctxt.h"
@@ -175,7 +176,9 @@ private:
 
   infer_ctxt *ctx_;
   unifier *engine_;
-  std::vector<record> records_;
+  /// A deque, not a vector: `at()` hands out references, and a resolver adds
+  /// obligations while one is being attempted, so a record must not move.
+  std::deque<record> records_;
   std::unordered_map<obligation_kind, obligation_resolver> resolvers_;
   /// Watched representative -> the obligations watching it.
   std::unordered_map<type_id, std::vector<obligation_id>> wake_index_;

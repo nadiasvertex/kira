@@ -5,10 +5,11 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <span>
 #include <unordered_set>
 #include <utility>
 
-#include "src/bytecode_compiler/compile.h"
+#include "src/bytecode_compiler/storage_compile.h"
 #include "src/hir/lower.h"
 #include "src/hir/traversal.h"
 #include "src/intrinsics.h"
@@ -122,7 +123,7 @@ assemble(semantic::comptime_program &program, const std::string &entry_module,
   auto pending = std::deque<semantic::comptime_function>{};
 
   // Every reified `static let` the lowered code reads, built once before the
-  // call runs (`bytecode_module::static_init_function`). Its value can call a
+  // call runs (`bytecode_module::static_initializers`). Its value can call a
   // `from_array` constructor, which is lowered like any other function.
   auto globals = std::vector<hir::hir_static_global>{};
   auto global_names = std::unordered_set<std::string>{};
@@ -228,8 +229,19 @@ assemble(semantic::comptime_program &program, const std::string &entry_module,
   for (const auto &module : modules) {
     module_pointers.push_back(module.get());
   }
-  auto compiled =
-      bytecode_compiler::compile_module(module_pointers, program.view().types);
+  // The same storage form the driver runs (spec/value-semantics.md): values
+  // are inline bytes, and the compiler runs the bytecode built from it.
+  auto storage = hir::prepare_storage_program(module_pointers, program.records());
+  if (!storage.has_value()) {
+    auto message = storage.error();
+    for (const auto &[name, why] : skipped) {
+      message += std::format("; `{}` could not be prepared: {}", name, why);
+    }
+    return unsupported(std::move(message));
+  }
+  auto compiled = bytecode_compiler::compile_storage_module(
+      std::span<const hir::storage_module *const>((*storage)->modules),
+      *(*storage)->env);
   if (!compiled.has_value()) {
     auto message = compiled.error().message;
     for (const auto &[name, why] : skipped) {
@@ -238,6 +250,8 @@ assemble(semantic::comptime_program &program, const std::string &entry_module,
     return unsupported(std::move(message));
   }
   result.module = std::move(*compiled);
+  result.storage = std::move(*storage);
+  result.lowered = std::move(modules);
   auto found_entry = false;
   for (std::size_t i = 0; i < result.module.functions.size(); ++i) {
     if (result.module.functions[i].name == entry_name) {

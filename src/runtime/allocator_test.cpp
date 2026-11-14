@@ -3,7 +3,10 @@
 #include <cstddef>
 #include <cstring>
 #include <thread>
+#include <utility>
 #include <vector>
+
+#include "src/runtime/aligned_buffer.h"
 
 #include "src/testing/test_assert.h"
 
@@ -142,10 +145,115 @@ auto test_concurrent_allocation_does_not_overlap() -> void {
   }
 }
 
+[[nodiscard]] auto is_aligned(const void *p, size_t align) -> bool {
+  return reinterpret_cast<uintptr_t>(p) % align == 0; // NOLINT
+}
+
+/// Every power-of-two alignment up to a page comes back aligned, zeroed, and
+/// counted as one block, in both allocator modes.
+auto test_aligned_alloc_honors_each_alignment() -> void {
+  for (size_t align = 1; align <= 4096; align *= 2) {
+    // Dirty a recycled block first, so a zero-fill that only held because the
+    // allocator returned fresh pages cannot pass.
+    auto *dirty = cinder_heap_alloc_aligned(200, align);
+    fill(dirty, 200, 0xCD);
+    cinder_heap_free(dirty, 200);
+
+    const auto allocations_before = cinder::runtime::heap_allocation_count();
+    const auto live_before = cinder::runtime::heap_live_block_count();
+    auto *block = cinder_heap_alloc_aligned(200, align);
+    expect(block != nullptr, "expected an aligned allocation to succeed");
+    expect(is_aligned(block, align),
+           "expected the block to start on its requested alignment");
+    expect(all_zero(block, 200), "expected an aligned block to be zeroed");
+    expect(cinder::runtime::heap_allocation_count() == allocations_before + 1,
+           "expected one counted allocation");
+    expect(cinder::runtime::heap_live_block_count() == live_before + 1,
+           "expected one more live block");
+    cinder_heap_free(block, 200);
+    if (cinder::runtime::active_allocator_mode() ==
+        cinder::runtime::allocator_mode::system) {
+      expect(cinder::runtime::heap_live_block_count() == live_before,
+             "expected freeing an aligned block to release it");
+    }
+  }
+}
+
+auto test_aligned_alloc_of_zero_bytes_is_null() -> void {
+  expect(cinder_heap_alloc_aligned(0, 16) == nullptr,
+         "expected a zero-byte aligned request to return null");
+}
+
+/// The case the aligned entry point exists for: an array of 128-bit integers,
+/// each element on a 16-byte boundary, holding values that need all 128 bits.
+auto test_aligned_storage_holds_an_int128_array() -> void {
+  constexpr size_t count = 5;
+  auto *elements = static_cast<unsigned __int128 *>(
+      cinder_heap_alloc_aligned(count * sizeof(unsigned __int128), 16));
+  expect(is_aligned(elements, 16), "expected the array on a 16-byte boundary");
+  for (size_t i = 0; i < count; ++i) {
+    expect(is_aligned(&elements[i], 16), // NOLINT
+           "expected every element on a 16-byte boundary");
+    elements[i] = (static_cast<unsigned __int128>(i + 1) << 100) | i; // NOLINT
+  }
+  for (size_t i = 0; i < count; ++i) {
+    expect(elements[i] == ((static_cast<unsigned __int128>(i + 1) << 100) | i),
+           "expected each 128-bit element to read back whole");
+  }
+  cinder_heap_free(elements, count * sizeof(unsigned __int128));
+}
+
+auto test_aligned_realloc_keeps_alignment_prefix_and_zero_tail() -> void {
+  auto *block = static_cast<unsigned char *>(cinder_heap_alloc_aligned(32, 32));
+  fill(block, 32, 0x7E);
+  auto *grown = static_cast<unsigned char *>(
+      cinder_heap_realloc_aligned(block, 32, 256, 32));
+  expect(is_aligned(grown, 32), "expected the grown block to stay aligned");
+  for (size_t i = 0; i < 32; ++i) {
+    expect(grown[i] == 0x7E, // NOLINT
+           "expected the prefix to survive an aligned realloc");
+  }
+  expect(all_zero(grown + 32, 224), // NOLINT
+         "expected the grown tail of an aligned realloc to be zeroed");
+
+  auto *shrunk = static_cast<unsigned char *>(
+      cinder_heap_realloc_aligned(grown, 256, 16, 32));
+  expect(is_aligned(shrunk, 32), "expected the shrunk block to stay aligned");
+  expect(shrunk[0] == 0x7E && shrunk[15] == 0x7E, // NOLINT
+         "expected a shrinking realloc to keep what still fits");
+  cinder_heap_free(shrunk, 16);
+
+  auto *from_null = cinder_heap_realloc_aligned(nullptr, 0, 64, 64);
+  expect(is_aligned(from_null, 64), "expected a realloc of null to be aligned");
+  expect(cinder_heap_realloc_aligned(from_null, 64, 0, 64) == nullptr,
+         "expected a realloc to zero bytes to free and return null");
+}
+
+/// Frame storage must be aligned for the widest scalar and survive being moved,
+/// because a frame lives in a vector that reallocates as calls nest.
+auto test_aligned_buffer_is_aligned_zeroed_and_stable_when_moved() -> void {
+  auto buffer = cinder::runtime::aligned_buffer(100);
+  expect(buffer.size() == 100, "expected the requested size");
+  expect(is_aligned(buffer.data(), 16), "expected 16-byte frame alignment");
+  expect(all_zero(buffer.data(), 100), "expected zeroed frame storage");
+  const auto *address = buffer.data();
+  auto moved = std::move(buffer);
+  expect(moved.data() == address, "expected a move to keep the address");
+  auto wide = cinder::runtime::aligned_buffer(64, 64);
+  expect(is_aligned(wide.data(), 64), "expected a stricter alignment honored");
+  expect(cinder::runtime::aligned_buffer().data() == nullptr,
+         "expected an empty buffer to own nothing");
+}
+
 } // namespace
 
 auto main() -> int {
   try {
+    test_aligned_alloc_honors_each_alignment();
+    test_aligned_alloc_of_zero_bytes_is_null();
+    test_aligned_storage_holds_an_int128_array();
+    test_aligned_realloc_keeps_alignment_prefix_and_zero_tail();
+    test_aligned_buffer_is_aligned_zeroed_and_stable_when_moved();
     test_alloc_returns_zeroed_aligned_memory();
     test_alloc_of_zero_bytes_is_null();
     test_realloc_zeroes_the_grown_tail();

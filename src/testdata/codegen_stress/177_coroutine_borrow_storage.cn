@@ -1,7 +1,8 @@
 module codegen_stress.coroutine_borrow_storage
 
 # expect: 1000007
-# max-allocations: 100
+# max-live-blocks: 0
+# max-allocations: 2
 
 # A coroutine keeps what a borrow points at where a suspension does not reach.
 # That storage belongs to the coroutine, so a borrow taken on every pass of a
@@ -10,8 +11,8 @@ module codegen_stress.coroutine_borrow_storage
 # fresh heap block on every pass that nothing freed, so this loop allocated at
 # least twice per iteration. `max-allocations` bounds the heap blocks `main`
 # allocates, which a per-iteration allocation exceeds. The borrowed slices
-# `xs[0..2]` and `xs[1..3]` are outside the loop, because building a slice
-# allocates its header on the heap.
+# `xs[0..2]` and `xs[1..3]` are inline descriptors, so the generator's object
+# and state block are the only two blocks `main` allocates.
 
 def sum_view(xs: &slice[int32]) -> int32:
     return xs[0] + xs[1]

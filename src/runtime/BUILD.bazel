@@ -13,25 +13,27 @@ cc_library(
         "arena.cpp",
         "fmt.cpp",
         "io.cpp",
-        "layout.cpp",
         "platform.cpp",
         "platform_query.cpp",
         "reactor.cpp",
         "scheduler.cpp",
         "string.cpp",
+        "value_layout.cpp",
     ],
     hdrs = [
+        "aligned_buffer.h",
         "allocator.h",
         "arena.h",
         "coroutine.h",
         "fmt.h",
         "io.h",
-        "layout.h",
         "platform.h",
         "platform_query.h",
         "reactor.h",
+        "result_out.h",
         "scheduler.h",
         "string.h",
+        "value_layout.h",
     ],
     alwayslink = True,
     deps = [
@@ -52,6 +54,16 @@ cc_library(
     hdrs = ["string_ops.h"],
     deps = ["//src/utf8"],
     visibility = ["//visibility:public"],
+)
+
+# The `_into` entry points called directly, checked against the host.
+cc_test(
+    name = "result_out_test",
+    srcs = ["result_out_test.cpp"],
+    deps = [
+        ":runtime",
+        "//src/testing",
+    ],
 )
 
 cc_test(
@@ -85,10 +97,10 @@ cc_test(
 )
 
 cc_test(
-    name = "layout_test",
-    srcs = ["layout_test.cpp"],
+    name = "value_layout_test",
+    srcs = ["value_layout_test.cpp"],
     data = [
-        "//src:runtime_layout_test_files",
+        "//src:value_layout_test_files",
     ],
     deps = [
         "//src/comptime_vm",

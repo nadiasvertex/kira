@@ -1,0 +1,38 @@
+module codegen_stress.field_of_call_and_guard_temporary
+
+# expect: 494
+# max-live-blocks: 0
+
+# A field moved out of a call's result: the result is a temporary that owns
+# the field, so the move takes it and only the other field drops. A match
+# guard that builds a droppable temporary drops it before the arm runs,
+# whichever way the guard goes. Each pass builds fresh lists, so a field that
+# is dropped twice, or never, shows up in the block count or the value.
+
+type pair = { left: list[int64], right: list[int64] }
+
+def one(n: int64) -> list[int64]:
+    var out = list[int64].new()
+    out.push(n)
+    return out
+
+def mk_pair(a: int64, b: int64) -> pair:
+    return pair { left: one(a), right: one(b) }
+
+def head(xs: &list[int64]) -> int64:
+    return xs[0]
+
+def guarded(k: int64) -> int64:
+    match k % 3:
+        0 if head(&one(k)) > 10 => 100
+        0 => 1
+        _ => 0
+
+def main() -> int64:
+    var out: int64 = 0
+    var k: int64 = 0
+    while k < 20:
+        let left = mk_pair(k, 1000).left
+        out = out + head(&left) + guarded(k)
+        k = k + 1
+    return out

@@ -866,7 +866,8 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   // `main.cpp` does for every real invocation (this alone now pulls in
   // `intrinsics.cn`, `traits.cn`, `traits.ord.cn`, `traits.show.cn`,
   // `traits.numeric.cn`, `traits.conversion.cn`, `traits.category.cn`,
-  // `traits.hash.cn`, `traits.scalar.cn`, `limits.cn`, `iter.cn`,
+  // `traits.hash.cn`, `traits.scalar.cn`, `traits.structural.cn`,
+  // `limits.cn`, `iter.cn`,
   // `prelude.cn`,
   // `io.cn`, `console.cn`, `fmt.cn`, `algo.cn`, `unicode_tables.cn`,
   // `unicode.cn`, `derive.cn`, `fs/path.cn`, `test.cn`, and the
@@ -885,8 +886,8 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 32,
-         "expected std.io, std.console, std.traits (across its 9 files), "
+  expect(report->modules.size() == 33,
+         "expected std.io, std.console, std.traits (across its 10 files), "
          "std.limits, std.iter, std.algo, std.fmt, std.string, "
          "std.unicode_tables, std.unicode, std.derive, std.fs.path, "
          "std.test, std.platform, std.panic, std.option, std.result, "
@@ -1902,6 +1903,32 @@ auto test_comptime_vm_values_round_trip() -> void {
          "expected the compile-time calls to run: " + report->diagnostics);
   expect(report->run.has_value() && report->run->exit_code == 60,
          std::format("expected `score(build(4))` == 60, got {}",
+                     report->run.has_value() ? report->run->exit_code : -1));
+}
+
+/// A struct value (string, nested struct, fields at distinct offsets) is
+/// written into a compile-time run as inline bytes: each `static for`
+/// element is passed to the `static if` condition that reads it.
+auto test_comptime_vm_aggregate_arguments() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  write_file(main_source, read_program("comptime_vm_aggregate_arguments.cn"));
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected the compile-time calls to run: " + report->diagnostics);
+  expect(report->run.has_value() && report->run->exit_code == 111,
+         std::format("expected each item to match its own score (111), got {}",
                      report->run.has_value() ? report->run->exit_code : -1));
 }
 
@@ -5293,6 +5320,20 @@ auto test_compile_sources_enforces_frame_stack_budget() -> void {
          "as a compiler gap");
   expect(over.hir_modules.size() == 1 && over.hir_modules[0].lowered,
          "expected the module itself to have lowered before the check");
+
+  // A buffer of a struct counts the struct's inline bytes (32 per `quad`),
+  // not one word per element.
+  const auto aggregate = compile(
+      "aggregate",
+      read_program("compile_sources_enforces_frame_stack_budget_3.cn"));
+  expect(aggregate.error_count == 1 &&
+             aggregate.diagnostics.find("this buffer takes 1056000 bytes") !=
+                 std::string::npos &&
+             aggregate.diagnostics.find("gap in the compiler") ==
+                 std::string::npos,
+         std::format("expected a 33000-`quad` buffer to be over the budget at "
+                     "its inline size, got:\n{}",
+                     aggregate.diagnostics));
 }
 
 } // namespace
@@ -5334,6 +5375,7 @@ auto main() -> int {
     test_comptime_error_names_call_site();
     test_comptime_list_method_runs();
     test_comptime_vm_values_round_trip();
+    test_comptime_vm_aggregate_arguments();
     test_comptime_vm_overflow_points_into_callee();
     test_comptime_vm_expression_overflow();
     test_comptime_vm_quote();

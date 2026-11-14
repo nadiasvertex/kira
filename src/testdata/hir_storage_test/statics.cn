@@ -1,0 +1,13 @@
+module sample
+
+static table: array[int32, 3] = [10, 20, 30]
+static let pair: (int64, int64) = (7, 9)
+
+def pair_first() -> int64:
+    return pair.0
+
+def table_at(i: usize) -> int32:
+    return table[i]
+
+def table_copy() -> array[int32, 3]:
+    return table

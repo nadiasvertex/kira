@@ -5,7 +5,9 @@ module codegen_stress.heap_alloc_past_64k
 # or a misplaced element would read the same wrong bytes on both tiers.
 #
 #  - `filled`: `[x; N]` past 64 elements is a runtime loop, not unrolled
-#    stores; read at both ends, at two element widths.
+#    stores; read at both ends, at two element widths. The two arrays are
+#    inline frame storage in the value representation, so together they stay
+#    under the 1 MiB frame limit (720000 + 280000 bytes).
 #  - `SPREAD`: a reified static is always an explicit element list (the
 #    comptime evaluator expands the fill), so this is 160000 bytes of
 #    unrolled stores. `op_store_slot`'s offset is still 16 bits, so the
@@ -16,9 +18,9 @@ module codegen_stress.heap_alloc_past_64k
 static SPREAD: array[int64, 20000] = [5; 20000]
 
 def filled() -> int64:
-    let wide: array[int64, 100000] = [7; 100000]
+    let wide: array[int64, 90000] = [7; 90000]
     let narrow: array[int32, 70000] = [9; 70000]
-    return wide[0] + wide[99999] + int64(narrow[0] + narrow[69999])
+    return wide[0] + wide[89999] + int64(narrow[0] + narrow[69999])
 
 def spread() -> int64:
     return SPREAD[0] + SPREAD[8191] + SPREAD[19999]

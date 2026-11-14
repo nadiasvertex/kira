@@ -46,6 +46,8 @@ pub trait ord requires eq:
 #: `deriving ord` work without an `impl ord for int32` (and one per other
 #: scalar): such an impl would define the very `cmp` that `<` dispatches to
 #: on that type, and `<` inside its body would then call itself forever.
+#: Both values are borrowed, because a derived `cmp` compares the fields of
+#: `self` and `other`, which it does not own.
 #: Type Params:
 #:   T: the value type; must implement `ord`.
 #: Args:
@@ -53,10 +55,10 @@ pub trait ord requires eq:
 #:   b: the second value.
 #: Returns:
 #:   how `a` relates to `b`.
-pub def ord_cmp[T](a: T, b: T) -> ordering where T: ord:
-    if a < b:
+pub def ord_cmp[T](a: &T, b: &T) -> ordering where T: ord:
+    if *a < *b:
         return @less
-    if b < a:
+    if *b < *a:
         return @greater
     return @equal
 

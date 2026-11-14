@@ -868,6 +868,7 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
     }
   }
 
+
   auto target_ctx = current_resolve_ctx();
   const auto *hk_param =
       trait_decl != nullptr && !trait_decl->type_params.empty() &&

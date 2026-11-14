@@ -61,6 +61,10 @@ public:
   /// ready. Types are settled and refinements erased, as after checking.
   [[nodiscard]] virtual auto view() const -> const checked_types & = 0;
 
+  /// `view()`, for a lowering that interns the types it needs (a reference
+  /// to a value it passes by address). The type table is the checker's own.
+  [[nodiscard]] virtual auto records() -> checked_types & = 0;
+
   /// Makes `fn` ready to lower: checked, with every type it records settled,
   /// and its records copied into `view()`. The error says why it is not
   /// ready (a generic template, a body not checked yet, a type still open).

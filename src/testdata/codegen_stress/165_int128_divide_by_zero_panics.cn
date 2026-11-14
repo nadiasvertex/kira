@@ -6,3 +6,5 @@ def main() -> int64:
     let a: int128 = 18446744073709551616
     var b: int128 = 0
     return (a / b) as int64
+
+# expect-panic: divide by zero

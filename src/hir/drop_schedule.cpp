@@ -247,6 +247,8 @@ auto compute_drop_schedule(const ast::func_decl &decl,
                                        cfg.owned_static_reads.end());
     schedule.owned_captures.insert(cfg.owned_captures.begin(),
                                    cfg.owned_captures.end());
+    schedule.borrowed_captures.insert(cfg.borrowed_captures.begin(),
+                                      cfg.borrowed_captures.end());
     schedule.task_captures.insert(cfg.task_captures.begin(),
                                   cfg.task_captures.end());
 

@@ -13,6 +13,8 @@
 #include "src/hir/lower.h"
 #include "src/llvm_codegen/aot.h"
 #include "src/llvm_codegen/codegen.h"
+#include "src/llvm_codegen/storage_codegen.h"
+#include "src/hir/storage_program.h"
 #include "src/util/path.h"
 
 namespace fs = std::filesystem;
@@ -61,11 +63,19 @@ namespace cinder::driver {
 
 [[nodiscard]] auto
 build_hir_module(std::span<const hir::hir_module *const> modules,
-                 const semantic::type_table &types,
+                 semantic::checked_types &checked,
                  std::string_view function_name, const fs::path &output_path,
                  std::string_view program_name, optimization_level level)
     -> build_outcome {
-  auto compiled = llvm_codegen::compile_module(modules, types);
+  auto program = hir::prepare_storage_program(modules, checked);
+  if (!program.has_value()) {
+    return build_outcome{.succeeded = false,
+                         .message = std::format("failed to compile `{}`: {}",
+                                                function_name, program.error())};
+  }
+  auto compiled = llvm_codegen::compile_storage_module(
+      std::span<const hir::storage_module *const>((*program)->modules),
+      *(*program)->env);
   if (!compiled) {
     return build_outcome{
         .succeeded = false,

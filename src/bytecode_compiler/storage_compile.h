@@ -1,0 +1,61 @@
+#pragma once
+
+#include <expected>
+#include <span>
+
+#include "src/bytecode/chunk.h"
+#include "src/bytecode_compiler/compile_error.h"
+#include "src/hir/storage.h"
+
+namespace cinder::bytecode_compiler {
+
+// ==========================================================================
+//  Bytecode from the shared storage form.
+//
+//  This compiler builds bytecode from `hir::storage_function`s: an aggregate
+//  or descriptor lives as inline bytes in its owner, and a call builds its
+//  result directly in storage the caller supplies.
+//
+//  Where values live:
+//
+//  - A scalar, address, or handle that nothing takes the address of lives in a
+//    register.
+//  - Everything else a function owns (aggregates, descriptors, and scalars
+//    whose address is taken) lives in the frame's byte storage
+//    (`bytecode_function::stack_byte_size`), at an offset fixed at compile
+//    time. That storage is aligned, zeroed when the frame is created, and its
+//    address does not change while the frame lives, including when the frame
+//    vector grows.
+//  - A parameter that travels by address, and the hidden result, live in the
+//    caller's bytes; the register holds the address.
+//
+//  Registers `[0, param_count)` carry the internal signature's operands in
+//  order: the hidden result address (when there is one), then each
+//  non-zero-sized source parameter. `bytecode_function::abi` records the
+//  sizes and classes so a host can call a function with the right storage.
+//
+//  The driver runs programs and compile-time code through this compiler.
+// ==========================================================================
+
+/// Compiles a program of several modules into one bytecode module. The first
+/// module is the entry module; its functions keep their names in the function
+/// table, and a function of any other module is named `module::name`
+/// (`hir::program_function_name`), so modules may share function names and a
+/// call into another module resolves to a fixed index like any other.
+///
+/// Each function should already satisfy `hir::verify`: this compiler relies on
+/// it for initialization, ownership and place validity and does not re-check
+/// them. It fails closed with a named reason on anything it cannot place: a
+/// `drop_in_place`, a slot that does not live in the frame or the caller, a
+/// 128-bit scalar, or an offset or frame size beyond what an operand encodes.
+[[nodiscard]] auto
+compile_storage_module(std::span<const hir::storage_module *const> modules,
+                       hir::storage_env &env)
+    -> std::expected<bytecode::bytecode_module, compile_error>;
+
+/// Compiles one module as a program of its own.
+[[nodiscard]] auto compile_storage_module(const hir::storage_module &module,
+                                          hir::storage_env &env)
+    -> std::expected<bytecode::bytecode_module, compile_error>;
+
+} // namespace cinder::bytecode_compiler

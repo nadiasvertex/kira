@@ -46,12 +46,19 @@ namespace {
 /// See `heap_allocation_count`.
 thread_local uint64_t allocation_count = 0;
 
+/// See `heap_allocation_count_all_threads`.
+std::atomic<uint64_t> all_threads_allocation_count = 0;
+
 /// See `heap_live_block_count`.
 std::atomic<int64_t> live_blocks = 0;
 
 } // namespace
 
 auto heap_allocation_count() -> uint64_t { return allocation_count; }
+
+auto heap_allocation_count_all_threads() -> uint64_t {
+  return all_threads_allocation_count.load(std::memory_order_relaxed);
+}
 
 auto heap_live_block_count() -> int64_t {
   return live_blocks.load(std::memory_order_relaxed);
@@ -70,6 +77,8 @@ extern "C" auto cinder_heap_alloc(uint64_t bytes) -> void * {
     return nullptr;
   }
   ++cinder::runtime::allocation_count;
+  cinder::runtime::all_threads_allocation_count.fetch_add(
+      1, std::memory_order_relaxed);
   cinder::runtime::live_blocks.fetch_add(1, std::memory_order_relaxed);
   if (cinder::runtime::active_allocator_mode() ==
       cinder::runtime::allocator_mode::arena) {
@@ -139,6 +148,62 @@ extern "C" void cinder_heap_free(void *ptr, uint64_t bytes) {
   }
   cinder::runtime::live_blocks.fetch_sub(1, std::memory_order_relaxed);
   std::free(ptr);
+}
+
+extern "C" auto cinder_heap_alloc_aligned(uint64_t bytes, uint64_t align)
+    -> void * {
+  if (align == 0 || (align & (align - 1)) != 0) {
+    std::println(stderr,
+                 "cinder: invalid allocation alignment {}\n"
+                 "  note: an alignment must be a power of two",
+                 align);
+    std::abort();
+  }
+  if (align <= 8) {
+    return cinder_heap_alloc(bytes);
+  }
+  const auto size = cinder::runtime::round_to_slot(bytes);
+  if (size == 0) {
+    return nullptr;
+  }
+  ++cinder::runtime::allocation_count;
+  cinder::runtime::all_threads_allocation_count.fetch_add(
+      1, std::memory_order_relaxed);
+  cinder::runtime::live_blocks.fetch_add(1, std::memory_order_relaxed);
+  if (cinder::runtime::active_allocator_mode() ==
+      cinder::runtime::allocator_mode::arena) {
+    return cinder::runtime::global_arena().allocate(size,
+                                                    static_cast<size_t>(align));
+  }
+  // `aligned_alloc` wants a size that is a multiple of the alignment, and
+  // does not zero what it returns.
+  const auto padded =
+      (size + static_cast<size_t>(align) - 1) / static_cast<size_t>(align) *
+      static_cast<size_t>(align);
+  void *const block = std::aligned_alloc(static_cast<size_t>(align), padded);
+  if (block == nullptr) {
+    cinder::runtime::out_of_memory(bytes);
+  }
+  std::memset(block, 0, padded);
+  return block;
+}
+
+extern "C" auto cinder_heap_realloc_aligned(void *ptr, uint64_t old_bytes,
+                                            uint64_t new_bytes, uint64_t align)
+    -> void * {
+  if (ptr == nullptr) {
+    return cinder_heap_alloc_aligned(new_bytes, align);
+  }
+  if (new_bytes == 0) {
+    cinder_heap_free(ptr, old_bytes);
+    return nullptr;
+  }
+  // Always a fresh block and a copy: the C library cannot grow an over-aligned
+  // block in place, and the new block is already zeroed past the prefix.
+  void *const grown = cinder_heap_alloc_aligned(new_bytes, align);
+  std::memcpy(grown, ptr, std::min(old_bytes, new_bytes));
+  cinder_heap_free(ptr, old_bytes);
+  return grown;
 }
 
 // --------------------------------------------------------------------------

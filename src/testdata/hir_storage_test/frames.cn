@@ -1,0 +1,63 @@
+module sample
+type pair = { pub a: int32, pub b: int32 }
+
+def make_pair(n: int32) -> pair:
+    return pair { a: n, b: n + 1 }
+
+# Frame bytes are asserted relative to each other, so each pair differs in
+# exactly one thing.
+def buf4() -> int64:
+    var buf: array[int64, 4] = [0, 0, 0, 0]
+    buf[0] = 5
+    return buf[0]
+
+def buf8() -> int64:
+    var buf: array[int64, 8] = [0, 0, 0, 0, 0, 0, 0, 0]
+    buf[0] = 5
+    return buf[0]
+
+def two_bufs() -> int64:
+    var a: array[int64, 4] = [0, 0, 0, 0]
+    var b: array[int64, 4] = [0, 0, 0, 0]
+    a[0] = 5
+    b[0] = 6
+    return a[0] + b[0]
+
+# One iteration or many, the frame is the same: a loop reuses its slots.
+def loop_once(n: int64) -> int64:
+    var buf: array[int64, 4] = [0, 0, 0, 0]
+    var i = 0
+    while i < n:
+        buf[0] = i
+        i = i + 1
+    return buf[0]
+
+def loop_twice(n: int64) -> int64:
+    var buf: array[int64, 4] = [0, 0, 0, 0]
+    var i = 0
+    while i < n:
+        buf[0] = i
+        buf[1] = i
+        i = i + 1
+    return buf[0]
+
+def locals_only(n: int32) -> pair:
+    let p = make_pair(n)
+    let q = make_pair(n + 1)
+    return q
+
+# 4.8 GB of array: past the frame limit, and past what a 32-bit frame offset
+# can address.
+def huge() -> array[int64, 600000000]:
+    return huge()
+
+def holds_huge() -> int64:
+    let h = huge()
+    return 0
+
+def takes_pair(p: pair) -> int32:
+    return p.a
+
+# The pair is built in an outgoing slot of this frame and consumed by the call.
+def passes_pair(n: int32) -> int32:
+    return takes_pair(make_pair(n))

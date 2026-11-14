@@ -25,3 +25,34 @@ cc_library(
         "//src/semantic",
     ],
 )
+
+# Shared by the tests of the backends that compile the storage form
+# (`bytecode_compiler:storage_compile_test`, `llvm_codegen:storage_codegen_test`):
+# a fixture program lowered to storage form, and the value cases each backend
+# must pass.
+cc_library(
+    name = "storage_fixtures",
+    hdrs = [
+        "storage_cases.h",
+        "storage_fixture.h",
+        "storage_intrinsic_cases.h",
+        "storage_closure_cases.h",
+        "storage_generator_cases.h",
+        "storage_task_cases.h",
+        "storage_pattern_cases.h",
+        "storage_rvo_cases.h",
+        "storage_memory_cases.h",
+        "storage_module_cases.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":stdlib_fixtures",
+        ":testing",
+        "//src/bytecode",
+        "//src/comptime_vm",
+        "//src/hir",
+        "//src/parser",
+        "//src/runtime",
+        "//src/semantic",
+    ],
+)

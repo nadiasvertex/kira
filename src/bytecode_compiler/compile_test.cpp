@@ -1,21 +1,25 @@
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <expected>
 #include <format>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"
-#include "src/bytecode_compiler/compile.h"
+#include "src/bytecode_compiler/storage_compile.h"
 #include "src/comptime_vm/backend.h"
 #include "src/hir/link.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
+#include "src/hir/storage_program.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
@@ -121,8 +125,35 @@ auto check_fixture(const std::string &text) -> checked_fixture {
 // in the compiled set or the VM has nothing to jump to. `find_reachable_
 // modules` keeps that set to what the fixture uses rather than the whole
 // stdlib.
+/// Lowers `reachable` to the storage form and compiles it for the VM, as the
+/// driver does. The checked program and the storage program are kept until
+/// the test exits, since the compiled module may refer to them.
+auto compile_storage(std::span<const hir::hir_module *const> reachable,
+                     cinder::semantic::checked_types &checked)
+    -> bc::bytecode_module {
+  static auto keep = std::vector<std::unique_ptr<hir::storage_program>>{};
+  auto program = hir::prepare_storage_program(reachable, checked);
+  expect(program.has_value(),
+         program.has_value()
+             ? std::string{}
+             : "expected fixture to lower to the storage form: " +
+                   program.error());
+  auto compiled = bcc::compile_storage_module(
+      std::span<const hir::storage_module *const>((*program)->modules),
+      *(*program)->env);
+  expect(compiled.has_value(),
+         compiled.has_value()
+             ? std::string{}
+             : std::string("expected fixture to compile to bytecode: ") +
+                   compiled.error().message);
+  keep.push_back(std::move(*program));
+  return std::move(*compiled);
+}
+
 auto compile_fixture(const std::string &text) -> bc::bytecode_module {
-  auto fixture = check_fixture(text);
+  static auto keep = std::vector<std::unique_ptr<checked_fixture>>{};
+  keep.push_back(std::make_unique<checked_fixture>(check_fixture(text)));
+  auto &fixture = *keep.back();
   auto entry = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(entry.has_value(), "expected fixture to lower to HIR");
 
@@ -133,13 +164,10 @@ auto compile_fixture(const std::string &text) -> bc::bytecode_module {
                                         modules);
 
   const auto reachable = hir::find_reachable_modules(*entry_module, modules);
-  auto compiled = bcc::compile_module(reachable, fixture.checked.types);
-  expect(compiled.has_value(),
-         compiled.has_value()
-             ? std::string{}
-             : std::string("expected fixture to compile to bytecode: ") +
-                   compiled.error().message);
-  return std::move(*compiled);
+  static auto keep_modules = std::vector<hir::ptr_vec<hir::hir_module>>{};
+  auto compiled = compile_storage(reachable, fixture.checked);
+  keep_modules.push_back(std::move(modules));
+  return compiled;
 }
 
 // Parses, checks, and lowers several files together as one session, then
@@ -150,10 +178,22 @@ auto compile_fixture(const std::string &text) -> bc::bytecode_module {
 auto compile_fixture_multi(
     const std::vector<std::pair<std::string, std::string>> &files,
     std::string_view entry_module_name) -> bc::bytecode_module {
-  auto sources = cinder::source_manager{};
-  auto diag = cinder::diagnostic_bag{};
-  const auto stdlib = cinder::testing::parse_stdlib(sources, diag);
-  auto ast_files = std::vector<cinder::ast::ptr<cinder::ast::file>>{};
+  // Kept until the test exits, with the program compiled from it.
+  struct session {
+    cinder::source_manager sources;
+    cinder::diagnostic_bag diag{};
+    cinder::testing::parsed_stdlib stdlib;
+    std::vector<cinder::ast::ptr<cinder::ast::file>> ast_files;
+    cinder::semantic::checked_types checked;
+    hir::ptr_vec<hir::hir_module> modules;
+  };
+  static auto keep = std::vector<std::unique_ptr<session>>{};
+  auto &kept = *keep.emplace_back(std::make_unique<session>());
+  auto &sources = kept.sources;
+  auto &diag = kept.diag;
+  kept.stdlib = cinder::testing::parse_stdlib(sources, diag);
+  const auto &stdlib = kept.stdlib;
+  auto &ast_files = kept.ast_files;
   auto parsed_modules = stdlib.modules;
   auto file_ids = std::vector<cinder::file_id_type>{};
 
@@ -180,11 +220,12 @@ auto compile_fixture_multi(
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(file_ids.back()) + 1, false);
   auto comptime = cinder::comptime_vm::vm_backend{};
-  const auto checked = cinder::semantic::check_program(
-      parsed_modules, diag, file_has_errors, &comptime);
+  kept.checked = cinder::semantic::check_program(parsed_modules, diag,
+                                                file_has_errors, &comptime);
+  auto &checked = kept.checked;
   expect_checked_cleanly(sources, diag);
 
-  auto modules = hir::ptr_vec<hir::hir_module>{};
+  auto &modules = kept.modules;
   for (size_t i = 0; i < ast_files.size(); ++i) {
     auto lowered = hir::lower_module(*ast_files[i], files[i].first, checked);
     expect(lowered.has_value(), "expected every fixture module to lower");
@@ -212,10 +253,7 @@ auto compile_fixture_multi(
   expect(entry != nullptr, "expected to find the entry module by name");
 
   const auto reachable = hir::find_reachable_modules(*entry, modules);
-  auto compiled = bcc::compile_module(reachable, checked.types);
-  expect(compiled.has_value(),
-         "expected the cross-module fixture to compile to bytecode");
-  return std::move(*compiled);
+  return compile_storage(reachable, checked);
 }
 
 auto function_index(const bc::bytecode_module &module, std::string_view name)
@@ -235,7 +273,47 @@ auto function_index(const bc::bytecode_module &module, std::string_view name)
 // each tier's own hand-picked call.
 auto run_main(const bc::bytecode_module &module)
     -> std::expected<bc::vm_result, bc::panic_reason> {
-  return bc::vm{module}.run(function_index(module, "main"), {});
+  const auto machine = bc::vm{module};
+  for (const auto init : module.static_initializers) {
+    const auto built = machine.run(init, std::span<const bc::slot_value>{});
+    if (!built.has_value()) {
+      return std::unexpected(built.error());
+    }
+  }
+  return machine.run(function_index(module, "main"), {});
+}
+
+/// Runs `name` and returns its result's inline bytes: built at an address the
+/// test owns, or returned in a register, as the function's signature says.
+/// The buffer starts zeroed, so bytes the callee never writes (padding) read
+/// as zero.
+auto run_for_bytes(const bc::bytecode_module &module, std::string_view name,
+                   std::span<const bc::slot_value> args = {})
+    -> std::vector<std::byte> {
+  const auto index = function_index(module, name);
+  const auto &abi = module.functions[index].abi;
+  expect(abi.has_value(), "expected a storage-form signature");
+  auto bytes = std::vector<std::byte>(std::max<size_t>(abi->result.size, 8));
+  const auto machine = bc::vm{module};
+  if (abi->returns_through_address) {
+    const auto run = machine.run_into(index, bytes, args);
+    expect(run.has_value(), std::format("expected {}() to succeed", name));
+  } else {
+    const auto run = machine.run(index, args);
+    expect(run.has_value(), std::format("expected {}() to succeed", name));
+    std::memcpy(bytes.data(), &run->value.u,
+                std::min<size_t>(sizeof(run->value.u), abi->result.size));
+  }
+  return bytes;
+}
+
+/// The `T` stored at `offset` in `bytes`.
+template <typename T>
+auto read_at(const std::vector<std::byte> &bytes, size_t offset) -> T {
+  expect(offset + sizeof(T) <= bytes.size(), "expected a read inside the value");
+  auto out = T{};
+  std::memcpy(&out, bytes.data() + offset, sizeof(T));
+  return out;
 }
 
 auto test_add_compiles_and_runs() -> void {
@@ -734,44 +812,30 @@ auto test_negate_of_min_integer_literal_does_not_panic() -> void {
 }
 
 auto test_string_literal_len_reads_the_heap_header() -> void {
-  // No surface `.len()` yet — reads the heap `str` value's own length slot
-  // directly via a hand-assembled op_load_slot, mirroring vm_test.cpp's
-  // own str test, just compiled from real source this time.
+  // A `str` is an inline `{len, data}` descriptor (ch14); a literal's data
+  // points at the program's constant bytes.
   auto module = compile_fixture(load_fixture("string_literal.cn"));
-  const auto vm = bc::vm{module};
-  auto result = vm.run(function_index(module, "greet"), {});
-  expect(result.has_value(), "expected greet() to succeed");
-  expect(result->has_value, "expected greet() to produce a value");
-  const auto *slots = reinterpret_cast<const bc::heap_word *>(
-      static_cast<uintptr_t>(result->value.u));
-  expect(slots[0].u == 5, "expected \"hello\" to report length 5");
-  const auto *data =
-      reinterpret_cast<const char *>(static_cast<uintptr_t>(slots[1].u));
-  expect(std::string_view(data, 5) == "hello",
-         "expected the str's data slot to point at \"hello\"'s bytes");
-
-  auto main_result = run_main(module);
-  expect(main_result.has_value(), "expected main() to succeed");
-  const auto *main_slots = reinterpret_cast<const bc::heap_word *>(
-      static_cast<uintptr_t>(main_result->value.u));
-  expect(main_slots[0].u == 5, "expected main()'s greet() to report length 5");
-  const auto *main_data =
-      reinterpret_cast<const char *>(static_cast<uintptr_t>(main_slots[1].u));
-  expect(std::string_view(main_data, 5) == "hello",
-         "expected main()'s greet() data slot to point at \"hello\"'s bytes");
+  for (const auto *name : {"greet", "main"}) {
+    const auto bytes = run_for_bytes(module, name);
+    expect(read_at<uint64_t>(bytes, 0) == 5,
+           std::format("expected {}()'s \"hello\" to report length 5", name));
+    const auto *data = reinterpret_cast<const char *>(
+        static_cast<uintptr_t>(read_at<uint64_t>(bytes, 8)));
+    expect(std::string_view(data, 5) == "hello",
+           std::format("expected {}()'s data to point at \"hello\"'s bytes",
+                       name));
+  }
 }
 
 auto test_tuple_construction_and_projection() -> void {
   auto module = compile_fixture(load_fixture("tuple_construction.cn"));
-  const auto vm = bc::vm{module};
-  auto result = vm.run(function_index(module, "make"), {});
-  expect(result.has_value(), "expected make() to succeed");
   // `(int32, int32, int32)` packs tight at its own natural 4-byte width/
-  // alignment (`runtime::tuple_layout`), not one 8-byte slot per element —
-  // read the three elements back at their real 4-byte-strided offsets.
-  const auto *elements = reinterpret_cast<const int32_t *>(
-      static_cast<uintptr_t>(result->value.u));
-  expect(elements[0] + elements[1] + elements[2] == 42,
+  // alignment, not one 8-byte slot per element — read the three elements
+  // back at their real 4-byte-strided offsets.
+  const auto bytes = run_for_bytes(module, "make");
+  expect(read_at<int32_t>(bytes, 0) + read_at<int32_t>(bytes, 4) +
+                 read_at<int32_t>(bytes, 8) ==
+             42,
          "expected the tuple's three elements to sum to 42");
 
   auto main_result = run_main(module);
@@ -843,18 +907,15 @@ auto test_padded_struct_field_access() -> void {
 auto test_packed_struct_has_no_padding_in_memory() -> void {
   // `combine()` above only proves field *values* round-trip correctly,
   // which a padded layout would do identically — this test instead reads
-  // the constructed struct's raw heap bytes directly to prove the
+  // the constructed struct's raw bytes directly to prove the
   // `packed` modifier actually removes alignment padding, not just that
   // reads/writes stay internally consistent.
   auto module = compile_fixture(load_fixture("packed_struct_layout.cn"));
-  const auto vm = bc::vm{module};
-  auto result = vm.run(function_index(module, "make"),
-                       std::array{bc::slot_value{uint64_t{0x1234}},
-                                  bc::slot_value{uint64_t{0xAB}},
-                                  bc::slot_value{uint64_t{0xDEADBEEF}}});
-  expect(result.has_value(), "expected make() on a packed struct to succeed");
-  const auto *bytes = reinterpret_cast<const uint8_t *>(
-      static_cast<uintptr_t>(result->value.u));
+  const auto args = std::array{bc::slot_value{uint64_t{0x1234}},
+                               bc::slot_value{uint64_t{0xAB}},
+                               bc::slot_value{uint64_t{0xDEADBEEF}}};
+  const auto raw = run_for_bytes(module, "make", args);
+  const auto *bytes = reinterpret_cast<const uint8_t *>(raw.data());
   // packed: magic@0 (2 bytes, LE), flags@2 (1 byte), len@3 (4 bytes, LE) —
   // back to back, no padding, 7 bytes total.
   expect(bytes[0] == 0x34 && bytes[1] == 0x12,
@@ -869,14 +930,11 @@ auto test_packed_struct_has_no_padding_in_memory() -> void {
 
 auto test_padded_struct_has_alignment_padding_in_memory() -> void {
   auto module = compile_fixture(load_fixture("padded_struct_layout.cn"));
-  const auto vm = bc::vm{module};
-  auto result = vm.run(function_index(module, "make"),
-                       std::array{bc::slot_value{uint64_t{0x1234}},
-                                  bc::slot_value{uint64_t{0xAB}},
-                                  bc::slot_value{uint64_t{0xDEADBEEF}}});
-  expect(result.has_value(), "expected make() on a padded struct to succeed");
-  const auto *bytes = reinterpret_cast<const uint8_t *>(
-      static_cast<uintptr_t>(result->value.u));
+  const auto args = std::array{bc::slot_value{uint64_t{0x1234}},
+                               bc::slot_value{uint64_t{0xAB}},
+                               bc::slot_value{uint64_t{0xDEADBEEF}}};
+  const auto raw = run_for_bytes(module, "make", args);
+  const auto *bytes = reinterpret_cast<const uint8_t *>(raw.data());
   // default (padded) layout: magic@0 (2 bytes), flags@2 (1 byte), one
   // padding byte at offset 3 so len lands on its own 4-byte alignment
   // boundary at offset 4 — 8 bytes total, unlike the packed layout's 7.
@@ -884,8 +942,8 @@ auto test_padded_struct_has_alignment_padding_in_memory() -> void {
   expect(bytes[2] == 0xAB, "expected flags at offset 2");
   expect(bytes[3] == 0x00,
          "expected a zero padding byte at offset 3 ahead of len's own "
-         "4-byte alignment — a fresh arena allocation is zeroed, so an "
-         "unused padding byte reads back as 0");
+         "4-byte alignment — the result buffer starts zeroed and no field "
+         "is written there");
   expect(bytes[4] == 0xEF && bytes[5] == 0xBE && bytes[6] == 0xAD &&
              bytes[7] == 0xDE,
          "expected len at offset 4, after the alignment padding");
@@ -911,13 +969,10 @@ auto test_narrow_element_array_has_no_padding_in_memory() -> void {
   // Mirrors `test_packed_struct_has_no_padding_in_memory` above: value-only
   // assertions can't distinguish a natural-stride `array[int16,5]` from one
   // that still wastes 8 bytes/element the old uniform-slot way — this reads
-  // the constructed array's raw heap bytes directly.
+  // the constructed array's raw bytes directly.
   auto module = compile_fixture(load_fixture("narrow_element_array.cn"));
-  const auto vm = bc::vm{module};
-  auto result = vm.run(function_index(module, "make_fixed"), {});
-  expect(result.has_value(), "expected make_fixed() to succeed");
-  const auto *bytes = reinterpret_cast<const uint8_t *>(
-      static_cast<uintptr_t>(result->value.u));
+  const auto raw = run_for_bytes(module, "make_fixed");
+  const auto *bytes = reinterpret_cast<const uint8_t *>(raw.data());
   expect(bytes[0] == 0x11 && bytes[1] == 0x11,
          "expected element 0 (0x1111) at byte offset 0, little-endian");
   expect(bytes[2] == 0x22 && bytes[3] == 0x22,
@@ -1002,42 +1057,26 @@ auto test_array_fill_form_repeats_the_same_value() -> void {
 }
 
 auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
+  // A sum is a `u64` tag, then the payload at the tag's end rounded up to the
+  // payload's alignment (`src/runtime/value_layout.h`): `@circle(3.5)` is tag
+  // 0 at offset 0 and the `float64` at offset 8. `main()` is `make(3.5)`.
   auto module = compile_fixture(load_fixture("sum_type_variant.cn"));
-  const auto vm = bc::vm{module};
-  auto result =
-      vm.run(function_index(module, "make"), std::array{bc::slot_value{3.5}});
-  expect(result.has_value(), "expected make() to succeed");
-  const auto *slots = reinterpret_cast<const bc::heap_word *>(
-      static_cast<uintptr_t>(result->value.u));
-  expect(slots[0].i == 0, "expected @circle to encode as tag 0");
-  expect(slots[1].f == 3.5, "expected the payload slot to hold 3.5");
-
-  // main() is `make(3.5)` — src/llvm_codegen/codegen_test.cpp decodes the
-  // same heap value through the JIT's `run_ptr_result`, so this and that
-  // test check the exact same tag/payload encoding for the exact same
-  // input, just through two different compilers.
-  auto main_result = run_main(module);
-  expect(main_result.has_value(), "expected main() to succeed");
-  const auto *main_slots = reinterpret_cast<const bc::heap_word *>(
-      static_cast<uintptr_t>(main_result->value.u));
-  expect(main_slots[0].i == 0, "expected main()'s @circle to encode as tag 0");
-  expect(main_slots[1].f == 3.5, "expected main()'s payload slot to hold 3.5");
+  const auto args = std::array{bc::slot_value{3.5}};
+  for (const auto &bytes :
+       {run_for_bytes(module, "make", args), run_for_bytes(module, "main")}) {
+    expect(read_at<int64_t>(bytes, 0) == 0, "expected @circle to encode as tag 0");
+    expect(read_at<double>(bytes, 8) == 3.5,
+           "expected the payload to hold 3.5 at offset 8");
+  }
 }
 
 auto test_sum_type_unit_variant_encodes_its_tag() -> void {
   auto module = compile_fixture(load_fixture("sum_type_unit_variant.cn"));
-  const auto vm = bc::vm{module};
-  auto result = vm.run(function_index(module, "make_empty"), {});
-  expect(result.has_value(), "expected make_empty() to succeed");
-  const auto *slots = reinterpret_cast<const bc::heap_word *>(
-      static_cast<uintptr_t>(result->value.u));
-  expect(slots[0].i == 1, "expected @empty to encode as tag 1");
-
-  auto main_result = run_main(module);
-  expect(main_result.has_value(), "expected main() to succeed");
-  const auto *main_slots = reinterpret_cast<const bc::heap_word *>(
-      static_cast<uintptr_t>(main_result->value.u));
-  expect(main_slots[0].i == 1, "expected main()'s @empty to encode as tag 1");
+  for (const auto *name : {"make_empty", "main"}) {
+    const auto bytes = run_for_bytes(module, name);
+    expect(read_at<int64_t>(bytes, 0) == 1,
+           std::format("expected {}()'s @empty to encode as tag 1", name));
+  }
 }
 
 auto test_match_dispatches_on_literal_and_wildcard_patterns() -> void {
@@ -1413,15 +1452,17 @@ auto test_for_loop_over_generator_evaluates_iterable_once() -> void {
 auto test_static_array_global_backs_two_independent_reads() -> void {
   auto module = compile_fixture(
       read_program("static_array_global_backs_two_independent_reads.cn"));
-  expect(module.static_init_function.has_value(),
-         "expected a static-init function to be synthesized for a reified "
+  expect(!module.static_initializers.empty(),
+         "expected a static initializer to be synthesized for a reified "
          "array global");
-  expect(module.global_count == 1, "expected exactly one reified global");
+  expect(module.global_byte_size >= 4 * sizeof(int32_t),
+         "expected the global's bytes to be reserved inline");
 
   const auto vm = bc::vm{module};
-  auto init_result =
-      vm.run(*module.static_init_function, std::span<const bc::slot_value>{});
-  expect(init_result.has_value(), "expected static init to succeed");
+  for (const auto init : module.static_initializers) {
+    auto init_result = vm.run(init, std::span<const bc::slot_value>{});
+    expect(init_result.has_value(), "expected static init to succeed");
+  }
 
   auto third_result = vm.run(function_index(module, "third"),
                              std::array{bc::slot_value{uint64_t{2}}});

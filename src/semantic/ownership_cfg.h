@@ -120,6 +120,9 @@ struct loan_info {
   /// shared loan and reports as a mutable one.
   bool reserved_mut = false;
   loan_origin origin = loan_origin::borrow;
+  /// A `capture` loan a lambda without a capture list took because it uses
+  /// a value that is not `copy` (ch. 16), rather than a `&`/`&mut` entry.
+  bool implicit = false;
   source_span span = source_span::dummy();
 };
 
@@ -286,6 +289,21 @@ struct basic_block {
 struct owned_capture {
   std::string name;
   type_id type = k_unknown_type;
+  /// The capture-list entry, or the body's first use of the name. A use of
+  /// a generic lambda names the one copy it was checked against
+  /// (`checked_types::generic_lambda_refs`).
+  const void *node = nullptr;
+};
+
+/// A value a lambda without a capture list borrows from the enclosing
+/// function (ch. 16): a value that is not `copy`, which the body does not
+/// consume. `is_mut` when the body changes it.
+struct borrowed_capture {
+  std::string name;
+  /// The body's first use of the name; a use of a generic lambda names the
+  /// one copy it was checked against (`checked_types::generic_lambda_refs`).
+  const void *node = nullptr;
+  bool is_mut = false;
 };
 
 /// A value an `async:` or `on(...)` block captures from the enclosing
@@ -343,6 +361,9 @@ struct function_cfg {
   /// The droppable values each lambda moves into its environment, in
   /// capture order, keyed by the `ast::lambda_expr`.
   std::map<const void *, std::vector<owned_capture>> owned_captures;
+  /// The values each lambda without a capture list borrows, keyed by the
+  /// `ast::lambda_expr`. Every other implicit capture is by value.
+  std::map<const void *, std::vector<borrowed_capture>> borrowed_captures;
   /// What each `async:` or `on(...)` block captures, in first-reference
   /// order, keyed by the block's expression.
   std::map<const void *, std::vector<task_capture>> task_captures;

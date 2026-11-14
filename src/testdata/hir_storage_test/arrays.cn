@@ -1,0 +1,82 @@
+module sample
+
+# Arrays that drop their elements, a raw write that gives a value up, and an
+# `into_iter` that owns the value its `self` names.
+
+use std.iter.{iter, into_iterator}
+
+type noisy = { pub id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+# Both elements are dropped, in index order, at the end of the scope; the
+# array itself is then given up.
+def pair() -> unit:
+    let xs: array[noisy, 2] = [noisy{id: 1}, noisy{id: 2}]
+    return
+
+# `uninit` storage starts zeroed; the raw write owns `value` and drops nothing.
+machine def keep(value: noisy) -> unit:
+    var slot = uninit[noisy, 1]()
+    let p = slot.as_mut_ptr()
+    p[0] = value
+    return
+
+type bag = { pub item: noisy }
+
+type bag_iter = { pub item: option[noisy] }
+
+impl iter[noisy] for bag_iter:
+    def next(mut self) -> option[noisy]:
+        return @none
+
+# `self` is the bag itself, moved in by the caller.
+impl into_iterator[noisy] for bag:
+    type iter = bag_iter
+    def into_iter(self) -> bag_iter:
+        return bag_iter{item: @some(self.item)}
+
+def walk(b: bag) -> unit:
+    for n in b:
+        let id = n.id
+    return
+
+# `&xs[0]` on a list is a `cell[noisy]` from the list's `at`, read as the
+# `&noisy` the payload holds: the same address.
+def first_of(xs: &list[noisy]) -> option[&noisy]:
+    return @some(&xs[0])
+
+# A loop over a borrowed list of `copy` elements gives `into_iter` a bitwise
+# copy of the list, and the iterator it returns owns nothing.
+def total(xs: &list[int64]) -> int64:
+    var sum: int64 = 0
+    for x in xs:
+        sum = sum + x
+    return sum
+
+# A literal iterated directly is bound to a temporary, which moves in.
+def literal_total() -> int64:
+    var sum: int64 = 0
+    for x in [1, 2, 3]:
+        sum = sum + x
+    return sum
+
+# A named function used as a value is a closure over a forwarding function.
+def apply(f: fn(int64) -> int64, x: int64) -> int64:
+    return f(x)
+
+def twice(x: int64) -> int64:
+    return x * 2
+
+def use_twice() -> int64:
+    return apply(twice, 21)
+
+# A literal payload passed to a generic parameter is typed by the sibling
+# argument that settles `T`, so its storage has a layout.
+def keep_some[T](o: option[T], d: T) -> option[T]:
+    return o
+
+def keep_literal() -> option[int32]:
+    return keep_some(@some(20), int32(1))

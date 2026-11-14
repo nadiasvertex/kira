@@ -203,6 +203,7 @@ private:
                                       const method_filter &accepts) const
       -> const method_entry *;
   [[nodiscard]] auto resolve_builtin_impl(const type_entry &entry,
+                                          type_id instance,
                                           std::string_view name) const
       -> const method_entry *;
   [[nodiscard]] auto resolve_builtin_extend(const type_entry &entry,

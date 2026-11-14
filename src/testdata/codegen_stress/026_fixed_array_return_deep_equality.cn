@@ -2,3 +2,5 @@ module codegen_stress.fixed_array_return_deep_equality
 
 def main() -> array[int32, 5]:
     return [10, 20, 30, 40, 50]
+
+# expect-text: [10, 20, 30, 40, 50]

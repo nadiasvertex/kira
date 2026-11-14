@@ -1,0 +1,442 @@
+module sample
+
+# Tasks in the storage form (chapter 18): an `async def` is a constructor plus a
+# step function whose frame is the state block, like a generator's. The body
+# hands its result over once, by address; an `await` polls the awaited task and
+# the step returns `pending` until the scheduler has run it. A plain function
+# reads a task's result with `get`, which blocks the calling thread.
+
+# Wider than a register, so the result is moved out of the state block.
+type triple = { pub a: int64, pub b: int64, pub c: int64 }
+
+type pair = { pub a: int64, pub b: int64 }
+
+async def double(x: int64) -> int64:
+    return x * 2
+
+# Awaits inside a loop: the loop counter and total live in the state block
+# across each suspension.
+async def sum_doubles(n: int64) -> int64:
+    var total: int64 = 0
+    var i: int64 = 0
+    while i < n:
+        total = total + await double(i)
+        i = i + 1
+    return total
+
+# Awaits one task after another, using the first result for the second.
+async def chain(x: int64) -> int64:
+    let a = await double(x)
+    let b = await double(a)
+    return a + b * 10
+
+# A borrow of a local in the state block is held across a suspension.
+async def borrows(x: int64) -> int64:
+    let p = pair { a: x, b: x * 3 }
+    let r = &p
+    let d = await double(x)
+    return r.a + r.b * 100 + d * 10000
+
+async def make_triple(n: int64) -> triple:
+    return triple { a: n, b: n * 2, c: n * 3 }
+
+# A result wider than a register, passed through another task.
+async def triple_total(n: int64) -> int64:
+    let t = await make_triple(n)
+    return t.a + t.b * 100 + t.c * 10000
+
+async def nothing() -> unit:
+    return
+
+# A task whose result is `unit` still finishes.
+async def waits_for_nothing(x: int64) -> int64:
+    await nothing()
+    return x + 1
+
+# `await par` runs the branches together and gives the tuple of their results.
+async def together(x: int64) -> int64:
+    let (a, b) = await par:
+        double(x)
+        chain(x)
+    return a + b * 1000
+
+# Three branches, one of them with a result wider than a register.
+async def wide_group(n: int64) -> int64:
+    let (t, a, c) = await par:
+        make_triple(n)
+        double(n)
+        chain(n)
+    return t.a + t.b * 10 + t.c * 100 + a * 1000 + c * 10000
+
+# `await race` gives the first result and cancels the others. The first branch
+# would take far too long to finish, so the second always wins.
+async def first_wins(x: int64) -> int64:
+    return await race:
+        sum_doubles(1000000)
+        double(x)
+
+# The group is waited on again in a loop, so each pass builds a new one.
+async def groups_in_a_loop(n: int64) -> int64:
+    var total: int64 = 0
+    var i: int64 = 0
+    while i < n:
+        let (a, b) = await par:
+            double(i)
+            double(i + 1)
+        total = total + a + b
+        i = i + 1
+    return total
+
+# A block that runs on a pool is a task of its own, with `x` passed in.
+async def on_a_pool(x: int64) -> int64:
+    let inner = await on(cpu):
+        x * 5
+    return inner + 1
+
+def run_on_a_pool(x: int64) -> int64:
+    let t = on_a_pool(x)
+    return t.get()
+
+def run_double(x: int64) -> int64:
+    let t = double(x)
+    return t.get()
+
+def run_sum(n: int64) -> int64:
+    let t = sum_doubles(n)
+    return t.get()
+
+def run_chain(x: int64) -> int64:
+    let t = chain(x)
+    return t.get()
+
+def run_together(x: int64) -> int64:
+    let t = together(x)
+    return t.get()
+
+def run_wide_group(n: int64) -> int64:
+    let t = wide_group(n)
+    return t.get()
+
+def run_first_wins(x: int64) -> int64:
+    let t = first_wins(x)
+    return t.get()
+
+def run_groups_in_a_loop(n: int64) -> int64:
+    let t = groups_in_a_loop(n)
+    return t.get()
+
+def run_borrows(x: int64) -> int64:
+    let t = borrows(x)
+    return t.get()
+
+def run_triple(n: int64) -> int64:
+    let t = triple_total(n)
+    return t.get()
+
+def run_unit(x: int64) -> int64:
+    let t = waits_for_nothing(x)
+    return t.get()
+
+# A task the scheduler already owns can be read once it has finished.
+def run_spawned(x: int64) -> int64:
+    let a = double(x)
+    let b = double(x + 1)
+    a.spawn()
+    b.spawn()
+    return a.get() * 100 + b.get()
+
+# A task that never ran is dropped without running its body.
+def run_unstarted() -> int64:
+    let t = sum_doubles(1000)
+    return 7
+
+# A result that needs a drop belongs to whoever reads it. Each drop appends
+# its id to the counter, so the counter records how many ran and in what order.
+type noisy = { pub id: int64, pub counter: *mut int64 }
+
+impl drop for noisy:
+    machine def drop(mut self) -> unit:
+        *self.counter = *self.counter * 10 + self.id
+        return
+
+async def make_noisy(id: int64, counter: *mut int64) -> noisy:
+    return noisy { id: id, counter: counter }
+
+async def await_noisy(id: int64, counter: *mut int64) -> int64:
+    let x = await make_noisy(id, counter)
+    return x.id * 10
+
+def get_noisy(id: int64, counter: *mut int64) -> int64:
+    let t = make_noisy(id, counter)
+    let x = t.get()
+    return x.id
+
+# Read by a plain function: dropped once, when the reader's scope ends.
+machine def noisy_read_by_get() -> int64:
+    var drops: int64 = 0
+    let seen = get_noisy(4, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+# Read by a task's `await`.
+machine def noisy_read_by_await() -> int64:
+    var drops: int64 = 0
+    let t = await_noisy(5, ptr_cast[int64](&mut drops))
+    let seen = t.get()
+    return drops * 100 + seen
+
+# The `io` pool has one worker and runs tasks in the order they were spawned, so
+# waiting for the second task means the first has finished. Its result is never
+# read, and dropping the handle drops that result.
+def finish_unread(id: int64, counter: *mut int64) -> int64:
+    let t = make_noisy(id, counter)
+    let marker = double(1)
+    t.spawn()
+    marker.spawn()
+    return marker.get()
+
+type holder = { pub first: noisy, pub second: noisy }
+
+async def make_holder(a: int64, b: int64, counter: *mut int64) -> holder:
+    return holder { first: noisy { id: a, counter: counter },
+                    second: noisy { id: b, counter: counter } }
+
+async def make_both(a: int64, b: int64, counter: *mut int64) -> (noisy, noisy):
+    return (noisy { id: a, counter: counter }, noisy { id: b, counter: counter })
+
+# Fields drop in declaration order.
+def finish_unread_holder(counter: *mut int64) -> int64:
+    let t = make_holder(3, 4, counter)
+    let marker = double(1)
+    t.spawn()
+    marker.spawn()
+    return marker.get()
+
+def finish_unread_both(counter: *mut int64) -> int64:
+    let t = make_both(5, 6, counter)
+    let marker = double(1)
+    t.spawn()
+    marker.spawn()
+    return marker.get()
+
+machine def noisy_holder_unread() -> int64:
+    var drops: int64 = 0
+    let seen = finish_unread_holder(ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+machine def noisy_tuple_unread() -> int64:
+    var drops: int64 = 0
+    let seen = finish_unread_both(ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+# Read once, then the handle is dropped: the read result is not dropped again.
+def read_then_drop(counter: *mut int64) -> int64:
+    let t = make_holder(7, 8, counter)
+    let h = t.get()
+    return h.first.id + h.second.id
+
+machine def noisy_read_then_drop() -> int64:
+    var drops: int64 = 0
+    let seen = read_then_drop(ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+machine def noisy_finished_unread() -> int64:
+    var drops: int64 = 0
+    let seen = finish_unread(6, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+# A result that is a sum drops the payload of the variant it holds.
+async def make_maybe(id: int64, counter: *mut int64) -> option[noisy]:
+    if id > 0:
+        return @some(noisy { id: id, counter: counter })
+    return @none
+
+def finish_unread_maybe(id: int64, counter: *mut int64) -> int64:
+    let t = make_maybe(id, counter)
+    let marker = double(1)
+    t.spawn()
+    marker.spawn()
+    return marker.get()
+
+machine def noisy_maybe_unread(id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = finish_unread_maybe(id, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+def read_maybe(id: int64, counter: *mut int64) -> int64:
+    let t = make_maybe(id, counter)
+    return match t.get():
+        @some(v) => v.id
+        @none => 0
+
+machine def noisy_maybe_read(id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = read_maybe(id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Two variants own drops; only the one that is held drops.
+type pick = @left(noisy) | @right(noisy)
+
+async def make_pick(id: int64, counter: *mut int64) -> pick:
+    if id > 0:
+        return @left(noisy { id: id, counter: counter })
+    return @right(noisy { id: 9, counter: counter })
+
+def finish_unread_pick(id: int64, counter: *mut int64) -> int64:
+    let t = make_pick(id, counter)
+    let marker = double(1)
+    t.spawn()
+    marker.spawn()
+    return marker.get()
+
+machine def noisy_pick_unread(id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = finish_unread_pick(id, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+# Never run, so there is no result to drop.
+def never_started(id: int64, counter: *mut int64) -> int64:
+    let t = make_noisy(id, counter)
+    return 1
+
+machine def noisy_unstarted() -> int64:
+    var drops: int64 = 0
+    let seen = never_started(7, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+# A crew starts the tasks spawned into it and waits for all of them before the
+# block ends. In a task that wait is a suspension point; in a plain function it
+# blocks the thread. The tasks come back out of the block as ordinary handles.
+async def crew_in_task(n: int64) -> int64:
+    let (a, b) = crew k:
+        let ta = k.spawn(double(n))
+        let tb = k.spawn(chain(n))
+        (ta, tb)
+    return (await a) + (await b) * 100
+
+def run_crew_in_task(n: int64) -> int64:
+    let t = crew_in_task(n)
+    return t.get()
+
+def crew_in_function(n: int64) -> int64:
+    let (a, b) = crew k:
+        let ta = k.spawn(double(n))
+        let tb = k.spawn(chain(n))
+        (ta, tb)
+    return a.get() + b.get() * 100
+
+# A crew that spawns in a loop, discarding each handle.
+async def crew_in_loop(n: int64) -> int64:
+    var i: int64 = 0
+    crew k:
+        while i < n:
+            let _ = k.spawn(double(i))
+            i = i + 1
+    return i
+
+def run_crew_in_loop(n: int64) -> int64:
+    let t = crew_in_loop(n)
+    return t.get()
+
+# The block waits for a child that is still running when the body is over. The
+# child stores its value after a pause, so a block that did not wait would
+# leave the cell unset.
+type sink = { pub slot: *mut int64 }
+
+# Only the child writes through the pointer, so the sink may move into a task.
+impl send for sink:
+
+machine def store(out: sink, value: int64) -> unit:
+    *out.slot = value
+    return
+
+async def slow_store(out: sink, value: int64) -> int64:
+    let spun = await on(cpu):
+        var i: int64 = 0
+        while i < 300000:
+            i = i + 1
+        i
+    store(out, value)
+    return spun
+
+async def join_waits(out: sink) -> int64:
+    crew k:
+        let _ = k.spawn(slow_store(out, 7))
+    return 1
+
+# Leaving the block by `return` waits too.
+async def leaves_by_return(out: sink) -> int64:
+    crew k:
+        let _ = k.spawn(slow_store(out, 5))
+        return 9
+    return 8
+
+machine def crew_waits_in_task() -> int64:
+    var cell: int64 = 0
+    let t = join_waits(sink { slot: ptr_cast[int64](&mut cell) })
+    let r = t.get()
+    return cell * 10 + r
+
+machine def crew_waits_on_return() -> int64:
+    var cell: int64 = 0
+    let t = leaves_by_return(sink { slot: ptr_cast[int64](&mut cell) })
+    let r = t.get()
+    return cell * 10 + r
+
+machine def crew_waits_in_function() -> int64:
+    var cell: int64 = 0
+    crew k:
+        let _ = k.spawn(slow_store(sink { slot: ptr_cast[int64](&mut cell) }, 3))
+    return cell
+
+# The entry point is an ordinary function that blocks on each task it awaits,
+# and on each group: 12 from `sum_doubles`, 42 from `chain(1)`, 10 and 12 from
+# the `par`, and 14 from the `race`.
+async def main() -> int64:
+    let a = await sum_doubles(4)
+    let (p, q) = await par:
+        double(5)
+        double(6)
+    let w = await race:
+        sum_doubles(1000000)
+        double(7)
+    let c = await chain(1)
+    return a + c + p + q * 100 + w * 10000
+
+# `c.errors()` on a collecting crew: the errors in spawn order, and the `ok`
+# results left in their tasks for `get()`, which reads them more than once.
+async def fails_on_threes(n: int64) -> result[int64, int64]:
+    if n % 3 == 0:
+        return @err(n)
+    return @ok(n * 10)
+
+async def errors_in_task(n: int64) -> int64:
+    let errs = crew c(on_error: collect):
+        var i: int64 = 1
+        while i <= n:
+            let _ = c.spawn(fails_on_threes(i))
+            i = i + 1
+        c.errors()
+    var total: int64 = 0
+    for e in errs:
+        total = total * 100 + e
+    return total
+
+def run_errors_in_task(n: int64) -> int64:
+    let t = errors_in_task(n)
+    return t.get()
+
+def errors_then_get() -> int64:
+    let (errs, kept) = crew c(on_error: collect):
+        let a = c.spawn(fails_on_threes(4))
+        let _ = c.spawn(fails_on_threes(9))
+        (c.errors(), a)
+    var sum: int64 = 0
+    for e in errs:
+        sum = sum + e
+    let first = match kept.get():
+        @ok(v) => v
+        @err(_) => 0
+    let again = match kept.get():
+        @ok(v) => v
+        @err(_) => 0
+    return sum * 10000 + first * 100 + again

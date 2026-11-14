@@ -755,7 +755,7 @@ auto checker::resolve_ident(const ast::ident_expr &ident, type_id expected)
     if (value->function != nullptr) {
       record_fn_value_reference(ident, *value->function,
                                 value->owner->module_name);
-      return fn_type_of(*value->function, value->owner);
+      return fn_value_type(*value->function, value->owner);
     }
     const auto type = static_binding_type(*value->static_binding, value->owner);
     record_static_const_reference(ident, *value->static_binding, type,
@@ -1009,6 +1009,22 @@ auto checker::ensure_static_binding_evaluated(const ast::static_decl &decl,
 /// `hir::find_reachable_modules` walks to decide a module must be compiled
 /// at all. Without it a cross-module reference resolves against the
 /// referencing module and finds nothing.
+auto checker::fn_value_type(const ast::func_decl &decl,
+                            const module_members *owner) -> type_id {
+  if (owner == nullptr) {
+    return fn_type_of(decl, owner);
+  }
+  const auto it = owner->functions.find(decl.name);
+  if (it == owner->functions.end() || it->second.decl != &decl) {
+    return fn_type_of(decl, owner);
+  }
+  const auto saved_file = file_.file_id_;
+  file_.file_id_ = it->second.file_id;
+  const auto type = fn_type_of(decl, owner);
+  file_.file_id_ = saved_file;
+  return type;
+}
+
 auto checker::record_fn_value_reference(const ast::expr &reference,
                                         const ast::func_decl &decl,
                                         std::string_view owner_module) -> void {

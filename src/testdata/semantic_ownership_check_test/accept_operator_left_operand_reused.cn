@@ -1,0 +1,18 @@
+module ownership.operator_left_operand_reused
+
+# The left operand of an overloaded operator is the method's `self` receiver,
+# a shared borrow, so it stays usable. Integer operands are `copy`.
+type vec2 = { x: int32, y: int32 }
+
+impl add for vec2:
+    type output = vec2
+    def add(self, other: self) -> self.output:
+        return vec2 { x: self.x + other.x, y: self.y + other.y }
+
+def demo() -> int32:
+    let a = vec2 { x: 1, y: 2 }
+    let sum = a + vec2 { x: 3, y: 4 }
+    let again = a + vec2 { x: 5, y: 6 }
+    let n = 3
+    let m = n + n
+    return sum.x + again.y + m

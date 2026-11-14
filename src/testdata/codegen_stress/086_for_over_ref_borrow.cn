@@ -14,7 +14,7 @@ module codegen_stress.for_over_ref_borrow
 #
 # `# expect:` rather than only cross-tier agreement, per CLAUDE.md: both
 # backends read the cursor's `data` pointer through the same
-# `src/runtime/layout.h` element-stride rules, so a cursor that mis-strode
+# `src/runtime/value_layout.h` element-stride rules, so a cursor that mis-strode
 # through the elements would agree between tiers and still be wrong.
 #
 # `xs` staying usable after the first loop — a second `for x in &xs` sees the

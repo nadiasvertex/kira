@@ -123,14 +123,6 @@ enum class opcode : uint8_t {
   // --- Constants and register-to-register moves --------------------------
   op_load_const,   ///< u16 dst, u32 const_index — reg[dst] = constants[idx].
   op_move,         ///< u16 dst, u16 src — reg[dst] = reg[src].
-  op_load_global,  ///< u16 dst, u16 global_index — reg[dst] = globals[idx].
-                   ///< The module-wide global table (`bytecode_module::
-                   ///< global_count`), not a per-function constant pool —
-                   ///< see `checked_types::static_global_defs`.
-  op_store_global, ///< u16 global_index, u16 src — globals[idx] = reg[src].
-                   ///< Emitted only by the synthesized static-init function
-                   ///< (`bytecode_module::static_init_function`), which runs
-                   ///< once before the program's real entry point.
 
   // --- Checked arithmetic (panics on overflow/div-by-zero for integer
   //     kinds, per spec/cinder-reference.md's "Integer Overflow" section;
@@ -242,20 +234,15 @@ enum class opcode : uint8_t {
                      ///< the same "parameterize, don't enumerate" choice
                      ///< `numeric_kind` already makes for arithmetic.
 
-  // --- Heap values --------------------------------------------------------
+  // --- Memory -------------------------------------------------------------
   //
-  //  Every non-scalar Cinder value (`str`, `list[T]`, fixed `array[T, N]`,
-  //  tuple, struct, sum-type payload, closure) is a single pointer into
-  //  `src/runtime/arena.h`'s bump allocator (Decision 3); `slot_value`'s
-  //  existing `u` field holds it, reinterpreted as an address — no new
-  //  union member needed, the same way `numeric_kind` already lets one
-  //  untagged 8-byte slot mean different things depending on which opcode
-  //  (and which static type the compiler already knows) touches it. Rather
-  //  than one opcode per aggregate kind (tuple-get, struct-get, variant-
-  //  payload-get, closure-env-get, ...), these three are deliberately
-  //  generic over "a flat block of 8-byte slots" (`src/runtime/layout.h`),
-  //  matching the same "parameterize, don't combinatorially enumerate"
-  //  choice `numeric_kind` already made for arithmetic.
+  //  An aggregate or descriptor lives as inline bytes in its owner: the
+  //  frame's byte storage, the caller's result storage, a static, or a heap
+  //  block a container owns (`src/runtime/value_layout.h`). A register that
+  //  refers to one holds its address in `slot_value::u`. Rather than one
+  //  opcode per aggregate kind, loads and stores take a byte offset and a
+  //  width, the same "parameterize, don't combinatorially enumerate" choice
+  //  `numeric_kind` makes for arithmetic.
   op_stack_alloc,    ///< u16 dst, u32 byte_offset — reg[dst] = the address
                      ///< of `byte_offset` within this frame's own
                      ///< `stack_byte_size` scratch range. The frame-local
@@ -267,90 +254,37 @@ enum class opcode : uint8_t {
                      ///< the life of the frame and the opcode itself
                      ///< allocates nothing.
   op_alloc,          ///< u16 dst, u64 byte_size — reg[dst] = a fresh, zeroed
-                     ///< `byte_size`-byte block from the arena. Despite the
-                     ///< name, this has always just allocated a byte count
-                     ///< (`slot_count * 8` for the uniform-slot constructs
-                     ///< that still use it that way) — callers compute
-                     ///< whatever byte size their own representation needs
-                     ///< (a byte-precise `runtime::struct_layout` size for a
-                     ///< struct, `field_count * 8` for a tuple/sum/closure).
+                     ///< `byte_size`-byte heap block (a coroutine object or
+                     ///< its state block).
   op_load_slot,      ///< u16 dst, u16 ptr, u16 byte_offset, u8 field_size —
                      ///< reg[dst] = a `field_size`-byte (1/2/4/8), zero-
                      ///< extended-to-64-bit read at
-                     ///< *(reg[ptr] as uint8_t* + byte_offset). Every
-                     ///< uniform-8-byte-slot construct (tuple, sum-type
-                     ///< payload, closure env) passes `field_size = 8,
-                     ///< byte_offset = slot_index * 8`, unchanged in
-                     ///< observable behavior; a struct's own byte-precise
-                     ///< `field_size`/`byte_offset` come from
-                     ///< `runtime::struct_field_offset`/`layout_of`.
+                     ///< *(reg[ptr] as uint8_t* + byte_offset). The offset
+                     ///< and width come from the value's layout.
   op_store_slot,     ///< u16 ptr, u16 byte_offset, u16 src, u8 field_size —
                      ///< *(reg[ptr] as uint8_t* + byte_offset) = the low
                      ///< `field_size` bytes (1/2/4/8) of reg[src]. Write-side
-                     ///< counterpart to `op_load_slot`; same
-                     ///< `field_size = 8` convention for uniform-slot
-                     ///< constructs.
-  op_load_str_const, ///< u16 dst, u32 string_const_index — reg[dst] = a
-                     ///< fresh 2-slot `str` heap value `{ len; data_ptr }`
-                     ///< whose `data_ptr` points directly at
-                     ///< `bytecode_function::string_constants[idx]`'s own
-                     ///< bytes (no arena copy — the function outlives the
-                     ///< run, so this is safe, and literal string bytes are
-                     ///< never mutated through a `str` value).
-  op_load_indexed,   ///< u16 dst, u16 ptr, u16 index, u8 elem_size — reg[dst] =
-                     ///< a `elem_size`-byte (1/2/4/8), zero-extended read at
-                     ///< *(reg[ptr] as uint8_t* + reg[index].u * elem_size).
-                     ///< The runtime-indexed counterpart to `op_load_slot`'s
-                     ///< compile-time-constant offset — used for fixed
-                     ///< `array[T, N]` element access, where the index is an
-                     ///< ordinary runtime value the compiler bounds-checks
-                     ///< itself (via `op_ge`/`op_panic_if`) before emitting
-                     ///< this, not baked into the instruction stream.
-                     ///< `elem_size` is `runtime::layout_of(element_type)`'s
-                     ///< natural size, generalizing what used to be a single
-                     ///< hardcoded 8-byte stride (with a separate one-off
-                     ///< `array[byte,N]` 1-byte special case) into one
-                     ///< opcode parameterized the same "parameterize, don't
-                     ///< enumerate" way `numeric_kind` already is.
-  op_store_indexed,  ///< u16 ptr, u16 index, u16 src, u8 elem_size —
-                     ///< *(reg[ptr] as uint8_t* + reg[index].u * elem_size)
-                     ///< = the low `elem_size` bytes of reg[src].
+                     ///< counterpart to `op_load_slot`.
+  op_str_const_data, ///< u16 dst, u32 string_const_index — reg[dst].u = the
+                     ///< address of `string_constants[idx]`'s bytes, which
+                     ///< outlive the run. The storage form builds a `str`
+                     ///< descriptor from it in the frame, allocating nothing.
+  op_global_addr,    ///< u16 dst, u32 offset — reg[dst].u = the address of
+                     ///< byte `offset` of the program's static storage
+                     ///< (`bytecode_module::global_byte_size`), which lives
+                     ///< as long as the `vm` and never moves.
 
   // ------------------------------------------------------------------
-  //  Address-of, for `&`/`&mut` on a *scalar* place. An aggregate needs
-  //  none of these: its compiled value already is the address a reference
-  //  to it would hold, so `&x`/`*p` on one is a passthrough with no
-  //  instruction at all (`is_heap_pointer_value` in both backends). A
-  //  scalar is different — it lives inline in a register or packed at its
-  //  natural width inside a block — so a reference to one has to be a real
-  //  computed address. The address these produce is consumed by the
-  //  ordinary `op_load_slot`/`op_store_slot` with `byte_offset = 0`; there
-  //  is deliberately no "load through pointer" opcode, because that is
-  //  exactly what a zero-offset slot access already is.
-  //
-  //  Width note: these yield the address of a location whose width is the
-  //  referent's *natural* size (4 bytes for an `int32` struct field), not
-  //  a uniform 8. Every load/store through one passes the same statically
-  //  known `field_size`, so the two always agree. Reading a 4-byte field
-  //  out of an 8-byte register slot is well-defined only because the low
-  //  bytes are the value's bytes — this assumes a little-endian host, the
-  //  same assumption `store_sized`/`load_sized` already make.
-  op_addr_local,   ///< u16 dst, u16 src — reg[dst].u = the address of the
-                   ///< current frame's register `src`. Safe to hold for the
-                   ///< frame's lifetime: a frame's registers are a
-                   ///< `std::vector` whose buffer does not move when the
-                   ///< frame *vector* reallocates on a call (`push_frame`),
-                   ///< so unlike a pointer into the frame vector itself,
-                   ///< this stays valid across nested calls. It does not
-                   ///< outlive the frame — returning it is a dangling
-                   ///< reference the checker, not this opcode, must reject.
+  //  Address arithmetic: the address of a field or element, from the
+  //  address of the value that holds it. A load or store through the
+  //  result is an `op_load_slot`/`op_store_slot` with `byte_offset = 0`.
   op_addr_slot,    ///< u16 dst, u16 ptr, u16 byte_offset — reg[dst].u =
                    ///< reg[ptr].u + byte_offset. The address counterpart of
                    ///< `op_load_slot`: `&mut s.field` on a scalar field.
   op_addr_indexed, ///< u16 dst, u16 ptr, u16 index, u8 elem_size — reg[dst].u
-                   ///< = reg[ptr].u + reg[index].u * elem_size. The address
-                   ///< counterpart of `op_load_indexed`: `&mut xs[i]`, and
-                   ///< the opcode `iter_mut` over a container is built on.
+                   ///< = reg[ptr].u + reg[index].u * elem_size: the address
+                   ///< of an element (`xs[i]`, `&mut xs[i]`, and `iter_mut`
+                   ///< over a container).
   op_panic_if,     ///< u16 cond, u8 panic_reason — panics with
                    ///< `static_cast<panic_reason>(panic_reason)` if
                    ///< reg[cond] (a `boolean` register) is true; otherwise
@@ -370,80 +304,11 @@ enum class opcode : uint8_t {
             ///< `op_panic` is for panics with a source-level trigger, such
             ///< as an unreachable match arm.
 
-  // --- Direct function values (first-class module-level functions) --------
-  op_load_direct_fn, ///< u16 dst, u16 function_index — loads `{fn_index; 0}`
-                     ///< into a two-slot register value so it can be passed
-                     ///< as a `fn` argument or stored in a local.
-
-  // --- Closures -----------------------------------------------------------
-  op_make_closure,  ///< u16 dst, u16 function_index, u16 env_ptr,
-                    ///< u16 glue_index — reg[dst] = a fresh 3-slot heap
-                    ///< block `{ function_index; reg[env_ptr]; glue }`
-                    ///< (`src/runtime/layout.h`'s closure layout), where
-                    ///< `glue` is `glue_index + 1`, or `0` when
-                    ///< `glue_index` is `k_no_drop_glue` (the closure's
-                    ///< environment owns nothing to drop). `env_ptr` is a
-                    ///< plain heap pointer to the capture block (itself a flat
-                    ///< `op_alloc`'d slot block, one slot per free variable,
-                    ///< populated via `op_store_slot`), or the sentinel `0`
-                    ///< when the lambda captures nothing.
-  op_call_indirect, ///< u16 dst, u16 closure, u16 first_arg, u8 argc — reads
-                    ///< `{ function_index; env_ptr }` out of reg[closure],
-                    ///< then calls that function exactly like `op_call`
-                    ///< except with `env_ptr` prepended as the callee's
-                    ///< hidden register-0 argument ahead of the `argc`
-                    ///< declared arguments starting at reg[first_arg] — the
-                    ///< indirect counterpart to `op_call`'s compile-time-
-                    ///< resolved `function_index` operand, used whenever the
-                    ///< callee isn't a direct reference to a named
-                    ///< module-level function (a closure value held in a
-                    ///< local, an immediately-invoked lambda literal, or any
-                    ///< other computed callee expression).
-
-  // --- Generators ------------------------------------------------------
+  // --- Coroutines -----------------------------------------------------
   //
-  // A `generator def`'s declared name compiles to a small *constructor*
-  // function (unchanged calling convention — ordinary `op_call` reaches
-  // it); the function body itself compiles separately into a *step*
-  // function, reachable only via a generator object's own
-  // `step_function_index` slot, never by name. A generator object is a
-  // fixed 4-slot heap block `{ step_function_index; state_ptr;
-  // resume_index; finished }`, laid out like a closure's `{
-  // function_index; env_ptr }` pair plus two more fields. `state_ptr`
-  // points at a second flat slot block — one slot per symbol
-  // `hir::live_across_yield` found live for the generator's parameters and
-  // locals — populated/read via `op_store_slot`/`op_load_slot` exactly
-  // like a closure's env block, just resynced on every suspend/resume
-  // instead of being write-once. `resume_index` is `0` at first call (run
-  // the step function's body from the top) and `k` after the `k`th
-  // `op_yield` — an index into the step function's own leading
-  // resume-dispatch chain, not a raw saved program counter.
-  op_make_generator, ///< u16 dst, u16 step_function_index, u16 state_ptr,
-                     ///< u32 state_bytes — reg[dst] = a fresh coroutine
-  ///< object (`runtime/coroutine.h`) `{ step_function_index;
-  ///< reg[state_ptr]; resume_index=0; status=0; record=0; value;
-  ///< state_bytes }`. `state_ptr` is the sentinel `0`
-  ///< when the generator has no state to preserve
-  ///< (mirrors `op_make_closure`'s null-env convention).
-  ///< Emitted by a generator's constructor function, not
-  ///< at its call sites — calling a generator function
-  ///< is an ordinary `op_call` into the constructor.
-  op_yield, ///< u16 value_reg, u16 generator_reg, u8 next_resume_index —
-            ///< stores reg[value_reg] in the generator's `value`
-            ///< slot and writes `suspended` into the *caller's*
-            ///< result register (the same `result_reg`/
-            ///< `has_caller` bookkeeping `op_return_value` already
-            ///< threads through `frame`), sets
-            ///< reg[generator_reg]'s `resume_index` slot to
-            ///< `next_resume_index` (a compile-time constant —
-            ///< this yield's own ordinal), and pops the current
-            ///< frame *without* setting `finished` — the
-            ///< coroutine analog of `op_return_value`, just
-            ///< leaving the generator resumable instead of done.
-            ///< Every locally-live symbol due to survive this
-            ///< suspension is synced into `state_ptr` via ordinary
-            ///< `op_store_slot`s immediately before this opcode,
-            ///< not by this opcode itself.
+  //  A generator or task is a coroutine object (`src/runtime/coroutine.h`)
+  //  whose step function the storage compiler builds; its state block holds
+  //  what lives across a suspension. These run, cancel and finish one.
   op_coroutine_resume, ///< u16 dst, u16 coroutine_reg — runs the coroutine
                        ///< one step. If reg[coroutine_reg]'s `status` slot is
                        ///< not `suspended`, writes that status into dst
@@ -467,26 +332,12 @@ enum class opcode : uint8_t {
   op_coroutine_cancelled, ///< u16 dst, u16 generator_reg — reg[dst] = whether
                           ///< reg[generator_reg]'s `finished` slot is `2`:
                           ///< the generator was resumed only to be cancelled.
-  op_drop_closure,        ///< u16 dst, u16 closure_reg — the compiled form of
-                          ///< `hir_closure_drop`. When reg[closure_reg] carries
-  ///< drop glue, calls it with the closure's `env_ptr` as
-  ///< its only argument; its `unit` lands in dst, unread.
-  ///< Otherwise does nothing.
-  op_str_decode_scalar, ///< u16 dst, u16 str_reg, u16 offset_reg — decodes
-                        ///< the UTF-8 scalar starting at byte offset
-                        ///< reg[offset_reg] within the `str` reg[str_reg],
-                        ///< writing it (or U+FFFD if that offset doesn't
-                        ///< start a valid sequence) into dst. Compiled form
-                        ///< of `hir_str_decode_scalar`; shares
-                        ///< `runtime::str_scalar_at`'s decode with the LLVM
-                        ///< tier's `cinder_rt_str_scalar_at`.
-  op_str_scalar_width,  ///< u16 dst, u16 str_reg, u16 offset_reg — bytes
-                        ///< consumed decoding the scalar at byte offset
-                        ///< reg[offset_reg] within the `str` reg[str_reg]
-                        ///< (1 if that offset doesn't start a valid
-                        ///< sequence). Compiled form of
-                        ///< `hir_str_scalar_width`; companion to
-                        ///< `op_str_decode_scalar`.
+                          ///< An acquire load: the scheduler may write the
+                          ///< slot from another thread.
+  op_coroutine_finish,    ///< u16 generator_reg — sets reg[generator_reg]'s
+                          ///< `finished` slot to `1` (done) with a release
+                          ///< store, as a body that has returned does. The
+                          ///< storage form's `coroutine_finish`.
   op_atomic_fetch_add,  ///< u16 dst, u16 ptr, u16 n — atomically adds
                         ///< reg[n] to the 8-byte word at reg[ptr], with
                         ///< acquire-release ordering; dst = the word's
@@ -500,14 +351,40 @@ enum class opcode : uint8_t {
                         ///< on reg[first_arg_reg .. +argc]; dst = its
                         ///< result. Compiled form of `hir_host_call`; only
                         ///< a hosted run (`run_limits::host`) can do one.
-  op_await_pending,     ///< u16 task_reg, u8 resume_index — a task's `await`
-                        ///< found its awaited task unfinished. Sets
-                        ///< reg[task_reg]'s `resume_index` slot to
-                        ///< `resume_index` (the await's own ordinal, which
-                        ///< resumes at the await itself) and pops the
-                        ///< current frame with `pending` as its result. As
-                        ///< with `op_yield`, live locals are synced into
-                        ///< the state block by `op_store_slot`s just before.
+  op_copy_bytes,        ///< u16 dst_ptr, u16 src_ptr, u32 byte_count — copies
+                        ///< `byte_count` bytes from the address in reg[src_ptr]
+                        ///< to the address in reg[dst_ptr]. The transfer of an
+                        ///< inline aggregate or descriptor (representation
+                        ///< v2); both ranges are owned storage that the
+                        ///< compiler has shown do not overlap, but the copy is
+                        ///< a `memmove` so a mistake there cannot corrupt
+                        ///< bytes silently. Does nothing for a zero count.
+  op_zero_bytes,        ///< u16 dst_ptr, u32 byte_count — writes `byte_count`
+                        ///< zero bytes at the address in reg[dst_ptr]: an
+                        ///< `uninit[T, N]` buffer each time it is made.
+  op_call_intrinsic_into, ///< u8 intrinsic_id, u16 first_arg_reg, u8 argc —
+                        ///< calls an intrinsic marked `into` in
+                        ///< `src/intrinsics.h`, whose result is built in
+                        ///< caller storage. reg[first_arg_reg] holds the
+                        ///< destination address and the following registers
+                        ///< the parameters: a scalar in its register, a
+                        ///< descriptor or aggregate as the address of the
+                        ///< caller's bytes. Nothing comes back. The
+                        ///< counterpart of `op_call_intrinsic`, whose result
+                        ///< comes back in a register.
+  op_call_function,     ///< u16 dst, u16 entry_reg, u16 first_arg, u8 argc —
+                        ///< calls function `reg[entry_reg]` with the `argc`
+                        ///< registers from `first_arg` as its arguments. The
+                        ///< storage compiler's call through a `fn` value
+                        ///< (`{entry, env, glue}`, 24 bytes of the caller's
+                        ///< storage): the caller loads `entry`, and the
+                        ///< environment address is the first argument.
+  op_drop_function_value, ///< u16 dst, u16 value_reg — runs the drop glue of
+                        ///< the `fn` value whose bytes are at the address in
+                        ///< reg[value_reg], when it has any: calls function
+                        ///< `glue - 1` with the environment address as its only
+                        ///< argument, its `unit` landing in dst. Does nothing
+                        ///< for a value with no glue (`glue == 0`).
 };
 
 // ==========================================================================
@@ -557,9 +434,6 @@ enum class operand_kind : uint8_t {
 /// in the encoding is derived from `operands_of` below.
 inline constexpr size_t k_register_operand_bytes = 2;
 
-/// `op_make_closure`'s `glue_index` for a closure with no drop glue.
-inline constexpr uint16_t k_no_drop_glue = 0xFFFF;
-
 /// The ordered operand sequence of one opcode. No instruction in this ISA
 /// takes more than four operands, so this is a fixed array rather than a
 /// heap sequence — it keeps `operands_of` usable in a constant expression.
@@ -592,10 +466,6 @@ struct operand_signature {
     return sig({reg, imm32});
   case opcode::op_move:
     return sig({reg, reg});
-  case opcode::op_load_global:
-    return sig({reg, imm16});
-  case opcode::op_store_global:
-    return sig({imm16, reg});
 
   // Arithmetic, bitwise, and comparison all share one shape: a destination,
   // one or two sources, and a trailing `numeric_kind` tag.
@@ -657,14 +527,10 @@ struct operand_signature {
     return sig({reg, reg, imm16, imm8});
   case opcode::op_store_slot:
     return sig({reg, imm16, reg, imm8});
-  case opcode::op_load_str_const:
+  case opcode::op_str_const_data:
+  case opcode::op_global_addr:
     return sig({reg, imm32});
-  case opcode::op_load_indexed:
-  case opcode::op_store_indexed:
-    return sig({reg, reg, reg, imm8});
 
-  case opcode::op_addr_local:
-    return sig({reg, reg});
   case opcode::op_addr_slot:
     return sig({reg, reg, imm16});
   case opcode::op_addr_indexed:
@@ -674,30 +540,25 @@ struct operand_signature {
   case opcode::op_panic:
     return sig({});
 
-  case opcode::op_load_direct_fn:
-    return sig({reg, imm16});
-
-  case opcode::op_make_closure:
-    return sig({reg, imm16, reg, imm16});
-  case opcode::op_call_indirect:
-    return sig({reg, reg, reg, imm8});
-
-  case opcode::op_make_generator:
-    return sig({reg, imm16, reg, imm32});
-  case opcode::op_yield:
-    return sig({reg, reg, imm8});
-  case opcode::op_await_pending:
-    return sig({reg, imm8});
   case opcode::op_coroutine_resume:
   case opcode::op_coroutine_cancel:
   case opcode::op_coroutine_cancelled:
-  case opcode::op_drop_closure:
     return sig({reg, reg});
-  case opcode::op_str_decode_scalar:
-  case opcode::op_str_scalar_width:
   case opcode::op_atomic_fetch_add:
   case opcode::op_atomic_fetch_sub:
     return sig({reg, reg, reg});
+  case opcode::op_copy_bytes:
+    return sig({reg, reg, imm32});
+  case opcode::op_zero_bytes:
+    return sig({reg, imm32});
+  case opcode::op_call_intrinsic_into:
+    return sig({imm8, reg, imm8});
+  case opcode::op_call_function:
+    return sig({reg, reg, reg, imm8});
+  case opcode::op_drop_function_value:
+    return sig({reg, reg});
+  case opcode::op_coroutine_finish:
+    return sig({reg});
   }
   return operand_signature{};
 }

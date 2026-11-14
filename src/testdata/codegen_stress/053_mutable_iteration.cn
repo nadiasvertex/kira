@@ -25,7 +25,7 @@ module codegen_stress.mutable_iteration
 #
 # `# expect:` rather than cross-tier agreement, for the reason CLAUDE.md
 # gives: both backends compute element addresses from the same
-# `src/runtime/layout.h` rules, so a write through a yielded reference that
+# `src/runtime/value_layout.h` rules, so a write through a yielded reference that
 # landed in the `{len, cap, data}` header would agree between tiers and still
 # be wrong. Every element written is read back below.
 
@@ -47,9 +47,9 @@ def iter_mut[T](xs: &mut list[T]) -> mut_cursor[T]:
 def next_mut[T](it: &mut mut_cursor[T]) -> option[&mut T]:
     if it.at >= it.src.len():
         return @none
-    let slot = &mut it.src[it.at]
-    it.at = it.at + 1
-    return @some(slot)
+    let at = it.at
+    it.at = at + 1
+    return @some(&mut it.src[at])
 
 def sum(xs: &list[int32]) -> int32:
     var total = 0

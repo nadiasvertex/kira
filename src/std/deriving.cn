@@ -115,10 +115,9 @@ static def derive_ord[T]() -> def_expr:
     var body: expr = expr.call(expr.ident("ord_equal"))
     var first: bool = true
     static for f in T.fields():
-        let field_cmp: expr = expr.call(
-            expr.ident("ord_cmp"),
-            expr.field(expr.ident("self"), f.name),
-            expr.field(expr.ident("other"), f.name))
+        let mine: expr = expr.field(expr.ident("self"), f.name)
+        let theirs: expr = expr.field(expr.ident("other"), f.name)
+        let field_cmp: expr = `(ord_cmp(&~mine, &~theirs))`
         if first:
             body = field_cmp
             first = false
@@ -253,9 +252,9 @@ static def derive_ord_sum[T]() -> def_expr:
             if v.name == w.name:
                 arm_body = expr.call(expr.ident("ord_equal"))
                 static for i in 0..v.payload_count:
-                    let field_cmp: expr = expr.call(
-                        expr.ident("ord_cmp"), expr.ident("p{i}"),
-                        expr.ident("q{i}"))
+                    let mine: expr = expr.ident("p{i}")
+                    let theirs: expr = expr.ident("q{i}")
+                    let field_cmp: expr = `(ord_cmp(&~mine, &~theirs))`
                     if i == 0:
                         arm_body = field_cmp
                     else:
@@ -295,11 +294,9 @@ static def derive_ord_sum[T]() -> def_expr:
 static def derive_hash[T]() -> def_expr:
     var body: expr = expr.call(expr.ident("hash_seed"))
     static for f in T.fields():
+        let field: expr = expr.field(expr.ident("self"), f.name)
         body = expr.call(
-            expr.ident("hash_combine"), body,
-            expr.call(
-                expr.ident("hash_value"),
-                expr.field(expr.ident("self"), f.name)))
+            expr.ident("hash_combine"), body, `(hash_value(&~field))`)
     return `(impl hash for ~(expr.ident(T.name())):
         def hash(self) -> uint64:
             return ~body)`
@@ -322,9 +319,10 @@ static def derive_hash_sum[T]() -> def_expr:
         var arm_body: expr = expr.call(
             expr.ident("hash_tag"), expr.lit(index))
         static for i in 0..v.payload_count:
+            let payload: expr = expr.ident("p{i}")
             arm_body = expr.call(
                 expr.ident("hash_combine"), arm_body,
-                expr.call(expr.ident("hash_value"), expr.ident("p{i}")))
+                `(hash_value(&~payload))`)
         body = expr.arm(
             body, expr.ctor_pattern(v.name, v.payload_count, "p"), arm_body)
         index = index + 1

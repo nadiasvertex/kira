@@ -53,7 +53,9 @@ impl[I, T, U] iterator[U] for map_iter[I, T, U] where I: iterator[T]:
 
 type filter_iter[I, T] = { inner: I, pred: fn(T) -> bool }
 
-impl[I, T] iterator[T] for filter_iter[I, T] where I: iterator[T]:
+# `T: copy`: the predicate takes its own copy of the item that is then
+# returned (ch. 14).
+impl[I, T] iterator[T] for filter_iter[I, T] where I: iterator[T], T: copy:
     def next(mut self) -> option[T]:
         while let @some(x) = self.inner.next():
             if (self.pred)(x):

@@ -1,0 +1,6 @@
+module sample
+packed type mixed = { pub a: bool, pub b: int32, pub c: bool }
+type marker = { pub nothing: unit, pub n: int32 }
+type holder = { pub m: mixed, pub k: marker, pub rest: array[unit, 4] }
+def main(h: holder) -> int32:
+    return 0

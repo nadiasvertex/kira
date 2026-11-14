@@ -552,6 +552,43 @@ auto checker::resolve_drop_plan(type_id id,
     // it, so every `fn` value is dropped through the glue it carries.
     return drop_plan{.closure_glue = session_.closure_glue_type_};
   }
+  if (entry.kind == type_kind::array_kind) {
+    // An array owns its elements, so it needs a drop exactly when they do.
+    if (!entry.array_size.has_value() || *entry.array_size == 0 ||
+        !visiting.insert(id).second) {
+      return std::nullopt;
+    }
+    const auto element = entry.result;
+    const auto length = *entry.array_size;
+    const auto inner = resolve_drop_plan(element, visiting);
+    visiting.erase(id);
+    if (!inner.has_value()) {
+      return std::nullopt;
+    }
+    return drop_plan{.element = element,
+                     .element_pointer = session_.types_.ptr_to(element, true),
+                     .length = length};
+  }
+  if (entry.kind == type_kind::tuple_kind) {
+    // A tuple owns its members, so it needs a drop exactly when one of them
+    // does. Members are named by position ("0", "1", ...), as `t.0` names
+    // them in a moved path.
+    if (!visiting.insert(id).second) {
+      return std::nullopt;
+    }
+    auto plan = drop_plan{};
+    const auto members = entry.args; // copy: resolving may intern
+    for (std::size_t i = 0; i < members.size(); ++i) {
+      if (resolve_drop_plan(members[i], visiting).has_value()) {
+        plan.droppable_fields.emplace_back(std::to_string(i), members[i]);
+      }
+    }
+    visiting.erase(id);
+    if (plan.droppable_fields.empty()) {
+      return std::nullopt;
+    }
+    return plan;
+  }
   const auto is_prelude_sum =
       entry.kind == type_kind::builtin_generic_kind &&
       ((entry.name == "option" && entry.args.size() == 1) ||
@@ -697,6 +734,98 @@ auto checker::resolve_drop_plans_from(std::size_t first) -> void {
     if (auto plan = resolve_drop_plan(id, visiting); plan.has_value()) {
       session_.drop_plans_.emplace(id, std::move(*plan));
     }
+  }
+}
+
+/// Records the concrete members of every closed struct and sum instance.
+/// Resolving a member can intern a type the table has not seen (a field typed
+/// `list[pair[int32]]` names an instance nothing else used), so the walk
+/// re-reads the table size each step and covers those too.
+///
+/// Types that mention an inference variable or a generic parameter are
+/// skipped: they are not types of the program, and a layout query for one is
+/// reported as an unresolved type rather than answered from a template.
+auto checker::compute_aggregate_shapes() -> aggregate_shapes {
+  auto shapes = aggregate_shapes{};
+  add_aggregate_shapes(shapes, /*settled_only=*/false);
+  return shapes;
+}
+
+auto checker::add_aggregate_shapes(aggregate_shapes &shapes, bool settled_only)
+    -> void {
+  for (std::size_t raw = 0; raw < session_.types_.count(); ++raw) {
+    const auto id = static_cast<type_id>(raw);
+    if (shapes.contains(id)) {
+      continue;
+    }
+    const auto entry = session_.types_.entry(id); // copy: resolving may intern
+    const auto is_prelude_sum =
+        entry.kind == type_kind::builtin_generic_kind &&
+        ((entry.name == "option" && entry.args.size() == 1) ||
+         (entry.name == "result" && entry.args.size() == 2));
+    if (entry.kind != type_kind::struct_kind &&
+        entry.kind != type_kind::sum_kind && !is_prelude_sum) {
+      continue;
+    }
+    if (mentions_type_var(id) || mentions_template_param(id)) {
+      continue;
+    }
+    auto shape = aggregate_shape{};
+    if (is_prelude_sum) {
+      const auto settled = [&](type_id arg) -> type_id {
+        return lowering_type(arg);
+      };
+      if (entry.name == "option") {
+        shape.variants.push_back(
+            variant_shape{.name = "some", .payload = {settled(entry.args[0])}});
+        shape.variants.push_back(variant_shape{.name = "none", .payload = {}});
+      } else {
+        shape.variants.push_back(
+            variant_shape{.name = "ok", .payload = {settled(entry.args[0])}});
+        shape.variants.push_back(
+            variant_shape{.name = "err", .payload = {settled(entry.args[1])}});
+      }
+    } else if (entry.kind == type_kind::struct_kind) {
+      const auto *fields = struct_fields_of(entry);
+      if (fields == nullptr) {
+        continue;
+      }
+      shape.packed = entry.decl != nullptr && entry.decl->modifiers.is_packed;
+      for (const auto &field : *fields) {
+        const auto type = struct_field_type(entry, field.name);
+        shape.fields.push_back(field_shape{
+            .name = field.name,
+            .type = lowering_type(type.value_or(k_unknown_type))});
+      }
+    } else {
+      const auto *variants = sum_variants_of(entry);
+      if (variants == nullptr) {
+        continue;
+      }
+      for (const auto &variant : *variants) {
+        auto payload = variant_payload_types(entry, variant);
+        for (auto &type : payload) {
+          type = lowering_type(type);
+        }
+        shape.variants.push_back(variant_shape{.name = variant.name,
+                                               .payload = std::move(payload)});
+      }
+    }
+    if (settled_only) {
+      const auto open = [&](type_id type) {
+        return session_.types_.is_unknown(type);
+      };
+      const auto open_field =
+          std::ranges::any_of(shape.fields, open, &field_shape::type);
+      const auto open_variant = std::ranges::any_of(
+          shape.variants, [&](const variant_shape &variant) {
+            return std::ranges::any_of(variant.payload, open);
+          });
+      if (open_field || open_variant) {
+        continue;
+      }
+    }
+    shapes.emplace(id, std::move(shape));
   }
 }
 

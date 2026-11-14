@@ -1,0 +1,58 @@
+module sample
+type noisy = { pub id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+def make_noisy(n: int32) -> noisy:
+    return noisy { id: n }
+
+def discard_noisy(n: int32) -> int32:
+    make_noisy(n)
+    return n
+
+def replace_noisy(n: int32) -> noisy:
+    var x = make_noisy(n)
+    x = make_noisy(n + 1)
+    return x
+
+def forget_noisy(n: int32) -> int32:
+    let x = make_noisy(n)
+    return n
+
+def take_noisy(x: noisy) -> int32:
+    return 0
+
+def pass_noisy(x: noisy) -> int32:
+    return take_noisy(x)
+
+type holder = { pub first: noisy, pub second: noisy }
+
+def make_holder(n: int32) -> holder:
+    return holder { first: make_noisy(n), second: make_noisy(n + 1) }
+
+def drop_holder(n: int32) -> int32:
+    let h = make_holder(n)
+    return n
+
+def take_first(n: int32) -> noisy:
+    let h = make_holder(n)
+    return h.first
+
+def replace_second(n: int32) -> int32:
+    var h = make_holder(n)
+    h.second = make_noisy(n + 2)
+    return n
+
+def read_id(x: &noisy) -> int32:
+    return x.id
+
+def read_through(n: int32) -> int32:
+    let x = make_noisy(n)
+    return read_id(&x)
+
+def pass_holder(h: holder) -> int32:
+    return 0
+
+def forward_holder(n: int32) -> int32:
+    return pass_holder(make_holder(n))

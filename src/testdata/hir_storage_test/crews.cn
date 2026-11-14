@@ -1,0 +1,26 @@
+module sample
+
+# A crew starts the tasks spawned into it and waits for all of them before the
+# block ends. In a task that wait is a suspension point.
+async def square(x: int64) -> int64:
+    return x * x
+
+async def in_task(n: int64) -> int64:
+    let (a, b) = crew k:
+        let ta = k.spawn(square(n))
+        let tb = k.spawn(square(n + 1))
+        (ta, tb)
+    return (await a) + (await b)
+
+async def discarded(n: int64) -> int64:
+    crew k:
+        let _ = k.spawn(square(n))
+    return n
+
+# In a plain function the wait blocks the thread.
+def in_function(n: int64) -> int64:
+    let (a, b) = crew k:
+        let ta = k.spawn(square(n))
+        let tb = k.spawn(square(n + 1))
+        (ta, tb)
+    return a.get() + b.get()

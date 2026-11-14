@@ -1,0 +1,179 @@
+module sample
+type pair = { pub a: int32, pub b: int32 }
+type line = { pub from: pair, pub to: pair }
+type shape = @circle(int32) | @rect(int32, int32) | @empty
+type framed = { pub kind: shape, pub id: int32 }
+
+def make_pair(n: int32) -> pair:
+    return pair { a: n, b: n + 1 }
+
+def make_line(n: int32) -> line:
+    return line { from: make_pair(n), to: pair { a: 0, b: n } }
+
+def forward(n: int32) -> pair:
+    return make_pair(n)
+
+def bind(n: int32) -> int32:
+    let p = make_pair(n)
+    return p.b
+
+def make_tuple(n: int32) -> (int32, int32):
+    return (n, n + 1)
+
+def make_array(n: int32) -> array[int32, 3]:
+    return [n, n, 0]
+
+def make_rect(n: int32) -> shape:
+    return @rect(n, n + 1)
+
+def make_empty() -> shape:
+    return @empty
+
+def make_framed(n: int32) -> framed:
+    return framed { kind: @circle(n), id: n }
+
+def make_some(n: int32) -> option[int32]:
+    return @some(n)
+
+def take_pair(p: pair, k: int32) -> int32:
+    return p.a + k
+
+def pass_fresh(n: int32) -> int32:
+    return take_pair(make_pair(n), n)
+
+def pass_local(p: pair) -> int32:
+    return take_pair(p, 1)
+
+def discard(n: int32) -> int32:
+    make_pair(n)
+    return n
+
+def reassign(n: int32) -> pair:
+    var p = make_pair(n)
+    p = make_pair(p.b)
+    return p
+
+def return_local(n: int32) -> pair:
+    let p = make_pair(n)
+    return p
+
+def first(p: &pair) -> int32:
+    return p.a
+
+def borrow(n: int32) -> int32:
+    let p = make_pair(n)
+    return first(&p)
+
+def sum_scalars(a: int32, b: int32) -> int32:
+    let c = a + b
+    return c * 2
+
+def unit_result(n: int32) -> unit:
+    let p = make_pair(n)
+    return
+
+def use_shape(s: shape) -> int32:
+    return 0
+
+def pass_shape(s: shape) -> int32:
+    return use_shape(s)
+
+def apply(f: &fn(int32) -> pair, n: int32) -> pair:
+    return f(n)
+
+def bump(p: &pair) -> pair:
+    return pair { a: p.a + 1, b: p.b }
+
+def self_bump(n: int32) -> pair:
+    var p = make_pair(n)
+    p = bump(&p)
+    return p
+
+async def triple(x: int32) -> int32:
+    return x * 3
+
+# A crew starts what is spawned into it and waits for it at the end of the
+# block.
+async def crewed() -> int32:
+    crew k:
+        let _ = k.spawn(triple(1))
+    return 1
+
+# Collecting a crew's errors builds a list, which is not in the storage form.
+async def fails(n: int32) -> result[int32, int32]:
+    return @err(n)
+
+async def collecting() -> int32:
+    let errs = crew c(on_error: collect):
+        let _ = c.spawn(fails(1))
+        c.errors()
+    var total: int32 = 0
+    for e in errs:
+        total = total + e
+    return total
+
+type failure = {
+    code: int32,
+}
+
+async def fails_owning(n: int32) -> result[int32, failure]:
+    return @err(failure { code: n })
+
+# A struct always moves, so its errors would be owned by the task and the list
+# at once.
+async def collecting_owned() -> int32:
+    let errs = crew c(on_error: collect):
+        let _ = c.spawn(fails_owning(1))
+        c.errors()
+    return 0
+
+# Waiting on a set of tasks is.
+async def racing() -> int32:
+    return await race:
+        triple(1)
+        triple(2)
+
+def matching(n: int32) -> int32:
+    match n:
+        1..5 => return 1
+        _ => return 2
+
+def shout() -> str:
+    return "hello"
+
+# A string literal into a field, and one the verifier can check the type of.
+def named(n: int32) -> framed:
+    return framed { kind: @circle(n), id: n }
+
+def quoted() -> str:
+    let s = "tab\there"
+    return s
+
+# The words of a descriptor, read and written as parts.
+def text_len(s: str) -> usize:
+    return s.len()
+
+machine def text_data(s: str) -> *byte:
+    return s.as_ptr()
+
+machine def array_data(a: array[int64, 2]) -> *int64:
+    return a.as_ptr()
+
+machine def view_of(p: *int64, n: usize) -> slice[int64]:
+    return slice_from_raw_parts(p, n)
+
+# A run-time index is checked against the length, then offset by the stride.
+def text_at(s: str, i: usize) -> byte:
+    return s[i]
+
+# A range is checked end first, then start against end.
+def text_part(s: str, a: usize, b: usize) -> str:
+    return s[a..b]
+
+# A fill builds element 0 and copies it over the rest.
+def filled(v: int64) -> array[int64, 3]:
+    return [v; 3]
+
+# A field of a computed value is read from a temporary.
+def doubled(n: int32) -> int32:
+    return make_pair(n).b

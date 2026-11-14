@@ -19,7 +19,7 @@ module main
 #
 # Per CLAUDE.md, cross-checking the bytecode VM against the LLVM tier proves
 # nothing here: both derive array element strides from the same
-# src/runtime/layout.h and would agree on the same wrong answer just as
+# src/runtime/value_layout.h and would agree on the same wrong answer just as
 # readily as the right one. `# expect: 127` pins down the actual computed
 # value instead of trusting tier agreement.
 

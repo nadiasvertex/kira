@@ -1,0 +1,46 @@
+module tools
+
+# A module the entry fixture (`modules.cn`) calls into. Its values cross the
+# module boundary in every direction the ABI has: an aggregate result built in
+# the caller's storage, an aggregate argument handed over by address, a
+# borrowed aggregate, and a value whose drop lives here.
+
+pub type pair = { pub a: int32, pub b: int32 }
+
+pub type wide = { pub x: int64, pub y: int64, pub z: int64 }
+
+# Each drop appends its id to a counter, so the counter records which drops
+# ran and in what order.
+pub type tracked = { pub id: int64, pub counter: *mut int64 }
+
+impl drop for tracked:
+    machine def drop(mut self) -> unit:
+        *self.counter = *self.counter * 10 + self.id
+        return
+
+# The entry module has a `make` of its own with another signature.
+pub def make(n: int32) -> pair:
+    return pair { a: n, b: n * 2 }
+
+pub def total(p: &pair) -> int32:
+    return p.a + p.b
+
+pub def consume(p: pair) -> int32:
+    return p.b - p.a
+
+pub def widen(n: int64) -> wide:
+    return wide { x: n, y: n + 1, z: n + 2 }
+
+pub def weigh(w: wide) -> int64:
+    return w.x * 100 + w.y * 10 + w.z
+
+pub def track(id: int64, counter: *mut int64) -> tracked:
+    return tracked { id: id, counter: counter }
+
+pub def discard(t: tracked) -> int64:
+    return t.id
+
+# Calls back into a function this module defines, through the same table.
+pub def twice(n: int32) -> pair:
+    let first = make(n)
+    return make(first.b)

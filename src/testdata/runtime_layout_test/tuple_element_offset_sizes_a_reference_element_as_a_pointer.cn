@@ -1,4 +1,0 @@
-module sample
-def main() -> (usize, &int32):
-    let x: int32 = 1
-    return (0, &x)

@@ -1,10 +1,9 @@
 module codegen_stress.mutate_through_mut_ref
 
 # Writing a field through a `&mut T` parameter, so a callee's mutation is
-# visible to the caller. A reference's runtime representation *is* its
-# referent's — both are the same single pointer into the same heap block
-# (`runtime/layout.h`), so `&mut cell` needs no representation of its own and
-# `c.value = ...` is the same byte-offset store `cell.value = ...` would be.
+# visible to the caller. A `&mut cell` is the address of the caller's `cell`
+# (`src/runtime/value_layout.h`), so `c.value = ...` is a store at the field's
+# byte offset from that address, the same store `cell.value = ...` would be.
 #
 # The regression this pins: the checker records the *unstripped* `&mut cell`
 # on the assignment target's `object` type, so `runtime::struct_field_offset`

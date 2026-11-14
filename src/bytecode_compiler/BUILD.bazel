@@ -3,12 +3,15 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 cc_library(
     name = "bytecode_compiler",
     srcs = [
-        "compile.cpp",
         "register_alloc.cpp",
+        "scalar_encoding.cpp",
+        "storage_compile.cpp",
     ],
     hdrs = [
-        "compile.h",
+        "compile_error.h",
         "register_alloc.h",
+        "scalar_encoding.h",
+        "storage_compile.h",
     ],
     deps = [
         "//src:intrinsics",
@@ -51,5 +54,29 @@ cc_test(
         "//src/semantic:semantic",
         "//src/testing",
         "//src/testing:stdlib_fixtures",
+    ],
+)
+
+cc_test(
+    name = "storage_compile_test",
+    srcs = ["storage_compile_test.cpp"],
+    data = [
+        "//src:bytecode_storage_test_files",
+        "//src:hir_storage_test_files",
+        "//src:std_sources",
+    ],
+    tags = ["no-sandbox"],
+    deps = [
+        "//src/comptime_vm",
+        ":bytecode_compiler",
+        "//src/bytecode:bytecode",
+        "//src/bytecode:vm",
+        "//src/hir:hir",
+        "//src/parser:parser",
+        "//src/runtime",
+        "//src/semantic:semantic",
+        "//src/testing",
+        "//src/testing:stdlib_fixtures",
+        "//src/testing:storage_fixtures",
     ],
 )

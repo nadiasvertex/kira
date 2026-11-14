@@ -44,6 +44,17 @@ template <typename T> auto as_owned(ast::ptr<ast::node> node) -> ast::ptr<T> {
     const auto &fld = ast::cast<const ast::field_expr>(node);
     return fld.object != nullptr && has_eager_splice(*fld.object);
   }
+  case ast::node_kind::unary_expr: {
+    const auto &un = ast::cast<const ast::unary_expr>(node);
+    return un.operand != nullptr && has_eager_splice(*un.operand);
+  }
+  case ast::node_kind::call_expr: {
+    const auto &call = ast::cast<const ast::call_expr>(node);
+    return (call.callee != nullptr && has_eager_splice(*call.callee)) ||
+           std::ranges::any_of(call.args, [](const auto &arg) -> bool {
+             return arg.value != nullptr && has_eager_splice(*arg.value);
+           });
+  }
   case ast::node_kind::return_stmt: {
     const auto &ret = ast::cast<const ast::return_stmt>(node);
     return ret.value != nullptr && has_eager_splice(*ret.value);
@@ -92,6 +103,25 @@ auto collect_splices(const ast::node &node, std::vector<const ast::node *> &out)
     const auto &ref = ast::cast<const ast::ref_type>(node);
     if (ref.inner != nullptr) {
       collect_splices(*ref.inner, out);
+    }
+    return;
+  }
+  case ast::node_kind::unary_expr: {
+    const auto &un = ast::cast<const ast::unary_expr>(node);
+    if (un.operand != nullptr) {
+      collect_splices(*un.operand, out);
+    }
+    return;
+  }
+  case ast::node_kind::call_expr: {
+    const auto &call = ast::cast<const ast::call_expr>(node);
+    if (call.callee != nullptr) {
+      collect_splices(*call.callee, out);
+    }
+    for (const auto &arg : call.args) {
+      if (arg.value != nullptr) {
+        collect_splices(*arg.value, out);
+      }
     }
     return;
   }
@@ -307,6 +337,48 @@ auto fragment_builder::materialize(const ast::node &node,
     cloned->op = bin.op;
     cloned->lhs = as_owned<ast::expr>(std::move(*lhs));
     cloned->rhs = as_owned<ast::expr>(std::move(*rhs));
+    return cloned;
+  }
+  case ast::node_kind::unary_expr: {
+    const auto &un = ast::cast<const ast::unary_expr>(node);
+    if (un.operand == nullptr) {
+      return too_complex();
+    }
+    auto operand = materialize(*un.operand, splices, next);
+    if (!operand.has_value()) {
+      return operand;
+    }
+    auto cloned = ast::make<ast::unary_expr>();
+    cloned->span = un.span;
+    cloned->op = un.op;
+    cloned->operand = as_owned<ast::expr>(std::move(*operand));
+    return cloned;
+  }
+  case ast::node_kind::call_expr: {
+    const auto &call = ast::cast<const ast::call_expr>(node);
+    if (call.callee == nullptr) {
+      return too_complex();
+    }
+    auto callee = materialize(*call.callee, splices, next);
+    if (!callee.has_value()) {
+      return callee;
+    }
+    auto cloned = ast::make<ast::call_expr>();
+    cloned->span = call.span;
+    cloned->callee = as_owned<ast::expr>(std::move(*callee));
+    for (const auto &arg : call.args) {
+      if (arg.value == nullptr) {
+        return too_complex();
+      }
+      auto value = materialize(*arg.value, splices, next);
+      if (!value.has_value()) {
+        return value;
+      }
+      cloned->args.push_back(ast::call_arg{
+          .span = arg.span,
+          .name = arg.name,
+          .value = as_owned<ast::expr>(std::move(*value))});
+    }
     return cloned;
   }
   case ast::node_kind::named_type: {
@@ -525,6 +597,21 @@ auto fragment_builder::clone_expr(const ast::node &node)
     cloned->op = bin.op;
     cloned->lhs = std::move(lhs);
     cloned->rhs = std::move(rhs);
+    return cloned;
+  }
+  case ast::node_kind::unary_expr: {
+    const auto &un = ast::cast<const ast::unary_expr>(node);
+    if (un.operand == nullptr) {
+      return nullptr;
+    }
+    auto operand = clone_expr(*un.operand);
+    if (operand == nullptr) {
+      return nullptr;
+    }
+    auto cloned = ast::make<ast::unary_expr>();
+    cloned->span = un.span;
+    cloned->op = un.op;
+    cloned->operand = std::move(operand);
     return cloned;
   }
   case ast::node_kind::ident_expr: {

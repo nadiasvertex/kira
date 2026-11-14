@@ -1,0 +1,233 @@
+module sample
+
+# Generators in the storage form (chapter 18): a `generator def` is a
+# constructor plus a step function whose frame is the state block, so every
+# local sits at a fixed offset and nothing is saved at a suspension. The step
+# hands each item over by address, so an item of any size needs no extra room.
+
+type pair = { pub a: int64, pub b: int64 }
+
+# Wider than the two words the legacy yielded-value area held.
+type triple = { pub a: int64, pub b: int64, pub c: int64 }
+
+# Counts its drops in memory the test owns, recording the order they ran in.
+type noisy = { pub id: int64, pub counter: *mut int64 }
+
+impl drop for noisy:
+    machine def drop(mut self) -> unit:
+        *self.counter = *self.counter * 10 + self.id
+        return
+
+def or_else(o: option[int64], fallback: int64) -> int64:
+    return match o:
+        @some(v) => v
+        @none => fallback
+
+generator def count(n: int64) -> some iterator[int64]:
+    var i: int64 = 0
+    while i < n:
+        yield i
+        i = i + 1
+
+generator def scaled(n: int64, k: int64) -> some iterator[int64]:
+    var i: int64 = 0
+    while i < n:
+        yield i * k
+        i = i + 1
+
+# Yields from both sides of a branch and from after the loop.
+generator def zigzag(n: int64) -> some iterator[int64]:
+    var i: int64 = 0
+    while i < n:
+        if i % 2 == 0:
+            yield i
+        else:
+            yield 0 - i
+        i = i + 1
+    yield 99
+
+# Resetting its counter at the end means a body that ran again after finishing
+# would yield again, so the status word is the only thing keeping it finished.
+generator def wraps(n: int64) -> some iterator[int64]:
+    var i: int64 = 0
+    while i < n:
+        yield i
+        i = i + 1
+    i = 0
+
+# Parameters of different size and alignment sit at their own offsets.
+generator def mixed(a: int8, b: int64, c: int32) -> some iterator[int64]:
+    yield int64(a)
+    yield b
+    yield int64(c)
+
+generator def triples(n: int64) -> some iterator[triple]:
+    var i: int64 = 0
+    while i < n:
+        yield triple { a: i, b: i * 2, c: i * 3 }
+        i = i + 1
+
+# A borrow of a local in the state block is held across suspensions.
+generator def borrows(a: int64) -> some iterator[int64]:
+    let p = pair { a: a, b: a * 2 }
+    let r = &p
+    yield r.a
+    yield r.b
+    yield p.a + r.b
+
+# Sums everything `count(n)` yields.
+def sum_to(n: int64) -> int64:
+    var g = count(n)
+    var total: int64 = 0
+    while let @some(v) = g.next():
+        total = total + v
+    return total
+
+# Two generators advance independently of each other.
+def interleave() -> int64:
+    var a = scaled(3, 1)
+    var b = scaled(10, 100)
+    var total: int64 = 0
+    var round: int64 = 0
+    while round < 4:
+        total = total + or_else(a.next(), 0 - 1) + or_else(b.next(), 0 - 1)
+        round = round + 1
+    return total
+
+# A finished generator keeps answering `@none`.
+def after_the_end() -> int64:
+    var g = count(1)
+    let first = or_else(g.next(), 0 - 1)
+    let second = or_else(g.next(), 0 - 2)
+    let third = or_else(g.next(), 0 - 3)
+    return first * 10000 + (second + 10) * 100 + (third + 10)
+
+def stays_finished() -> int64:
+    var g = wraps(2)
+    let a = or_else(g.next(), 0 - 1)
+    let b = or_else(g.next(), 0 - 1)
+    let c = or_else(g.next(), 0 - 1)
+    let d = or_else(g.next(), 0 - 2)
+    return a * 1000 + b * 100 + (c + 10) * 10 + (d + 10)
+
+def zigzag_weighted(n: int64) -> int64:
+    var g = zigzag(n)
+    var total: int64 = 0
+    var weight: int64 = 1
+    while let @some(v) = g.next():
+        total = total + v * weight
+        weight = weight + 1
+    return total
+
+def mixed_weighted() -> int64:
+    var g = mixed(7, 200, 30)
+    let x = or_else(g.next(), 0 - 1)
+    let y = or_else(g.next(), 0 - 1)
+    let z = or_else(g.next(), 0 - 1)
+    let w = or_else(g.next(), 0 - 1)
+    return x + y * 10 + z * 1000 + w * 100000
+
+def triple_sum(n: int64) -> int64:
+    var g = triples(n)
+    var total: int64 = 0
+    while let @some(t) = g.next():
+        total = total + t.a + t.b * 100 + t.c * 10000
+    return total
+
+def borrowed_sum(a: int64) -> int64:
+    var g = borrows(a)
+    var total: int64 = 0
+    while let @some(v) = g.next():
+        total = total * 1000 + v
+    return total
+
+# A generator crosses a call boundary by value, in and out.
+def make_count(n: int64) -> generator[int64]:
+    return count(n)
+
+def drain(g: generator[int64]) -> int64:
+    var total: int64 = 0
+    while let @some(v) = g.next():
+        total = total + v
+    return total
+
+def through_calls(n: int64) -> int64:
+    return drain(make_count(n))
+
+# A value the generator owns is dropped once, wherever the generator stops.
+generator def guarded(counter: *mut int64) -> some iterator[int64]:
+    let n = noisy { id: 3, counter: counter }
+    yield 1
+    yield 2
+
+# Run to the end: the value is dropped when the body returns.
+machine def guarded_to_end() -> int64:
+    var drops: int64 = 0
+    var g = guarded(ptr_cast[int64](&mut drops))
+    let a = or_else(g.next(), 0 - 1)
+    let b = or_else(g.next(), 0 - 1)
+    let c = or_else(g.next(), 0 - 1)
+    return drops * 1000 + a * 100 + b * 10 + c + 1
+
+# Dropped while suspended: the unwinding drops the value.
+machine def guarded_cancelled_drops() -> int64:
+    var drops: int64 = 0
+    let seen = guarded_first(ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+machine def guarded_first(counter: *mut int64) -> int64:
+    var g = guarded(counter)
+    return or_else(g.next(), 0 - 1)
+
+# Never started: nothing was built, so nothing is dropped.
+machine def guarded_unstarted_drops() -> int64:
+    var drops: int64 = 0
+    unstarted(ptr_cast[int64](&mut drops))
+    return drops
+
+machine def unstarted(counter: *mut int64) -> unit:
+    let g = guarded(counter)
+    return
+
+# An item that needs a drop belongs to whoever reads it from `next()`.
+generator def noisy_items(n: int64, counter: *mut int64) -> some iterator[noisy]:
+    var i: int64 = 1
+    while i <= n:
+        yield noisy { id: i, counter: counter }
+        i = i + 1
+
+def read_items_inner(n: int64, counter: *mut int64) -> int64:
+    var g = noisy_items(n, counter)
+    var total: int64 = 0
+    while let @some(item) = g.next():
+        total = total + item.id
+    return total
+
+# Every item is dropped when its pass ends, and the final `none` owes nothing.
+machine def read_items(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = read_items_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def read_one_inner(n: int64, counter: *mut int64) -> int64:
+    var g = noisy_items(n, counter)
+    return match g.next():
+        @some(v) => v.id
+        @none => 0
+
+# One read leaves the generator suspended, and dropping it drops nothing more.
+machine def read_one(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = read_one_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def discard_one_inner(n: int64, counter: *mut int64) -> int64:
+    var g = noisy_items(n, counter)
+    g.next()
+    return 0
+
+# An item nobody reads is dropped with the `option` that holds it.
+machine def discard_one(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = discard_one_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen

@@ -1,0 +1,48 @@
+module sample
+# with: modules_tools.cn
+use tools
+
+# Calls into another module. The expected values are worked out by hand in
+# `src/testing/storage_module_cases.h`.
+
+# Shares its name with `tools.make`, which returns a pair.
+def make(n: int32) -> int32:
+    return n + 1
+
+# A result built in this frame by a function of another module, then borrowed
+# by one; the same-named local function resolves to this module's.
+def pair_total(n: int32) -> int32:
+    let p = tools.make(n)
+    return tools.total(&p) * 10 + make(n)
+
+# A returned result of another module's type is built where the caller says.
+def forward(n: int32) -> tools.pair:
+    return tools.make(n)
+
+# An aggregate built by one module and handed to another as an argument.
+def handed(n: int32) -> int32:
+    return tools.consume(tools.make(n))
+
+# A value wider than two registers crossing both ways.
+def weighed(n: int64) -> int64:
+    return tools.weigh(tools.widen(n))
+
+# A chain that stays inside the other module before coming back.
+def chained(n: int32) -> int32:
+    let p = tools.twice(n)
+    return p.a * 100 + p.b
+
+# A value with a drop defined in the other module: consumed there (its drop
+# runs there) or left here (its drop is called from here).
+machine def dropped_there(n: int64) -> int64:
+    var counter: int64 = 0
+    let t = tools.track(n, ptr_cast[int64](&mut counter))
+    let id = tools.discard(t)
+    return counter * 100 + id
+
+machine def dropped_here(n: int64) -> int64:
+    var counter: int64 = 0
+    if n > 0:
+        let t = tools.track(n, ptr_cast[int64](&mut counter))
+        let u = tools.track(n + 1, ptr_cast[int64](&mut counter))
+    return counter

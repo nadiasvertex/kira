@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -21,11 +23,24 @@
 
 namespace cinder::llvm_codegen {
 
-/// JIT helper: enough `llvm::orc::LLJIT` plumbing to run a `compile_module`
-/// result's zero-argument entry function in-process. The tests use it to
-/// compare the LLVM tier's result against the bytecode VM's
-/// (`bytecode::vm::run`). It does not tier up hot VM code, and no command
-/// runs programs through it. See
+/// The sanitizer this process was built with, which JIT-compiled code is
+/// instrumented for so that it is checked like the C++ around it.
+enum class host_sanitizer : std::uint8_t { none, address, thread };
+
+[[nodiscard]] auto current_host_sanitizer() -> host_sanitizer;
+
+/// Instruments every function `module` defines for `current_host_sanitizer()`
+/// (AddressSanitizer or ThreadSanitizer), as `-fsanitize=` would for C++.
+/// The sanitizer runtime is the host's, found through the process's symbols.
+/// Globals are left uninstrumented under AddressSanitizer: registering them
+/// needs the object-file sections a static link provides. Does nothing in an
+/// unsanitized build. `jit_module::create` calls it after optimization.
+auto instrument_for_host_sanitizer(llvm::Module &module) -> void;
+
+/// JIT helper: enough `llvm::orc::LLJIT` plumbing to run a compiled module's
+/// functions in-process. The tests use it to run the LLVM tier
+/// (`run_storage` for code compiled from the storage form). It does not tier
+/// up hot VM code, and no command runs programs through it. See
 /// `spec/specification/05-implementation/68-jit-execution.md`.
 struct jit_result {
   bool has_value = false;
@@ -44,12 +59,11 @@ public:
          optimization_level level = optimization_level::o0)
       -> std::expected<jit_module, std::string>;
 
-  /// Runs the zero-argument function `name`. `return_kind` must be the
-  /// `numeric_kind` the function's checked return type maps to (`nullopt`
-  /// for a `unit`-returning function) — a JIT-compiled function has a real
-  /// native ABI signature, unlike the bytecode VM's uniform `slot_value`
-  /// calling convention, so the caller must say which typed function
-  /// pointer to call through. Converts a propagating `panic_error`
+  /// Runs the zero-argument native function `name` (hand-written IR, say),
+  /// whose native return type is the one `return_kind` names (`nullopt` for
+  /// `void`), so the caller must say which typed function pointer to call
+  /// through. Code compiled from the storage form is run with
+  /// `run_storage` instead. Converts a propagating `panic_error`
   /// (`cinder_codegen_panic`, thrown across the JIT'd frame and caught here)
   /// into `bytecode::panic_reason`, mirroring `bytecode::vm::run`'s own
   /// `std::expected` shape so both tiers' results are directly comparable.
@@ -58,17 +72,16 @@ public:
       std::optional<bytecode::numeric_kind> return_kind) const
       -> std::expected<jit_result, bytecode::panic_reason>;
 
-  /// Like `run`, but for a zero-argument function whose checked return type
-  /// is heap-backed (`str`, `list[T]`, tuple, fixed array, struct, sum type,
-  /// or a closure) rather than a scalar `numeric_kind` — its native ABI
-  /// return type is a plain `ptr` (every heap value is one pointer,
-  /// `src/runtime/layout.h`), so there's no per-kind marshaling to dispatch
-  /// on the way `run` needs. The returned pointer is a real, dereferenceable
-  /// address in this process (the JIT runs in-process), suitable for the
-  /// stress harness's deep-equality walk against the bytecode VM's own
-  /// heap value.
-  [[nodiscard]] auto run_ptr_result(std::string_view name) const
-      -> std::expected<jit_result, bytecode::panic_reason>;
+  /// Calls a function compiled from the storage form through its entry thunk
+  /// (`storage_codegen.h`, `storage_codegen_options::entry_thunks`). `args`
+  /// holds one 8-byte slot per non-zero-sized source parameter; `result` is
+  /// the caller-owned storage a by-address result is built in, or where a
+  /// scalar result is written (it may be null for a zero-sized result). A
+  /// propagating `panic_error` becomes a `panic_reason`, as in `run`.
+  [[nodiscard]] auto run_storage(std::string_view name,
+                                 std::span<const uint64_t> args,
+                                 void *result) const
+      -> std::expected<void, bytecode::panic_reason>;
 
 private:
   explicit jit_module(std::unique_ptr<llvm::orc::LLJIT> jit)

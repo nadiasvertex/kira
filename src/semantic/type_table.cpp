@@ -517,25 +517,6 @@ auto type_table::erase_refinements(type_id id) -> type_id {
   }
 }
 
-/// Linear scan: layout asks this once per struct field of a user type, and
-/// the table is small. See the header for why a name is all there is to go on.
-auto type_table::refinement_base_named(std::string_view name) const
-    -> std::optional<type_id> {
-  auto found = std::optional<type_id>{};
-  for (const auto &item : entries_) {
-    if (item.kind != type_kind::refinement_kind || item.decl == nullptr ||
-        item.decl->name != name) {
-      continue;
-    }
-    const auto base = strip_refinement(item.result);
-    if (found.has_value() && *found != base) {
-      return std::nullopt; // ambiguous; see the header
-    }
-    found = base;
-  }
-  return found;
-}
-
 /// See the header for semantics.
 auto type_table::is_unknown(type_id id) const -> bool {
   const auto kind = entry(id).kind;
@@ -653,8 +634,8 @@ auto type_table::values_compatible(type_id expected, type_id found) const
 /// return) matches any expected type; a reference on either side compares
 /// against its target type; and same-kind types compare their
 /// declaration/name identity plus recursively-compatible arguments.
-/// See the header: the heap-backed set `src/runtime/layout.h` describes.
-auto type_table::is_heap_represented(type_id id) const -> bool {
+/// See the header: the scalars are the only values that are not compound.
+auto type_table::is_compound_value(type_id id) const -> bool {
   const auto &target = entry(strip_refinement(id));
   switch (target.kind) {
   case type_kind::tuple_kind:
@@ -673,7 +654,7 @@ auto type_table::is_heap_represented(type_id id) const -> bool {
 
 /// See the header: whether a `&` to this type is the same bits as the value.
 auto type_table::reference_is_transparent(type_id referent) const -> bool {
-  if (is_heap_represented(referent)) {
+  if (is_compound_value(referent)) {
     return true;
   }
   const auto kind = entry(strip_refinement(referent)).kind;

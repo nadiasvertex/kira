@@ -38,7 +38,8 @@ impl functor for option:
 
 type bag[T] = { first: T, items: list[T] }
 
-extend[T] bag[T]:
+# `map` copies each item out of the bag, so `T` is `copy`.
+extend[T: copy] bag[T]:
     def count(self) -> usize:
         return self.items.len()
     # Generic over its own `U` and the block's `T`: an instance of `map` is
@@ -59,12 +60,13 @@ def sum_list[T](xs: list[T], zero: T) -> T where T: add:
     return acc
 
 # `>` on a `T`: builtin for `int32`, `money::cmp` for `money`.
-def biggest[T](xs: &list[T]) -> T where T: ord:
-    var best = xs[0]
+# It answers with an index, since a `money` moves and cannot be copied out.
+def biggest[T](xs: &list[T]) -> usize where T: ord:
+    var best: usize = 0
     var i: usize = 1
     while i < xs.len():
-        if xs[i] > best:
-            best = xs[i]
+        if xs[i] > xs[best]:
+            best = i
         i = i + 1
     return best
 
@@ -78,7 +80,7 @@ def get_or[T](o: option[T], d: T) -> T:
         @none => d
 
 # `list[T].new()`, then methods on a receiver the template wrote in `T`.
-def pair_of[T](x: T) -> list[T]:
+def pair_of[T: copy](x: T) -> list[T]:
     var out = list[T].new()
     out.push(x)
     out.push(x)
@@ -100,7 +102,7 @@ def width_of[T]() -> int32:
     return 32
 
 # A value parameter read as a value, and a recursive call at the same `n`.
-def count_down[n: usize](v: array[int32, n], i: usize) -> int32:
+def count_down[n: usize](v: &array[int32, n], i: usize) -> int32:
     if i >= n:
         return 0
     return v[i] + count_down(v, i + 1)
@@ -113,8 +115,8 @@ def main() -> int32:
     var score: int32 = 0
     let ints: list[int32] = [3, 9, 4]
     let monies: list[money] = [money { cents: 30 }, money { cents: 90 }]
-    score = score + biggest(&ints)                                 # 9
-    score = score + int32(biggest(&monies).cents)                  # 90
+    score = score + ints[biggest(&ints)]                           # 9
+    score = score + int32(monies[biggest(&monies)].cents)          # 90
     score = score + sum_list(ints, 0)                              # 16
     score = score + int32(sum_list(monies, money { cents: 0 }).cents)  # 120
     score = score + get_or(bump(@some(20), (x: int32) => x + 1), 0)    # 21
@@ -127,9 +129,13 @@ def main() -> int32:
     score = score + int32(mapped_count(b)) * 1000                  # 6000
     score = score + width_of[int8]() + width_of[int64]() - width_of[int32]()  # 40
     let arr: array[int32, 3] = [5, 6, 7]
-    score = score + count_down(arr, 0)                             # 18
+    score = score + count_down(&arr, 0)                             # 18
     println(framed(7))
     println(framed(money { cents: 5 }))
     let text = framed(int64(-3))
     score = score + int32(text.len())                              # 4
     return score
+
+# The bytes of a `str` built at run time (interpolation, `show`) are never
+# freed, because `str` is `copy` and so has no owner (spec/todo.md item 24).
+# max-live-blocks: 18

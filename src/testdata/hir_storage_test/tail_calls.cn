@@ -1,0 +1,34 @@
+module sample
+
+# Calls in tail position. Only a call whose operands and result are scalars
+# replaces the caller's frame (`hir::is_safe_tail_call`).
+type pair = { pub a: int32, pub b: int32 }
+
+def make_pair(n: int32) -> pair:
+    return pair { a: n, b: n + 1 }
+
+def sum_pair(p: pair) -> int32:
+    return p.a + p.b
+
+def count_down(n: int32) -> int32:
+    if n == 0:
+        return 0
+    return count_down(n - 1)
+
+def is_even(n: int64) -> bool:
+    if n == 0:
+        return true
+    return is_odd(n - 1)
+
+def is_odd(n: int64) -> bool:
+    if n == 0:
+        return false
+    return is_even(n - 1)
+
+# The pair is built in this frame and passed by address.
+def with_pair(n: int32) -> int32:
+    return sum_pair(make_pair(n))
+
+# The callee builds this function's result through its address.
+def forwards_result(n: int32) -> pair:
+    return make_pair(n)

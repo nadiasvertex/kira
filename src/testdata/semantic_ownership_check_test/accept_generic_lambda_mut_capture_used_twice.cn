@@ -1,0 +1,17 @@
+module accept_generic_lambda_mut_capture_used_twice
+
+# A generic lambda is one closure value however many uses it has, so its
+# `&mut` capture is one mutable borrow, and so is an implicit capture the body
+# changes. Both end at the last use, after which the locals are free again.
+def main() -> int64:
+    var total: int64 = 0
+    let add = [&mut total] (x) =>:
+        total = total + x
+    add(5)
+    add(1)
+    var xs: list[int64] = []
+    let push = (x) =>:
+        xs.push(x)
+    push(2)
+    push(3)
+    return total + (xs.len() as int64)

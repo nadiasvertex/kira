@@ -5,3 +5,5 @@ def make_point(x: int32, y: int32) -> (int32, int32, bool):
 
 def main() -> (int32, int32, bool):
     return make_point(3, 7)
+
+# expect-text: (3, 7, 1)

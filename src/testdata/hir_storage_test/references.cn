@@ -1,0 +1,50 @@
+module sample
+
+type noisy = { pub id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+type counter = { at: int32, limit: int32 }
+
+def next_of(n: &noisy, c: &mut counter) -> option[int32]:
+    if c.at >= c.limit:
+        return @none
+    c.at = c.at + 1
+    return @some(n.id + c.at)
+
+def mk(id: int32) -> noisy:
+    return noisy { id: id }
+
+# `*r = v`: the old list is dropped through the `&mut`, and the new one is
+# written over it at once.
+def set_list(r: &mut list[int32], v: list[int32]) -> unit:
+    *r = v
+
+# `ptr_cast` of a reference gives a pointer to the place it borrows.
+machine def poke(r: &mut int32) -> unit:
+    let p = ptr_cast[int32](r)
+    p[0] = 7
+
+# A binding reached through a reference names the payload in place.
+def grow(o: &mut option[list[int32]]) -> unit:
+    match o:
+        @some(xs) => xs.push(9)
+        @none => return
+
+# The subject's temporary is dropped in the body on `break`, and after the
+# loop when the pattern fails: one exit holds it and the other does not.
+def while_let_break() -> int32:
+    var c = counter { at: 0, limit: 5 }
+    var total = 0
+    while let @some(v) = next_of(&mk(50), &mut c):
+        if v == 52:
+            break
+        total = total + v
+    return total
+
+# `*o = @none` drops the old payload inside the `if` that tested its variant,
+# and then writes the whole sum over it.
+def clear(o: &mut option[list[int32]]) -> unit:
+    *o = @none

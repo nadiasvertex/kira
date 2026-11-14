@@ -1,0 +1,59 @@
+module sample
+
+# Indexing at a run-time index checks the index against the length and reads
+# the element at its stride past the data word (or the array's address). A
+# range index checks `end <= len` and then `start <= end`, and builds a view.
+
+def nth(i: usize) -> int64:
+    let xs: array[int64, 4] = [10, 20, 30, 40]
+    return xs[i]
+
+def set_nth(i: usize, v: int64) -> int64:
+    var xs: array[int64, 3] = [1, 2, 3]
+    xs[i] = v
+    return xs[0] * 100 + xs[1] * 10 + xs[2]
+
+# Elements wider than a word: the stride is the tuple's size.
+def pair_second(i: usize) -> int64:
+    let ps: array[(int32, int64), 3] = [(1, 10), (2, 20), (3, 30)]
+    return ps[i].1
+
+def byte_at(s: str, i: usize) -> byte:
+    return s[i]
+
+def count_byte(s: str, b: byte) -> int64:
+    var n: int64 = 0
+    var i: usize = 0
+    while i < s.len():
+        if s[i] == b:
+            n = n + 1
+        i = i + 1
+    return n
+
+def middle(s: str, a: usize, b: usize) -> str:
+    return s[a..b]
+
+def middle_len(a: usize, b: usize) -> usize:
+    let s = "abcdef"
+    let m = s[a..b]
+    return m.len()
+
+def inclusive_first(a: usize, b: usize) -> byte:
+    let s = "abcdef"
+    let m = s[a..=b]
+    return m[0]
+
+def inclusive_len(a: usize, b: usize) -> usize:
+    let s = "abcdef"
+    let m = s[a..=b]
+    return m.len()
+
+def window_sum(a: usize, b: usize) -> int64:
+    let xs: array[int64, 5] = [1, 2, 3, 4, 5]
+    let w = xs[a..b]
+    var t: int64 = 0
+    var i: usize = 0
+    while i < w.len():
+        t = t * 10 + w[i]
+        i = i + 1
+    return t

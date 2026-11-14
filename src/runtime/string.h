@@ -2,27 +2,34 @@
 
 #include <cstdint>
 
-/// C-ABI entry points `llvm_codegen`-compiled IR (JIT and AOT alike) calls for
-/// the `std.string` intrinsics (`spec/std-reference.md`) — the LLVM-tier
-/// counterpart of `src/bytecode/vm.cpp`'s `intrinsic_rt_str_*` dispatch, the
-/// same "one algorithm, two thin backends" split `src/runtime/fmt.h` uses for
-/// the formatting intrinsics. The actual UTF-8 algorithms live once in
-/// `src/runtime/string_ops.h`; these wrappers only marshal the heap ABI.
+/// C-ABI entry points for the `std.string` intrinsics
+/// (`spec/std-reference.md`). The UTF-8 algorithms live once in
+/// `src/runtime/string_ops.h`; these wrappers only marshal the ABI.
 ///
-/// `str` is a 2-slot `{ len; data_ptr }` opaque heap pointer (see
-/// `src/runtime/io.h`); a scalar argument/return crosses as a plain native
-/// value (`src/intrinsics.h`'s `intrinsic_wire_kind`) — `rt_str_eq` returns
-/// a native `uint32_t` (0/1, standing for `bool`); `rt_str_find`/
-/// `rt_str_rfind` still return a 2-slot `find_result { found; pos }` struct,
-/// which is not a bare scalar and so is still a heap pointer.
+/// The LLVM tier links these. The bytecode VM (`src/bytecode/vm.cpp`) calls
+/// the same `_into` functions, so the two tiers cannot build a descriptor or
+/// aggregate result differently.
+///
+/// A descriptor or aggregate argument is the address of the caller's own
+/// bytes in the layout of `src/runtime/value_layout.h`, borrowed for the
+/// call. A function whose result is a descriptor or aggregate is an `_into`
+/// entry point (`src/intrinsics.h`, `intrinsic_signature::into`): `result`
+/// is the address of storage the caller owns, sized and aligned for the
+/// declared result type, which the function fills completely (every byte,
+/// so padding is zero). `src/runtime/result_out.h` lists every shape.
+///
+/// `rt_str_eq` returns a native `uint32_t` (0 or 1, standing for `bool`);
+/// `find_result` is `{ found: bool @0, pos: usize @8 }`.
 extern "C" {
 auto cinder_rt_str_eq(uint64_t *a, uint64_t *b) -> uint32_t;
 auto cinder_rt_str_cmp(uint64_t *a, uint64_t *b) -> int32_t;
-auto cinder_rt_str_find(uint64_t *haystack, uint64_t *needle, uint64_t from)
-    -> uint64_t *;
-auto cinder_rt_str_rfind(uint64_t *haystack, uint64_t *needle) -> uint64_t *;
-auto cinder_rt_str_reverse(uint64_t *s) -> uint64_t *;
-auto cinder_rt_str_trim(uint64_t *s, uint32_t mode) -> uint64_t *;
-auto cinder_rt_str_replace(uint64_t *s, uint64_t *from, uint64_t *to)
-    -> uint64_t *;
+
+void cinder_rt_str_find_into(void *result, const void *haystack,
+                             const void *needle, uint64_t from);
+void cinder_rt_str_rfind_into(void *result, const void *haystack,
+                              const void *needle);
+void cinder_rt_str_reverse_into(void *result, const void *s);
+void cinder_rt_str_trim_into(void *result, const void *s, uint32_t mode);
+void cinder_rt_str_replace_into(void *result, const void *s, const void *from,
+                                const void *to);
 }

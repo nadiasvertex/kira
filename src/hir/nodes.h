@@ -188,9 +188,9 @@ struct hir_pattern : hir_node {
   /// positions it can derive that structurally: a tuple pattern's elements
   /// come from the tuple type's own `args`, an array pattern's from its
   /// element type. Two positions it cannot, because the answer needs
-  /// generic substitution that `runtime::layout.h` deliberately does not
-  /// do (see its header comment): a sum-type variant's payload, and a
-  /// struct's field. Lowering already resolves both — it must, to build
+  /// generic substitution the pattern alone does not carry: a sum-type
+  /// variant's payload, and a struct's field. Lowering already resolves
+  /// both — it must, to build
   /// the `hir_variant_payload`/`hir_field` place expression a binding
   /// reads through — so it records the type here rather than making each
   /// backend re-derive it. Only those positions set it today; everywhere
@@ -205,6 +205,10 @@ struct hir_param {
   symbol_id symbol = k_invalid_symbol_id;
   std::string name;
   type_id type = k_unknown_type;
+  /// A task block's capture that the task only borrows: the enclosing
+  /// function still owns it and the task never drops it. The storage form
+  /// passes a bitwise copy that owns nothing.
+  bool lent = false;
 };
 
 // ==========================================================================
@@ -214,9 +218,20 @@ struct hir_param {
 /// Literal value with its checked type already resolved. The raw spelling
 /// is kept rather than pre-parsed into a machine value — same deferral as
 /// `ast::literal_expr` — so codegen picks the concrete representation once.
+/// The question a `size_of[T]()` or `align_of[T]()` literal answers. The
+/// storage form answers it from the concrete layouts
+/// (`runtime::value_layouts`): HIR is lowered before compile-time code has
+/// settled every shape, so the literal's `value` is empty until then.
+struct layout_question {
+  bool wants_alignment = false; ///< `align_of` rather than `size_of`.
+  type_id type = k_unknown_type;
+};
+
 struct hir_literal : hir_expr {
   token_kind lit_kind;
   std::string value;
+  /// Set for the answer to a `size_of`/`align_of` query.
+  std::optional<layout_question> question{};
 
   hir_literal(source_span s, type_id t, token_kind lk, std::string v)
       : hir_expr(hir_node_kind::hir_literal, s, t), lit_kind(lk),
@@ -321,6 +336,22 @@ struct hir_call : hir_expr {
   /// receives it by reference like every `self`: a receiver stored in a
   /// temporary is not dropped after the call.
   bool consumes_receiver = false;
+  /// The callee is a function that owns its receiver
+  /// (`hir_function::owns_receiver`), so the storage form moves the receiver
+  /// into the call instead of passing its address.
+  bool receiver_by_value = false;
+  /// With `receiver_by_value`: the first argument is a reference to the
+  /// receiver, which a `for` loop over a borrowed collection only borrows.
+  /// The callee gets a bitwise copy, and what it returns owns nothing.
+  bool receiver_borrowed = false;
+  /// The arguments, by index, that a task block's call only lends to the
+  /// task (`hir_param::lent`).
+  std::vector<size_t> lent_args;
+  /// This call is a type's own `drop` that lowering synthesized where a value
+  /// goes out of scope or is overwritten (`build_drop_calls`), not one the
+  /// source wrote. The storage form reads it to tell a value's end from an
+  /// ordinary call on a borrow.
+  bool is_drop = false;
 
   hir_call(source_span s, type_id t, ptr<hir_expr> c, ptr_vec<hir_expr> a)
       : hir_expr(hir_node_kind::hir_call, s, t), callee(std::move(c)),
@@ -479,28 +510,20 @@ struct hir_container_len : hir_expr {
         object(std::move(obj)) {}
 };
 
-/// A `uninit[T, N]()` buffer: `byte_size` bytes of frame-local storage,
-/// aligned to `align_bytes`. `type` is the `uninit[T, N]` itself, whose
-/// runtime representation is the buffer's base address.
+/// A `uninit[T, N]()` buffer: frame-local storage for `N` elements, zeroed.
+/// `type` is the `uninit[T, N]` itself; its layout
+/// (`runtime::value_layouts`) is `N` elements at `T`'s stride.
 ///
-/// The one aggregate in the language that is *not* heap-allocated. Both
-/// backends give it genuine stack storage — an `alloca` in the LLVM tier's
-/// entry block, a statically-sized frame-local byte range in the bytecode
-/// tier — because a fixed-capacity inline buffer whose storage came from the
-/// heap would defeat its only purpose (see `hir_stack_buffer`'s consumers in
-/// `spec/specification/04-stdlib/collections/47-small-list.md`).
-///
-/// The size is fixed at lowering time, so neither backend ever performs a
-/// dynamically-sized stack allocation: the bytecode tier sums every buffer
-/// in a function into one frame-local byte count reserved on entry, which is
-/// what keeps a buffer's address stable for the whole frame.
+/// Both backends give it genuine stack storage — an `alloca` in the LLVM
+/// tier's entry block, a statically-sized frame-local byte range in the
+/// bytecode tier — because a fixed-capacity inline buffer whose storage came
+/// from the heap would defeat its only purpose (see `hir_stack_buffer`'s
+/// consumers in `spec/specification/04-stdlib/collections/47-small-list.md`).
+/// The size is fixed by the type, so neither backend ever performs a
+/// dynamically-sized stack allocation.
 struct hir_stack_buffer : hir_expr {
-  uint64_t byte_size = 0;
-  uint64_t align_bytes = 8;
-
-  hir_stack_buffer(source_span s, type_id t, uint64_t size, uint64_t align)
-      : hir_expr(hir_node_kind::hir_stack_buffer, s, t), byte_size(size),
-        align_bytes(align) {}
+  hir_stack_buffer(source_span s, type_id t)
+      : hir_expr(hir_node_kind::hir_stack_buffer, s, t) {}
 };
 
 /// The address of element 0 of `object`'s data block — what `xs.as_ptr()`
@@ -518,6 +541,10 @@ struct hir_stack_buffer : hir_expr {
 /// receiver is allowed to produce.
 struct hir_container_data : hir_expr {
   ptr<hir_expr> object;
+  /// Set only by an array's drop (`lowerer::build_drop_calls`): the elements
+  /// are dropped through the returned pointer, so the array itself ends here
+  /// without a drop of its own. The storage form records that with `forget`.
+  bool takes_elements = false;
 
   hir_container_data(source_span s, type_id t, ptr<hir_expr> obj)
       : hir_expr(hir_node_kind::hir_container_data, s, t),
@@ -1127,6 +1154,10 @@ enum class coroutine_kind : uint8_t {
 struct hir_function : hir_item {
   std::string name;
   std::vector<hir_param> params;
+  /// The function owns the value its first parameter, `self: &T`, refers to
+  /// (`semantic::ownership_results::consuming_receivers`). The storage form
+  /// takes that parameter as a `T` passed by address, and reads `*self` as it.
+  bool owns_receiver = false;
   type_id return_type = k_unknown_type;
   ptr<hir_block> body;
   /// What kind of suspendable state machine this function compiles into, if

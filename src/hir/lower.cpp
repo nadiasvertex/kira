@@ -24,7 +24,7 @@
 #include "src/parser/ast_traversal.h"
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
-#include "src/runtime/layout.h"
+#include "src/runtime/value_layout.h"
 #include "src/runtime/scheduler.h"
 #include "src/semantic/checker_results.h"
 #include "src/semantic/module_index.h"
@@ -462,6 +462,24 @@ private:
     return std::nullopt;
   }
 
+  /// The local a capture names: the copy of a generic lambda that `node`, a
+  /// use of its name, was checked against, or else the local `name` names.
+  [[nodiscard]] auto capture_symbol(std::string_view name,
+                                    const void *node) const
+      -> std::optional<symbol_id> {
+    if (node != nullptr) {
+      if (const auto copy = checked_.ownership.generic_lambda_refs.find(node);
+          copy != checked_.ownership.generic_lambda_refs.end()) {
+        const auto symbol = generic_lambda_symbols_.find(copy->second);
+        if (symbol == generic_lambda_symbols_.end()) {
+          return std::nullopt;
+        }
+        return symbol->second;
+      }
+    }
+    return lookup_local(name);
+  }
+
   /// Mints an id with no name of its own — used for a `match` subject's
   /// synthetic binding, which arm code never refers to by spelling (see
   /// `lower_match`).
@@ -597,7 +615,7 @@ private:
   [[nodiscard]] auto lower_static_global_ref(const ast::expr &ref, type_id type,
                                              const std::string &name)
       -> std::expected<ptr<hir_expr>, lowering_error> {
-    if (drop_schedule_.owned_static_reads.contains(&ref)) {
+    if (owns_static_reads_ || drop_schedule_.owned_static_reads.contains(&ref)) {
       for (const auto &[decl, def] : checked_.lowering.static_global_defs) {
         if (def.name == name) {
           return lower_static_global_value(
@@ -775,6 +793,25 @@ private:
                                       ptr_vec<hir_node> &out,
                                       const field_paths &moved_paths = {})
       -> std::expected<void, lowering_error>;
+  /// Whether `decl`, or the template it is an instance of, owns the value its
+  /// `self` refers to (`ownership_results::consuming_receivers`).
+  [[nodiscard]] auto owns_receiver(const ast::func_decl *decl) const -> bool {
+    if (decl == nullptr) {
+      return false;
+    }
+    const auto &owners = checked_.ownership.consuming_receivers;
+    if (owners.contains(decl)) {
+      return true;
+    }
+    const auto tmpl = checked_.ownership.instance_templates.find(decl);
+    return tmpl != checked_.ownership.instance_templates.end() &&
+           owners.contains(tmpl->second);
+  }
+  [[nodiscard]] auto build_array_drop(const place_fn &make_receiver,
+                                      const semantic::drop_plan &plan,
+                                      source_span span, ptr_vec<hir_node> &out,
+                                      const field_paths &moved_paths)
+      -> std::expected<void, lowering_error>;
   /// Builds and appends the drop call(s) for one scheduled binding.
   [[nodiscard]] auto emit_one_drop(const pending_drop &drop,
                                    ptr_vec<hir_node> &stmts)
@@ -810,7 +847,29 @@ private:
   [[nodiscard]] auto emit_crew_exits(jump_exit kind, source_span span,
                                      ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
-  [[nodiscard]] auto coroutine_cancel_check(const void *key, source_span span)
+  /// The result type of a call to `decl`, which `drop` and `push` calls the
+  /// lowering makes itself need: a function declared without a return type
+  /// returns what the checker inferred from its body (`unit` for a `drop`).
+  [[nodiscard]] auto declared_result_type(const ast::func_decl &decl) const
+      -> type_id {
+    if (decl.return_type == nullptr) {
+      const auto inferred = checked_.inferred_return_types.find(&decl);
+      return inferred != checked_.inferred_return_types.end() &&
+                     inferred->second != k_unknown_type
+                 ? inferred->second
+                 : interning_types().builtin("unit");
+    }
+    const auto found = checked_.node_types.find(decl.return_type.get());
+    return found != checked_.node_types.end() ? found->second : k_unknown_type;
+  }
+
+  /// The check a task makes after each suspension: when it was cancelled,
+  /// drop what it owns and return. `awaited`, if given, are the tasks it was
+  /// waiting for, which have stopped by then and are dropped first; `drops`
+  /// are other values the scope's drop records do not know of.
+  [[nodiscard]] auto coroutine_cancel_check(const void *key, source_span span,
+                                            ptr_vec<hir_expr> awaited = {},
+                                            ptr_vec<hir_node> drops = {})
       -> std::expected<ptr<hir_node>, lowering_error>;
   /// The type table, for the few types lowering interns that checking never
   /// had occasion to (`unit` results of runtime calls, `option[T]`, the tuple
@@ -841,7 +900,8 @@ private:
   /// suspension point, then the check for a cancel that arrived meanwhile.
   [[nodiscard]] auto emit_task_wait(ptr_vec<hir_node> &stmts,
                                     ptr<hir_expr> task, const void *key,
-                                    source_span span, bool all = false)
+                                    source_span span, bool all = false,
+                                    ptr_vec<hir_expr> awaited = {})
       -> std::expected<void, lowering_error>;
   /// Waits for `task` and reads its result: `await task` and `task.get()`.
   /// `await` consumes the task, so `consumes` drops it once its result has
@@ -885,12 +945,15 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   /// `lower_task_block` with the body made by `lower_body`. `key` names the
   /// task's captures and its scope-exit drops in the drop schedule, and
-  /// `start_key` the drops of a task dropped before it runs.
+  /// `start_key` the drops of a task dropped before it runs. `carried` are
+  /// tasks the body owns without the drop schedule knowing them (the task an
+  /// `on(pool, task)` wrapper runs), released when it is dropped before it
+  /// runs.
   [[nodiscard]] auto lower_task_function(
       const void *key, const void *start_key, std::string task_name,
       const std::function<std::expected<ptr<hir_block>, lowering_error>()>
           &lower_body,
-      type_id declared, source_span span)
+      type_id declared, source_span span, ptr_vec<hir_expr> carried = {})
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_await_on(const ast::await_expr &await, type_id type)
       -> std::expected<ptr<hir_expr>, lowering_error>;
@@ -920,11 +983,6 @@ private:
     [[nodiscard]] auto ref(size_t i) const -> ptr<hir_expr> {
       return {make<hir_local_ref>(spans[i], types[i], symbols[i],
                                   std::string("<group task>"))};
-    }
-    [[nodiscard]] auto result_of(size_t i, source_span span,
-                                 type_id result) const -> ptr<hir_expr> {
-      return {make<hir_generator_next>(span, result, ref(i),
-                                       /*await_task=*/true)};
     }
   };
   /// `await par: ...` / `await race: ...` — see their definitions.
@@ -966,6 +1024,14 @@ private:
       -> std::expected<ptr<hir_lambda>, lowering_error>;
   [[nodiscard]] auto lower_lambda(const ast::lambda_expr &lambda)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// The capture plan of `closure`, which has no capture list, when it
+  /// borrows some of what it captures (`function_cfg::borrowed_captures`):
+  /// `free_variables` in order, `borrowed` by reference and the rest by
+  /// value. None when it borrows nothing, so `capture_plan` reads the body.
+  [[nodiscard]] auto implicit_capture_plan(
+      const ast::lambda_expr &lambda, const hir_lambda &closure,
+      const std::unordered_map<symbol_id, ast::capture_mode> &borrowed)
+      -> std::optional<std::vector<hir_capture>>;
   [[nodiscard]] auto lower_where(const ast::where_expr &where)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_try(const ast::try_expr &try_expr)
@@ -1504,10 +1570,6 @@ private:
   /// locals of its copies, so a capture list that names it (`[f]`) captures
   /// every closure made for it.
   std::unordered_map<symbol_id, std::vector<symbol_id>> generic_lambda_groups_;
-  /// A generic lambda's `let` pattern, mapped to the locals of its copies:
-  /// dropping the binding drops every closure made for it.
-  std::unordered_map<const void *, std::vector<symbol_id>>
-      generic_lambda_bindings_;
   std::unordered_map<symbol_id, type_id> local_types_;
   symbol_id next_symbol_ = 0;
   /// The name of the function being lowered, which names the task functions
@@ -1519,6 +1581,10 @@ private:
   /// See `drop_schedule`'s doc comment (`src/hir/drop_schedule.h`) for why
   /// this needs no new plumbing through `lower_block`'s parameters.
   drop_schedule drop_schedule_;
+  /// A compile-time expression has no drop schedule to say which static
+  /// reads it owns, so each gets a fresh value: a static never changes, so
+  /// a fresh value reads the same as the global would.
+  bool owns_static_reads_ = false;
   /// The local each drop flag of `drop_schedule_` is declared as, once its
   /// binding has been lowered.
   std::vector<symbol_id> flag_symbols_;
@@ -1697,27 +1763,24 @@ auto lowerer::guarded(const std::vector<std::size_t> &flags,
   if (flags.empty() || body.empty()) {
     return body;
   }
-  auto condition = flag_ref(flags.front(), span);
-  if (!condition.has_value()) {
-    return std::unexpected(condition.error());
-  }
-  for (std::size_t i = 1; i < flags.size(); ++i) {
-    auto next = flag_ref(flags[i], span);
-    if (!next.has_value()) {
-      return std::unexpected(next.error());
+  // One `if` per flag, the last innermost, rather than one `if` on their
+  // `&&`: each test reads a flag itself, which is how the storage form's
+  // verifier ties a value's drop to the flag that says it is still held.
+  auto out = std::move(body);
+  for (auto flag = flags.rbegin(); flag != flags.rend(); ++flag) {
+    auto condition = flag_ref(*flag, span);
+    if (!condition.has_value()) {
+      return std::unexpected(condition.error());
     }
-    condition = ok_expr(hir::make<hir_binary>(
-        span, checked_.types.bool_type(), ast::binary_op::logical_and,
-        std::move(*condition), std::move(*next)));
+    auto branches = std::vector<hir_if_branch>{};
+    branches.push_back(hir_if_branch{
+        .condition = std::move(*condition),
+        .body = make<hir_block>(span, k_unknown_type, std::move(out))});
+    out = ptr_vec<hir_node>{};
+    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(make<hir_if>(span, k_unknown_type,
+                                         std::move(branches), nullptr)))));
   }
-  auto branches = std::vector<hir_if_branch>{};
-  branches.push_back(hir_if_branch{
-      .condition = std::move(*condition),
-      .body = make<hir_block>(span, k_unknown_type, std::move(body))});
-  auto out = ptr_vec<hir_node>{};
-  out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span, ptr<hir_expr>(make<hir_if>(span, k_unknown_type,
-                                       std::move(branches), nullptr)))));
   return out;
 }
 
@@ -2402,6 +2465,22 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
       if (!idx.has_value()) {
         return std::unexpected(idx.error());
       }
+      // A view that is not a cell (the `slice_mut[T]` of a range) is a
+      // value, and `&mut` lends it: the call is typed as the view and the
+      // whole expression as the reference to it.
+      if (checked_.types.entry(*type).kind == type_kind::ref_kind) {
+        auto view = checked_type_of(index);
+        if (!view.has_value()) {
+          return std::unexpected(view.error());
+        }
+        auto call = lower_index_dispatch(index.span, *view, found->second,
+                                         std::move(*object), std::move(*idx));
+        if (!call.has_value()) {
+          return std::unexpected(call.error());
+        }
+        return ok_expr(hir::make<hir_unary>(un.span, *type, un.op,
+                                            std::move(*call)));
+      }
       return lower_index_dispatch(index.span, *type, found->second,
                                   std::move(*object), std::move(*idx));
     }
@@ -2502,23 +2581,11 @@ auto lowerer::lower_call(const ast::call_expr &call)
     return lower_literal(*folded->second);
   }
 
-  // `uninit[T, N]()` — a frame-local buffer of `N` slots sized for `T`.
-  // The size comes from `runtime::layout_of`, the same function `size_of[T]`
-  // and every element stride read from, so the buffer's capacity is exactly
-  // `N` elements as indexed through it.
+  // `uninit[T, N]()` — a frame-local buffer of `N` elements of `T`, laid out
+  // by the storage form from its type.
   if (const auto buffer = checked_.lowering.stack_buffers.find(&call);
       buffer != checked_.lowering.stack_buffers.end()) {
-    const auto layout =
-        runtime::layout_of(checked_.types, buffer->second.element);
-    if (!layout.has_value()) {
-      return fail(lowering_error_kind::unresolved_type, call.span,
-                  std::format("`{}` has no known size, so a buffer of it "
-                              "cannot be laid out",
-                              checked_.types.display(buffer->second.element)));
-    }
-    return ok_expr(make<hir_stack_buffer>(
-        call.span, *type, layout->size_bytes * buffer->second.count,
-        layout->align_bytes));
+    return ok_expr(make<hir_stack_buffer>(call.span, *type));
   }
 
   // `ptr_cast[U](p)` — a pure retype. The lowered operand node *is* the
@@ -2565,11 +2632,10 @@ auto lowerer::lower_call(const ast::call_expr &call)
   }
 
   // `size_of[T]()` / `align_of[T]()` — the checker resolved *which* type
-  // each asks about (`checked_types::layout_queries`); the answer comes
-  // from `runtime::layout_of`, the one function both backends already read
-  // every field offset and element stride out of. Answering it here rather
-  // than in the checker is what makes `size_of[T]()` agree with `T`'s real
-  // stride by construction instead of by coincidence.
+  // each asks about (`checked_types::layout_queries`); the storage form
+  // answers it from `runtime::value_layouts`, the layouts both backends read
+  // every field offset and element stride out of, so `size_of[T]()` agrees
+  // with `T`'s real stride by construction.
   if (const auto query = checked_.lowering.layout_queries.find(&call);
       query != checked_.lowering.layout_queries.end()) {
     if (query->second.operand == k_unknown_type ||
@@ -2590,19 +2656,13 @@ auto lowerer::lower_call(const ast::call_expr &call)
           checked_.drop.drop_plans.contains(query->second.operand) ? "true"
                                                                    : "false"));
     }
-    const auto layout =
-        runtime::layout_of(checked_.types, query->second.operand);
-    if (!layout.has_value()) {
-      return fail(lowering_error_kind::unresolved_type, call.span,
-                  std::format("`{}` has no known size or alignment",
-                              checked_.types.display(query->second.operand)));
-    }
-    const auto answer =
-        query->second.kind == semantic::layout_query_kind::size_of
-            ? layout->size_bytes
-            : layout->align_bytes;
-    return ok_expr(make<hir_literal>(call.span, *type, token_kind::int_lit,
-                                     std::to_string(answer)));
+    auto size = ptr<hir_literal>(
+        make<hir_literal>(call.span, *type, token_kind::int_lit, ""));
+    size->question = layout_question{
+        .wants_alignment =
+            query->second.kind != semantic::layout_query_kind::size_of,
+        .type = query->second.operand};
+    return ok_expr(std::move(size));
   }
 
   // `x.len()`/`x.as_bytes()` on a builtin container/`str` — these have no
@@ -2948,6 +3008,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
                                     std::move(args), target_decl);
     lowered_call->consumes_receiver =
         consumes_receiver && receiver_ast != nullptr;
+    lowered_call->receiver_by_value =
+        lowered_call->consumes_receiver && owns_receiver(target_decl);
     return ok_expr(std::move(lowered_call));
   }
 
@@ -3188,16 +3250,6 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
          found->second != k_unknown_type;
 }
 
-[[nodiscard]] auto drop_call_result_type(const checked_types &checked,
-                                         const ast::func_decl &decl)
-    -> type_id {
-  if (decl.return_type == nullptr) {
-    return k_unknown_type;
-  }
-  const auto found = checked.node_types.find(decl.return_type.get());
-  return found != checked.node_types.end() ? found->second : k_unknown_type;
-}
-
 auto lowerer::lower_index(const ast::index_expr &index)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   auto type = checked_type_of(index);
@@ -3238,7 +3290,7 @@ auto lowerer::lower_index(const ast::index_expr &index)
   if (const auto by_ref = checked_.lowering.index_ref_dispatches.find(&index);
       by_ref != checked_.lowering.index_ref_dispatches.end() &&
       !checked_.is_copy(*type)) {
-    const auto cell = drop_call_result_type(checked_, *by_ref->second.decl);
+    const auto cell = declared_result_type(*by_ref->second.decl);
     if (checked_.types.is_unknown(cell)) {
       return fail(lowering_error_kind::unsupported_construct, index.span,
                   "internal error: the `at_ref` that reads this element in "
@@ -3291,6 +3343,71 @@ auto lowerer::lower_index_dispatch(source_span span, type_id result,
                              resolved.decl));
 }
 
+/// An array's drop: each element in index order, through a pointer to the
+/// elements, as `std.mem.drop_range` would. Taking the pointer ends the array
+/// (`hir_container_data::takes_elements`), so the elements are its only drops.
+/// The checker moves no single element out of an owned array, so the array is
+/// either whole here or not dropped at all.
+auto lowerer::build_array_drop(const place_fn &make_receiver,
+                               const semantic::drop_plan &plan,
+                               source_span span, ptr_vec<hir_node> &out,
+                               const field_paths &moved_paths)
+    -> std::expected<void, lowering_error> {
+  if (!moved_paths.empty()) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                "internal error: an array drop was scheduled for an array "
+                "that was moved out of in part");
+  }
+  const auto element = *plan.element;
+  const auto length = plan.length;
+  const auto usize_type = checked_.types.usize_type();
+  const auto pointer_type = plan.element_pointer;
+  const auto data_symbol = mint_symbol();
+  const auto index_symbol = mint_symbol();
+  auto data = make<hir_container_data>(span, pointer_type, make_receiver());
+  data->takes_elements = true;
+  out.push_back(ptr<hir_node>(make<hir_let>(span, data_symbol,
+                                            std::string("<drop elements>"),
+                                            ptr<hir_expr>(std::move(data)))));
+  out.push_back(ptr<hir_node>(make<hir_let>(
+      span, index_symbol, std::string("<drop index>"),
+      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
+                                      std::string("0"))),
+      /*mut=*/true)));
+  const place_fn element_place = [span, element, pointer_type, data_symbol,
+                                  usize_type, index_symbol]() -> ptr<hir_expr> {
+    return {make<hir_index>(
+        span, element,
+        ptr<hir_expr>(make<hir_local_ref>(span, pointer_type, data_symbol,
+                                          std::string("<drop elements>"))),
+        ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
+                                          std::string("<drop index>"))))};
+  };
+  auto body = ptr_vec<hir_node>{};
+  if (auto ok = build_drop_calls(element_place, element, span, body);
+      !ok.has_value()) {
+    return ok;
+  }
+  auto step = ptr_vec<hir_node>{};
+  step.push_back(ptr<hir_node>(hir::make<hir_assign>(
+      span, ast::assign_op::add_assign,
+      ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
+                                        std::string("<drop index>"))),
+      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
+                                      std::string("1"))))));
+  auto condition = ptr<hir_expr>(hir::make<hir_binary>(
+      span, checked_.types.bool_type(), ast::binary_op::lt,
+      ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
+                                        std::string("<drop index>"))),
+      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
+                                      std::to_string(length)))));
+  out.push_back(ptr<hir_node>(make<hir_while>(
+      span, std::move(condition),
+      make<hir_block>(span, k_unknown_type, std::move(body)),
+      make<hir_block>(span, k_unknown_type, std::move(step)))));
+  return {};
+}
+
 auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
                                source_span span, ptr_vec<hir_node> &out,
                                const field_paths &moved_paths)
@@ -3315,6 +3432,9 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
                                                    make_receiver())))));
     return {};
   }
+  if (plan.element.has_value()) {
+    return build_array_drop(make_receiver, plan, span, out, moved_paths);
+  }
   if (plan.own_drop.has_value()) {
     const auto &resolved = *plan.own_drop;
     // Same convention as `lower_index_dispatch` just above: an empty
@@ -3330,10 +3450,12 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
         span, k_unknown_type, symbol, local_name, resolved.owner_module));
     auto args = ptr_vec<hir_expr>{};
     args.push_back(make_receiver());
-    const auto result_type = drop_call_result_type(checked_, *resolved.decl);
-    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, ptr<hir_expr>(direct_call(span, result_type, std::move(callee),
-                                        std::move(args), resolved.decl)))));
+    const auto result_type = declared_result_type(*resolved.decl);
+    auto own_drop = direct_call(span, result_type, std::move(callee),
+                                std::move(args), resolved.decl);
+    own_drop->is_drop = true;
+    out.push_back(ptr<hir_node>(
+        make<hir_expr_stmt>(span, ptr<hir_expr>(std::move(own_drop)))));
   }
   // Field-wise, in declaration order, regardless of whether this type had
   // its own `impl drop` above — the spec's implicit field-wise rule applies
@@ -3361,8 +3483,17 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
     if (moved_whole) {
       continue;
     }
-    const place_fn field_place = [make_receiver, field_name,
-                                  field_type]() -> ptr<hir_expr> {
+    // A tuple's members are named by position.
+    const auto position =
+        checked_.types.entry(type).kind == semantic::type_kind::tuple_kind
+            ? semantic::tuple_index_of(field_name)
+            : std::nullopt;
+    const place_fn field_place = [make_receiver, field_name, field_type,
+                                  position]() -> ptr<hir_expr> {
+      if (position.has_value()) {
+        return {make<hir_tuple_index>(source_span::dummy(), field_type,
+                                      make_receiver(), *position)};
+      }
       return {make<hir_field>(source_span::dummy(), field_type, make_receiver(),
                               field_name)};
     };
@@ -3441,29 +3572,7 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
 auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
   auto drops = ptr_vec<hir_node>{};
-  if (const auto copies = generic_lambda_bindings_.find(drop.node);
-      copies != generic_lambda_bindings_.end()) {
-    // A generic lambda's binding holds one closure per copy.
-    for (const auto copy : copies->second) {
-      const auto type = local_types_.find(copy);
-      if (type == local_types_.end() ||
-          !checked_.drop.drop_plans.contains(type->second)) {
-        continue;
-      }
-      const auto copy_type = type->second;
-      const auto copy_name = drop.name;
-      const place_fn make_copy = [copy, copy_type,
-                                  copy_name]() -> ptr<hir_expr> {
-        return {make<hir_local_ref>(source_span::dummy(), copy_type, copy,
-                                    copy_name)};
-      };
-      if (auto built = build_drop_calls(make_copy, copy_type,
-                                        source_span::dummy(), drops);
-          !built.has_value()) {
-        return built;
-      }
-    }
-  } else {
+  {
     const auto symbol = lookup_whole_local(drop.node);
     if (!symbol.has_value()) {
       return fail(lowering_error_kind::unsupported_construct,
@@ -3617,9 +3726,19 @@ auto lowerer::emit_crew_exits(jump_exit kind, source_span span,
   return {};
 }
 
-auto lowerer::coroutine_cancel_check(const void *key, source_span span)
+auto lowerer::coroutine_cancel_check(const void *key, source_span span,
+                                     ptr_vec<hir_expr> awaited,
+                                     ptr_vec<hir_node> drops)
     -> std::expected<ptr<hir_node>, lowering_error> {
   auto exit = ptr_vec<hir_node>{};
+  for (auto &task : awaited) {
+    exit.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(make<hir_coroutine_cancel>(
+                  span, k_unknown_type, std::move(task))))));
+  }
+  for (auto &drop : drops) {
+    exit.push_back(std::move(drop));
+  }
   if (auto dropped = emit_exit_drops(key, jump_exit::function, span, exit);
       !dropped.has_value()) {
     return std::unexpected(dropped.error());
@@ -3785,7 +3904,7 @@ auto lowerer::lower_runtime_fill(
   auto body_stmts = ptr_vec<hir_node>{};
   body_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
       span, call_from_resolved(
-                drop_call_result_type(checked_, *dispatch.push_callee.decl),
+                declared_result_type(*dispatch.push_callee.decl),
                 dispatch.push_callee, std::move(push_args)))));
   auto body = make<hir_block>(span, k_unknown_type, std::move(body_stmts));
 
@@ -4008,6 +4127,23 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
     }
     captures = std::move(resolved);
   }
+  // What the ownership checker decided this lambda borrows, resolved here
+  // for the same reason as a capture list.
+  auto borrowed = std::unordered_map<symbol_id, ast::capture_mode>{};
+  if (const auto found = drop_schedule_.borrowed_captures.find(&lambda);
+      found != drop_schedule_.borrowed_captures.end()) {
+    for (const auto &capture : found->second) {
+      const auto symbol = capture_symbol(capture.name, capture.node);
+      if (!symbol.has_value()) {
+        return fail(lowering_error_kind::unsupported_construct, lambda.span,
+                    "internal error: a value a closure borrows did not "
+                    "resolve to a local of the enclosing function");
+      }
+      borrowed.insert_or_assign(*symbol, capture.is_mut
+                                             ? ast::capture_mode::by_mut_ref
+                                             : ast::capture_mode::by_ref);
+    }
+  }
 
   push_scope();
 
@@ -4113,12 +4249,37 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
   auto closure =
       make<hir_lambda>(lambda.span, *lambda_type, std::move(params),
                        return_type, std::move(*body), std::move(captures));
+  if (!closure->captures.has_value()) {
+    closure->captures = implicit_capture_plan(lambda, *closure, borrowed);
+  }
   auto glue = lower_drop_glue(lambda, *closure);
   if (!glue.has_value()) {
     return std::unexpected(glue.error());
   }
   closure->drop_glue = std::move(*glue);
   return ok_expr(std::move(closure));
+}
+
+auto lowerer::implicit_capture_plan(
+    const ast::lambda_expr & /*lambda*/, const hir_lambda &closure,
+    const std::unordered_map<symbol_id, ast::capture_mode> &borrowed)
+    -> std::optional<std::vector<hir_capture>> {
+  // Without borrows, `capture_plan` gives the same plan from the body.
+  if (borrowed.empty()) {
+    return std::nullopt;
+  }
+  auto plan = std::vector<hir_capture>{};
+  for (const auto symbol : free_variables(closure)) {
+    if (!local_types_.contains(symbol)) {
+      continue; // a module-level function, resolved directly
+    }
+    const auto mode = borrowed.find(symbol);
+    plan.push_back(hir_capture{.symbol = symbol,
+                               .mode = mode != borrowed.end()
+                                           ? mode->second
+                                           : ast::capture_mode::by_value});
+  }
+  return plan;
 }
 
 auto lowerer::lower_drop_glue(const ast::lambda_expr &lambda,
@@ -4141,7 +4302,7 @@ auto lowerer::lower_drop_glue(const ast::lambda_expr &lambda,
   // ordinary scope.
   auto stmts = ptr_vec<hir_node>{};
   for (const auto &capture : std::views::reverse(owned->second)) {
-    const auto symbol = lookup_local(capture.name);
+    const auto symbol = capture_symbol(capture.name, capture.node);
     if (!symbol.has_value()) {
       return fail(lowering_error_kind::unsupported_construct, lambda.span,
                   "internal error: a value moved into a closure did not "
@@ -4295,14 +4456,27 @@ auto lowerer::lower_task_read(const void *key, source_span span,
   // result:  let t = e;  <wait for t>;  <cancel check>  and the expression
   // itself becomes a read of `t`'s result. The wait is a suspension point,
   // so `t` is a local that the state machine saves across it.
-  const auto task_symbol = mint_symbol();
+  // `t.get()` on a local only looks at `t`, so it waits on `t` where it
+  // stands: binding it to a second name would be a second owner.
+  const auto *named = !consumes && task->kind == hir_node_kind::hir_local_ref
+                          ? &static_cast<const hir_local_ref &>(*task)
+                          : nullptr;
+  const auto task_symbol = named != nullptr ? named->symbol : mint_symbol();
+  const auto task_name =
+      named != nullptr ? named->name : std::string("<await task>");
   const auto task_ref = [&, task_symbol]() -> ptr<hir_expr> {
-    return {make<hir_local_ref>(task_span, task_type, task_symbol,
-                                std::string("<await task>"))};
+    return {make<hir_local_ref>(task_span, task_type, task_symbol, task_name)};
   };
-  await_hoist_->push_back(ptr<hir_node>(make<hir_let>(
-      task_span, task_symbol, std::string("<await task>"), std::move(task))));
-  if (auto waited = emit_task_wait(*await_hoist_, task_ref(), key, span);
+  if (named == nullptr) {
+    await_hoist_->push_back(ptr<hir_node>(make<hir_let>(
+        task_span, task_symbol, task_name, std::move(task))));
+  }
+  auto held = ptr_vec<hir_expr>{};
+  if (consumes) {
+    held.push_back(task_ref());
+  }
+  if (auto waited = emit_task_wait(*await_hoist_, task_ref(), key, span,
+                                   /*all=*/false, std::move(held));
       !waited.has_value()) {
     return std::unexpected(waited.error());
   }
@@ -4318,11 +4492,12 @@ auto lowerer::lower_task_read(const void *key, source_span span,
 }
 
 auto lowerer::emit_task_wait(ptr_vec<hir_node> &stmts, ptr<hir_expr> task,
-                             const void *key, source_span span, bool all)
+                             const void *key, source_span span, bool all,
+                             ptr_vec<hir_expr> awaited)
     -> std::expected<void, lowering_error> {
   stmts.push_back(ptr<hir_node>(make<hir_yield>(
       span, std::move(task), /*awaiting_task=*/true, /*awaiting_all=*/all)));
-  auto cancel = coroutine_cancel_check(key, span);
+  auto cancel = coroutine_cancel_check(key, span, std::move(awaited));
   if (!cancel.has_value()) {
     return std::unexpected(cancel.error());
   }
@@ -4431,7 +4606,7 @@ auto lowerer::lower_task_function(
     const void *key, const void *start_key, std::string task_name,
     const std::function<std::expected<ptr<hir_block>, lowering_error>()>
         &lower_body,
-    type_id declared, source_span span)
+    type_id declared, source_span span, ptr_vec<hir_expr> carried)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   const auto task_type = task_type_of(declared);
   static const auto no_captures =
@@ -4464,11 +4639,15 @@ auto lowerer::lower_task_function(
   // enclosing local's symbol, which the body already refers to.
   push_scope();
   auto prelude = ptr_vec<hir_node>{};
+  auto owned = std::unordered_set<symbol_id>{};
   for (const auto &capture : captures) {
     if (!capture.moved) {
       continue;
     }
-    const auto symbol = lookup_local(capture.name);
+    const auto symbol = capture_symbol(capture.name, capture.node);
+    if (symbol.has_value()) {
+      owned.insert(*symbol);
+    }
     if (!symbol.has_value()) {
       pop_scope();
       restore();
@@ -4482,7 +4661,7 @@ auto lowerer::lower_task_function(
     declare_flags(capture.node, span, prelude);
   }
   // A task dropped before it first runs returns at once.
-  auto cancel = coroutine_cancel_check(start_key, span);
+  auto cancel = coroutine_cancel_check(start_key, span, std::move(carried));
   if (!cancel.has_value()) {
     pop_scope();
     restore();
@@ -4524,6 +4703,7 @@ auto lowerer::lower_task_function(
   // Every local of the enclosing function the body reads is a parameter.
   auto params = std::vector<hir_param>{};
   auto args = ptr_vec<hir_expr>{};
+  auto lent_args = std::vector<size_t>{};
   for (const auto symbol : free_variables(**block)) {
     const auto type = local_types_.find(symbol);
     if (type == local_types_.end()) {
@@ -4546,8 +4726,12 @@ auto lowerer::lower_task_function(
         }
       }
     }
-    params.push_back(
-        hir_param{.symbol = symbol, .name = name, .type = type->second});
+    const auto lent = !owned.contains(symbol);
+    if (lent) {
+      lent_args.push_back(args.size());
+    }
+    params.push_back(hir_param{
+        .symbol = symbol, .name = name, .type = type->second, .lent = lent});
     args.push_back(ptr<hir_expr>(
         make<hir_local_ref>(span, type->second, symbol, std::move(name))));
   }
@@ -4562,8 +4746,9 @@ auto lowerer::lower_task_function(
 
   auto callee = ptr<hir_expr>(make<hir_local_ref>(
       span, k_unknown_type, resolve_reference(task_name), task_name));
-  return ok_expr(
-      make<hir_call>(span, task_type, std::move(callee), std::move(args)));
+  auto call = make<hir_call>(span, task_type, std::move(callee), std::move(args));
+  call->lent_args = std::move(lent_args);
+  return ok_expr(std::move(call));
 }
 
 /// `await on(ctx): body` runs `body` as a task on `ctx`'s pool and gives its
@@ -4645,6 +4830,9 @@ auto lowerer::lower_on_task(const ast::on_expr &on, type_id task_type)
   const auto held = declare_local("<on task>", task_type);
   pop_scope();
   const auto *key = &on.context_type;
+  auto carried = ptr_vec<hir_expr>{};
+  carried.push_back(ptr<hir_expr>(
+      make<hir_local_ref>(span, task_type, held, std::string("<on task>"))));
   auto wrapper = lower_task_function(
       key, key, std::format("<on {}@{}>", function_name_, span.start),
       [&]() -> std::expected<ptr<hir_block>, lowering_error> {
@@ -4663,7 +4851,7 @@ auto lowerer::lower_on_task(const ast::on_expr &on, type_id task_type)
         return ptr<hir_block>(
             make<hir_block>(span, declared, std::move(stmts)));
       },
-      declared, span);
+      declared, span, std::move(carried));
   if (!wrapper.has_value()) {
     return std::unexpected(wrapper.error());
   }
@@ -4698,7 +4886,10 @@ auto lowerer::lower_spawn_and_wait(ptr<hir_expr> made, type_id task_type,
       make<hir_expr_stmt>(span, runtime_call(span, "rt_task_spawn", unit_type,
                                              std::move(spawn_args)))));
   if (in_task) {
-    if (auto waited = emit_task_wait(setup, task_ref(), wait_key, span);
+    auto held = ptr_vec<hir_expr>{};
+    held.push_back(task_ref());
+    if (auto waited = emit_task_wait(setup, task_ref(), wait_key, span,
+                                     /*all=*/false, std::move(held));
         !waited.has_value()) {
       return std::unexpected(waited.error());
     }
@@ -4788,7 +4979,50 @@ auto lowerer::lower_crew(std::string_view name,
 
   emit_crew_end(crew_symbol, span, nodes);
   if (in_task_body_) {
-    auto cancel = coroutine_cancel_check(key, span);
+    // The block's value is not bound to a name yet, so a cancellation here
+    // has to release the tasks it hands back and drop the rest of it.
+    auto held = ptr_vec<hir_expr>{};
+    auto drops = ptr_vec<hir_node>{};
+    if (result != nullptr) {
+      const auto &local = static_cast<const hir_local_ref &>(*result);
+      const auto result_ref = [&]() -> ptr<hir_expr> {
+        return {make<hir_local_ref>(span, result_type, local.symbol,
+                                    std::string("<crew result>"))};
+      };
+      const auto &entry = checked_.types.entry(result_type);
+      const auto is_task = [&](type_id member) {
+        const auto &m = checked_.types.entry(member);
+        return m.kind == type_kind::builtin_generic_kind && m.name == "task";
+      };
+      // A part that is not a task drops by its plan; one with no plan owns
+      // nothing to drop.
+      const auto drop_part = [&](const place_fn &part, type_id part_type)
+          -> std::expected<void, lowering_error> {
+        if (!checked_.drop.drop_plans.contains(part_type)) {
+          return {};
+        }
+        return build_drop_calls(part, part_type, span, drops);
+      };
+      if (is_task(result_type)) {
+        held.push_back(result_ref());
+      } else if (entry.kind == type_kind::tuple_kind) {
+        for (size_t i = 0; i < entry.args.size(); ++i) {
+          const auto member = entry.args[i];
+          const auto member_ref = [&, member, i]() -> ptr<hir_expr> {
+            return {make<hir_tuple_index>(span, member, result_ref(), i)};
+          };
+          if (is_task(member)) {
+            held.push_back(member_ref());
+          } else if (auto ok = drop_part(member_ref, member); !ok.has_value()) {
+            return std::unexpected(ok.error());
+          }
+        }
+      } else if (auto ok = drop_part(result_ref, result_type); !ok.has_value()) {
+        return std::unexpected(ok.error());
+      }
+    }
+    auto cancel =
+        coroutine_cancel_check(key, span, std::move(held), std::move(drops));
     if (!cancel.has_value()) {
       return std::unexpected(cancel.error());
     }
@@ -4837,21 +5071,28 @@ auto lowerer::lower_crew_errors(const ast::call_expr &call,
   if (!crew_value.has_value()) {
     return std::unexpected(crew_value.error());
   }
-  const auto crew_symbol = mint_symbol();
   const auto crew_type = checked_type_of(crew);
   if (!crew_type.has_value()) {
     return std::unexpected(crew_type.error());
   }
+  // The crew's own name is used where it stands: binding it to a second name
+  // would be a second owner of the handle, which the crew's join still uses.
+  const auto *named = (*crew_value)->kind == hir_node_kind::hir_local_ref
+                          ? &static_cast<const hir_local_ref &>(**crew_value)
+                          : nullptr;
+  const auto crew_symbol = named != nullptr ? named->symbol : mint_symbol();
+  const auto crew_name =
+      named != nullptr ? named->name : std::string("<errors crew>");
   const auto crew_ref = [&]() -> ptr<hir_expr> {
-    return {make<hir_local_ref>(span, *crew_type, crew_symbol,
-                                std::string("<errors crew>"))};
+    return {make<hir_local_ref>(span, *crew_type, crew_symbol, crew_name)};
   };
 
   auto stmts = ptr_vec<hir_node>{};
   auto &prologue = in_task ? *await_hoist_ : stmts;
-  prologue.push_back(ptr<hir_node>(make<hir_let>(span, crew_symbol,
-                                                 std::string("<errors crew>"),
-                                                 std::move(*crew_value))));
+  if (named == nullptr) {
+    prologue.push_back(ptr<hir_node>(make<hir_let>(
+        span, crew_symbol, crew_name, std::move(*crew_value))));
+  }
   if (in_task) {
     if (auto waited = emit_task_wait(prologue, crew_ref(), &call, span);
         !waited.has_value()) {
@@ -4932,7 +5173,7 @@ auto lowerer::lower_crew_errors(const ast::call_expr &call,
   auto err_stmts = ptr_vec<hir_node>{};
   err_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
       span, call_from_resolved(
-                drop_call_result_type(checked_, *dispatch.push_callee.decl),
+                declared_result_type(*dispatch.push_callee.decl),
                 dispatch.push_callee, std::move(push_args)))));
   auto err_pattern_args = ptr_vec<hir_pattern>{};
   err_pattern_args.push_back(
@@ -4999,8 +5240,13 @@ auto lowerer::lower_par_results(ptr_vec<hir_node> &setup,
                                 std::string("<par tasks>"))};
   };
   if (in_task) {
+    auto held = ptr_vec<hir_expr>{};
+    for (size_t i = 0; i < tasks.size(); ++i) {
+      held.push_back(ptr<hir_expr>(
+          make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)));
+    }
     if (auto waited = emit_task_wait(setup, group_ref(), &await, span,
-                                     /*all=*/true);
+                                     /*all=*/true, std::move(held));
         !waited.has_value()) {
       return std::unexpected(waited.error());
     }
@@ -5060,7 +5306,13 @@ auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
   };
 
   if (in_task) {
-    if (auto waited = emit_task_wait(setup, group_ref(), &await, span);
+    auto held = ptr_vec<hir_expr>{};
+    for (size_t i = 0; i < tasks.size(); ++i) {
+      held.push_back(ptr<hir_expr>(
+          make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)));
+    }
+    if (auto waited = emit_task_wait(setup, group_ref(), &await, span,
+                                     /*all=*/false, std::move(held));
         !waited.has_value()) {
       return std::unexpected(waited.error());
     }
@@ -5076,16 +5328,21 @@ auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
   }
 
   // The first finished branch in source order wins.
+  // The tasks were moved into the tuple, so every read goes through it.
+  const auto member = [&](size_t i) -> ptr<hir_expr> {
+    return {make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)};
+  };
   const auto read_branch = [&](size_t i) -> ptr<hir_block> {
     auto stmts = ptr_vec<hir_node>{};
-    stmts.push_back(ptr<hir_node>(
-        make<hir_expr_stmt>(span, tasks.result_of(i, span, type))));
+    stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(make<hir_generator_next>(
+                  span, type, member(i), /*await_task=*/true)))));
     return make<hir_block>(span, type, std::move(stmts));
   };
   auto picks = std::vector<hir_if_branch>{};
   for (size_t i = 0; i + 1 < tasks.size(); ++i) {
     auto args = ptr_vec<hir_expr>{};
-    args.push_back(tasks.ref(i));
+    args.push_back(member(i));
     picks.push_back(
         hir_if_branch{.condition = runtime_call(span, "rt_task_is_finished",
                                                 bool_type, std::move(args)),
@@ -6014,20 +6271,22 @@ auto lowerer::lower_stmt(const ast::node &node)
           return std::unexpected(closure.error());
         }
         auto copy_name = std::format("{}${}", name, i);
-        const auto symbol = declare_local(copy_name, (*closure)->type);
+        // Each copy is a binding of its own to the ownership checker, which
+        // drops it by the copy (`ownership_cfg`'s `declare_generic_lambda`).
+        const auto symbol = declare_local(copy_name, (*closure)->type,
+                                          /*whole=*/true, copy);
         generic_lambda_symbols_.insert_or_assign(copy, symbol);
         group.push_back(symbol);
         result.push_back(ptr<hir_node>(make<hir_let>(
             let.span, symbol, std::move(copy_name), std::move(*closure))));
+        declare_flags(copy, let.span, result);
       }
       // Bound after the copies, so the name shadows like any `let`; only a
       // capture list reads it (`lower_lambda`), every other use names its
       // own copy.
       const auto name_symbol = mint_symbol();
       scopes_.back().by_name.insert_or_assign(name, name_symbol);
-      generic_lambda_bindings_.insert_or_assign(let.pattern.get(), group);
       generic_lambda_groups_.emplace(name_symbol, std::move(group));
-      declare_flags(let.pattern.get(), let.span, result);
       return result;
     }
     auto initializer = lower_expr(*let.initializer);
@@ -6295,10 +6554,9 @@ auto lowerer::lower_stmt(const ast::node &node)
           return std::unexpected(assigned.error());
         }
         auto call = lower_index_dispatch(
-            // `set_at` returns `unit` and this is a statement, so the
-            // call's value is discarded — `k_unknown_type` is what
-            // `lower_binary` uses for the same reason on its callee.
-            assign.span, k_unknown_type, found->second, std::move(*object),
+            // `set_at` returns `unit`, and the statement discards it.
+            assign.span, interning_types().builtin("unit"), found->second,
+            std::move(*object),
             std::move(*subject), std::move(*assigned));
         if (!call.has_value()) {
           return std::unexpected(call.error());
@@ -6391,18 +6649,21 @@ auto lowerer::lower_stmt(const ast::node &node)
     // `self` names the mutated object. Binding it with a `let` re-reads the
     // object rather than reusing the assignment's own target expression
     // (which is now owned by the `hir_assign`), so the check sees the value
-    // the write just produced.
+    // the write just produced. It is a shared borrow, as a method's `self`
+    // is (chapter 3): the object stays where it is.
     auto self_value = clone_place(*object);
     if (!self_value.has_value()) {
       return std::unexpected(self_value.error());
     }
-    const auto object_type = object->type;
+    const auto self_type = interning_types().ref_to(object->type, false);
     const auto self_symbol = mint_symbol();
-    stmts.push_back(ptr<hir_node>(make<hir_let>(assign.span, self_symbol,
-                                                std::string("self"),
-                                                std::move(*self_value))));
+    stmts.push_back(ptr<hir_node>(make<hir_let>(
+        assign.span, self_symbol, std::string("self"),
+        ptr<hir_expr>(hir::make<hir_unary>(assign.span, self_type,
+                                      ast::unary_op::addr_of,
+                                      std::move(*self_value))))));
     auto check =
-        check_invariant_of(*invariant, object_type, self_symbol, assign.span);
+        check_invariant_of(*invariant, self_type, self_symbol, assign.span);
     if (!check.has_value()) {
       return std::unexpected(check.error());
     }
@@ -7481,6 +7742,13 @@ auto lowerer::lower_iterator_loop(
         iterable.span, dispatch.adapter_result_type, std::move(adapter_callee),
         std::move(adapter_args), dispatch.adapter_decl);
     adapter_call->consumes_receiver = true;
+    adapter_call->receiver_by_value = owns_receiver(dispatch.adapter_decl);
+    // A borrowed collection (the checker allows one only for `copy`
+    // elements) is copied into the iterator, which owns nothing.
+    adapter_call->receiver_borrowed =
+        adapter_call->receiver_by_value &&
+        interning_types().entry(interning_types().strip_refinement(iterable_type))
+                .kind == semantic::type_kind::ref_kind;
     handle_value = ok_expr(std::move(adapter_call));
     handle_type = dispatch.adapter_result_type;
   }
@@ -7611,7 +7879,7 @@ auto lowerer::lower_static_for_inline(const ast::static_decl &decl)
                         ptr_vec<hir_expr>{}),
       /*mut=*/true)));
   const auto push_result =
-      drop_call_result_type(checked_, *dispatch->second.push_callee.decl);
+      declared_result_type(*dispatch->second.push_callee.decl);
   // Each element: a literal computed while checking, or this iteration's
   // copy of the yield, behind a `let` for each loop binding.
   auto values = ptr_vec<hir_expr>{};
@@ -7779,7 +8047,7 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
         span,
         call_from_resolved(
             span,
-            drop_call_result_type(checked_, *dispatch->second.push_callee.decl),
+            declared_result_type(*dispatch->second.push_callee.decl),
             dispatch->second.push_callee, std::move(push_args))));
 
     auto result = ptr_vec<hir_node>{};
@@ -9038,6 +9306,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
       : decl.modifiers.is_generator ? coroutine_kind::generator
                                     : coroutine_kind::none,
       item_type));
+  function->owns_receiver = !function->params.empty() && owns_receiver(&decl);
   if (auto finished = finish_function(*function); !finished.has_value()) {
     return std::unexpected(finished.error());
   }
@@ -9050,6 +9319,7 @@ auto lowerer::lower_expression_function(
     std::string name) -> std::expected<ptr<hir_function>, lowering_error> {
   // Nothing it owns is dropped: it runs once, at compile time.
   drop_schedule_ = {};
+  owns_static_reads_ = true;
   flag_symbols_.clear();
   auto return_type = checked_type_of(expr);
   if (!return_type.has_value()) {

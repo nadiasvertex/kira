@@ -4,7 +4,6 @@
 #include <expected>
 #include <memory>
 #include <optional>
-#include <span>
 #include <string>
 #include <string_view>
 
@@ -18,16 +17,15 @@
 #include <llvm/IR/Module.h>
 #pragma clang diagnostic pop
 
-#include "src/hir/nodes.h"
 #include "src/parser/source_location.h"
-#include "src/semantic/type_table.h"
 
 namespace cinder::llvm_codegen {
 
-/// Why `compile_module` refused to produce an `llvm::Module` for some HIR
-/// construct. This pass lowers the same HIR as the bytecode compiler
-/// (`src/bytecode_compiler/compile.h`) and fails closed on the same kinds of
-/// construct, so a gap in one tier is reported as a gap in the other.
+/// Why `compile_storage_module` (`storage_codegen.h`) refused to produce an
+/// `llvm::Module` for a function of the storage form. It compiles the same
+/// storage form as the bytecode compiler (`src/bytecode_compiler/
+/// storage_compile.h`) and fails closed on the same kinds of construct, so a
+/// gap in one tier is reported as a gap in the other.
 enum class codegen_error_kind : uint8_t {
   unsupported_construct,
   unsupported_type,
@@ -58,49 +56,10 @@ struct compiled_module {
 /// `jit_support.h` for the execution side of this contract.
 inline constexpr const char *kPanicSymbolName = "cinder_codegen_panic";
 
-/// The exact symbol name generated IR calls to allocate a heap value. Every
-/// non-scalar value (`str`, `list[T]`, tuple/struct/sum-type/closure) is
-/// allocated through this one entry point, defined in
-/// `src/runtime/allocator.h` and resolved the same way `kPanicSymbolName` is
-/// (process-symbol lookup for the JIT, ordinary static linking for
-/// `cinder --compile`).
-///
-/// Named `cinder_heap_alloc`, not `cinder_rt_alloc`: the `cinder_rt_*` prefix
-/// is reserved for the uniform-ABI intrinsic entry points (`src/intrinsics.h`),
-/// and `rt_alloc` is one of them — a Cinder-callable intrinsic whose native
-/// symbol `cinder_rt_alloc` takes and returns opaque heap pointers, unlike
-/// this one's `(i64) -> ptr`.
-inline constexpr const char *kAllocSymbolName = "cinder_heap_alloc";
-
-/// Lowers every function in `module` into one `llvm::Module` named after
-/// `module.module_name`, resolving direct calls to other functions in the
-/// same module by declaring every function's signature up front (a first
-/// pass over `module.functions`) before compiling any body — unlike
-/// `bytecode_compiler` (which resolves calls through a name -> index table
-/// at its own pace), real `llvm::Function` values must exist before a call
-/// instruction can reference them, including for forward references and
-/// mutual recursion. `types` must be the same `type_table` every `type_id`
-/// on `module`'s nodes indexes into.
-[[nodiscard]] auto compile_module(const hir::hir_module &module,
-                                  const semantic::type_table &types)
-    -> std::expected<compiled_module, codegen_error>;
-
-/// Multi-module variant of `compile_module`, mirroring
-/// `bytecode_compiler::compile_module`'s span overload exactly (same
-/// entry-module-is-bare, everyone-else-is-`module::name`-mangled scheme —
-/// see its doc comment in `src/bytecode_compiler/compile.h`). `modules.
-/// front()` is the entry module; the produced `llvm::Module` is named after
-/// it. The single-module overload above is exactly
-/// `compile_module({&module}, types)`.
-[[nodiscard]] auto
-compile_module(std::span<const hir::hir_module *const> modules,
-               const semantic::type_table &types)
-    -> std::expected<compiled_module, codegen_error>;
-
 // ==========================================================================
 //  Optimization — an opt-in `llvm::PassBuilder` pipeline run over a
 //  `compiled_module`'s IR before it's JIT-executed or emitted as a native
-//  object file. `compile_module` above never runs any optimization itself
+//  object file. `compile_storage_module` never runs any optimization itself
 //  (the generated IR should stay a direct, readable reflection of the
 //  source); `optimize_module` is a separate, explicit step a caller
 //  opts into via `-O1`/`-O2`/`-O3` (`driver::cli_config::opt_level`).
@@ -108,9 +67,9 @@ compile_module(std::span<const hir::hir_module *const> modules,
 
 /// Mirrors clang/gcc's `-O0`/`-O1`/`-O2`/`-O3` convention and maps 1:1 onto
 /// `llvm::OptimizationLevel` (see `optimize_module`'s definition in
-/// `codegen.cpp` for the actual `llvm::PassBuilder` pipeline — kept out of
-/// this header so callers that only need `compiled_module`/`compile_module`
-/// don't have to pull in `<llvm/Passes/PassBuilder.h>`). `o0` — no
+/// `optimize.cpp` for the actual `llvm::PassBuilder` pipeline — kept out of
+/// this header so callers that only need `compiled_module` don't have to
+/// pull in `<llvm/Passes/PassBuilder.h>`). `o0` — no
 /// optimization passes run at all — is every caller's default unless a
 /// `-O` flag says otherwise.
 enum class optimization_level : uint8_t { o0 = 0, o1 = 1, o2 = 2, o3 = 3 };

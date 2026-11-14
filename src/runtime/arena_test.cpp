@@ -39,8 +39,47 @@ auto test_c_abi_entry_point_allocates() -> void {
 
 } // namespace
 
+namespace {
+
+/// An odd-sized request leaves the bump pointer off any 16- or 64-byte
+/// boundary, so each following aligned request has to pad to reach one. Blocks
+/// must still not overlap and must be zeroed.
+auto test_aligned_allocation_pads_and_does_not_overlap() -> void {
+  auto arena = cinder::runtime::bump_arena{};
+  auto previous_end = uintptr_t{0};
+  for (const size_t align : {size_t{16}, size_t{64}, size_t{16}, size_t{256}}) {
+    auto *odd = arena.allocate(24);
+    expect(odd != nullptr, "expected an odd-sized allocation");
+    auto *aligned = arena.allocate(40, align);
+    const auto address = reinterpret_cast<uintptr_t>(aligned); // NOLINT
+    expect(address % align == 0, "expected the block on its alignment");
+    expect(address >= reinterpret_cast<uintptr_t>(odd) + 24, // NOLINT
+           "expected the aligned block not to overlap the one before it");
+    expect(address >= previous_end, "expected blocks to be disjoint");
+    auto zeros = std::array<std::byte, 40>{};
+    expect(std::memcmp(aligned, zeros.data(), 40) == 0,
+           "expected padding to leave the block zeroed");
+    previous_end = address + 40;
+  }
+}
+
+/// A request larger than a whole block, with a large alignment, still lands on
+/// the alignment.
+auto test_aligned_allocation_larger_than_a_block() -> void {
+  auto arena = cinder::runtime::bump_arena{};
+  auto *p = arena.allocate((size_t{1} << 20) + 64, 128);
+  expect(reinterpret_cast<uintptr_t>(p) % 128 == 0, // NOLINT
+         "expected an oversized block on its alignment");
+  auto *q = arena.allocate(8);
+  expect(q != nullptr && q != p, "expected the arena to keep working");
+}
+
+} // namespace
+
 auto main() -> int {
   try {
+    test_aligned_allocation_pads_and_does_not_overlap();
+    test_aligned_allocation_larger_than_a_block();
     test_allocations_are_distinct_and_zeroed();
     test_allocation_across_block_boundary();
     test_c_abi_entry_point_allocates();

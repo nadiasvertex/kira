@@ -39,7 +39,7 @@ type holder[T] = { value: T }
 type boxed[T] = { item: T }
 
 # Generic impl: one `T`, solved per receiver.
-impl[T] get_it[T] for holder[T]:
+impl[T] get_it[T] for holder[T] where T: copy:
     def get(self) -> T:
         return self.value
 

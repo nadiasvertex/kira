@@ -1,0 +1,33 @@
+module codegen_stress.unproven_contracts_hold
+
+# expect: 832
+
+# Contracts the checker cannot prove (their inputs pass through `opaque`) are
+# checked at run time: a precondition at the call, a postcondition at the
+# return, and a struct invariant at construction and after each field write.
+# Every one holds here, so a check that panics on a true condition, or tests
+# the wrong value, stops the program instead of producing the sum.
+
+def opaque(x: int32) -> int32:
+    return x
+
+def half(x: int32) -> int32
+pre x >= 0, "x must be non-negative"
+post return >= 0
+: x / 2
+
+type positive_int = { pub value: int32 }
+    invariant self.value > 0
+
+def bump(n: int32) -> int32:
+    var p = positive_int{value: opaque(n)}
+    p.value = opaque(n + 1)
+    return p.value
+
+def main() -> int32:
+    var total: int32 = 0
+    var k: int32 = 1
+    while k <= 16:
+        total = total + half(opaque(k * 10)) + bump(k)
+        k = k + 1
+    return total

@@ -42,6 +42,12 @@ enum class allocator_mode : uint8_t {
 /// synchronization; work a program hands to another thread is not counted.
 [[nodiscard]] auto heap_allocation_count() -> uint64_t;
 
+/// How many heap blocks `cinder_heap_alloc` has handed out on every thread
+/// so far, including the work a program hands to the scheduler's workers.
+/// Tests read it before and after a program, with the scheduler idle, to
+/// bound everything the program allocated.
+[[nodiscard]] auto heap_allocation_count_all_threads() -> uint64_t;
+
 /// How many heap blocks are allocated and not yet freed, across every
 /// thread. Tests compare it before and after a program to find blocks the
 /// program never freed. Arena mode never frees, so there it only grows.
@@ -79,10 +85,29 @@ auto cinder_heap_alloc(uint64_t bytes) -> void *;
 auto cinder_heap_realloc(void *ptr, uint64_t old_bytes, uint64_t new_bytes)
     -> void *;
 
-/// Releases a block obtained from the two above. A null `ptr` is a no-op.
-/// In `arena` mode this does nothing at all — deliberately, see
-/// `allocator_mode`.
+/// Releases a block obtained from the two above, or from the aligned entry
+/// points below. A null `ptr` is a no-op. In `arena` mode this does nothing at
+/// all — deliberately, see `allocator_mode`.
 void cinder_heap_free(void *ptr, uint64_t bytes);
+
+/// As `cinder_heap_alloc`, but the block starts on a multiple of `align`,
+/// which must be a power of two (anything else aborts). Like the plain entry
+/// point it returns zeroed memory, `nullptr` for a zero-byte request, and
+/// counts as one allocation and one live block; release it with
+/// `cinder_heap_free`. An `align` of 8 or less is exactly `cinder_heap_alloc`.
+///
+/// This is how storage for a value with a stricter alignment than a slot —
+/// an `int128`, or an array or struct containing one — is obtained. The plain
+/// entry point promises only 8 bytes.
+auto cinder_heap_alloc_aligned(uint64_t bytes, uint64_t align) -> void *;
+
+/// As `cinder_heap_realloc`, for a block obtained from
+/// `cinder_heap_alloc_aligned` with the same `align`. The result starts on a
+/// multiple of `align` and may move even when it shrinks. `cinder_heap_realloc`
+/// itself must not be used on a block whose alignment exceeds 16: the C
+/// library's `realloc` does not preserve a stricter alignment.
+auto cinder_heap_realloc_aligned(void *ptr, uint64_t old_bytes,
+                                 uint64_t new_bytes, uint64_t align) -> void *;
 }
 
 /// The `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/intrinsics.h`,

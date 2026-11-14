@@ -1,0 +1,21 @@
+module sample
+type pair = { pub a: int32, pub b: int32 }
+
+def make_pair(n: int32) -> pair:
+    return pair { a: n, b: n + 1 }
+
+def sum_pair(p: pair) -> int32:
+    return p.a + p.b
+
+# Calls in tail position: with a scalar result, with an aggregate argument built
+# in this frame, and with the caller's result address forwarded.
+def count_down(n: int32) -> int32:
+    if n == 0:
+        return 0
+    return count_down(n - 1)
+
+def tail_with_pair(n: int32) -> int32:
+    return sum_pair(make_pair(n))
+
+def tail_forwarding_result(n: int32) -> pair:
+    return make_pair(n)

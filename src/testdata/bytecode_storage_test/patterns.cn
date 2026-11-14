@@ -1,0 +1,440 @@
+module sample
+
+# Pattern tests in the storage form: `match`, `while let`, and `let ... else`
+# read a sum's tag in place and bind payloads from the sum's own bytes.
+
+type shape = @circle(int64) | @rect(int64, int64) | @empty
+
+type pair = { pub a: int64, pub b: int64 }
+
+# A payload larger than a word, so the binding reads aggregate bytes.
+type boxed = @one(pair) | @none_here
+
+def make_shape(kind: int64, a: int64, b: int64) -> shape:
+    if kind == 0:
+        return @circle(a)
+    if kind == 1:
+        return @rect(a, b)
+    return @empty
+
+def make_option(present: bool, v: int64) -> option[int64]:
+    if present:
+        return @some(v)
+    return @none
+
+# One arm per variant; each binds its payload slots.
+def area(kind: int64, a: int64, b: int64) -> int64:
+    let s = make_shape(kind, a, b)
+    return match s:
+        @circle(r) => r * r * 3
+        @rect(w, h) => w * h
+        @empty => 7
+
+# A wildcard arm catches the variants not named before it.
+def is_circle(kind: int64) -> int64:
+    let s = make_shape(kind, 1, 2)
+    return match s:
+        @circle(_) => 1
+        _ => 0
+
+# A statement `match` with no arm for some variants leaves the result alone.
+def partial(kind: int64, a: int64, b: int64) -> int64:
+    var total: int64 = 100
+    let s = make_shape(kind, a, b)
+    match s:
+        @rect(w, h) =>:
+            total = total + w + h
+        @circle(r) =>:
+            total = total + r
+        @empty =>:
+            total = total + 1
+    return total
+
+# Literal patterns on a payload, and a nested constructor.
+def classify(present: int64, v: int64) -> int64:
+    let o = make_option(present != 0, v)
+    return match o:
+        @some(0) => 10
+        @some(1) => 20
+        @some(n) => 30 + n
+        @none => 40
+
+# Tuple and struct patterns.
+def tuple_pick(a: int64, b: int64) -> int64:
+    let t = (a, b)
+    return match t:
+        (0, y) => y
+        (x, 0) => x * 100
+        (x, y) => x + y
+
+def struct_pick(a: int64, b: int64) -> int64:
+    let p = pair { a: a, b: b }
+    return match p:
+        { a: 1, b: y } => y
+        { a: x, b: _ } => x * 10
+
+# An or-pattern shares one arm between variants.
+def either(kind: int64) -> int64:
+    let s = make_shape(kind, 1, 2)
+    return match s:
+        @circle(_) | @empty => 5
+        @rect(_, _) => 6
+
+# A payload that is an aggregate is moved out of the sum.
+def unbox(present: int64, a: int64, b: int64) -> int64:
+    var holder: boxed = @none_here
+    if present != 0:
+        holder = @one(pair { a: a, b: b })
+    return match holder:
+        @one(p) => p.a * 1000 + p.b
+        @none_here => -1
+
+# The subject is a call, evaluated once.
+def subject_call(kind: int64) -> int64:
+    return match make_shape(kind, 4, 5):
+        @circle(r) => r
+        @rect(w, h) => w + h
+        @empty => 0
+
+# `while let` runs until the pattern fails and re-evaluates its subject.
+def drain(count: int64) -> int64:
+    var left = count
+    var total: int64 = 0
+    while let @some(n) = make_option(left > 0, left):
+        total = total + n
+        left = left - 1
+    return total
+
+# `break` and `continue` inside the body.
+def drain_some(count: int64) -> int64:
+    var left = count
+    var total: int64 = 0
+    while let @some(n) = make_option(left > 0, left):
+        left = left - 1
+        if n == 2:
+            continue
+        if n == 1:
+            break
+        total = total + n
+    return total * 10 + left
+
+# `let ... else` binds on success and leaves on failure.
+def first_or(present: int64, v: int64) -> int64:
+    let @some(n) = make_option(present != 0, v) else:
+        return -5
+    return n + 1000
+
+# Sums that own droppable payloads. Each drop appends its id to a counter, so
+# the counter records which drops ran and in what order.
+type tracked = { pub id: int64, pub counter: *mut int64 }
+
+impl drop for tracked:
+    machine def drop(mut self) -> unit:
+        *self.counter = *self.counter * 10 + self.id
+        return
+
+type cell = @full(tracked) | @vacant
+
+type duo = @both(tracked, tracked) | @left(tracked) | @nothing
+
+def make_cell(present: int64, id: int64, counter: *mut int64) -> cell:
+    if present != 0:
+        return @full(tracked { id: id, counter: counter })
+    return @vacant
+
+def make_duo(kind: int64, a: int64, b: int64, counter: *mut int64) -> duo:
+    if kind == 2:
+        return @both(tracked { id: a, counter: counter },
+                     tracked { id: b, counter: counter })
+    if kind == 1:
+        return @left(tracked { id: a, counter: counter })
+    return @nothing
+
+def make_tracked(left: int64, counter: *mut int64) -> option[tracked]:
+    if left > 0:
+        return @some(tracked { id: left, counter: counter })
+    return @none
+
+# The sum is dropped where it goes out of scope, through the variant it holds.
+def cell_scope_inner(present: int64, id: int64, counter: *mut int64) -> int64:
+    let c = make_cell(present, id, counter)
+    return 1
+
+machine def cell_scope(present: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = cell_scope_inner(present, id, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+# An arm that binds the payload owns it, and drops it when the arm ends.
+def cell_take_inner(present: int64, id: int64, counter: *mut int64) -> int64:
+    let c = make_cell(present, id, counter)
+    return match c:
+        @full(t) => t.id
+        @vacant => 0
+
+machine def cell_take(present: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = cell_take_inner(present, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# An arm that binds nothing leaves the payload with the sum.
+def cell_peek_inner(present: int64, id: int64, counter: *mut int64) -> int64:
+    let c = make_cell(present, id, counter)
+    return match c:
+        @full(_) => 1
+        @vacant => 0
+
+machine def cell_peek(present: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = cell_peek_inner(present, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# A payload that is not bound is dropped first, then the bound one at the end.
+def duo_first_inner(kind: int64, a: int64, b: int64, counter: *mut int64) -> int64:
+    let d = make_duo(kind, a, b, counter)
+    return match d:
+        @both(x, _) => x.id
+        @left(x) => x.id
+        @nothing => 0
+
+machine def duo_first(kind: int64, a: int64, b: int64) -> int64:
+    var drops: int64 = 0
+    let seen = duo_first_inner(kind, a, b, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Two bound payloads drop in reverse order of binding.
+def duo_both_inner(kind: int64, a: int64, b: int64, counter: *mut int64) -> int64:
+    let d = make_duo(kind, a, b, counter)
+    return match d:
+        @both(x, y) => x.id + y.id
+        _ => 0
+
+machine def duo_both(kind: int64, a: int64, b: int64) -> int64:
+    var drops: int64 = 0
+    let seen = duo_both_inner(kind, a, b, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Each pass of `while let` owns one item, and the final `none` owes nothing.
+def drain_tracked_inner(count: int64, counter: *mut int64) -> int64:
+    var left = count
+    var total: int64 = 0
+    while let @some(t) = make_tracked(left, counter):
+        total = total + t.id
+        left = left - 1
+    return total
+
+machine def drain_tracked(count: int64) -> int64:
+    var drops: int64 = 0
+    let seen = drain_tracked_inner(count, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# A body that leaves early still drops the item it holds.
+def drain_until_inner(count: int64, stop: int64, counter: *mut int64) -> int64:
+    var left = count
+    var total: int64 = 0
+    while let @some(t) = make_tracked(left, counter):
+        if t.id == stop:
+            break
+        total = total + t.id
+        left = left - 1
+    return total
+
+machine def drain_until(count: int64, stop: int64) -> int64:
+    var drops: int64 = 0
+    let seen = drain_until_inner(count, stop, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def first_tracked_inner(left: int64, counter: *mut int64) -> int64:
+    let @some(t) = make_tracked(left, counter) else:
+        return -5
+    return t.id
+
+machine def first_tracked(left: int64) -> int64:
+    var drops: int64 = 0
+    let seen = first_tracked_inner(left, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Assigning over a sum drops the old one first.
+def cell_replace_inner(counter: *mut int64) -> int64:
+    var c = make_cell(1, 1, counter)
+    c = make_cell(1, 2, counter)
+    return 0
+
+machine def cell_replace() -> int64:
+    var drops: int64 = 0
+    let seen = cell_replace_inner(ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def eat(c: cell) -> int64:
+    return 9
+
+# A sum passed on is dropped by the callee.
+def cell_pass_inner(present: int64, id: int64, counter: *mut int64) -> int64:
+    let c = make_cell(present, id, counter)
+    return eat(c)
+
+machine def cell_pass(present: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = cell_pass_inner(present, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# A literal tested on a scalar payload of a sum that owns a drop. When the
+# literal does not match, the next arm runs and the payload stays with the sum.
+type stamped = @item(tracked, int64) | @empty
+
+def make_stamped(present: int64, id: int64, stamp: int64,
+                 counter: *mut int64) -> stamped:
+    if present != 0:
+        return @item(tracked { id: id, counter: counter }, stamp)
+    return @empty
+
+def stamped_inner(present: int64, id: int64, stamp: int64,
+                  counter: *mut int64) -> int64:
+    let s = make_stamped(present, id, stamp, counter)
+    return match s:
+        @item(t, 0) => t.id
+        @item(_, k) => 100 + k
+        @empty => 5
+
+machine def stamped_pick(present: int64, id: int64, stamp: int64) -> int64:
+    var drops: int64 = 0
+    let seen = stamped_inner(present, id, stamp, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen
+
+# A variant tested inside a variant: `option[cell]`.
+def make_nested(kind: int64, id: int64, counter: *mut int64) -> option[cell]:
+    if kind == 2:
+        return @some(make_cell(1, id, counter))
+    if kind == 1:
+        return @some(make_cell(0, id, counter))
+    return @none
+
+def nested_take_inner(kind: int64, id: int64, counter: *mut int64) -> int64:
+    let o = make_nested(kind, id, counter)
+    return match o:
+        @some(@full(t)) => t.id
+        @some(@vacant) => 1
+        @none => 2
+
+machine def nested_take(kind: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = nested_take_inner(kind, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def nested_peek_inner(kind: int64, id: int64, counter: *mut int64) -> int64:
+    let o = make_nested(kind, id, counter)
+    return match o:
+        @some(@full(_)) => 3
+        @some(@vacant) => 1
+        @none => 2
+
+machine def nested_peek(kind: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = nested_peek_inner(kind, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Every arm leaves, so each place that tests a variant must hold its own copy
+# of the arms that follow.
+def nested_leave_inner(kind: int64, id: int64, counter: *mut int64) -> int64:
+    let o = make_nested(kind, id, counter)
+    match o:
+        @some(@full(t)) =>:
+            return t.id
+        @some(@vacant) =>:
+            return 1
+        @none =>:
+            return 2
+    return 99
+
+machine def nested_leave(kind: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = nested_leave_inner(kind, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def nested_else_inner(kind: int64, id: int64, counter: *mut int64) -> int64:
+    let @some(@full(t)) = make_nested(kind, id, counter) else:
+        return -7
+    return t.id
+
+machine def nested_else(kind: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = nested_else_inner(kind, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Guards read the names the pattern binds. A pattern that fails and a guard that
+# fails both go on to the next arm.
+def guard_pick(kind: int64, a: int64, b: int64) -> int64:
+    let s = make_shape(kind, a, b)
+    return match s:
+        @rect(w, h) if w < h => h - w
+        @circle(r) if r > 100 => r
+        @circle(r) => r + 1000
+        @rect(w, h) if w == h => 7000
+        _ => 0
+
+# A guard on an arm that always matches, in a statement `match`.
+def guard_stmt(kind: int64, a: int64, b: int64) -> int64:
+    var total: int64 = 100
+    let s = make_shape(kind, a, b)
+    match s:
+        @circle(r) if r > 10 =>:
+            total = total + r
+        @circle(_) =>:
+            total = total + 1
+        _ =>:
+            total = total + 2
+    return total
+
+def guard_pair(a: int64, b: int64) -> int64:
+    let p = pair { a: a, b: b }
+    return match p:
+        { a: x, b: y } if x < y => y - x
+        { a: x, b: y } => x + y
+
+# Each guard runs once, in order, and only when its pattern holds. The counter
+# records the guards that ran.
+machine def note(counter: *mut int64, v: int64, holds: bool) -> bool:
+    *counter = *counter * 10 + v
+    return holds
+
+def guard_order_inner(kind: int64, a: int64, b: int64,
+                      counter: *mut int64) -> int64:
+    let s = make_shape(kind, a, b)
+    return match s:
+        @circle(r) if note(counter, 1, r > 10) => r
+        @circle(r) if note(counter, 2, r > 5) => r + 100
+        @rect(w, h) if note(counter, 3, w > h) => w - h
+        _ => 0
+
+machine def guard_order(kind: int64, a: int64, b: int64) -> int64:
+    var trail: int64 = 0
+    let seen = guard_order_inner(kind, a, b, ptr_cast[int64](&mut trail))
+    return trail * 1000 + seen
+
+# A guard on a sum that owns a drop reads a scalar of the payload. Whether it
+# holds or fails, the sum keeps its payload until the scope end drops it.
+def guard_owned_inner(present: int64, id: int64, stamp: int64,
+                      counter: *mut int64) -> int64:
+    let s = make_stamped(present, id, stamp, counter)
+    return match s:
+        @item(_, k) if k > 5 => k
+        @item(_, _) => 1
+        @empty => 5
+
+machine def guard_owned(present: int64, id: int64, stamp: int64) -> int64:
+    var drops: int64 = 0
+    let seen = guard_owned_inner(present, id, stamp, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen
+
+# Two tests can fail before the guard (two literals), and every arm leaves, so
+# the second place the remaining arms are built must start as live code.
+def guard_leave(n: int64, a: int64, b: int64) -> int64:
+    let p = pair { a: a, b: b }
+    match p:
+        { a: 1, b: 2 } if n > 0 =>:
+            return 10
+        { a: 1, b: _ } =>:
+            return 20
+        _ =>:
+            return 30
+    return 0

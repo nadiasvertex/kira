@@ -1,0 +1,40 @@
+module sample
+
+type pair = { pub a: int32, pub b: int64 }
+
+def call_it(f: fn(int64) -> int64, x: int64) -> int64:
+    return f(x)
+
+def add_captured(n: int64) -> int64:
+    let add = x => x + n
+    return call_it(add, 5)
+
+def captured_pair() -> int64:
+    let p = pair { a: 3, b: 40 }
+    let f = move [p] (x) => x + int64(p.a) + p.b
+    return call_it(f, 1)
+
+def borrowed_pair() -> int64:
+    let p = pair { a: 3, b: 40 }
+    let f = x => x + int64(p.a) + p.b
+    return call_it(f, 1)
+
+type noisy = { pub id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        let ratio = 10 / self.id
+        return
+
+# A value moved into the closure is owned by it.
+def own(n: noisy) -> int64:
+    let f = move [n] (x: int64) -> int64 => x + int64(n.id)
+    return f(1)
+
+# A scalar captured by reference is reached through its address.
+def by_reference() -> int64:
+    var total: int64 = 0
+    let bump = [&mut total] (x: int64) -> int64 =>:
+        total = total + x
+        return total
+    return bump(2)

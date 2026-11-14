@@ -1,0 +1,230 @@
+module sample
+
+# Results built in their final storage: constructors, calls, branches, and the
+# failure arm of `?` in every position of a value under construction.
+
+type pair = { pub a: int64, pub b: int64 }
+type line = { pub from: pair, pub to: pair }
+type shape = @circle(pair) | @rect(int64, int64) | @empty
+
+def make_pair(a: int64, b: int64) -> pair:
+    return pair { a: a, b: b }
+
+def chain_inner(a: int64, b: int64) -> pair:
+    return make_pair(a, b)
+
+def chain(a: int64, b: int64) -> pair:
+    return chain_inner(b, a)
+
+def make_line(n: int64) -> line:
+    return line { from: chain(n, n + 1), to: pair { a: n + 2, b: n + 3 } }
+
+def pick_pair(c: bool, n: int64) -> pair:
+    return if c: make_pair(n, 1) else: pair { a: 2, b: n }
+
+def shape_of(kind: int64, n: int64) -> shape:
+    if kind == 0:
+        return @circle(make_pair(n, n + 1))
+    if kind == 1:
+        return @rect(n, n + 2)
+    return @empty
+
+def shape_pair(kind: int64, n: int64) -> pair:
+    return match shape_of(kind, n):
+        @circle(p) => p
+        @rect(w, h) => make_pair(h, w)
+        @empty => make_pair(0, 0)
+
+def pairs_of(n: int64) -> (pair, pair):
+    return (make_pair(n, 1), make_pair(n + 1, 2))
+
+def array_of(n: int64) -> array[pair, 2]:
+    return [make_pair(n, 3), make_pair(n + 1, 4)]
+
+def option_pair(n: int64) -> option[pair]:
+    if n > 0:
+        return @some(make_pair(n, n * 2))
+    return @none
+
+# Every field has a different value, so a field written in the wrong place
+# shows in the sum.
+def direct_forms(n: int64) -> int64:
+    let l = make_line(n)
+    let p = pick_pair(n > 0, n)
+    let q = shape_pair(0, n)
+    let r = shape_pair(1, n)
+    let ps = pairs_of(n)
+    let xs = array_of(n)
+    return l.from.a * 1 + l.from.b * 10 + l.to.a * 100 + l.to.b * 1000 + p.a * 10000 + p.b * 100000 + q.b * 1000000 + r.a * 10000000 + ps.1.b * 100000000 + xs[1].b * 1000000000
+
+def option_sum(n: int64) -> int64:
+    return match option_pair(n):
+        @some(p) => p.a * 10 + p.b
+        @none => -1
+
+# `?` where the success types differ: the failure is rebuilt in the result.
+def parse(n: int64) -> result[int64, int64]:
+    if n > 0:
+        return @ok(n)
+    return @err(0 - n)
+
+def wrap(n: int64) -> result[pair, int64]:
+    let v = parse(n)?
+    return @ok(make_pair(v, v + 1))
+
+def wrap_value(n: int64) -> int64:
+    return match wrap(n):
+        @ok(p) => p.a * 10 + p.b
+        @err(e) => 1000 + e
+
+def wrap_inside(n: int64) -> result[(int64, pair), int64]:
+    return @ok((n, make_pair(parse(n)?, 5)))
+
+def wrap_inside_value(n: int64) -> int64:
+    return match wrap_inside(n):
+        @ok(t) => t.0 * 100 + t.1.a
+        @err(e) => 2000 + e
+
+def maybe(n: int64) -> option[int64]:
+    if n > 0:
+        return @some(n)
+    return @none
+
+def maybe_pair(n: int64) -> option[pair]:
+    return @some(make_pair(maybe(n)?, 8))
+
+def maybe_pair_value(n: int64) -> int64:
+    return match maybe_pair(n):
+        @some(p) => p.a * 10 + p.b
+        @none => -3
+
+# A value under construction that owns drops, left by a failure in a later
+# part. Each drop appends its id to a counter: `drops * 100 + result`.
+type tracked = { pub id: int64, pub counter: *mut int64 }
+
+impl drop for tracked:
+    machine def drop(mut self) -> unit:
+        *self.counter = *self.counter * 10 + self.id
+        return
+
+type twin = { pub x: tracked, pub y: tracked }
+type trio = { pub a: tracked, pub b: tracked, pub c: tracked }
+
+def may_tracked(n: int64, counter: *mut int64) -> result[tracked, int64]:
+    if n > 0:
+        return @ok(tracked { id: n, counter: counter })
+    return @err(10 + n)
+
+def make_twin(n: int64, counter: *mut int64) -> result[twin, int64]:
+    return @ok(twin { x: tracked { id: 7, counter: counter }, y: may_tracked(n, counter)? })
+
+def twin_inner(n: int64, counter: *mut int64) -> int64:
+    return match make_twin(n, counter):
+        @ok(t) => 1
+        @err(e) => 100 + e
+
+machine def twin_try(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = twin_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen
+
+def make_trio(n: int64, counter: *mut int64) -> result[trio, int64]:
+    return @ok(trio { a: may_tracked(n, counter)?, b: may_tracked(n - 1, counter)?, c: tracked { id: 9, counter: counter } })
+
+def trio_inner(n: int64, counter: *mut int64) -> int64:
+    return match make_trio(n, counter):
+        @ok(t) => 1
+        @err(e) => e
+
+machine def trio_try(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = trio_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen
+
+def make_trio_all(n: int64, counter: *mut int64) -> result[trio, int64]:
+    return @ok(trio { a: may_tracked(n, counter)?, b: may_tracked(n - 1, counter)?, c: may_tracked(n - 2, counter)? })
+
+def trio_all_inner(n: int64, counter: *mut int64) -> int64:
+    return match make_trio_all(n, counter):
+        @ok(t) => 1
+        @err(e) => e
+
+machine def trio_all_try(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = trio_all_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen
+
+# A returned local is built in the result storage when every return moves it.
+# Each entry point below must give the same answer with and without that.
+def named_pair(n: int64) -> pair:
+    var result = pair { a: n, b: 0 }
+    result.b = n + 1
+    return result
+
+def named_value(n: int64) -> int64:
+    let p = named_pair(n)
+    return p.a * 10 + p.b
+
+def early_named(c: bool, n: int64) -> pair:
+    var p = make_pair(n, 1)
+    if c:
+        p.b = 9
+        return p
+    p.a = 0
+    return p
+
+def early_value(c: int64, n: int64) -> int64:
+    let p = early_named(c > 0, n)
+    return p.a * 10 + p.b
+
+def loop_named(n: int64) -> pair:
+    var p = make_pair(0, 0)
+    var i: int64 = 0
+    while i < n:
+        p.a = p.a + i
+        p.b = p.b + 1
+        i = i + 1
+    return p
+
+def loop_value(n: int64) -> int64:
+    let p = loop_named(n)
+    return p.a * 10 + p.b
+
+def reassigned_named(n: int64) -> pair:
+    var p = make_pair(n, n + 1)
+    p = make_pair(p.b, p.a)
+    return p
+
+def reassigned_value(n: int64) -> int64:
+    let p = reassigned_named(n)
+    return p.a * 10 + p.b
+
+def named_tracked(n: int64, counter: *mut int64) -> tracked:
+    var t = tracked { id: n, counter: counter }
+    t.id = t.id + 1
+    return t
+
+def named_tracked_inner(n: int64, counter: *mut int64) -> int64:
+    let t = named_tracked(n, counter)
+    return 1
+
+machine def named_tracked_drops(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = named_tracked_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen
+
+# One path does not return the local, so it is moved at the return that does.
+def sometimes_tracked(c: bool, n: int64, counter: *mut int64) -> tracked:
+    let t = tracked { id: n, counter: counter }
+    if c:
+        return t
+    return tracked { id: 6, counter: counter }
+
+def sometimes_tracked_inner(c: int64, n: int64, counter: *mut int64) -> int64:
+    let t = sometimes_tracked(c > 0, n, counter)
+    return 1
+
+machine def sometimes_tracked_drops(c: int64, n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = sometimes_tracked_inner(c, n, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen

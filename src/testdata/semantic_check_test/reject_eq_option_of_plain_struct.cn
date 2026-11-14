@@ -1,0 +1,12 @@
+module reject_eq_option_of_plain_struct
+
+# An `option` compares the value inside, so that value's type needs `eq`.
+
+type thing = { x: int64 }
+
+def main() -> int64:
+    let a: option[thing] = @some(thing{x: 1})
+    let b: option[thing] = @none
+    if a == b:
+        return 1
+    return 0

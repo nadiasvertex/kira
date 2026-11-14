@@ -17,7 +17,7 @@ module codegen_stress.generic_block_method_implicit_param
 
 type box[T] = { v: T }
 
-extend[T: add] box[T]:
+extend[T: add + copy] box[T]:
     def tag(self, k) -> int64: int64(k) + 1
 
     def keep(self, k): k

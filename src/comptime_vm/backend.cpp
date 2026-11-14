@@ -1,5 +1,7 @@
 #include "src/comptime_vm/backend.h"
 
+#include <algorithm>
+#include <cstring>
 #include <format>
 #include <utility>
 #include <vector>
@@ -7,6 +9,7 @@
 #include "src/bytecode/vm.h"
 #include "src/comptime_vm/values.h"
 #include "src/hir/lower.h"
+#include "src/runtime/aligned_buffer.h"
 
 namespace cinder::comptime_vm {
 
@@ -115,25 +118,64 @@ auto vm_backend::run(semantic::comptime_program &program,
   }
   // Quoted syntax the run holds, by handle.
   auto handles = handle_table{};
+  auto &layouts = *compiled.storage->layouts;
+  const auto &entry = compiled.module.functions.at(compiled.entry_index);
+  if (!entry.abi.has_value() || entry.abi->params.size() != args.size()) {
+    return unsupported(std::format("`{}` has no storage calling convention", name));
+  }
+  // Each argument travels as the entry's ABI says: in a register, or as the
+  // address of bytes this run owns (the callee owns what they hold).
+  auto argument_bytes = std::vector<runtime::aligned_buffer>{};
   auto slots = std::vector<bytecode::slot_value>{};
-  slots.reserve(args.size());
   for (std::size_t i = 0; i < args.size(); ++i) {
-    auto slot = to_vm(program, handles, compiled.param_types[i], args[i]);
-    if (!slot.has_value()) {
-      return unsupported(slot.error());
+    const auto &transport = entry.abi->params[i];
+    if (transport.by_address) {
+      auto &bytes = argument_bytes.emplace_back(
+          std::max<std::size_t>(transport.size, 16),
+          std::max<std::size_t>(transport.align, 16));
+      if (auto ok = write_inline(program, handles, layouts,
+                                 compiled.param_types[i], args[i], bytes.data());
+          !ok.has_value()) {
+        return unsupported(ok.error());
+      }
+      slots.push_back(bytecode::slot_value{static_cast<std::uint64_t>(
+          reinterpret_cast<std::uintptr_t>(bytes.data()))});
+    } else if (transport.size != 0) {
+      auto slot =
+          to_register(program, handles, layouts, compiled.param_types[i], args[i]);
+      if (!slot.has_value()) {
+        return unsupported(slot.error());
+      }
+      slots.push_back(*slot);
     }
-    slots.push_back(*slot);
   }
 
-  // The compiler builds quoted syntax when the run asks it to.
+  // The compiler builds quoted syntax when the run asks it to. The operands
+  // follow the call ABI (`host_site`): the result's address first when it is
+  // built by address, then each argument that is not zero-sized.
   const auto host = bytecode::host_fn(
       [&](const bytecode::host_site &site,
           std::span<const bytecode::slot_value> operands)
           -> std::expected<bytecode::slot_value, std::string> {
+        auto next = std::size_t{0};
+        auto *result_at = static_cast<std::byte *>(nullptr);
+        if (site.result_by_address) {
+          result_at = reinterpret_cast<std::byte *>(
+              static_cast<std::uintptr_t>(operands[next++].u));
+        }
         auto values = std::vector<comptime::value>{};
-        for (std::size_t i = 0; i < operands.size(); ++i) {
-          auto value =
-              from_vm(program, handles, site.arg_types.at(i), operands[i]);
+        for (std::size_t i = 0; i < site.arg_types.size(); ++i) {
+          const auto type = site.arg_types[i];
+          auto value = std::expected<comptime::value, std::string>{};
+          if (site.arg_zero_sized[i]) {
+            value = read_inline(program, handles, layouts, type, nullptr);
+          } else if (site.arg_by_address[i]) {
+            value = read_inline(program, handles, layouts, type,
+                                reinterpret_cast<const std::byte *>(
+                                    static_cast<std::uintptr_t>(operands[next++].u)));
+          } else {
+            value = from_register(program, handles, layouts, type, operands[next++]);
+          }
           if (!value.has_value()) {
             return std::unexpected(value.error());
           }
@@ -144,19 +186,35 @@ auto vm_backend::run(semantic::comptime_program &program,
         if (!result.has_value()) {
           return std::unexpected(result.error());
         }
-        return to_vm(program, handles, site.result_type, *result);
+        if (result_at != nullptr) {
+          if (auto ok = write_inline(program, handles, layouts, site.result_type,
+                                     *result, result_at);
+              !ok.has_value()) {
+            return std::unexpected(ok.error());
+          }
+          return bytecode::slot_value{};
+        }
+        return to_register(program, handles, layouts, site.result_type, *result);
       });
   const auto machine = bytecode::vm(compiled.module);
   const auto limits = bytecode::run_limits{
       .step_budget = step_budget_, .allow_effects = false, .host = &host};
-  if (compiled.module.static_init_function.has_value()) {
-    auto init =
-        machine.run_hosted(*compiled.module.static_init_function, {}, limits);
-    if (!init.has_value()) {
+  for (const auto init : compiled.module.static_initializers) {
+    auto ran = machine.run_hosted(init, {}, limits);
+    if (!ran.has_value()) {
       return unsupported("its static data could not be initialized");
     }
   }
-  auto result = machine.run_hosted(compiled.entry_index, slots, limits);
+  auto result_bytes = runtime::aligned_buffer(
+      std::max<std::size_t>(entry.abi->result.size, 16),
+      std::max<std::size_t>(entry.abi->result.align, 16));
+  auto result =
+      entry.abi->returns_through_address
+          ? machine.run_hosted_into(
+                compiled.entry_index,
+                std::span<std::byte>(result_bytes.data(), result_bytes.size()),
+                slots, limits)
+          : machine.run_hosted(compiled.entry_index, slots, limits);
   if (!result.has_value()) {
     auto failure = semantic::comptime_failure{
         .reason = semantic::comptime_failure::kind::failed,
@@ -181,10 +239,14 @@ auto vm_backend::run(semantic::comptime_program &program,
     }
     return std::unexpected(std::move(failure));
   }
-  if (!result->has_value) {
-    return comptime::value::make_unit();
-  }
-  auto value = from_vm(program, handles, compiled.return_type, result->value);
+  auto value =
+      entry.abi->returns_through_address
+          ? read_inline(program, handles, layouts, compiled.return_type,
+                        result_bytes.data())
+      : !result->has_value
+          ? read_inline(program, handles, layouts, compiled.return_type, nullptr)
+          : from_register(program, handles, layouts, compiled.return_type,
+                          result->value);
   if (!value.has_value()) {
     return unsupported(value.error());
   }

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace cinder {
@@ -47,7 +48,7 @@ namespace cinder {
 //  subtly wrong.
 // ==========================================================================
 enum class intrinsic_wire_kind : uint8_t {
-  ptr, ///< An opaque heap pointer — `src/runtime/layout.h`'s convention.
+  ptr, ///< An address: a descriptor's, a destination's, or a raw pointer.
   i32, ///< A native 32-bit integer; also stands for a widened `bool`/`uint8`.
   i64, ///< A native 64-bit integer; also stands for `usize`.
   f32, ///< A native IEEE-754 32-bit float, bit-preserving (no promotion).
@@ -62,6 +63,14 @@ struct intrinsic_signature {
   intrinsic_wire_kind result;
   std::array<intrinsic_wire_kind, 3> params;
   uint8_t arity;
+  /// The storage-form contract (`spec/value-semantics.md`, T-07). The result is
+  /// a descriptor or aggregate, which the caller builds in storage it owns:
+  /// the storage compilers call the `_into` symbol (`intrinsic_into_symbol`),
+  /// which takes the destination address as a hidden first argument and
+  /// returns nothing. The runtime writes the whole value, padding included,
+  /// and allocates no wrapper for it. `result` is `ptr`, the destination's
+  /// wire kind.
+  bool into = false;
 };
 
 [[nodiscard]] consteval auto
@@ -77,6 +86,17 @@ intrinsic(std::string_view name, intrinsic_wire_kind result,
   return signature;
 }
 
+/// An intrinsic whose result is built in caller storage (see
+/// `intrinsic_signature::into`). Only its `_into` symbol exists.
+[[nodiscard]] consteval auto
+into_intrinsic(std::string_view name,
+               std::initializer_list<intrinsic_wire_kind> params)
+    -> intrinsic_signature {
+  auto signature = intrinsic(name, intrinsic_wire_kind::ptr, params);
+  signature.into = true;
+  return signature;
+}
+
 /// Short names for the rows of `known_intrinsics`.
 namespace wire {
 inline constexpr auto ptr = intrinsic_wire_kind::ptr;
@@ -89,15 +109,15 @@ inline constexpr auto f64 = intrinsic_wire_kind::f64;
 /// Every runtime-called intrinsic, in the order `op_call_intrinsic` encodes
 /// as its `intrinsic_id` and the VM's native table (`src/bytecode/vm.cpp`)
 /// follows. Adding one means adding a row here and a function there.
-inline constexpr std::array<intrinsic_signature, 67> known_intrinsics = {{
-    intrinsic("rt_stdin", wire::ptr, {}),
-    intrinsic("rt_stdout", wire::ptr, {}),
-    intrinsic("rt_stderr", wire::ptr, {}),
-    intrinsic("rt_open", wire::ptr, {wire::ptr, wire::ptr}),
-    intrinsic("rt_close", wire::ptr, {wire::ptr}),
-    intrinsic("rt_read", wire::ptr, {wire::ptr, wire::ptr}),
-    intrinsic("rt_write", wire::ptr, {wire::ptr, wire::ptr}),
-    intrinsic("rt_flush", wire::ptr, {wire::ptr}),
+inline constexpr std::array<intrinsic_signature, 69> known_intrinsics = {{
+    into_intrinsic("rt_stdin", {}),
+    into_intrinsic("rt_stdout", {}),
+    into_intrinsic("rt_stderr", {}),
+    into_intrinsic("rt_open", {wire::ptr, wire::ptr}),
+    into_intrinsic("rt_close", {wire::ptr}),
+    into_intrinsic("rt_read", {wire::ptr, wire::ptr}),
+    into_intrinsic("rt_write", {wire::ptr, wire::ptr}),
+    into_intrinsic("rt_flush", {wire::ptr}),
     // String-formatting intrinsics (`spec/string-formatting-design.md`):
     // back `std.fmt`'s `pad_str`/`pad_integral` and the builtin-only numeric
     // format styles (`d`/`x`/`X`/`o`/`b`/`e`/`E`/`f`/`g`/`G`/`c`). Every
@@ -105,16 +125,15 @@ inline constexpr std::array<intrinsic_signature, 67> known_intrinsics = {{
     // `intrinsic_wire_kind` below) rather than being boxed in a heap
     // struct; only `str`/aggregate values (`raw_fd`/`io_errno` above, and
     // this group's own `find_result`) are opaque heap pointers.
-    intrinsic("rt_str_concat", wire::ptr, {wire::ptr, wire::ptr}),
+    into_intrinsic("rt_str_concat", {wire::ptr, wire::ptr}),
     intrinsic("rt_str_len_scalars", wire::i64, {wire::ptr}),
-    intrinsic("rt_str_repeat_char", wire::ptr, {wire::i32, wire::i64}),
-    intrinsic("rt_str_truncate_scalars", wire::ptr, {wire::ptr, wire::i64}),
-    intrinsic("rt_fmt_radix_digits", wire::ptr,
-              {wire::i64, wire::i32, wire::i32}),
-    intrinsic("rt_fmt_f64_fixed", wire::ptr, {wire::f64, wire::i64}),
-    intrinsic("rt_fmt_f64_sci", wire::ptr, {wire::f64, wire::i64, wire::i32}),
-    intrinsic("rt_fmt_f64_general", wire::ptr, {wire::f64, wire::i64}),
-    intrinsic("rt_fmt_char_from_codepoint", wire::ptr, {wire::i32}),
+    into_intrinsic("rt_str_repeat_char", {wire::i32, wire::i64}),
+    into_intrinsic("rt_str_truncate_scalars", {wire::ptr, wire::i64}),
+    into_intrinsic("rt_fmt_radix_digits", {wire::i64, wire::i32, wire::i32}),
+    into_intrinsic("rt_fmt_f64_fixed", {wire::f64, wire::i64}),
+    into_intrinsic("rt_fmt_f64_sci", {wire::f64, wire::i64, wire::i32}),
+    into_intrinsic("rt_fmt_f64_general", {wire::f64, wire::i64}),
+    into_intrinsic("rt_fmt_char_from_codepoint", {wire::i32}),
     // `std.string` UTF-8 intrinsics (spec/std-reference.md). Substring search
     // is Two-Way (linear worst case) over bytes, scalar-correct by UTF-8
     // self-synchronization. The algorithms live in `src/runtime/
@@ -127,25 +146,24 @@ inline constexpr std::array<intrinsic_signature, 67> known_intrinsics = {{
               {wire::ptr, wire::ptr}), // rt_str_eq         (a, b),
     intrinsic("rt_str_cmp", wire::i32,
               {wire::ptr, wire::ptr}), // rt_str_cmp        (a, b),
-    intrinsic("rt_str_find", wire::ptr,
-              {wire::ptr, wire::ptr,
-               wire::i64}), // rt_str_find       (haystack, needle, from),
-    intrinsic("rt_str_rfind", wire::ptr,
-              {wire::ptr, wire::ptr}), // rt_str_rfind      (haystack, needle),
-    intrinsic("rt_str_reverse", wire::ptr, {wire::ptr}), // rt_str_reverse (s),
-    intrinsic("rt_str_trim", wire::ptr,
-              {wire::ptr, wire::i32}), // rt_str_trim       (s, mode),
-    intrinsic(
-        "rt_str_replace", wire::ptr,
-        {wire::ptr, wire::ptr, wire::ptr}), // rt_str_replace    (s, from, to),
+    into_intrinsic(
+        "rt_str_find",
+        {wire::ptr, wire::ptr,
+         wire::i64}), // rt_str_find       (haystack, needle, from),
+    into_intrinsic("rt_str_rfind",
+                   {wire::ptr, wire::ptr}), // rt_str_rfind (haystack, needle),
+    into_intrinsic("rt_str_reverse", {wire::ptr}), // rt_str_reverse (s),
+    into_intrinsic("rt_str_trim", {wire::ptr, wire::i32}), // (s, mode),
+    into_intrinsic("rt_str_replace",
+                   {wire::ptr, wire::ptr, wire::ptr}), // (s, from, to),
     // `std.platform` runtime introspection intrinsics (spec/std-reference.md).
     // Every one is niladic and returns `result[T, io_errno]`.
-    intrinsic("rt_uname", wire::ptr, {}),
-    intrinsic("rt_gethostname", wire::ptr, {}),
-    intrinsic("rt_processor_name", wire::ptr, {}),
-    intrinsic("rt_libc_version", wire::ptr, {}),
-    intrinsic("rt_windows_version", wire::ptr, {}),
-    intrinsic("rt_macos_version", wire::ptr, {}),
+    into_intrinsic("rt_uname", {}),
+    into_intrinsic("rt_gethostname", {}),
+    into_intrinsic("rt_processor_name", {}),
+    into_intrinsic("rt_libc_version", {}),
+    into_intrinsic("rt_windows_version", {}),
+    into_intrinsic("rt_macos_version", {}),
     // Aborts the process after writing `msg` to stderr. The one intrinsic
     // that never returns: `option`/`result`'s `unwrap` need a failure path,
     // and terminating the process is inexpressible on the primitive set.
@@ -237,10 +255,19 @@ inline constexpr std::array<intrinsic_signature, 67> known_intrinsics = {{
               {wire::i64}),                       // rt_sleep_until (deadline),
     intrinsic("rt_monotonic_now", wire::i64, {}), // rt_monotonic_now (),
     // Descriptor set-up for asynchronous I/O (`std.io`).
-    intrinsic("rt_pipe", wire::ptr, {}),                     // rt_pipe (),
-    intrinsic("rt_set_nonblocking", wire::ptr, {wire::ptr}), // (fd),
+    into_intrinsic("rt_pipe", {}),                     // rt_pipe (),
+    into_intrinsic("rt_set_nonblocking", {wire::ptr}), // (fd),
     intrinsic("rt_errno_would_block", wire::i32,
               {}), // rt_errno_would_block (),
+    // `for c in s` over a `str` (`src/runtime/string_ops.h`): the scalar at a
+    // byte offset, and how many bytes it takes, called with the descriptor's
+    // data and length words.
+    intrinsic("rt_str_scalar_at", wire::i32,
+              {wire::ptr, wire::i64,
+               wire::i64}), // rt_str_scalar_at (data, len, offset),
+    intrinsic("rt_str_scalar_width", wire::i64,
+              {wire::ptr, wire::i64,
+               wire::i64}), // rt_str_scalar_width (data, len, offset),
 }};
 
 static_assert(std::ranges::none_of(known_intrinsics,
@@ -272,6 +299,28 @@ inline constexpr auto known_intrinsic_return_kinds = [] {
                          &intrinsic_signature::result);
   return kinds;
 }();
+
+inline constexpr auto known_intrinsic_into = [] {
+  auto flags = std::array<bool, known_intrinsics.size()>{};
+  std::ranges::transform(known_intrinsics, flags.begin(),
+                         &intrinsic_signature::into);
+  return flags;
+}();
+
+/// @brief Whether intrinsic `id` builds its result in caller storage.
+[[nodiscard]] constexpr auto intrinsic_builds_into(size_t id) noexcept -> bool {
+  return known_intrinsic_into.at(id);
+}
+
+/// @brief The native symbol of an `into` intrinsic: `cinder_rt_open` becomes
+/// `cinder_rt_open_into`. The destination is the first argument and the
+/// function returns nothing. Parameters are as in `known_intrinsics`; a
+/// descriptor or aggregate parameter is the address of caller-owned bytes in
+/// the layout of `src/runtime/value_layout.h`.
+[[nodiscard]] inline auto intrinsic_into_symbol(std::string_view name)
+    -> std::string {
+  return "cinder_" + std::string(name) + "_into";
+}
 
 inline constexpr auto known_intrinsic_param_kinds = [] {
   auto kinds =

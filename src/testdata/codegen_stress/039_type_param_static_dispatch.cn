@@ -43,3 +43,5 @@ def main() -> int32:
 
     # 40 + 104 + 50 = 194
     return a.n + b.n + c.n
+
+# expect: 194

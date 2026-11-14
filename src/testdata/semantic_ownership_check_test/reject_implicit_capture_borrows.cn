@@ -1,0 +1,22 @@
+module reject_implicit_capture_borrows
+
+# A closure without a capture list borrows the values it uses that are not
+# `copy` (ch. 16), so it can neither outlive them nor let them move while it
+# is live.
+
+def make() -> fn(int64) -> int64:
+    var xs: list[int64] = []
+    xs.push(1)
+    return (x) => x + xs.len() as int64
+
+def moved_while_held() -> int64:
+    var ys: list[int64] = []
+    let f = (x: int64) => x + ys.len() as int64
+    let zs = ys
+    return f(1) + zs.len() as int64
+
+def pushed_while_read() -> int64:
+    var ws: list[int64] = []
+    let f = () => ws.len() as int64
+    ws.push(2)
+    return f()

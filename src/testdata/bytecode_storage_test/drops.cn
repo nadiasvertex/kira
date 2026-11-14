@@ -1,0 +1,46 @@
+module sample
+type noisy = { pub id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        let ratio = 10 / self.id
+        return
+
+def make_noisy(n: int32) -> noisy:
+    return noisy { id: n }
+
+def scoped(n: int32) -> int32:
+    let x = make_noisy(n)
+    return 1
+
+def discarded(n: int32) -> int32:
+    make_noisy(n)
+    return 2
+
+def replaced(n: int32) -> int32:
+    var x = make_noisy(5)
+    x = make_noisy(n)
+    return 3
+
+def consume(x: noisy) -> int32:
+    return 4
+
+def moved_away(n: int32) -> int32:
+    let x = make_noisy(n)
+    return consume(x)
+
+def pass_through(n: int32) -> noisy:
+    let x = make_noisy(n)
+    return x
+
+def receive(n: int32) -> int32:
+    let x = pass_through(n)
+    return 5
+
+def in_loop(n: int32) -> int32:
+    var i = 1
+    var total = 0
+    while i <= n:
+        let x = make_noisy(i - 2)
+        total = total + i
+        i = i + 1
+    return total

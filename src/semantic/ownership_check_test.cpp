@@ -281,6 +281,22 @@ auto test_copying_a_mut_reference_moves_it() -> void {
                     "expected binding a `&mut` to a second name to move it");
 }
 
+auto test_operator_right_operand_is_moved() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_use_after_operator_moves_operand.cn");
+  expect_diagnostic(analyzed, "use of moved value `b`",
+                    "expected an overloaded operator to move a non-copy right "
+                    "operand into its by-value parameter");
+}
+
+auto test_operator_left_operand_is_borrowed() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_operator_left_operand_reused.cn");
+  expect(analyzed.error_count == 0,
+         "expected an overloaded operator's left operand (the `self` "
+         "receiver) and `copy` operands to stay usable");
+}
+
 // ==========================================================================
 //  Exclusivity within a single call: at most one `&mut`, and a `&mut` cannot
 //  coexist with any `&` of the same value.
@@ -952,6 +968,49 @@ auto test_generic_lambda_moving_capture_twice_is_explained() -> void {
              analyzed.diagnostics);
 }
 
+auto test_generic_lambda_copies_share_capture_borrows() -> void {
+  const auto accepted = analyze_test_data_file(
+      "accept_generic_lambda_mut_capture_used_twice.cn");
+  expect(accepted.error_count == 0,
+         std::string("expected the copies of a generic lambda to hold one "
+                     "`&mut` capture between them:\n") +
+             accepted.diagnostics);
+  const auto rejected = analyze_test_data_file(
+      "reject_generic_lambda_mut_capture_read_between_uses.cn");
+  expect_diagnostic(rejected, "cannot use `total` while",
+                    "expected a later copy of a generic lambda to keep its "
+                    "`&mut` capture borrowed");
+}
+
+auto test_implicit_capture_borrows() -> void {
+  const auto rejected =
+      analyze_test_data_file("reject_implicit_capture_borrows.cn");
+  expect_diagnostic(rejected, "cannot return a closure that borrows `xs`",
+                    "expected a returned closure that borrows a local to be "
+                    "rejected");
+  expect_diagnostic(rejected, "mark the lambda `move` so the closure owns `xs`",
+                    "expected the returned closure's help to suggest `move`");
+  expect_diagnostic(rejected,
+                    "cannot move `ys` while the closure `f` is still in use",
+                    "expected moving a value a live closure borrows to be "
+                    "rejected");
+  expect_diagnostic(rejected,
+                    "a closure borrows each value it uses that is not `copy`",
+                    "expected the note to explain the implicit borrow");
+  expect_diagnostic(rejected, "`ws` borrowed as mutable here",
+                    "expected pushing onto a value a live closure reads to be "
+                    "rejected");
+  expect(rejected.error_count == 3,
+         std::string("expected one error per function:\n") +
+             rejected.diagnostics);
+  const auto accepted =
+      analyze_test_data_file("accept_implicit_capture_borrows.cn");
+  expect(accepted.error_count == 0,
+         std::string("expected `move`, a finished borrow, and a mutable "
+                     "borrow to be accepted:\n") +
+             accepted.diagnostics);
+}
+
 auto test_move_out_of_capture_is_rejected() -> void {
   const auto analyzed = analyze_test_data_file("reject_move_out_of_capture.cn");
   for (const auto *place :
@@ -1261,6 +1320,8 @@ auto main() -> int {
     test_returning_a_reference_to_a_member_is_accepted();
     test_mutating_while_member_reference_live_is_rejected();
     test_copying_a_mut_reference_moves_it();
+    test_operator_right_operand_is_moved();
+    test_operator_left_operand_is_borrowed();
     test_two_mutable_borrows_in_one_call_are_rejected();
     test_mutable_and_shared_borrow_in_one_call_are_rejected();
     test_borrowing_as_a_call_argument_is_accepted();
@@ -1341,6 +1402,8 @@ auto main() -> int {
     test_view_outliving_source_scope_is_rejected();
     test_return_view_of_parameter_is_accepted();
     test_generic_lambda_moving_capture_twice_is_explained();
+    test_generic_lambda_copies_share_capture_borrows();
+    test_implicit_capture_borrows();
     test_move_out_of_capture_is_rejected();
     test_reads_of_captures_are_accepted();
     test_deref_borrow_outliving_handle_is_rejected();

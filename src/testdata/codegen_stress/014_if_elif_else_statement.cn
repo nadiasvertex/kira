@@ -12,3 +12,5 @@ def grade(score: int32) -> int32:
 
 def main() -> int32:
     return grade(95) * 1000 + grade(85) * 100 + grade(72) * 10 + grade(40)
+
+# expect: 4321

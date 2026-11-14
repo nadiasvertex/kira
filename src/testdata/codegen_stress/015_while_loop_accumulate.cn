@@ -10,3 +10,5 @@ def sum_to_n(n: int32) -> int32:
 
 def main() -> int32:
     return sum_to_n(100)
+
+# expect: 5050

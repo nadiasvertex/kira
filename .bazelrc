@@ -47,10 +47,50 @@ build:tsan --copt=-g
 build:tsan --copt=-O1
 build:tsan --strip=never
 
+# AddressSanitizer over the compiler, the runtime, and the code both
+# backends run in process (the VM, and the LLVM JIT through the instrumented
+# runtime): `bazelisk test --config=asan //src:storage_corpus_test
+# //src:std_test //src/runtime/...`. Leak detection is off: the compiler
+# interns types and keeps them for the process. UndefinedBehaviorSanitizer
+# is a separate config because, with Clang 23 on macOS arm64, a binary built
+# with both cannot unwind a C++ exception (every `throw` terminates), and the
+# VM reports panics by throwing.
+build:asan --copt=-fsanitize=address
+build:asan --linkopt=-fsanitize=address
+build:asan --copt=-fno-omit-frame-pointer
+build:asan --copt=-g
+build:asan --copt=-O1
+build:asan --strip=never
+build:asan --test_env=ASAN_OPTIONS=detect_leaks=0
+build:asan --test_timeout=3000
+
+# UndefinedBehaviorSanitizer; any report fails the test.
+build:ubsan --copt=-fsanitize=undefined
+build:ubsan --linkopt=-fsanitize=undefined
+build:ubsan --copt=-fno-sanitize-recover=all
+build:ubsan --copt=-fno-omit-frame-pointer
+build:ubsan --copt=-g
+build:ubsan --copt=-O1
+build:ubsan --strip=never
+build:ubsan --test_env=UBSAN_OPTIONS=print_stacktrace=1
+build:ubsan --test_timeout=3000
+
+# The same, for tests that link executables with `--build`/`--compile`
+# (`//src:cli_test`): those executables link the runtime archives without the
+# sanitizer runtime, so the archives are left uninstrumented.
+build:asan_aot --config=asan
+build:asan_aot --per_file_copt=src/runtime/.*,src/.*aot_runtime.*,src/.*utf8.*,src/.*string_ops.*@-fno-sanitize=address
+
 # Release configuration
 build:release --compilation_mode=opt
 build:release --cxxopt=-O3
 build:release --cxxopt=-DNDEBUG
+
+# The LLVM JIT resolves runtime functions in the test and compiler
+# processes by name, and nothing in C++ calls some of them. An optimized
+# macOS link dead-strips such functions unless the executable keeps its
+# global symbols.
+build:release --linkopt=-Wl,-export_dynamic
 
 
 # Show test output on failure

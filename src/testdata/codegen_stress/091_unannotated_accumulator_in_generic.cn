@@ -21,7 +21,7 @@ module codegen_stress.unannotated_accumulator_in_generic
 # because both tiers read their layout from the same rules and would agree on
 # that wrong answer.
 
-def doubled[T](xs: list[T], f: fn(T) -> T) -> list[T]:
+def doubled[T](xs: list[T], f: fn(T) -> T) -> list[T] where T: copy:
     var out = []
     var i: usize = 0
     while i < xs.len():

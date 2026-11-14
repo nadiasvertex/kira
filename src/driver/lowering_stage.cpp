@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "src/hir/frame_budget.h"
+#include "src/runtime/value_layout.h"
 #include "src/hir/lower.h"
 #include "src/util/path.h"
 #include "src/util/str.h"
@@ -84,10 +85,12 @@ static auto report_lowering_failure(const cli_config &cfg,
 /// program's error, not the compiler's, and it is reported whether or not
 /// code was asked for: the rule is part of the language, not of whichever
 /// backend runs next. Returns whether `module` is clean.
-static auto check_frame_budgets(hir::hir_module &module, file_id_type file_id,
+static auto check_frame_budgets(hir::hir_module &module,
+                                runtime::value_layouts &layouts,
+                                file_id_type file_id,
                                 const diagnostic_renderer &renderer,
                                 compile_report &report) -> bool {
-  const auto violations = hir::find_frame_budget_violations(module);
+  const auto violations = hir::find_frame_budget_violations(module, layouts);
   for (const auto &violation : violations) {
     auto diag = diagnostic(
         diagnostic_level::error,
@@ -122,6 +125,8 @@ auto lower_and_emit_modules(const cli_config &cfg,
                             compile_report &report)
     -> hir::ptr_vec<hir::hir_module> {
   auto lowered_modules = hir::ptr_vec<hir::hir_module>{};
+  // Checking is over, so every instance's shape is settled.
+  auto layouts = runtime::value_layouts(checked.types, checked.shapes);
 
   for (const auto &input : parsed_inputs) {
     if (static_cast<size_t>(input.file_id) < file_has_errors.size() &&
@@ -171,8 +176,8 @@ auto lower_and_emit_modules(const cli_config &cfg,
                                        lowered_result.error().span.start)});
     if (lowered_result.has_value()) {
       (*lowered_result)->file_id = input.file_id;
-      if (check_frame_budgets(**lowered_result, input.file_id, renderer,
-                              report)) {
+      if (check_frame_budgets(**lowered_result, layouts, input.file_id,
+                              renderer, report)) {
         lowered_modules.push_back(std::move(*lowered_result));
       }
     } else {
@@ -192,7 +197,8 @@ auto lower_and_emit_modules(const cli_config &cfg,
       for (auto &submodule : *submodules) {
         report.hir_modules.push_back(hir_lowering_result{
             .module_path = submodule->module_name, .lowered = true});
-        if (check_frame_budgets(*submodule, input.file_id, renderer, report)) {
+        if (check_frame_budgets(*submodule, layouts, input.file_id, renderer,
+                                report)) {
           lowered_modules.push_back(std::move(submodule));
         }
       }
@@ -222,7 +228,7 @@ auto lower_and_emit_modules(const cli_config &cfg,
             .module_path = functor_module->module_name, .lowered = true});
         // Same file choice as `report_lowering_failure` below: a functor's
         // cloned `def`s keep spans into the file that declared them.
-        if (check_frame_budgets(*functor_module,
+        if (check_frame_budgets(*functor_module, layouts,
                                 parsed_inputs.empty()
                                     ? file_id_type{0}
                                     : parsed_inputs.front().file_id,

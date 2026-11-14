@@ -56,13 +56,15 @@ pub def hash_combine(acc: uint64, next: uint64) -> uint64:
 #: Hashes one `hash` value. The counterpart of `ord_cmp`, present for the same
 #: reason: a derived body folds over its fields with a call, and the AST
 #: builders splice a call to a free function more readily than a method.
+#: It borrows its argument, so a derived body hashes a field in place rather
+#: than moving it out of `self`.
 #: Type Params:
 #:   T: the value type; must implement `hash`.
 #: Args:
 #:   x: the value to hash.
 #: Returns:
-#:   `x`'s hash.
-pub def hash_value[T](x: T) -> uint64 where T: hash:
+#:   `*x`'s hash.
+pub def hash_value[T](x: &T) -> uint64 where T: hash:
     return x.hash()
 
 #: The contribution a sum type's variant tag makes to its hash --

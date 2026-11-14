@@ -9,3 +9,5 @@ def main() -> int8:
     var b = a -| z
     var c = b *| w
     return c
+
+# expect: 127

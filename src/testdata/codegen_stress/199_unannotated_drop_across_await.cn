@@ -1,0 +1,35 @@
+module codegen_stress.unannotated_drop_across_await
+
+# expect: 1275
+# max-live-blocks: 0
+
+# A value with a `drop` declared without a return type, held across an
+# `await`. The task's cancellation check after the await drops it on the
+# cancelled path, and the call it makes returns `unit` like any other drop.
+# The fields drop after the user's `drop`, so a list left behind shows up in
+# the block count.
+
+type holder = { id: int64, xs: list[int64] }
+
+impl drop for holder:
+    def drop(mut self):
+        self.id = 0
+
+def one(n: int64) -> list[int64]:
+    var out = list[int64].new()
+    out.push(n)
+    return out
+
+async def work(n: int64) -> int64:
+    let h = holder { id: n, xs: one(n * 10) }
+    let v = await on(cpu):
+        n + 1
+    return h.id + h.xs[0] + v
+
+async def main() -> int64:
+    var total: int64 = 0
+    var k: int64 = 0
+    while k < 15:
+        total = total + await work(k)
+        k = k + 1
+    return total

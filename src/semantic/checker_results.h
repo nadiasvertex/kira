@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "src/parser/ast.h"
+#include "src/semantic/aggregate_shape.h"
 #include "src/semantic/type_table.h"
 
 namespace cinder::semantic {
@@ -174,7 +175,8 @@ struct reified_value {
 /// What it takes to drop one value of a struct/sum type — see
 /// `checker::resolve_drop_plans` (`check.cpp`). `own_drop` is this type's own
 /// `impl drop`, if it has one; `droppable_fields` are the struct fields (in
-/// declaration order) that are themselves droppable, whether or not this
+/// declaration order), or a tuple's members (named "0", "1", ...), that are
+/// themselves droppable, whether or not this
 /// type has an `own_drop` of its own — the spec's implicit field-wise rule
 /// applies regardless. A sum type instead lists `variant_drops`: for each
 /// variant with a droppable payload slot, that variant's arity and the
@@ -200,6 +202,12 @@ struct drop_plan {
   /// made it, so dropping one runs the drop glue the closure carries, if any.
   /// The glue is a `fn() -> unit` of this type over the same environment.
   std::optional<type_id> closure_glue;
+  /// An `array[T, n]` whose elements need a drop: `T`. Dropping the array
+  /// drops each element in index order, through `element_pointer` (`*mut T`).
+  /// `length` is `n`.
+  std::optional<type_id> element;
+  type_id element_pointer = k_unknown_type;
+  std::uint64_t length = 0;
 };
 
 /// The resolved `list[T]::new`/`list[T]::push` calls a `for ... => yield`
@@ -713,15 +721,14 @@ struct lowering_results {
       folded_comptime_calls;
   /// Every `size_of[T]()` / `align_of[T]()` call, mapped to the type it
   /// asks about. The *answer* is deliberately not stored here: a type's
-  /// size and alignment are `src/runtime/layout.h`'s to define — it is the
+  /// size and alignment are `runtime::value_layouts`' to define — the
   /// single source both backends read their layouts from — and
   /// `//src/runtime` depends on this library, so the checker cannot call
   /// into it without a cycle. The checker therefore resolves only the
-  /// question (which type, which query), and `hir::lower_call` answers it
-  /// against `runtime::layout_of` and splices in an integer literal. That
-  /// also keeps the two in step by construction: a `size_of[T]()` can never
-  /// disagree with the stride the same `T` actually occupies in a struct
-  /// field or list element, because both come from the one function.
+  /// question (which type, which query); `hir::lower_call` carries it on
+  /// the literal, and the storage form answers it. That keeps the two in
+  /// step by construction: a `size_of[T]()` can never disagree with the
+  /// stride the same `T` occupies in a struct field or list element.
   std::unordered_map<const ast::call_expr *, layout_query> layout_queries;
   /// Every `ptr_cast[U](p)` call, mapped to the pointer type it produces.
   /// A raw pointer's runtime representation is an address and nothing else,
@@ -741,9 +748,9 @@ struct lowering_results {
   std::unordered_set<const ast::call_expr *> slice_from_raw_parts_calls;
   /// Every `uninit[T, N]()` call, mapped to the buffer it asks for: the
   /// element type and the slot count. Like `layout_queries`, the *size* is
-  /// deliberately not stored — `hir::lower_call` derives both the byte size
-  /// and the alignment from `runtime::layout_of(T)`, so a `uninit[T, N]`'s
-  /// stride can never disagree with the stride a `*mut T` through it uses.
+  /// deliberately not stored — the buffer is laid out from its
+  /// `uninit[T, N]` type by `runtime::value_layouts`, so its stride can
+  /// never disagree with the stride a `*mut T` through it uses.
   std::unordered_map<const ast::call_expr *, stack_buffer_request>
       stack_buffers;
   /// One top-level `static let` reified as real backing data — an array,
@@ -859,6 +866,10 @@ struct ownership_results {
   /// parameters the instance's has substituted away.
   std::unordered_map<const ast::func_decl *, const ast::func_decl *>
       instance_templates;
+  /// The methods that own the value their `self` refers to: each
+  /// `into_iterator` impl's `into_iter`, the one consuming `self`. An
+  /// instance of one is found through `instance_templates`.
+  std::unordered_set<const ast::func_decl *> consuming_receivers;
   /// Every interned `type_id` whose values can carry a borrow: a view
   /// (`slice`/`mut slice`, `cell`/`mut cell`), a reference (`&T`/`&mut T`),
   /// a callable (`fn(...)`, since a closure may hold `&`/`&mut` captures), or
@@ -1004,6 +1015,9 @@ struct checked_types {
   ownership_results ownership;
   /// Drop plans; see `drop_results`.
   drop_results drop;
+  /// Concrete struct fields and sum payloads of every settled instance, for
+  /// `runtime::value_layouts`; see `aggregate_shape.h`.
+  aggregate_shapes shapes;
 
   /// Whether a value of `id` copies rather than moves: `type_table::is_copy`,
   /// a type parameter bounded by `copy`, or a `copy` sum.

@@ -17,17 +17,21 @@ Compile-time code is not interpreted from the AST. It goes through the same path
 The checker cannot call HIR lowering or the VM directly, because both depend on the checker's output. Two interfaces in `src/semantic/comptime_backend.h` break the cycle:
 
 - The checker implements `comptime_program`. It hands out checked functions ready to lower, checking a function out of turn if compile-time code reaches it before the checker's normal walk does.
-- `src/comptime_vm/` implements `comptime_backend`. It lowers the callee and every function its lowered code names, compiles them into one bytecode module, and runs it.
+- `src/comptime_vm/` implements `comptime_backend`. It lowers the callee and every function its lowered code names, prepares them in the storage form (`hir::prepare_storage_program`, the same step the driver runs), compiles that into one bytecode module, and runs it.
 
 A compile-time expression that is not a call, such as a `static assert` condition, is lowered as the body of a synthetic function. Names it reads from its surroundings, such as a `static for` loop variable or a type parameter, are passed in as parameters.
 
-Arguments and results cross the boundary through `src/comptime_vm/values.cpp`. Each conversion is given the type the checker assigned, and builds or reads the VM's representation using the same heap layout compiled code uses. Integers, floats, `bool`, `char`, `unit`, `str`, tuples, arrays, `list[T]`, structs, sum types, `option`, and `result` convert in any nesting. Quoted syntax (`expr`, `stmt`, and related types) is held by handle.
+Arguments and results cross the boundary through `src/comptime_vm/values.cpp`. Each conversion is given the type the checker assigned and writes or reads the value's inline bytes under the program's `value_layouts`, the layouts compiled code uses. The entry function's calling convention says how each value travels: in a register, or as the address of bytes the run owns (an aggregate argument, or a result written through the caller's address). Integers, floats, `bool`, `char`, `unit`, `str`, tuples, arrays, `list[T]`, structs, sum types, `option`, and `result` convert in any nesting. Quoted syntax (`expr`, `stmt`, and related types) is held by handle.
+
+Because values are laid out while checking is under way, the checker records the shape of each struct and sum instance as soon as its field types are settled (`checker::add_aggregate_shapes`), instead of only once checking ends. Records the lowering reads that are otherwise filled late are recorded early for the same reason: which methods take `self` by value (`into_iter`) is recorded when impl methods are registered.
+
+A compile-time expression is lowered without a drop schedule: it runs once, and what it owns is not dropped. Each static it reads is rebuilt as a fresh value, which reads the same as the static because a static never changes, so the expression never moves out of a shared global.
 
 ## Limits on a compile-time run
 
 - **No effects.** A compile-time run uses the VM's hosted mode with effects disallowed. It cannot perform I/O or reach anything outside the VM.
 - **Step budget.** A run stops with a diagnostic when it exceeds a fixed step budget. The diagnostic says this usually means a loop or recursion that never ends.
-- **Host calls for syntax.** Building quoted syntax and calling the `expr.*` builders are host calls (`op_host_call`) from the VM back into the compiler. `src/comptime/fragments.cpp` builds the nodes, and `src/comptime/hygiene.cpp` renames bindings introduced inside a quote so a splice cannot capture names at the splice site.
+- **Host calls for syntax.** Building quoted syntax and calling the `expr.*` builders are host calls (`op_host_call`) from the VM back into the compiler. In the storage form a host call is a call whose target is the operation; its operands follow the call convention (the result's address first when the result is built by address, then each argument that is not zero-sized), and `bytecode::host_site` records how each one travels. `src/comptime/fragments.cpp` builds the nodes, and `src/comptime/hygiene.cpp` renames bindings introduced inside a quote so a splice cannot capture names at the splice site. A `~` splice inside a quote is resolved when the quote is evaluated, while the values it reads still exist; this works inside binary and unary operators, calls, `return`, function and impl bodies, and reference types, and a quote whose splices sit anywhere else is refused by name.
 - **Unsupported conversions fail closed.** A value whose type has no conversion yet (closures, slices, types as values) produces an error naming the type.
 
 ## Consistency with the final program

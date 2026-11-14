@@ -1,0 +1,24 @@
+module sample
+
+# Shapes the stdlib's `list[T]` bodies and drop instances produce.
+
+type noisy = { pub id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+type hooks = { pub name: int32, pub first: option[noisy], pub second: option[noisy] }
+
+# Each optional field is dropped under its own `if`; the struct owes nothing
+# after both.
+def release(h: hooks) -> unit:
+    return
+
+# `ptr_cast` retypes the pointer a variable holds.
+machine def as_words(p: *mut byte) -> *mut usize:
+    return ptr_cast[usize](p)
+
+# A `cell[T]` is the address of a `T`.
+def first_cell(xs: &array[int64, 3]) -> cell[int64]:
+    return &xs[0]

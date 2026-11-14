@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <format>
 #include <functional>
 #include <map>
 #include <optional>
@@ -155,11 +156,40 @@ auto strip_groups(const ast::expr &expr) -> const ast::expr & {
 
 /// The name a place expression is rooted at.
 struct root_name {
-  std::string_view name;
+  /// A local's name, or a generic lambda copy's key (`use_name`).
+  std::string name;
   source_span span = source_span::dummy();
   /// The `ident_expr` or `module_path_expr` the name was read from.
   const ast::expr *node = nullptr;
 };
+
+/// The key of `copy`, one of the copies of the generic lambda `name` binds
+/// (`checked_types::generic_lambda_instances`). Each copy is a closure of
+/// its own, moved and dropped on its own, so each is a local of its own
+/// under this key. The `$` keeps it apart from every name a program spells.
+[[nodiscard]] auto copy_key(std::string_view name,
+                            const ast::lambda_expr *copy) -> std::string {
+  return std::format("{}${}", name, static_cast<const void *>(copy));
+}
+
+/// The name the use `use` of `name` resolves to: the key of the copy the
+/// checker made for it when `name` is a generic lambda
+/// (`checked_types::generic_lambda_refs`), otherwise `name` itself.
+[[nodiscard]] auto use_name(std::string_view name, const void *use,
+                            const checked_types *checked) -> std::string {
+  if (checked != nullptr) {
+    if (const auto copy = checked->ownership.generic_lambda_refs.find(use);
+        copy != checked->ownership.generic_lambda_refs.end()) {
+      return copy_key(name, copy->second);
+    }
+  }
+  return std::string(name);
+}
+
+/// The name `key` spells in a diagnostic: a copy's key without its suffix.
+[[nodiscard]] auto spelled(std::string_view key) -> std::string_view {
+  return key.substr(0, key.find('$'));
+}
 
 /// One step from a place's root toward the place: a field, an element, or a
 /// dereference, with the type it reaches.
@@ -212,16 +242,18 @@ auto place_root(const ast::expr &expr, bool &projected,
       if (current->has_error) {
         return std::nullopt;
       }
-      return root_name{.name = ast::cast<ast::ident_expr>(*current).name,
-                       .span = current->span,
-                       .node = current};
+      return root_name{
+          .name = use_name(ast::cast<ast::ident_expr>(*current).name, current,
+                           checked),
+          .span = current->span,
+          .node = current};
     case ast::node_kind::module_path_expr: {
       const auto &path = ast::cast<ast::module_path_expr>(*current);
       if (path.segments.empty()) {
         return std::nullopt;
       }
       projected = projected || path.segments.size() > 1;
-      return root_name{.name = path.segments.front(),
+      return root_name{.name = std::string(path.segments.front()),
                        .span = current->span,
                        .node = current};
     }
@@ -293,6 +325,7 @@ public:
         declare_param(*param.pattern, type_of(param.pattern.get()));
       }
     }
+    in_task_ = decl.modifiers.is_async;
     if (decl.modifiers.is_generator || decl.modifiers.is_async) {
       // A generator or task dropped before it first runs returns at once.
       cancel_point(generator_start(decl));
@@ -329,6 +362,7 @@ public:
                         const std::vector<ast::ptr<ast::node>> &body,
                         const std::vector<task_capture> &captures) -> void {
     task_block_ = true;
+    in_task_ = true;
     begin(&key);
     for (const auto &capture : captures) {
       if (capture.moved) {
@@ -353,6 +387,12 @@ public:
 
   [[nodiscard]] auto captures() const -> const std::vector<implicit_capture> & {
     return captures_;
+  }
+
+  /// Whether this (lambda) body changes `name`, a name it captures: a write
+  /// to or into it, a `&mut` of it, or a `mut self` call on it.
+  [[nodiscard]] auto writes_capture(std::string_view name) const -> bool {
+    return written_captures_.contains(std::string(name));
   }
 
 private:
@@ -383,9 +423,18 @@ private:
   /// Set while building a task block's own graph: a name it uses from the
   /// enclosing function is one the task only borrows, so it cannot change.
   bool task_block_ = false;
+  /// Set while building a task's graph (an `async def` or a task block): a
+  /// wait in it is a point where the task may be cancelled.
+  bool in_task_ = false;
   function_cfg cfg_;
   std::vector<scope> scopes_;
   std::vector<implicit_capture> captures_;
+  /// A generic lambda's binding, by the local of its first copy (which its
+  /// plain name finds), to the locals of all its copies: a capture list
+  /// naming it captures every one (`declare_generic_lambda`).
+  std::unordered_map<local_id, std::vector<local_id>> generic_groups_;
+  /// The captured names this (lambda) body changes (`writes_capture`).
+  std::unordered_set<std::string> written_captures_;
   block_id current_ = 0;
   block_id exit_ = 0;
   local_id return_slot_ = 0;
@@ -804,7 +853,7 @@ private:
     if (moved && !task_probe_) {
       const auto type = captured_type(name);
       if (type.has_value() && movable(*type)) {
-        reject_capture_move(std::string(name), name, span);
+        reject_capture_move(std::string(spelled(name)), spelled(name), span);
         moved = false;
       }
     }
@@ -1024,7 +1073,7 @@ private:
     if (report_captures_) {
       emit(task_capture_write_event{.span = span,
                                     .kind = kind,
-                                    .name = std::string(root.name),
+                                    .name = std::string(spelled(root.name)),
                                     .method = std::string(method)});
     }
     return true;
@@ -1033,6 +1082,7 @@ private:
   auto reject_captured_write(const root_name &root, const ast::expr &place,
                              static_write kind, source_span span,
                              std::string_view method = {}) -> void {
+    written_captures_.insert(root.name);
     if (const auto *info = captured_local(root.name)) {
       reject_place_write(*info, &place, kind, span, method);
     }
@@ -1310,8 +1360,9 @@ private:
           movable(type_of(&expr))) {
         auto steps = std::vector<place_step>{};
         place_steps(expr, steps);
-        reject_capture_move(spell_place(root->name, steps, steps.size()),
-                            root->name, expr.span);
+        reject_capture_move(
+            spell_place(spelled(root->name), steps, steps.size()),
+            spelled(root->name), expr.span);
       }
       // A task owns what its body consumes, a part of a capture included.
       note_capture(root->name,
@@ -1559,7 +1610,7 @@ private:
       if (short_circuits && binary.rhs != nullptr) {
         stash(temp, eval_full(*binary.rhs, use_mode::read));
       } else {
-        stash(temp, eval_opt(binary.rhs.get(), use_mode::read));
+        stash(temp, eval_opt(binary.rhs.get(), operand_mode(binary)));
       }
       return compound_result(expr, temp);
     }
@@ -1585,8 +1636,15 @@ private:
     case ast::node_kind::or_else_expr:
       return lower_or_else(ast::cast<ast::or_else_expr>(expr));
 
-    case ast::node_kind::call_expr:
-      return eval_call(ast::cast<ast::call_expr>(expr));
+    case ast::node_kind::call_expr: {
+      const auto &call = ast::cast<ast::call_expr>(expr);
+      auto result = eval_call(call);
+      if (in_task_ && is_task_get(call)) {
+        // A task waits for `t.get()`, and may be cancelled while it does.
+        cancel_point(&call);
+      }
+      return result;
+    }
 
     case ast::node_kind::tuple_expr: {
       const auto &tuple = ast::cast<ast::tuple_expr>(expr);
@@ -1663,7 +1721,9 @@ private:
       auto result = value{};
       auto first = true;
       for (const auto *copy : copies->second) {
-        auto made = eval_lambda(*copy, first);
+        // The copies are one closure value, so only the first takes the
+        // capture borrows (`eval_lambda`).
+        auto made = eval_lambda(*copy, first, /*borrow=*/first);
         first = false;
         result.loans.insert(result.loans.end(), made.loans.begin(),
                             made.loans.end());
@@ -1729,7 +1789,7 @@ private:
       return eval_task_block(expr, ast::cast<ast::async_expr>(expr).body);
 
     case ast::node_kind::crew_expr:
-      lower_crew_body(ast::cast<ast::crew_expr>(expr).body);
+      lower_crew_body(&expr, ast::cast<ast::crew_expr>(expr).body);
       return {};
 
     case ast::node_kind::on_expr: {
@@ -1805,9 +1865,10 @@ private:
 
   /// A struct literal's shorthand field `{x}`, which reads as `{x: x}`.
   auto eval_shorthand_field(const ast::struct_field_init &field) -> value {
-    const auto local = lookup(field.name);
+    const auto name = use_name(field.name, &field, &checked_);
+    const auto local = lookup(name);
     if (!local.has_value()) {
-      note_capture(field.name, /*moved=*/true, field.span, &field);
+      note_capture(name, /*moved=*/true, field.span, &field);
       return {};
     }
     const auto type = cfg_.locals[*local].type;
@@ -1901,6 +1962,25 @@ private:
       return receiver_passing::move;
     }
     return entry.is_mut ? receiver_passing::mut : receiver_passing::shared;
+  }
+
+  /// How an operator's right operand is used: moved into an overload's
+  /// by-value parameter (`add(self, other: self)`), as any argument is, and
+  /// only read for a built-in operator or a `&` parameter. The left operand
+  /// is the overload's `self`, which is lent.
+  [[nodiscard]] auto operand_mode(const ast::binary_expr &binary) const
+      -> use_mode {
+    const auto found = checked_.lowering.operator_dispatches.find(&binary);
+    if (found == checked_.lowering.operator_dispatches.end() ||
+        found->second.decl == nullptr || found->second.decl->params.size() < 2) {
+      return use_mode::read;
+    }
+    const auto type = type_of(found->second.decl->params[1].pattern.get());
+    if (checked_.types.is_unknown(type) ||
+        checked_.types.entry(type).kind == type_kind::ref_kind) {
+      return use_mode::read;
+    }
+    return use_mode::move;
   }
 
   [[nodiscard]] auto argument_passing(const ast::call_expr &call,
@@ -2209,6 +2289,26 @@ private:
     return compound_result(call, temp);
   }
 
+  /// Whether `call` is `t.get()` on a `task` (through references too).
+  [[nodiscard]] auto is_task_get(const ast::call_expr &call) const -> bool {
+    if (call.callee == nullptr ||
+        call.callee->kind != ast::node_kind::field_expr || !call.args.empty()) {
+      return false;
+    }
+    const auto &field = ast::cast<ast::field_expr>(*call.callee);
+    if (field.field_name != "get" || field.object == nullptr) {
+      return false;
+    }
+    auto type = type_of(field.object.get());
+    while (!checked_.types.is_unknown(type) &&
+           checked_.types.entry(type).kind == type_kind::ref_kind) {
+      type = checked_.types.entry(type).result;
+    }
+    return !checked_.types.is_unknown(type) &&
+           checked_.types.entry(type).kind == type_kind::builtin_generic_kind &&
+           checked_.types.entry(type).name == "task";
+  }
+
   /// Whether `call` is `c.spawn(task)` on a `crew`.
   [[nodiscard]] auto is_crew_spawn(const ast::call_expr &call) const -> bool {
     if (call.callee == nullptr ||
@@ -2225,13 +2325,18 @@ private:
            checked_.types.entry(type).name == "crew";
   }
 
-  /// A `crew` body, whose spawned tasks all end with it.
-  auto lower_crew_body(const std::vector<ast::ptr<ast::node>> &body) -> void {
+  /// A `crew` body, keyed by `key`, whose spawned tasks all end with it. In
+  /// a task the wait for them is a point where the task may be cancelled.
+  auto lower_crew_body(const void *key,
+                       const std::vector<ast::ptr<ast::node>> &body) -> void {
     const auto holder = new_temp(local_role::crew_tasks);
     crew_holders_.push_back(holder);
     static_cast<void>(lower_scoped_body(body, false));
     crew_holders_.pop_back();
     emit(use_event{.local = holder});
+    if (in_task_) {
+      cancel_point(key);
+    }
   }
 
   /// An `async:` or `on(...)` block, `key`: its body runs as a task of its
@@ -2291,13 +2396,28 @@ private:
     return result;
   }
 
+  /// The locals `local` stands for in a capture list: every copy of a
+  /// generic lambda, or `local` alone.
+  [[nodiscard]] auto group_of(local_id local) const -> std::vector<local_id> {
+    if (const auto group = generic_groups_.find(local);
+        group != generic_groups_.end()) {
+      return group->second;
+    }
+    return {local};
+  }
+
   /// A lambda: its body is a function of its own; here, only what creating
   /// it does to the enclosing function's locals. A `&`/`&mut` capture-list
   /// entry borrows for as long as the closure lives. Everything else is
   /// captured by value — moved if the body (or `move`) consumes it, copied
   /// otherwise — and a captured value's own borrows travel with it.
-  auto eval_lambda(const ast::lambda_expr &lambda, bool report_captures = true)
-      -> value {
+  ///
+  /// Without `borrow`, the closure is a later copy of a generic lambda whose
+  /// first copy already took the capture borrows, and the caller hands it
+  /// those loans: its by-reference captures are recorded for lowering but
+  /// borrow nothing again.
+  auto eval_lambda(const ast::lambda_expr &lambda, bool report_captures = true,
+                   bool borrow = true) -> value {
     auto nested = cfg_builder(checked_, out_, this);
     nested.report_captures_ = report_captures_ && report_captures;
     nested.build_lambda(lambda);
@@ -2311,16 +2431,22 @@ private:
         note_capture(name, moved, span, node);
         return;
       }
-      const auto &info = cfg_.locals[*local];
-      const auto moves = moved && info.movable;
-      access(*local, moves ? access_kind::move : access_kind::read, span,
-             k_no_loan, &lambda);
-      if (moves && checked_.drop.drop_plans.contains(info.type)) {
-        cfg_.owned_captures[&lambda].push_back(
-            owned_capture{.name = std::string(name), .type = info.type});
+      auto owned = std::optional<type_id>{};
+      for (const auto part : group_of(*local)) {
+        const auto &info = cfg_.locals[part];
+        const auto moves = moved && info.movable;
+        access(part, moves ? access_kind::move : access_kind::read, span,
+               k_no_loan, &lambda);
+        if (moves && checked_.drop.drop_plans.contains(info.type)) {
+          owned = info.type;
+        }
+        if (bears(info.type)) {
+          result.sources.push_back(part);
+        }
       }
-      if (bears(info.type)) {
-        result.sources.push_back(*local);
+      if (owned.has_value()) {
+        cfg_.owned_captures[&lambda].push_back(owned_capture{
+            .name = std::string(name), .type = *owned, .node = node});
       }
     };
 
@@ -2335,15 +2461,21 @@ private:
             continue;
           }
           const auto is_mut = entry.mode == ast::capture_mode::by_mut_ref;
-          if (is_mut) {
-            reject_place_write(cfg_.locals[*local], nullptr,
-                               static_write::borrow_mut, entry.span);
+          if (!borrow) {
+            continue;
           }
-          access(*local,
-                 is_mut ? access_kind::borrow_mut : access_kind::borrow_shared,
-                 entry.span);
-          result.loans.push_back(
-              new_loan(*local, is_mut, loan_origin::capture, entry.span));
+          for (const auto part : group_of(*local)) {
+            if (is_mut) {
+              reject_place_write(cfg_.locals[part], nullptr,
+                                 static_write::borrow_mut, entry.span);
+            }
+            access(part,
+                   is_mut ? access_kind::borrow_mut
+                          : access_kind::borrow_shared,
+                   entry.span);
+            result.loans.push_back(
+                new_loan(part, is_mut, loan_origin::capture, entry.span));
+          }
           break;
         }
         case ast::capture_mode::by_move:
@@ -2357,10 +2489,69 @@ private:
       return result;
     }
     for (const auto &capture : nested.captures()) {
+      const auto written = nested.writes_capture(capture.name);
+      if (borrow_capture(lambda, capture, written, borrow, result)) {
+        continue;
+      }
+      if (written && !lookup(capture.name).has_value()) {
+        // Captured from further out: this body changes it too.
+        written_captures_.insert(capture.name);
+      }
       capture_by_value(capture.name, capture.moved || lambda.is_move,
                        capture.span, capture.node);
     }
     return result;
+  }
+
+  /// An implicit capture of a local that is not `copy`, which the body does
+  /// not consume and `move` does not force to move: the closure borrows it
+  /// (ch. 16), mutably when the body changes it. The closure carries the
+  /// loan, so the local cannot be moved or dropped while the closure may
+  /// still be called, and a closure that must outlive it is written `move`.
+  /// `self` is left out: it is already a reference to the receiver.
+  /// Without `borrow` (a later copy of a generic lambda), the capture is
+  /// recorded but the first copy's loan stands for it.
+  auto borrow_capture(const ast::lambda_expr &lambda,
+                      const implicit_capture &capture, bool written,
+                      bool borrow, value &result) -> bool {
+    if (capture.moved || lambda.is_move || capture.name == "self") {
+      return false;
+    }
+    const auto local = lookup(capture.name);
+    if (!local.has_value()) {
+      // Captured from further out: the enclosing closure or task holds it,
+      // and this closure borrows it from there. The enclosing capture is
+      // what the owner sees, through `note_capture`.
+      const auto type = captured_type(capture.name);
+      if (!type.has_value() || !movable(*type) || task_block_ ||
+          task_probe_) {
+        return false;
+      }
+      if (written) {
+        written_captures_.insert(capture.name);
+      }
+      note_capture(capture.name, /*moved=*/false, capture.span, capture.node);
+      cfg_.borrowed_captures[&lambda].push_back(borrowed_capture{
+          .name = capture.name, .node = capture.node, .is_mut = written});
+      return true;
+    }
+    if (!cfg_.locals[*local].movable) {
+      return false;
+    }
+    if (!borrow) {
+      cfg_.borrowed_captures[&lambda].push_back(borrowed_capture{
+          .name = capture.name, .node = capture.node, .is_mut = written});
+      return true;
+    }
+    access(*local, written ? access_kind::borrow_mut : access_kind::borrow_shared,
+           capture.span);
+    const auto loan =
+        new_loan(*local, written, loan_origin::capture, capture.span);
+    cfg_.loans[loan].implicit = true;
+    result.loans.push_back(loan);
+    cfg_.borrowed_captures[&lambda].push_back(borrowed_capture{
+        .name = capture.name, .node = capture.node, .is_mut = written});
+    return true;
   }
 
   /// Leaves the function from the current block, returning `returned`:
@@ -2940,7 +3131,7 @@ private:
     }
 
     case ast::node_kind::crew_stmt:
-      lower_crew_body(ast::cast<ast::crew_stmt>(node).body);
+      lower_crew_body(&node, ast::cast<ast::crew_stmt>(node).body);
       return {};
 
     case ast::node_kind::splice_stmt: {
@@ -2985,7 +3176,57 @@ private:
     }
   }
 
+  /// `let f = (x) => ...` whose parameter has no type: one closure per copy
+  /// the checker made for a use of `f`, each a local of its own under its
+  /// copy's key (`use_name`), so moving one leaves the others to drop. The
+  /// plain name finds the first copy and, through `generic_groups_`, all of
+  /// them, which is what a capture list naming `f` captures.
+  auto declare_generic_lambda(const ast::let_stmt &stmt) -> bool {
+    const auto *lambda =
+        ast::as<const ast::lambda_expr>(stmt.initializer.get());
+    if (lambda == nullptr || stmt.pattern == nullptr ||
+        stmt.pattern->kind != ast::node_kind::binding_pattern ||
+        !stmt.else_body.empty()) {
+      return false;
+    }
+    const auto copies =
+        checked_.ownership.generic_lambda_instances.find(lambda);
+    if (copies == checked_.ownership.generic_lambda_instances.end()) {
+      return false;
+    }
+    const auto &binding = ast::cast<ast::binding_pattern>(*stmt.pattern);
+    auto group = std::vector<local_id>{};
+    auto first = true;
+    // The copies are one closure value: the first takes the capture borrows
+    // and every copy carries them, so a `&mut` capture is one mutable borrow
+    // however many copies there are (`eval_lambda`).
+    auto borrows = std::vector<loan_id>{};
+    for (const auto *copy : copies->second) {
+      auto made = eval_lambda(*copy, first, /*borrow=*/first);
+      if (first) {
+        borrows = made.loans;
+      } else {
+        made.loans.insert(made.loans.end(), borrows.begin(), borrows.end());
+      }
+      first = false;
+      const auto local = declare(binding.name, type_of(copy), binding.span,
+                                 /*whole=*/true, /*owns=*/false, copy);
+      scopes_.back().names.back().first = copy_key(binding.name, copy);
+      cfg_.locals[local].immutable = true;
+      bind_value(local, made);
+      group.push_back(local);
+    }
+    if (!group.empty()) {
+      scopes_.back().names.emplace_back(binding.name, group.front());
+      generic_groups_.insert_or_assign(group.front(), std::move(group));
+    }
+    return true;
+  }
+
   auto lower_let(const ast::let_stmt &stmt) -> void {
+    if (declare_generic_lambda(stmt)) {
+      return;
+    }
     auto v =
         eval_opt(stmt.initializer.get(),
                  subject_mode(stmt.initializer.get(), {stmt.pattern.get()}));
@@ -3044,6 +3285,7 @@ private:
       if (projected) {
         reject_captured_write(*root, target, static_write::assign, target.span);
       }
+      written_captures_.insert(root->name);
       note_capture(root->name, false, root->span, root->node);
       return;
     }

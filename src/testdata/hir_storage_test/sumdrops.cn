@@ -1,0 +1,205 @@
+module sample
+
+type noisy = { pub id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+type slot = @full(noisy) | @vacant
+
+def make_noisy(n: int32) -> noisy:
+    return noisy { id: n }
+
+def make_slot(n: int32) -> slot:
+    if n > 0:
+        return @full(make_noisy(n))
+    return @vacant
+
+def make_option(n: int32) -> option[noisy]:
+    if n > 0:
+        return @some(make_noisy(n))
+    return @none
+
+# The scope-end drop of a sum.
+def drop_slot(n: int32) -> int32:
+    let s = make_slot(n)
+    return n
+
+# An arm binds the payload, which leaves the sum.
+def take_payload(n: int32) -> int32:
+    let s = make_slot(n)
+    return match s:
+        @full(x) => x.id
+        @vacant => 0
+
+# An arm that names no payload keeps the sum.
+def peek(n: int32) -> int32:
+    let s = make_slot(n)
+    return match s:
+        @full(_) => 1
+        @vacant => 0
+
+def drain(n: int32) -> int32:
+    var total: int32 = 0
+    var left = n
+    while let @some(x) = make_option(left):
+        total = total + x.id
+        left = left - 1
+    return total
+
+def first_or(n: int32) -> int32:
+    let @some(x) = make_option(n) else:
+        return -5
+    return x.id
+
+type duo = @both(noisy, noisy) | @left(noisy) | @nothing
+
+def make_duo(n: int32) -> duo:
+    if n > 1:
+        return @both(make_noisy(n), make_noisy(n + 1))
+    if n > 0:
+        return @left(make_noisy(n))
+    return @nothing
+
+# Binding one payload leaves the other with the sum.
+def first_of(n: int32) -> int32:
+    let d = make_duo(n)
+    return match d:
+        @both(a, _) => a.id
+        @left(a) => a.id
+        @nothing => 0
+
+def both_of(n: int32) -> int32:
+    let d = make_duo(n)
+    return match d:
+        @both(a, b) => a.id + b.id
+        _ => 0
+
+# A parameter that is a sum is dropped by its owner.
+def consume(c: slot) -> int32:
+    return 1
+
+def pass_on(n: int32) -> int32:
+    let s = make_slot(n)
+    return consume(s)
+
+def replace(n: int32) -> int32:
+    var s = make_slot(n)
+    s = make_slot(n + 1)
+    return n
+
+# A statement `match` with a wildcard arm.
+def statement(n: int32) -> int32:
+    var total: int32 = 0
+    let s = make_slot(n)
+    match s:
+        @full(x) =>:
+            total = x.id
+        _ =>:
+            total = -1
+    return total
+
+def early(n: int32) -> int32:
+    let s = make_slot(n)
+    if n > 5:
+        return 1
+    return match s:
+        @full(_) => 2
+        @vacant => 3
+
+# Literal and nested tests.
+type tagged = @item(noisy, int32) | @empty
+
+def make_tagged(n: int32) -> tagged:
+    if n > 0:
+        return @item(make_noisy(n), n - 1)
+    return @empty
+
+def literal_payload(n: int32) -> int32:
+    let t = make_tagged(n)
+    return match t:
+        @item(x, 0) => x.id
+        @item(_, k) => 100 + k
+        @empty => -1
+
+def make_nested(n: int32) -> option[slot]:
+    if n > 1:
+        return @some(make_slot(n))
+    if n > 0:
+        return @some(make_slot(0))
+    return @none
+
+def nested(n: int32) -> int32:
+    let o = make_nested(n)
+    return match o:
+        @some(@full(x)) => x.id
+        @some(@vacant) => -1
+        @none => 0
+
+def nested_else(n: int32) -> int32:
+    let @some(@full(x)) = make_nested(n) else:
+        return -7
+    return x.id
+
+# Nothing is bound, so the payload stays with the sum and the sums nested in it
+# are dropped through the variants they hold.
+def nested_peek(n: int32) -> int32:
+    let o = make_nested(n)
+    return match o:
+        @some(@full(_)) => 3
+        @some(@vacant) => 1
+        @none => 2
+
+# Still refused: a pattern outside the supported tests.
+def tuple_subject(n: int32) -> int32:
+    let t = (make_noisy(n), n)
+    return match t:
+        (_, 0) => 1
+        (_, k) => k
+
+# An or-pattern whose alternatives are each a supported test.
+def either(n: int32) -> int32:
+    let d = make_duo(n)
+    return match d:
+        @left(_) | @nothing => 1
+        _ => 2
+
+# A pattern that binds nothing.
+def count_some(n: int32) -> int32:
+    var left = n
+    var total: int32 = 0
+    while let @some(_) = make_option(left):
+        total = total + 1
+        left = left - 1
+    return total
+
+def has_some(n: int32) -> int32:
+    let @some(_) = make_option(n) else:
+        return 0
+    return 1
+
+# A guard reads a scalar the pattern binds; the sum that owes a drop stays
+# whole when the guard fails.
+def guard_scalar(n: int32) -> int32:
+    let t = make_tagged(n)
+    return match t:
+        @item(_, k) if k > 5 => k
+        @item(_, _) => 1
+        @empty => 0
+
+# A guard on a pattern that takes a droppable payload out is refused.
+def guard_takes(n: int32) -> int32:
+    let s = make_slot(n)
+    return match s:
+        @full(x) if x.id > 5 => x.id
+        @full(x) => 1
+        @vacant => 0
+
+# A failed guard hands the sum to a later arm that takes the payload.
+def guard_then_take(n: int32) -> int32:
+    let t = make_tagged(n)
+    return match t:
+        @item(_, k) if k > 5 => k
+        @item(x, _) => x.id
+        @empty => 0

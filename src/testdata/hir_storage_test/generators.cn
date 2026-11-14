@@ -1,0 +1,46 @@
+module sample
+
+type pair = { pub a: int64, pub b: int64 }
+
+# A generator that yields a scalar from inside a loop.
+generator def count(n: int64) -> some iterator[int64]:
+    var i: int64 = 0
+    while i < n:
+        yield i
+        i = i + 1
+
+# Reads every item through `while let`, then drops the finished generator.
+def sum_to(n: int64) -> int64:
+    var g = count(n)
+    var total: int64 = 0
+    while let @some(v) = g.next():
+        total = total + v
+    return total
+
+# Two generators, advanced independently.
+def both(n: int64) -> int64:
+    var a = count(n)
+    var b = count(n)
+    let x = match a.next():
+        @some(v) => v
+        @none => 0
+    let y = match b.next():
+        @some(v) => v
+        @none => 0
+    return x + y
+
+type noisy = { pub id: int64 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+# An item that needs a drop is not in the storage form yet.
+generator def owned() -> some iterator[noisy]:
+    yield noisy { id: 1 }
+
+def take_owned() -> int64:
+    var g = owned()
+    return match g.next():
+        @some(v) => v.id
+        @none => 0

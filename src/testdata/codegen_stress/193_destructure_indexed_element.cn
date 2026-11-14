@@ -1,0 +1,26 @@
+module codegen_stress.destructure_indexed_element
+
+# expect: 468
+
+# A destructuring `let` on a list element reads the parts in place: the
+# element is not `copy` (a tuple always moves), so `runs[i]` is reached
+# through the address `at_ref` gives, and the bindings read through it after
+# the `let` itself is over, here in a later statement and a call.
+
+def span(a: usize, b: usize) -> usize:
+    return b - a
+
+def main() -> int64:
+    var runs: list[(usize, usize)] = []
+    var start: usize = 0
+    while start < 60:
+        runs.push((start, start + 5))
+        start = start + 5
+    var total: usize = 0
+    var i: usize = 0
+    while i < runs.len():
+        let (a, b) = runs[i]
+        let (_, c) = runs[runs.len() - 1 - i]
+        total = total + a + span(a, b) + c / 5
+        i = i + 1
+    return total as int64

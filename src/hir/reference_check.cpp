@@ -35,7 +35,7 @@ public:
         function_ = function.get();
         for (const auto &param : function->params) {
           if (param.name == "self" && !is_ref(param.type) &&
-              types_.is_heap_represented(param.type)) {
+              types_.is_compound_value(param.type)) {
             report(function->span, std::format("`self` is typed `{}`, not a "
                                                "reference",
                                                types_.display(param.type)));
@@ -809,11 +809,17 @@ private:
     return expr;
   }
 
-  /// `&expr` typed `want`; a value that is not a place is stored first.
+  /// `&expr`, a reference as mutable as `want`; a value that is not a place
+  /// is stored first. The reference is to `expr`'s own type: a callee shared
+  /// by every instance of a generic impl (a trait default) writes `want` in
+  /// the impl's parameters, which name no type here.
   auto borrow(ptr<hir_expr> expr, type_id want) -> ptr<hir_expr> {
     const auto span = expr->span;
-    const auto op = types_.entry(want).is_mut ? ast::unary_op::addr_of_mut
-                                              : ast::unary_op::addr_of;
+    const auto is_mut = types_.entry(want).is_mut;
+    const auto op = is_mut ? ast::unary_op::addr_of_mut : ast::unary_op::addr_of;
+    if (!types_.is_unknown(expr->type)) {
+      want = const_cast<semantic::type_table &>(types_).ref_to(expr->type, is_mut);
+    }
     if (is_place(*expr)) {
       // A part of a temporary that is borrowed stays in it.
       auto path = std::vector<std::string>{};
@@ -936,17 +942,9 @@ private:
     if (call.target != nullptr) {
       for (const auto &param : call.target->params) {
         const auto found = checked_.node_types.find(param.pattern.get());
-        auto type = found != checked_.node_types.end()
-                        ? found->second
-                        : semantic::k_unknown_type;
-        // A runtime intrinsic receives a heap value's own pointer where its
-        // signature says `&T`: the runtime reads and writes through the
-        // block, never the caller's slot.
-        if (call.target->modifiers.is_intrinsic && is_ref(type) &&
-            types_.is_heap_represented(types_.entry(type).result)) {
-          type = types_.entry(type).result;
-        }
-        out.push_back(type);
+        out.push_back(found != checked_.node_types.end()
+                          ? found->second
+                          : semantic::k_unknown_type);
       }
       return out;
     }
@@ -1214,8 +1212,12 @@ private:
     case hir_node_kind::hir_call: {
       auto &call = dynamic_cast<hir_call &>(node);
       // Calling through a `&fn(...)` calls the function value it refers to.
+      // A call borrows its function value, so one that is not a place (a
+      // lambda called where it is written) is held in a temporary that drops
+      // at the end of the statement.
       if (call.target == nullptr) {
         project(call.callee);
+        read_through_temporary(call.callee);
       }
       const auto params = param_types(call);
       if (params.size() == call.args.size()) {

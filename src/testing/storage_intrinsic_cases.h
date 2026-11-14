@@ -1,0 +1,465 @@
+#pragma once
+
+// Cases for calls to runtime intrinsics from the shared storage form, run by
+// every backend that compiles it. The expected bytes are worked out by hand
+// from the layouts in `src/runtime/result_out.h` (a `result` is `{tag: u64,
+// payload @8}`, a `str` is `{len, data}`), and the host effects are checked
+// against the operating system, not against another backend.
+
+#include <bit>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <fcntl.h>
+#include <iostream>
+#include <span>
+#include <string>
+#include <string_view>
+#include <unistd.h>
+#include <vector>
+
+#include "src/runtime/allocator.h"
+#include "src/testing/storage_cases.h"
+#include "src/testing/test_assert.h"
+
+namespace cinder::testing::storage_cases {
+
+/// A `str` or `slice[byte]` descriptor the host owns: the layout the compiler
+/// gives them, `{len: u64 @0, data: address @8}`.
+struct text_view {
+  uint64_t length = 0;
+  const char *data = nullptr;
+
+  explicit text_view(std::string_view text)
+      : length(text.size()), data(text.data()) {}
+};
+
+static_assert(sizeof(text_view) == 16);
+
+/// A descriptor passed to a function as the address of a parameter.
+[[nodiscard]] inline auto as_argument(const text_view &view) -> int64_t {
+  return static_cast<int64_t>(reinterpret_cast<intptr_t>(&view)); // NOLINT
+}
+
+/// The text a `str` result holds, released with the allocator that made it.
+[[nodiscard]] inline auto take_text(const result_bytes &result,
+                                    size_t offset = 0) -> std::string {
+  const auto length = result.at<uint64_t>(offset);
+  const auto *data = reinterpret_cast<const char *>( // NOLINT
+      result.at<uint64_t>(offset + 8));
+  auto text = std::string(data == nullptr ? "" : data, length);
+  cinder_heap_free(const_cast<char *>(data), length); // NOLINT
+  return text;
+}
+
+inline auto expect_text(const result_bytes &result, std::string_view wanted,
+                        std::string_view what) -> void {
+  const auto actual = take_text(result);
+  if (actual != wanted) {
+    std::cerr << what << ": expected \"" << wanted << "\", got \"" << actual
+              << "\"\n";
+    fail("a string result differs");
+  }
+}
+
+inline auto expect_ok(const result_bytes &result, std::string_view what)
+    -> void {
+  expect_equal(static_cast<int64_t>(result.at<uint64_t>(0)), 0,
+               std::string(what) + " is ok");
+}
+
+inline auto expect_err(const result_bytes &result, int code,
+                       std::string_view what) -> void {
+  expect_equal(static_cast<int64_t>(result.at<uint64_t>(0)), 1,
+               std::string(what) + " is err");
+  expect_equal(result.at<int32_t>(8), code,
+               std::string(what) + " error code");
+}
+
+/// A descriptor argument that has to stay alive for the call.
+[[nodiscard]] inline auto bits_of(double value) -> int64_t {
+  return std::bit_cast<int64_t>(value);
+}
+
+// ==========================================================================
+//  I/O results
+// ==========================================================================
+
+inline auto io_results_are_written_in_place(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "intrinsics.cn");
+
+  // A `raw_fd` returned as it arrives, and read through a field.
+  expect_equal(p->into("stdout_value", {}).at<int64_t>(0), 1, "stdout value");
+  expect_equal(p->scalar("stdout_number", {}), 1, "stdout field");
+
+  // A failing call: `err(io_errno)`, the code inline at offset 8.
+  auto bad = p->into("close_fd", std::vector<int64_t>{1000000});
+  expect_err(bad, EBADF, "close of a descriptor that is not open");
+
+  // Success and then failure of the same call on a real descriptor. The whole
+  // `ok` result is the tag and zero bytes: nothing else is left unset.
+  auto ends = std::vector<int>(2, -1);
+  expect(::pipe(ends.data()) == 0, "expected the host to make a pipe");
+  auto closed = p->into("close_fd", std::vector<int64_t>{ends[0]});
+  expect_ok(closed, "close of an open descriptor");
+  expect_equal(static_cast<int64_t>(closed.at<uint64_t>(8)), 0,
+               "bytes after the ok tag");
+  expect_err(p->into("close_fd", std::vector<int64_t>{ends[0]}), EBADF,
+             "second close");
+
+  // The result is dropped: the effect still happens.
+  expect_equal(p->scalar("discard_close", std::vector<int64_t>{ends[1]}), 7,
+               "discard_close");
+  expect(::fcntl(ends[1], F_GETFD) == -1 && errno == EBADF,
+         "expected the discarded call to have closed the descriptor");
+
+  expect_ok(p->into("flush_fd", std::vector<int64_t>{1}), "flush");
+
+  // A runtime-made pipe, written and read through the same functions.
+  auto made = p->into("make_pipe", {});
+  expect_ok(made, "pipe");
+  const auto read_end = made.at<int64_t>(8);
+  const auto write_end = made.at<int64_t>(16);
+  expect(read_end >= 0 && write_end >= 0 && read_end != write_end,
+         "expected two distinct descriptors");
+
+  const auto message = std::string_view("ping");
+  const auto outgoing = text_view(message);
+  auto sent = p->into("write_bytes",
+                      std::vector<int64_t>{write_end, as_argument(outgoing)});
+  expect_ok(sent, "write");
+  expect_equal(sent.at<int64_t>(8), 4, "bytes written");
+
+  auto buffer = std::string(16, '\0');
+  const auto incoming = text_view(buffer);
+  auto received = p->into("read_bytes", std::vector<int64_t>{
+                                            read_end, as_argument(incoming)});
+  expect_ok(received, "read");
+  expect_equal(received.at<int64_t>(8), 4, "bytes read");
+  expect(buffer.substr(0, 4) == "ping", "expected the bytes that were sent");
+
+  // Reading an empty non-blocking descriptor reports the host's EAGAIN.
+  expect_ok(p->into("nonblocking", std::vector<int64_t>{read_end}),
+            "set_nonblocking");
+  auto empty = p->into("read_bytes", std::vector<int64_t>{
+                                          read_end, as_argument(incoming)});
+  expect_err(empty, static_cast<int>(p->scalar("would_block", {})),
+             "read of an empty pipe");
+  expect_equal(p->scalar("would_block", {}), EAGAIN, "would_block");
+
+  expect_ok(p->into("close_fd", std::vector<int64_t>{read_end}), "close read");
+  expect_err(p->into("write_bytes", std::vector<int64_t>{
+                                        read_end, as_argument(outgoing)}),
+             EBADF, "write to a closed descriptor");
+  expect_ok(p->into("close_fd", std::vector<int64_t>{write_end}),
+            "close write");
+}
+
+/// Repeating success and failure paths neither allocates a result wrapper nor
+/// leaves a block behind.
+inline auto repeated_io_allocates_nothing(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "intrinsics.cn");
+  const auto allocations = runtime::heap_allocation_count();
+  const auto live = runtime::heap_live_block_count();
+  for (int round = 0; round < 500; ++round) {
+    auto made = p->into("make_pipe", {});
+    expect_ok(made, "pipe");
+    const auto read_end = made.at<int64_t>(8);
+    const auto write_end = made.at<int64_t>(16);
+    expect_ok(p->into("close_fd", std::vector<int64_t>{read_end}), "close");
+    expect_equal(p->scalar("discard_close", std::vector<int64_t>{write_end}), 7,
+                 "discard_close");
+    expect_err(p->into("close_fd", std::vector<int64_t>{write_end}), EBADF,
+               "close after discard");
+  }
+  expect_equal(static_cast<int64_t>(runtime::heap_allocation_count() -
+                                    allocations),
+               0, "heap blocks allocated by repeated pipe calls");
+  expect_equal(runtime::heap_live_block_count() - live, 0,
+               "heap blocks left by repeated pipe calls");
+}
+
+// ==========================================================================
+//  String results
+// ==========================================================================
+
+inline auto string_results_are_written_in_place(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "intrinsics.cn");
+  const auto text = [](std::string_view s) { return text_view(s); };
+
+  {
+    const auto s = text("abc");
+    expect_text(p->into("reverse", std::vector<int64_t>{as_argument(s)}), "cba",
+                "reverse");
+    const auto multi = text("a\xC3\xB1" "b"); // "añb"
+    expect_text(p->into("reverse", std::vector<int64_t>{as_argument(multi)}),
+                "b\xC3\xB1" "a", "reverse of a multibyte string");
+    expect_equal(p->scalar("length", std::vector<int64_t>{as_argument(multi)}),
+                 3, "length counts scalars");
+    expect_text(
+        p->into("truncate",
+                std::vector<int64_t>{as_argument(multi), int64_t{2}}),
+        "a\xC3\xB1", "truncate");
+  }
+  {
+    const auto a = text("ab");
+    const auto b = text("cde");
+    expect_text(p->into("concat", std::vector<int64_t>{as_argument(a),
+                                                       as_argument(b)}),
+                "abcde", "concat");
+    expect_equal(p->scalar("same", std::vector<int64_t>{as_argument(a),
+                                                        as_argument(a)}),
+                 1, "same");
+    expect_equal(p->scalar("same", std::vector<int64_t>{as_argument(a),
+                                                        as_argument(b)}),
+                 0, "different");
+    expect(p->scalar("compare", std::vector<int64_t>{as_argument(a),
+                                                     as_argument(b)}) < 0,
+           "expected \"ab\" to sort before \"cde\"");
+    expect(p->scalar("compare", std::vector<int64_t>{as_argument(b),
+                                                     as_argument(a)}) > 0,
+           "expected \"cde\" to sort after \"ab\"");
+  }
+  {
+    const auto haystack = text("hello world");
+    const auto needle = text("o");
+    const auto missing = text("z");
+    auto first = p->into("find", std::vector<int64_t>{as_argument(haystack),
+                                                      as_argument(needle), 0});
+    expect_equal(first.at<uint8_t>(0), 1, "find.found");
+    expect_equal(first.at<int64_t>(8), 4, "find.pos");
+    auto second = p->into("find", std::vector<int64_t>{as_argument(haystack),
+                                                       as_argument(needle), 5});
+    expect_equal(second.at<int64_t>(8), 7, "find from 5");
+    auto none = p->into("find", std::vector<int64_t>{as_argument(haystack),
+                                                     as_argument(missing), 0});
+    expect_equal(none.at<uint8_t>(0), 0, "find of a missing string");
+    expect_equal(none.at<int64_t>(8), 0, "find.pos when not found");
+    auto last = p->into("rfind", std::vector<int64_t>{as_argument(haystack),
+                                                      as_argument(needle)});
+    expect_equal(last.at<uint8_t>(0), 1, "rfind.found");
+    expect_equal(last.at<int64_t>(8), 7, "rfind.pos");
+  }
+  {
+    const auto padded = text("  hi  ");
+    expect_text(p->into("trim", std::vector<int64_t>{as_argument(padded), 0}),
+                "hi", "trim both");
+    expect_text(p->into("trim", std::vector<int64_t>{as_argument(padded), 1}),
+                "hi  ", "trim start");
+    expect_text(p->into("trim", std::vector<int64_t>{as_argument(padded), 2}),
+                "  hi", "trim end");
+    const auto source = text("a-b-c");
+    const auto dash = text("-");
+    const auto plus = text("+");
+    expect_text(p->into("replace", std::vector<int64_t>{as_argument(source),
+                                                        as_argument(dash),
+                                                        as_argument(plus)}),
+                "a+b+c", "replace");
+  }
+  expect_text(p->into("repeat", std::vector<int64_t>{'x', 3}), "xxx", "repeat");
+  expect_text(p->into("codepoint", std::vector<int64_t>{65}), "A", "codepoint");
+  expect_text(p->into("codepoint", std::vector<int64_t>{0x1F600}),
+              "\xF0\x9F\x98\x80", "a four-byte codepoint");
+  expect_text(p->into("radix", std::vector<int64_t>{255, 16, 0}), "ff", "hex");
+  expect_text(p->into("radix", std::vector<int64_t>{255, 16, 1}), "FF",
+              "uppercase hex");
+  expect_text(p->into("radix", std::vector<int64_t>{5, 2, 0}), "101", "binary");
+  expect_text(p->into("radix", std::vector<int64_t>{0, 10, 0}), "0", "zero");
+  expect_text(p->into("fixed", std::vector<int64_t>{bits_of(3.14159), 2}),
+              "3.14", "fixed");
+  expect_text(
+      p->into("scientific", std::vector<int64_t>{bits_of(1234.5), 2, 0}),
+      "1.23e3", "scientific");
+  expect_text(
+      p->into("scientific", std::vector<int64_t>{bits_of(1234.5), 2, 1}),
+      "1.23E3", "uppercase scientific");
+  expect_text(p->into("general", std::vector<int64_t>{bits_of(0.5), 6}), "0.5",
+              "general");
+}
+
+/// A `str` result costs one allocation, for its bytes, and none for the
+/// descriptor; an empty one costs nothing.
+inline auto string_results_allocate_only_their_bytes(case_backend &backend)
+    -> void {
+  auto p = backend.open("bytecode_storage_test", "intrinsics.cn");
+  const auto source = text_view("hello");
+  const auto empty = text_view("");
+
+  auto before = runtime::heap_allocation_count();
+  auto reversed = p->into("reverse", std::vector<int64_t>{as_argument(source)});
+  expect_equal(static_cast<int64_t>(runtime::heap_allocation_count() - before),
+               1, "allocations for one string result");
+  expect_text(reversed, "olleh", "reverse");
+
+  before = runtime::heap_allocation_count();
+  auto nothing = p->into("concat", std::vector<int64_t>{as_argument(empty),
+                                                        as_argument(empty)});
+  expect_equal(static_cast<int64_t>(runtime::heap_allocation_count() - before),
+               0, "allocations for an empty string result");
+  expect_equal(static_cast<int64_t>(nothing.at<uint64_t>(0)), 0,
+               "empty string length");
+  expect_equal(static_cast<int64_t>(nothing.at<uint64_t>(8)), 0,
+               "empty string data");
+
+  const auto live = runtime::heap_live_block_count();
+  for (int round = 0; round < 500; ++round) {
+    expect_text(p->into("reverse", std::vector<int64_t>{as_argument(source)}),
+                "olleh", "reverse in a loop");
+  }
+  expect_equal(runtime::heap_live_block_count() - live, 0,
+               "string blocks left behind");
+}
+
+/// The text a `str` result refers to, read without releasing it: a literal's
+/// bytes are static.
+[[nodiscard]] inline auto peek_text(const result_bytes &result,
+                                    size_t offset = 0) -> std::string {
+  const auto length = result.at<uint64_t>(offset);
+  const auto *data = reinterpret_cast<const char *>( // NOLINT
+      result.at<uint64_t>(offset + 8));
+  return std::string(data == nullptr ? "" : data, length);
+}
+
+/// A string literal is a `{len, data}` descriptor over static bytes: built
+/// where it is used, read by the string intrinsics, returned and stored in a
+/// field, and never allocated.
+inline auto string_literals_are_static_descriptors(case_backend &backend)
+    -> void {
+  auto p = backend.open("bytecode_storage_test", "strings.cn");
+  const auto before = runtime::heap_allocation_count();
+  expect_equal(p->scalar("hello_len", {}), 5, "hello_len");
+  expect_equal(p->scalar("picked_len", std::vector<int64_t>{1}), 2,
+               "picked_len(1)");
+  expect_equal(p->scalar("picked_len", std::vector<int64_t>{0}), 4,
+               "picked_len(0)");
+  expect(peek_text(p->into("returned", {})) == "static",
+         "expected the returned literal's bytes");
+  expect(peek_text(p->into("escaped", {})) == "a\nb",
+         "expected the escape to be decoded");
+  expect_equal(static_cast<int64_t>(p->into("empty", {}).at<uint64_t>(0)), 0,
+               "empty literal length");
+  const auto hi = text_view("hi");
+  const auto ho = text_view("ho");
+  expect_equal(p->scalar("is_hi", std::vector<int64_t>{as_argument(hi)}), 1,
+               "is_hi(hi)");
+  expect_equal(p->scalar("is_hi", std::vector<int64_t>{as_argument(ho)}), 0,
+               "is_hi(ho)");
+  expect_equal(p->scalar("same_text", {}), 1, "same_text");
+  // `labelled` is `{id: int32 @0, name: str @8}`.
+  const auto labelled = p->into("label", std::vector<int64_t>{3});
+  expect_equal(labelled.at<int32_t>(0), 3, "label(3).id");
+  expect(peek_text(labelled, 8) == "item", "expected the field's bytes");
+  expect_equal(p->scalar("label_len", std::vector<int64_t>{3}), 4, "label_len");
+  expect_equal(static_cast<int64_t>(runtime::heap_allocation_count() - before),
+               0, "allocations for string literals");
+}
+
+/// `len()` and `as_ptr()` read a descriptor's words, and
+/// `slice_from_raw_parts` writes them.
+inline auto descriptor_words_are_read_and_written(case_backend &backend)
+    -> void {
+  auto p = backend.open("bytecode_storage_test", "views.cn");
+  const auto accented = text_view("héllo");
+  expect_equal(p->scalar("text_len", std::vector<int64_t>{as_argument(accented)}),
+               6, "text_len(héllo) counts bytes");
+  expect_equal(p->scalar("literal_len", {}), 6, "literal_len");
+  const auto hi = text_view("hi");
+  expect_equal(p->scalar("first_byte", std::vector<int64_t>{as_argument(hi)}),
+               'h', "first_byte(hi)");
+  expect_equal(p->scalar("second_of_array", {}), 8, "second_of_array");
+  expect_equal(p->scalar("empty_array_sum", {}), 5, "empty_array_sum");
+  // 0 + 10 + 20 + 30, plus the view's length.
+  expect_equal(p->scalar("view_sum", std::vector<int64_t>{4}), 64,
+               "view_sum(4)");
+  expect_equal(p->scalar("view_sum", std::vector<int64_t>{1}), 1,
+               "view_sum(1)");
+}
+
+/// An index known only at run time is checked against the length; a range
+/// index checks its end against the length and its start against its end.
+inline auto run_time_indexes_are_checked(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "indexing.cn");
+  const auto oob = [&](std::string_view name, std::vector<int64_t> args) {
+    const auto failure = p->panics(name, args);
+    expect(failure.has_value() &&
+               *failure == bytecode::panic_reason::index_out_of_bounds,
+           "expected " + std::string{name} + " to panic out of bounds");
+  };
+  using args = std::vector<int64_t>;
+  expect_equal(p->scalar("nth", args{0}), 10, "nth(0)");
+  expect_equal(p->scalar("nth", args{3}), 40, "nth(3)");
+  oob("nth", args{4});
+  expect_equal(p->scalar("set_nth", args{1, 7}), 173, "set_nth(1, 7)");
+  oob("set_nth", args{3, 7});
+  expect_equal(p->scalar("pair_second", args{2}), 30, "pair_second(2)");
+  expect_equal(p->scalar("pair_second", args{1}), 20, "pair_second(1)");
+  const auto word = text_view("banana");
+  expect_equal(p->scalar("byte_at", args{as_argument(word), 2}), 'n',
+               "byte_at(banana, 2)");
+  oob("byte_at", args{as_argument(word), 6});
+  expect_equal(p->scalar("count_byte", args{as_argument(word), 'a'}), 3,
+               "count_byte(banana, a)");
+  expect(peek_text(p->into("middle", args{as_argument(word), 1, 4})) == "ana",
+         "expected middle(banana, 1, 4) to view `ana`");
+  expect(peek_text(p->into("middle", args{as_argument(word), 6, 6})).empty(),
+         "expected middle(banana, 6, 6) to be empty");
+  oob("middle", args{as_argument(word), 0, 7});
+  expect_equal(p->scalar("middle_len", args{2, 5}), 3, "middle_len(2, 5)");
+  oob("middle_len", args{4, 2});
+  oob("middle_len", args{0, 7});
+  expect_equal(p->scalar("inclusive_first", args{3, 4}), 'd',
+               "inclusive_first(3, 4)");
+  expect_equal(p->scalar("inclusive_len", args{0, 5}), 6, "inclusive_len(0, 5)");
+  oob("inclusive_len", args{0, 6});
+  expect_equal(p->scalar("window_sum", args{1, 4}), 234, "window_sum(1, 4)");
+  expect_equal(p->scalar("window_sum", args{2, 2}), 0, "window_sum(2, 2)");
+  oob("window_sum", args{3, 6});
+}
+
+/// Array fills, fields of computed values, and loops over values that need a
+/// drop. The drop log reads newest digit last: `321` is ids 3, 2, then 1.
+inline auto computed_values_and_droppable_loops(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "computed.cn");
+  using args = std::vector<int64_t>;
+  expect_equal(p->scalar("fill_sum", args{3}), 31, "fill_sum(3)");
+  expect_equal(p->scalar("fill_count", args{3}), 4096, "fill_count(3)");
+  expect_equal(p->scalar("fill_words", args{0}), 9, "fill_words(0)");
+  expect_equal(p->scalar("fill_words", args{6}), 9, "fill_words(6)");
+  expect_equal(p->scalar("second_of", args{5}), 10, "second_of(5)");
+  expect_equal(p->scalar("third_of", args{5}), 7, "third_of(5)");
+  expect_equal(p->scalar("row_last", args{4}), 400, "row_last(4)");
+  expect_equal(p->scalar("while_sum", args{3}), 32106, "while_sum(3)");
+  expect_equal(p->scalar("while_sum", args{0}), 0, "while_sum(0)");
+  expect_equal(p->scalar("for_sum", args{3}), 32106, "for_sum(3)");
+  expect_equal(p->scalar("for_moved", args{3}), 32106, "for_moved(3)");
+  expect_equal(p->scalar("for_break", args{3}), 3203, "for_break(3)");
+}
+
+/// Statics: built once before anything runs, then read in place by every
+/// function. Values pin layout, since both tiers share it.
+inline auto statics_are_built_once_and_shared(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "statics.cn");
+  using args = std::vector<int64_t>;
+  expect_equal(p->scalar("table_at", args{0}), 10, "table_at(0)");
+  expect_equal(p->scalar("table_at", args{3}), 40, "table_at(3)");
+  expect_equal(p->scalar("table_sum", args{}), 100, "table_sum()");
+  expect_equal(p->scalar("point_mix", args{}), 3454, "point_mix()");
+  expect_equal(p->scalar("pair_mix", args{}), 79, "pair_mix()");
+  expect_equal(p->scalar("word_len", args{}), 6, "word_len()");
+  expect_equal(p->scalar("word_byte", args{1}), 't', "word_byte(1)");
+}
+
+inline auto intrinsic_cases(case_backend &backend) -> void {
+  io_results_are_written_in_place(backend);
+  repeated_io_allocates_nothing(backend);
+  string_results_are_written_in_place(backend);
+  string_results_allocate_only_their_bytes(backend);
+  string_literals_are_static_descriptors(backend);
+  descriptor_words_are_read_and_written(backend);
+  run_time_indexes_are_checked(backend);
+  computed_values_and_droppable_loops(backend);
+  statics_are_built_once_and_shared(backend);
+}
+
+} // namespace cinder::testing::storage_cases

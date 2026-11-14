@@ -175,7 +175,9 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
   switch (node.kind) {
   case hir_node_kind::hir_literal: {
     const auto &n = dynamic_cast<const hir_literal &>(node);
-    return hir::make<hir_literal>(span, type, n.lit_kind, n.value);
+    auto copy = hir::make<hir_literal>(span, type, n.lit_kind, n.value);
+    copy->question = n.question;
+    return copy;
   }
   case hir_node_kind::hir_local_ref: {
     const auto &n = dynamic_cast<const hir_local_ref &>(node);
@@ -200,6 +202,12 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
     auto copy = hir::make<hir_call>(span, type, clone_as(*n.callee, rename),
                                     clone_all(n.args, rename));
     copy->is_tail_call = n.is_tail_call;
+    copy->is_drop = n.is_drop;
+    copy->consumes_receiver = n.consumes_receiver;
+    copy->receiver_by_value = n.receiver_by_value;
+    copy->receiver_borrowed = n.receiver_borrowed;
+    copy->lent_args = n.lent_args;
+    copy->target = n.target;
     return copy;
   }
   case hir_node_kind::hir_field: {
@@ -305,12 +313,14 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
   }
   case hir_node_kind::hir_stack_buffer: {
     const auto &n = dynamic_cast<const hir_stack_buffer &>(node);
-    return hir::make<hir_stack_buffer>(span, type, n.byte_size, n.align_bytes);
+    return hir::make<hir_stack_buffer>(span, type);
   }
   case hir_node_kind::hir_container_data: {
     const auto &n = dynamic_cast<const hir_container_data &>(node);
-    return hir::make<hir_container_data>(span, type,
-                                         clone_as(*n.object, rename));
+    auto out = hir::make<hir_container_data>(span, type,
+                                             clone_as(*n.object, rename));
+    out->takes_elements = n.takes_elements;
+    return out;
   }
   case hir_node_kind::hir_slice_from_raw_parts: {
     const auto &n = dynamic_cast<const hir_slice_from_raw_parts &>(node);
@@ -789,33 +799,11 @@ struct inline_template {
 }
 
 /// Whether binding an argument of type `arg` with `let` reproduces passing
-/// it to a parameter of type `param` on both backends: the same type, or the
-/// same heap-boxed aggregate seen through a reference or not — a pointer
-/// either way.
-[[nodiscard]] auto same_representation(const type_table &types, type_id arg,
-                                       type_id param) -> bool {
-  if (arg == param) {
-    return true;
-  }
-  const auto strip = [&](type_id id) -> type_id {
-    while (types.entry(id).kind == type_kind::ref_kind) {
-      id = types.entry(id).result;
-    }
-    return id;
-  };
-  const auto base = strip(arg);
-  if (base != strip(param)) {
-    return false;
-  }
-  switch (types.entry(base).kind) {
-  case type_kind::struct_kind:
-  case type_kind::sum_kind:
-  case type_kind::tuple_kind:
-  case type_kind::array_kind:
-    return true;
-  default:
-    return false;
-  }
+/// it to a parameter of type `param`: only when the types are the same. An
+/// aggregate is its own bytes (spec/value-semantics.md), so a value and a
+/// reference to it are different things to bind.
+[[nodiscard]] auto same_representation(type_id arg, type_id param) -> bool {
+  return arg == param;
 }
 
 // --------------------------------------------------------------------------
@@ -865,7 +853,16 @@ private:
       return nullptr;
     }
     const auto &call = dynamic_cast<const hir_call &>(expr);
-    if (call.callee->kind != hir_node_kind::hir_local_ref) {
+    // A scheduled drop stays a call: the storage form discharges a value's
+    // drop obligation at the drop call itself (`storage_lower`), and an
+    // expanded body would leave the value still owing it. So does a call
+    // whose receiver or arguments pass by a convention of their own (an
+    // owned receiver handed over as `&v`, a lent task argument): the storage
+    // form implements that convention at the call, and a `let` of the
+    // argument would not.
+    if (call.is_drop || call.receiver_by_value || call.consumes_receiver ||
+        !call.lent_args.empty() ||
+        call.callee->kind != hir_node_kind::hir_local_ref) {
       return nullptr;
     }
     const auto &ref = dynamic_cast<const hir_local_ref &>(*call.callee);
@@ -886,8 +883,7 @@ private:
       return nullptr;
     }
     for (size_t i = 0; i < call.args.size(); ++i) {
-      if (!same_representation(types_, call.args[i]->type,
-                               candidate.params[i].type)) {
+      if (!same_representation(call.args[i]->type, candidate.params[i].type)) {
         return nullptr;
       }
     }

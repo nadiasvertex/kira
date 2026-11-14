@@ -19,13 +19,17 @@
 #include <vector>
 
 #include "src/intrinsics.h"
+#include "src/runtime/aligned_buffer.h"
 #include "src/runtime/allocator.h"
 #include "src/runtime/arena.h"
 #include "src/runtime/coroutine.h"
-#include "src/runtime/layout.h"
+#include "src/runtime/fmt.h"
+#include "src/runtime/io.h"
+#include "src/runtime/platform.h"
 #include "src/runtime/platform_query.h"
 #include "src/runtime/reactor.h"
 #include "src/runtime/scheduler.h"
+#include "src/runtime/string.h"
 #include "src/runtime/string_ops.h"
 #include "src/utf8/utf8.h"
 
@@ -945,10 +949,9 @@ template <typename T>
 }
 
 // ---------------------------------------------------------------------------
-// Heap-value slot access (op_alloc/op_load_slot/op_store_slot) —
-// src/runtime/layout.h's flat "N 8-byte slots" representation shared with
-// llvm_codegen. A slot_value's u64 field doubles as a pointer here, the
-// same untagged-reinterpretation approach numeric_kind already relies on.
+// Memory access (op_load_slot/op_store_slot). A slot_value's u64 field
+// doubles as an address here, the same untagged-reinterpretation approach
+// numeric_kind already relies on.
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] auto slots_of(slot_value ptr) -> heap_word * {
@@ -1084,7 +1087,7 @@ struct frame {
   /// from `bytecode_function::stack_byte_size`, and never resized — every
   /// offset into it is fixed at compile time, and a pointer taken into it
   /// must stay valid for the life of the frame.
-  std::vector<std::byte> stack_bytes;
+  runtime::aligned_buffer stack_bytes;
   size_t pc = 0;
   uint16_t result_reg = 0;
   bool has_caller = false;
@@ -1099,11 +1102,11 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   frame f;
   f.function = &fn;
   f.registers.assign(fn.register_count, slot_value{});
-  // Zero-filled, matching `cinder_heap_alloc`'s guarantee and the LLVM tier's
+  // Zero-filled, matching the allocator's guarantee and the LLVM tier's
   // `memset` of the same buffer, so a read of an unwritten slot is at least
   // deterministic across tiers rather than exposing whatever the previous
   // frame left behind.
-  f.stack_bytes.assign(fn.stack_byte_size, std::byte{});
+  f.stack_bytes = runtime::aligned_buffer(fn.stack_byte_size);
   for (size_t i = 0; i < args.size(); ++i) {
     f.registers[i] = args[i];
   }
@@ -1114,180 +1117,23 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 }
 
 // ---------------------------------------------------------------------------
-// Intrinsics (src/intrinsics.h). Per spec/stdlib.md, this tier's native
-// implementation of every intrinsic is straight C++ standard library/POSIX
-// calls — the AOT/LLVM tier instead links against a native runtime library
-// implementing the same fixed schema. Every intrinsic here follows the heap
-// conventions already established elsewhere in this file: a struct is a
-// flat N-slot block in field-declaration order (`op_alloc`/`op_store_slot`),
-// a `str`/slice value is a 2-slot `{ len; data_ptr }` header
-// (`op_load_str_const`), and — since `runtime::layout.cpp` now gives
-// `option`/`result` the same tag/payload-slot convention a user sum type
-// gets — a `result[T, io_errno]` value is a 2-slot `{ tag; payload }` block
-// with `tag == 0` for `@ok(payload)` and `tag == 1` for `@err(payload)`,
-// matching `sum_variant_tag`'s hardcoded order for these two builtins.
+// Intrinsics (src/intrinsics.h) whose result comes back in a register. A
+// descriptor argument (`str`, `slice[byte]`) is the address of the caller's
+// `{ len, data }` bytes (`src/runtime/value_layout.h`). The intrinsics that
+// build a descriptor or aggregate result are the runtime's own `_into`
+// functions, below.
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] auto alloc_struct(std::span<const slot_value> fields)
-    -> slot_value {
-  auto *raw = cinder_heap_alloc(fields.size() * sizeof(heap_word));
-  auto *slots = static_cast<heap_word *>(raw);
-  for (size_t i = 0; i < fields.size(); ++i) {
-    slots[i] = heap_word{fields[i]};
-  }
-  return ptr_to_slot(raw);
-}
-
-/// Reads the `value` field out of a heap `raw_fd { value: int64 }` struct.
-[[nodiscard]] auto raw_fd_of(slot_value fd_struct) -> int {
-  return static_cast<int>(slots_of(fd_struct)[0].i);
-}
-
-/// Allocates a heap `raw_fd { value: int64 }` struct holding `fd`.
-[[nodiscard]] auto make_raw_fd(int64_t fd) -> slot_value {
-  const auto field = slot_value{fd};
-  return alloc_struct(std::span<const slot_value>(&field, 1));
-}
-
-/// Decodes a heap `str`/`slice[byte]`/`slice_mut[byte]` `{ len; data_ptr }`
-/// header into a raw byte span over its bytes.
+/// The bytes of the `{ len, data }` descriptor at the address in `header`.
 [[nodiscard]] auto bytes_of(slot_value header) -> std::span<char> {
   const auto *slots = slots_of(header);
   auto *data = reinterpret_cast<char *>(static_cast<uintptr_t>(slots[1].u));
   return {data, static_cast<size_t>(slots[0].u)};
 }
 
-/// Builds `@ok(payload)` as `result[T, io_errno]`'s runtime shape.
-[[nodiscard]] auto make_result_ok(slot_value payload) -> slot_value {
-  const std::array<slot_value, 2> fields = {slot_value{int64_t{0}}, payload};
-  return alloc_struct(fields);
-}
-
-/// Builds `@err({ code: errno })` as `result[T, io_errno]`'s runtime shape.
-[[nodiscard]] auto make_result_err(int errno_code) -> slot_value {
-  const auto code_field = slot_value{int64_t{errno_code}};
-  const auto io_errno_struct =
-      alloc_struct(std::span<const slot_value>(&code_field, 1));
-  const std::array<slot_value, 2> fields = {slot_value{int64_t{1}},
-                                            io_errno_struct};
-  return alloc_struct(fields);
-}
-
-[[nodiscard]] auto intrinsic_rt_stdin(std::span<const slot_value>)
-    -> slot_value {
-  return make_raw_fd(0);
-}
-[[nodiscard]] auto intrinsic_rt_stdout(std::span<const slot_value>)
-    -> slot_value {
-  return make_raw_fd(1);
-}
-[[nodiscard]] auto intrinsic_rt_stderr(std::span<const slot_value>)
-    -> slot_value {
-  return make_raw_fd(2);
-}
-
-[[nodiscard]] auto intrinsic_rt_open(std::span<const slot_value> args)
-    -> slot_value {
-  // args[0]: str `{ len; data_ptr }` path.
-  // args[1]: `open_options { read; write; append; create; truncate }` —
-  // five `bool`s, one byte each at offsets 0..4 (`runtime::struct_layout`),
-  // not five 8-byte slots.
-  const auto path_bytes = bytes_of(args[0]);
-  const auto path = std::string(path_bytes.data(), path_bytes.size());
-  const auto *opts = raw_bytes_of(args[1]);
-  const bool want_read = opts[0] != 0;
-  const bool want_write = opts[1] != 0;
-  const bool append = opts[2] != 0;
-  const bool create = opts[3] != 0;
-  const bool truncate = opts[4] != 0;
-
-  int flags = O_RDONLY;
-  if (want_read && want_write) {
-    flags = O_RDWR;
-  } else if (want_write) {
-    flags = O_WRONLY;
-  }
-  if (append) {
-    flags |= O_APPEND;
-  }
-  if (create) {
-    flags |= O_CREAT;
-  }
-  if (truncate) {
-    flags |= O_TRUNC;
-  }
-
-  const int fd = ::open(path.c_str(), flags, 0644); // NOLINT
-  if (fd < 0) {
-    return make_result_err(errno);
-  }
-  return make_result_ok(make_raw_fd(fd));
-}
-
-[[nodiscard]] auto intrinsic_rt_close(std::span<const slot_value> args)
-    -> slot_value {
-  if (::close(raw_fd_of(args[0])) != 0) {
-    return make_result_err(errno);
-  }
-  return make_result_ok(slot_value{});
-}
-
-[[nodiscard]] auto intrinsic_rt_read(std::span<const slot_value> args)
-    -> slot_value {
-  const auto buf = bytes_of(args[1]);
-  const auto n = ::read(raw_fd_of(args[0]), buf.data(), buf.size());
-  if (n < 0) {
-    return make_result_err(errno);
-  }
-  return make_result_ok(slot_value{static_cast<uint64_t>(n)});
-}
-
-[[nodiscard]] auto intrinsic_rt_write(std::span<const slot_value> args)
-    -> slot_value {
-  const auto buf = bytes_of(args[1]);
-  const auto n = ::write(raw_fd_of(args[0]), buf.data(), buf.size());
-  if (n < 0) {
-    return make_result_err(errno);
-  }
-  return make_result_ok(slot_value{static_cast<uint64_t>(n)});
-}
-
-[[nodiscard]] auto intrinsic_rt_flush(std::span<const slot_value>)
-    -> slot_value {
-  // Every read/write above goes straight through the raw ::read/::write
-  // syscalls with no userspace buffering layer, so there is nothing for
-  // this tier to flush.
-  return make_result_ok(slot_value{});
-}
-
-// ---------------------------------------------------------------------------
-// String-formatting intrinsics (`spec/string-formatting-design.md`). These
-// back `std.fmt`'s `pad_str`/`pad_integral` and the builtin-only numeric
-// format styles. Every scalar argument/return is boxed in a single-field
-// struct (see `src/std/fmt.cn`'s `box_*` types) so it stays
-// heap-representable, matching this file's existing struct-is-a-flat-slot-
-// block convention rather than special-casing scalar intrinsic arguments.
-// ---------------------------------------------------------------------------
-
-[[nodiscard]] auto make_runtime_str(std::string_view text) -> slot_value {
-  auto *bytes = cinder_heap_alloc(text.size());
-  if (!text.empty()) {
-    std::memcpy(bytes, text.data(), text.size());
-  }
-  const std::array<slot_value, 2> fields = {
-      slot_value{static_cast<uint64_t>(text.size())}, ptr_to_slot(bytes)};
-  return alloc_struct(fields);
-}
-
 [[nodiscard]] auto view_of(slot_value str_header) -> std::string_view {
   const auto bytes = bytes_of(str_header);
   return {bytes.data(), bytes.size()};
-}
-
-auto intrinsic_rt_str_concat(std::span<const slot_value> args) -> slot_value {
-  auto out = std::string(view_of(args[0]));
-  out += view_of(args[1]);
-  return make_runtime_str(out);
 }
 
 auto intrinsic_rt_str_len_scalars(std::span<const slot_value> args)
@@ -1304,48 +1150,9 @@ auto intrinsic_rt_str_len_scalars(std::span<const slot_value> args)
   return slot_value{static_cast<uint64_t>(count)};
 }
 
-auto intrinsic_rt_str_repeat_char(std::span<const slot_value> args)
-    -> slot_value {
-  const auto codepoint = static_cast<uint32_t>(args[0].u);
-  const auto n = args[1].u;
-  std::string one;
-  encode_utf8_scalar(codepoint, one);
-  std::string out;
-  out.reserve(one.size() * static_cast<size_t>(n));
-  for (uint64_t i = 0; i < n; ++i) {
-    out += one;
-  }
-  return make_runtime_str(out);
-}
-
-auto intrinsic_rt_str_truncate_scalars(std::span<const slot_value> args)
-    -> slot_value {
-  const auto view = view_of(args[0]);
-  const auto n = args[1].u;
-  size_t pos = 0;
-  uint64_t count = 0;
-  while (count < n && pos < view.size()) {
-    if (!decode_utf8_scalar(view, pos).has_value()) {
-      break;
-    }
-    ++count;
-  }
-  return make_runtime_str(view.substr(0, pos));
-}
-
-// `std.string` UTF-8 intrinsics (spec/std-reference.md). The actual algorithms
-// live in `src/runtime/string_ops.h` and are shared verbatim with the LLVM
-// tier's C-ABI wrappers (`src/runtime/string.cpp`); these handlers only
-// marshal the VM's slot representation in and out.
-
-/// A 2-slot `find_result { found: bool; pos: usize }` (see
-/// `src/std/string.cn`).
-[[nodiscard]] auto make_find_result(std::optional<size_t> hit) -> slot_value {
-  const std::array<slot_value, 2> fields = {
-      slot_value{static_cast<uint64_t>(hit.has_value() ? 1 : 0)},
-      slot_value{static_cast<uint64_t>(hit.value_or(0))}};
-  return alloc_struct(fields);
-}
+// `std.string` UTF-8 intrinsics (spec/std-reference.md). The algorithms live
+// in `src/runtime/string_ops.h` and are shared verbatim with the LLVM tier's
+// C-ABI wrappers (`src/runtime/string.cpp`).
 
 auto intrinsic_rt_str_eq(std::span<const slot_value> args) -> slot_value {
   const auto equal =
@@ -1357,127 +1164,6 @@ auto intrinsic_rt_str_cmp(std::span<const slot_value> args) -> slot_value {
   const auto cmp =
       cinder::runtime::str_compare(view_of(args[0]), view_of(args[1]));
   return slot_value{static_cast<int64_t>(cmp)};
-}
-
-auto intrinsic_rt_str_find(std::span<const slot_value> args) -> slot_value {
-  return make_find_result(cinder::runtime::str_find(
-      view_of(args[0]), view_of(args[1]), static_cast<size_t>(args[2].u)));
-}
-
-auto intrinsic_rt_str_rfind(std::span<const slot_value> args) -> slot_value {
-  return make_find_result(
-      cinder::runtime::str_rfind(view_of(args[0]), view_of(args[1])));
-}
-
-auto intrinsic_rt_str_reverse(std::span<const slot_value> args) -> slot_value {
-  return make_runtime_str(cinder::runtime::str_reverse(view_of(args[0])));
-}
-
-auto intrinsic_rt_str_trim(std::span<const slot_value> args) -> slot_value {
-  const auto mode =
-      static_cast<cinder::runtime::trim_mode>(static_cast<uint8_t>(args[1].u));
-  return make_runtime_str(cinder::runtime::str_trim(view_of(args[0]), mode));
-}
-
-auto intrinsic_rt_str_replace(std::span<const slot_value> args) -> slot_value {
-  return make_runtime_str(cinder::runtime::str_replace(
-      view_of(args[0]), view_of(args[1]), view_of(args[2])));
-}
-
-auto intrinsic_rt_fmt_radix_digits(std::span<const slot_value> args)
-    -> slot_value {
-  const auto value = args[0].u;
-  const auto radix = static_cast<uint64_t>(args[1].u);
-  const bool uppercase = args[2].u != 0;
-  if (value == 0) {
-    return make_runtime_str("0");
-  }
-  static constexpr std::string_view lower_digits = "0123456789abcdef";
-  static constexpr std::string_view upper_digits = "0123456789ABCDEF";
-  const auto &digits = uppercase ? upper_digits : lower_digits;
-  std::string out;
-  uint64_t v = value;
-  while (v > 0) {
-    out.push_back(digits[v % radix]);
-    v /= radix;
-  }
-  std::ranges::reverse(out);
-  return make_runtime_str(out);
-}
-
-/// Rewrites `std::to_chars`' scientific-notation exponent (`e+03`/`e-03`)
-/// into the design doc's leaner form (`e3`/`e-3`): no `+` sign, no leading
-/// zero padding.
-[[nodiscard]] auto tidy_scientific_exponent(std::string_view formatted)
-    -> std::string {
-  const auto e_pos = formatted.find('e');
-  if (e_pos == std::string_view::npos) {
-    return std::string(formatted);
-  }
-  auto out = std::string(formatted.substr(0, e_pos + 1));
-  auto exp = formatted.substr(e_pos + 1);
-  bool negative = false;
-  if (!exp.empty() && (exp.front() == '+' || exp.front() == '-')) {
-    negative = exp.front() == '-';
-    exp.remove_prefix(1);
-  }
-  while (exp.size() > 1 && exp.front() == '0') {
-    exp.remove_prefix(1);
-  }
-  if (negative) {
-    out.push_back('-');
-  }
-  out += exp;
-  return out;
-}
-
-auto intrinsic_rt_fmt_f64_fixed(std::span<const slot_value> args)
-    -> slot_value {
-  const auto value = args[0].f;
-  const auto precision = static_cast<int>(args[1].u);
-  std::array<char, 512> buf{};
-  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
-                                    std::chars_format::fixed, precision);
-  if (result.ec != std::errc{}) {
-    return make_runtime_str("0");
-  }
-  return make_runtime_str(std::string_view(buf.data(), result.ptr));
-}
-
-auto intrinsic_rt_fmt_f64_sci(std::span<const slot_value> args) -> slot_value {
-  const auto value = args[0].f;
-  const auto precision = static_cast<int>(args[1].u);
-  const bool uppercase = args[2].u != 0;
-  std::array<char, 512> buf{};
-  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
-                                    std::chars_format::scientific, precision);
-  if (result.ec != std::errc{}) {
-    return make_runtime_str("0");
-  }
-  auto tidy =
-      tidy_scientific_exponent(std::string_view(buf.data(), result.ptr));
-  if (uppercase) {
-    for (auto &c : tidy) {
-      if (c == 'e') {
-        c = 'E';
-      }
-    }
-  }
-  return make_runtime_str(tidy);
-}
-
-auto intrinsic_rt_fmt_f64_general(std::span<const slot_value> args)
-    -> slot_value {
-  const auto value = args[0].f;
-  const auto precision = static_cast<int>(args[1].u);
-  std::array<char, 512> buf{};
-  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
-                                    std::chars_format::general, precision);
-  if (result.ec != std::errc{}) {
-    return make_runtime_str("0");
-  }
-  return make_runtime_str(
-      tidy_scientific_exponent(std::string_view(buf.data(), result.ptr)));
 }
 
 // Bitcast intrinsics (`spec/todo.md` item 7): reinterpret a float's bit
@@ -1655,6 +1341,17 @@ auto intrinsic_rt_crew_len(std::span<const slot_value> args) -> slot_value {
       sched::crew_size(reinterpret_cast<sched::crew *>(args[0].u))); // NOLINT
 }
 
+auto intrinsic_rt_str_scalar_at(std::span<const slot_value> args) -> slot_value {
+  return slot_value{static_cast<uint64_t>(cinder::runtime::cinder_rt_str_scalar_at(
+      reinterpret_cast<const char *>(args[0].u), args[1].u, args[2].u))}; // NOLINT
+}
+
+auto intrinsic_rt_str_scalar_width(std::span<const slot_value> args)
+    -> slot_value {
+  return slot_value{cinder::runtime::cinder_rt_str_scalar_width(
+      reinterpret_cast<const char *>(args[0].u), args[1].u, args[2].u)}; // NOLINT
+}
+
 auto intrinsic_rt_crew_task(std::span<const slot_value> args) -> slot_value {
   namespace sched = cinder::runtime::scheduler;
   return slot_value{reinterpret_cast<uint64_t>(sched::crew_task( // NOLINT
@@ -1719,29 +1416,6 @@ auto intrinsic_rt_monotonic_now(std::span<const slot_value> /*args*/)
   return slot_value{cinder::runtime::reactor::monotonic_now()};
 }
 
-auto intrinsic_rt_pipe(std::span<const slot_value> /*args*/) -> slot_value {
-  auto ends = std::array<int, 2>{};
-  if (::pipe(ends.data()) != 0) {
-    return make_result_err(errno);
-  }
-  for (const int end : ends) {
-    (void)::fcntl(end, F_SETFD, FD_CLOEXEC); // NOLINT
-  }
-  const std::array<slot_value, 2> fields = {slot_value{int64_t{ends[0]}},
-                                            slot_value{int64_t{ends[1]}}};
-  return make_result_ok(alloc_struct(fields));
-}
-
-auto intrinsic_rt_set_nonblocking(std::span<const slot_value> args)
-    -> slot_value {
-  const int fd = raw_fd_of(args[0]);
-  const int flags = ::fcntl(fd, F_GETFL);                           // NOLINT
-  if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) { // NOLINT
-    return make_result_err(errno);
-  }
-  return make_result_ok(slot_value{});
-}
-
 auto intrinsic_rt_errno_would_block(std::span<const slot_value> /*args*/)
     -> slot_value {
   return slot_value{int64_t{EAGAIN}};
@@ -1761,14 +1435,6 @@ auto intrinsic_rt_bitcast_f32_to_u32(std::span<const slot_value> args)
   return slot_value{static_cast<uint64_t>(bits)};
 }
 
-auto intrinsic_rt_fmt_char_from_codepoint(std::span<const slot_value> args)
-    -> slot_value {
-  const auto codepoint = static_cast<uint32_t>(args[0].u);
-  std::string out;
-  encode_utf8_scalar(codepoint, out);
-  return make_runtime_str(out);
-}
-
 // ---------------------------------------------------------------------------
 // `std.platform` runtime intrinsics (spec/std-reference.md). Each queries the
 // host through `src/runtime/platform_query.h` (shared with this tier's
@@ -1778,77 +1444,6 @@ auto intrinsic_rt_fmt_char_from_codepoint(std::span<const slot_value> args)
 // ---------------------------------------------------------------------------
 
 namespace platform_query = cinder::runtime::platform_query;
-
-[[nodiscard]] auto intrinsic_rt_uname(std::span<const slot_value>)
-    -> slot_value {
-  const auto info = platform_query::query_uname();
-  if (!info) {
-    return make_result_err(errno);
-  }
-  const std::array<slot_value, 5> fields = {
-      make_runtime_str(info->sysname), make_runtime_str(info->nodename),
-      make_runtime_str(info->release), make_runtime_str(info->version),
-      make_runtime_str(info->machine)};
-  return make_result_ok(alloc_struct(fields));
-}
-
-[[nodiscard]] auto intrinsic_rt_gethostname(std::span<const slot_value>)
-    -> slot_value {
-  const auto name = platform_query::query_hostname();
-  if (!name) {
-    return make_result_err(errno);
-  }
-  return make_result_ok(make_runtime_str(*name));
-}
-
-[[nodiscard]] auto intrinsic_rt_processor_name(std::span<const slot_value>)
-    -> slot_value {
-  const auto name = platform_query::query_processor_name();
-  if (!name) {
-    return make_result_err(errno);
-  }
-  return make_result_ok(make_runtime_str(*name));
-}
-
-[[nodiscard]] auto intrinsic_rt_libc_version(std::span<const slot_value>)
-    -> slot_value {
-  const auto info = platform_query::query_libc_version();
-  if (!info) {
-    return make_result_err(errno);
-  }
-  const std::array<slot_value, 2> fields = {make_runtime_str(info->name),
-                                            make_runtime_str(info->version)};
-  return make_result_ok(alloc_struct(fields));
-}
-
-[[nodiscard]] auto intrinsic_rt_windows_version(std::span<const slot_value>)
-    -> slot_value {
-  const auto info = platform_query::query_windows_version();
-  if (!info) {
-    return make_result_err(errno);
-  }
-  const std::array<slot_value, 5> fields = {
-      slot_value{static_cast<uint64_t>(info->major)},
-      slot_value{static_cast<uint64_t>(info->minor)},
-      slot_value{static_cast<uint64_t>(info->build)},
-      slot_value{static_cast<uint64_t>(info->platform_id)},
-      make_runtime_str(info->csd_version)};
-  return make_result_ok(alloc_struct(fields));
-}
-
-[[nodiscard]] auto intrinsic_rt_macos_version(std::span<const slot_value>)
-    -> slot_value {
-  const auto info = platform_query::query_macos_version();
-  if (!info) {
-    return make_result_err(errno);
-  }
-  const std::array<slot_value, 5> fields = {
-      make_runtime_str(info->release), make_runtime_str(info->version),
-      make_runtime_str(info->dev_stage),
-      make_runtime_str(info->non_release_version),
-      make_runtime_str(info->machine)};
-  return make_result_ok(alloc_struct(fields));
-}
 
 /// Mirrors `cinder_rt_panic` (`src/runtime/io.cpp`) for the bytecode tier:
 /// reports `msg` on stderr, then unwinds to the scheduler on a worker and
@@ -1902,36 +1497,36 @@ using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 /// names against.
 constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
     k_intrinsics = {{
-        intrinsic_rt_stdin,
-        intrinsic_rt_stdout,
-        intrinsic_rt_stderr,
-        intrinsic_rt_open,
-        intrinsic_rt_close,
-        intrinsic_rt_read,
-        intrinsic_rt_write,
-        intrinsic_rt_flush,
-        intrinsic_rt_str_concat,
+        nullptr, // rt_stdin: built in caller storage
+        nullptr, // rt_stdout: built in caller storage
+        nullptr, // rt_stderr: built in caller storage
+        nullptr, // rt_open: built in caller storage
+        nullptr, // rt_close: built in caller storage
+        nullptr, // rt_read: built in caller storage
+        nullptr, // rt_write: built in caller storage
+        nullptr, // rt_flush: built in caller storage
+        nullptr, // rt_str_concat: built in caller storage
         intrinsic_rt_str_len_scalars,
-        intrinsic_rt_str_repeat_char,
-        intrinsic_rt_str_truncate_scalars,
-        intrinsic_rt_fmt_radix_digits,
-        intrinsic_rt_fmt_f64_fixed,
-        intrinsic_rt_fmt_f64_sci,
-        intrinsic_rt_fmt_f64_general,
-        intrinsic_rt_fmt_char_from_codepoint,
+        nullptr, // rt_str_repeat_char: built in caller storage
+        nullptr, // rt_str_truncate_scalars: built in caller storage
+        nullptr, // rt_fmt_radix_digits: built in caller storage
+        nullptr, // rt_fmt_f64_fixed: built in caller storage
+        nullptr, // rt_fmt_f64_sci: built in caller storage
+        nullptr, // rt_fmt_f64_general: built in caller storage
+        nullptr, // rt_fmt_char_from_codepoint: built in caller storage
         intrinsic_rt_str_eq,
         intrinsic_rt_str_cmp,
-        intrinsic_rt_str_find,
-        intrinsic_rt_str_rfind,
-        intrinsic_rt_str_reverse,
-        intrinsic_rt_str_trim,
-        intrinsic_rt_str_replace,
-        intrinsic_rt_uname,
-        intrinsic_rt_gethostname,
-        intrinsic_rt_processor_name,
-        intrinsic_rt_libc_version,
-        intrinsic_rt_windows_version,
-        intrinsic_rt_macos_version,
+        nullptr, // rt_str_find: built in caller storage
+        nullptr, // rt_str_rfind: built in caller storage
+        nullptr, // rt_str_reverse: built in caller storage
+        nullptr, // rt_str_trim: built in caller storage
+        nullptr, // rt_str_replace: built in caller storage
+        nullptr, // rt_uname: built in caller storage
+        nullptr, // rt_gethostname: built in caller storage
+        nullptr, // rt_processor_name: built in caller storage
+        nullptr, // rt_libc_version: built in caller storage
+        nullptr, // rt_windows_version: built in caller storage
+        nullptr, // rt_macos_version: built in caller storage
         intrinsic_rt_panic,
         intrinsic_rt_bitcast_f64_to_u64,
         intrinsic_rt_bitcast_f32_to_u32,
@@ -1966,14 +1561,139 @@ constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
         intrinsic_rt_fd_writable,
         intrinsic_rt_sleep_until,
         intrinsic_rt_monotonic_now,
-        intrinsic_rt_pipe,
-        intrinsic_rt_set_nonblocking,
+        nullptr, // rt_pipe: built in caller storage
+        nullptr, // rt_set_nonblocking: built in caller storage
         intrinsic_rt_errno_would_block,
+        intrinsic_rt_str_scalar_at,
+        intrinsic_rt_str_scalar_width,
     }};
 
 static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),
               "every known intrinsic needs exactly one native implementation, "
               "in the same order");
+
+// ---------------------------------------------------------------------------
+// Intrinsics that build their result in caller storage (`into`, see
+// `src/intrinsics.h`). The storage compiler (`bytecode_compiler/
+// storage_compile.cpp`) calls every intrinsic with `op_call_intrinsic`, and
+// for these the first argument register holds the address of the destination
+// and the rest follow the declared parameters: a scalar in its register, a
+// descriptor or aggregate as the address of the caller's bytes. They are the
+// runtime's own `cinder_rt_*_into` functions, so the two tiers cannot write a
+// result differently; no heap block is made for the result.
+// ---------------------------------------------------------------------------
+
+using into_fn = void (*)(std::span<const slot_value>);
+
+[[nodiscard]] auto address_arg(const slot_value &value) -> void * {
+  return reinterpret_cast<void *>(static_cast<uintptr_t>(value.u)); // NOLINT
+}
+
+[[nodiscard]] auto word_arg(const slot_value &value) -> uint32_t {
+  return static_cast<uint32_t>(value.u);
+}
+
+/// Handler `id`, or null when the intrinsic returns its result directly.
+[[nodiscard]] auto into_handler(uint8_t id) -> into_fn {
+  static const auto table = [] {
+    auto handlers = std::array<into_fn, cinder::known_intrinsics.size()>{};
+    const auto set = [&handlers](std::string_view name, into_fn handler) {
+      handlers.at(cinder::intrinsic_index_of(name).value()) = handler;
+    };
+    set("rt_stdin", [](auto a) { cinder_rt_stdin_into(address_arg(a[0])); });
+    set("rt_stdout", [](auto a) { cinder_rt_stdout_into(address_arg(a[0])); });
+    set("rt_stderr", [](auto a) { cinder_rt_stderr_into(address_arg(a[0])); });
+    set("rt_open", [](auto a) {
+      cinder_rt_open_into(address_arg(a[0]), address_arg(a[1]),
+                          address_arg(a[2]));
+    });
+    set("rt_close", [](auto a) {
+      cinder_rt_close_into(address_arg(a[0]), address_arg(a[1]));
+    });
+    set("rt_read", [](auto a) {
+      cinder_rt_read_into(address_arg(a[0]), address_arg(a[1]),
+                          address_arg(a[2]));
+    });
+    set("rt_write", [](auto a) {
+      cinder_rt_write_into(address_arg(a[0]), address_arg(a[1]),
+                           address_arg(a[2]));
+    });
+    set("rt_flush", [](auto a) {
+      cinder_rt_flush_into(address_arg(a[0]), address_arg(a[1]));
+    });
+    set("rt_pipe", [](auto a) { cinder_rt_pipe_into(address_arg(a[0])); });
+    set("rt_set_nonblocking", [](auto a) {
+      cinder_rt_set_nonblocking_into(address_arg(a[0]), address_arg(a[1]));
+    });
+    set("rt_str_concat", [](auto a) {
+      cinder_rt_str_concat_into(address_arg(a[0]), address_arg(a[1]),
+                                address_arg(a[2]));
+    });
+    set("rt_str_repeat_char", [](auto a) {
+      cinder_rt_str_repeat_char_into(address_arg(a[0]), word_arg(a[1]), a[2].u);
+    });
+    set("rt_str_truncate_scalars", [](auto a) {
+      cinder_rt_str_truncate_scalars_into(address_arg(a[0]), address_arg(a[1]),
+                                          a[2].u);
+    });
+    set("rt_fmt_radix_digits", [](auto a) {
+      cinder_rt_fmt_radix_digits_into(address_arg(a[0]), a[1].u, word_arg(a[2]),
+                                      word_arg(a[3]));
+    });
+    set("rt_fmt_f64_fixed", [](auto a) {
+      cinder_rt_fmt_f64_fixed_into(address_arg(a[0]), a[1].f, a[2].u);
+    });
+    set("rt_fmt_f64_sci", [](auto a) {
+      cinder_rt_fmt_f64_sci_into(address_arg(a[0]), a[1].f, a[2].u,
+                                 word_arg(a[3]));
+    });
+    set("rt_fmt_f64_general", [](auto a) {
+      cinder_rt_fmt_f64_general_into(address_arg(a[0]), a[1].f, a[2].u);
+    });
+    set("rt_fmt_char_from_codepoint", [](auto a) {
+      cinder_rt_fmt_char_from_codepoint_into(address_arg(a[0]), word_arg(a[1]));
+    });
+    set("rt_str_find", [](auto a) {
+      cinder_rt_str_find_into(address_arg(a[0]), address_arg(a[1]),
+                              address_arg(a[2]), a[3].u);
+    });
+    set("rt_str_rfind", [](auto a) {
+      cinder_rt_str_rfind_into(address_arg(a[0]), address_arg(a[1]),
+                               address_arg(a[2]));
+    });
+    set("rt_str_reverse", [](auto a) {
+      cinder_rt_str_reverse_into(address_arg(a[0]), address_arg(a[1]));
+    });
+    set("rt_str_trim", [](auto a) {
+      cinder_rt_str_trim_into(address_arg(a[0]), address_arg(a[1]),
+                              word_arg(a[2]));
+    });
+    set("rt_str_replace", [](auto a) {
+      cinder_rt_str_replace_into(address_arg(a[0]), address_arg(a[1]),
+                                 address_arg(a[2]), address_arg(a[3]));
+    });
+    set("rt_uname", [](auto a) { cinder_rt_uname_into(address_arg(a[0])); });
+    set("rt_gethostname",
+        [](auto a) { cinder_rt_gethostname_into(address_arg(a[0])); });
+    set("rt_processor_name",
+        [](auto a) { cinder_rt_processor_name_into(address_arg(a[0])); });
+    set("rt_libc_version",
+        [](auto a) { cinder_rt_libc_version_into(address_arg(a[0])); });
+    set("rt_windows_version",
+        [](auto a) { cinder_rt_windows_version_into(address_arg(a[0])); });
+    set("rt_macos_version",
+        [](auto a) { cinder_rt_macos_version_into(address_arg(a[0])); });
+    // A row marked `into` without a handler here would run the older entry
+    // point and treat its heap block as the destination. Refuse to start.
+    for (size_t id = 0; id < handlers.size(); ++id) {
+      if (cinder::intrinsic_builds_into(id) != (handlers.at(id) != nullptr)) {
+        std::abort();
+      }
+    }
+    return handlers;
+  }();
+  return table.at(id);
+}
 
 } // namespace
 
@@ -2011,10 +1731,72 @@ auto vm::run_hosted(uint16_t function_index, std::span<const slot_value> args,
   return execute(function_index, args, limits);
 }
 
+auto vm::entry_with_result(uint16_t function_index, std::span<std::byte> result,
+                           std::span<const slot_value> args) const
+    -> std::expected<std::vector<slot_value>, vm_failure> {
+  const auto refuse = [](std::string message) {
+    return std::unexpected(vm_failure{.reason = panic_reason::host_failed,
+                                      .message = std::move(message)});
+  };
+  if (function_index >= module_.functions.size()) {
+    return refuse(std::format("there is no function {}", function_index));
+  }
+  const auto &function = module_.functions[function_index];
+  if (!function.abi.has_value() || !function.abi->returns_through_address) {
+    return refuse(std::format("`{}` does not build its result through an "
+                              "address",
+                              function.name));
+  }
+  const auto &abi = *function.abi;
+  if (result.size() < abi.result.size) {
+    return refuse(std::format("`{}` needs {} bytes of result storage but {} "
+                              "were given",
+                              function.name, abi.result.size, result.size()));
+  }
+  if (reinterpret_cast<uintptr_t>(result.data()) % abi.result.align != 0) {
+    return refuse(std::format("the result storage for `{}` must be aligned "
+                              "to {} bytes",
+                              function.name, abi.result.align));
+  }
+  if (args.size() + 1 != function.param_count) {
+    return refuse(std::format("`{}` takes {} argument registers besides its "
+                              "result address but {} were given",
+                              function.name, function.param_count - 1,
+                              args.size()));
+  }
+  auto entry = std::vector<slot_value>{};
+  entry.reserve(args.size() + 1);
+  entry.push_back(ptr_to_slot(result.data()));
+  entry.insert(entry.end(), args.begin(), args.end());
+  return entry;
+}
+
+auto vm::run_into(uint16_t function_index, std::span<std::byte> result,
+                  std::span<const slot_value> args) const
+    -> std::expected<vm_result, vm_failure> {
+  const auto entry = entry_with_result(function_index, result, args);
+  if (!entry.has_value()) {
+    return std::unexpected(entry.error());
+  }
+  return execute(function_index, *entry, run_limits{});
+}
+
+auto vm::run_hosted_into(uint16_t function_index, std::span<std::byte> result,
+                         std::span<const slot_value> args,
+                         const run_limits &limits) const
+    -> std::expected<vm_result, vm_failure> {
+  const auto entry = entry_with_result(function_index, result, args);
+  if (!entry.has_value()) {
+    return std::unexpected(entry.error());
+  }
+  const auto hosted = hosted_panic_scope{};
+  return execute(function_index, *entry, limits);
+}
+
 auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
                  const run_limits &limits) const
     -> std::expected<vm_result, vm_failure> {
-  // The shared part of the VM is `module_` and `globals_`; everything an
+  // The shared part of the VM is `module_` and the statics; everything an
   // execution mutates (its frames and counters) is local to this call, so
   // concurrent task polls never touch each other's state.
   const auto current = current_vm_scope(this);
@@ -2055,23 +1837,6 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         f.pc = ops.pos();
         break;
       }
-      case opcode::op_load_global: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto dst = ops.reg();
-        const auto idx = ops.imm16();
-        f.registers[dst] = globals_[idx];
-        f.pc = ops.pos();
-        break;
-      }
-      case opcode::op_store_global: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto idx = ops.imm16();
-        const auto src = ops.reg();
-        globals_[idx] = f.registers[src];
-        f.pc = ops.pos();
-        break;
-      }
-
       case opcode::op_add:
       case opcode::op_sub:
       case opcode::op_mul:
@@ -2220,7 +1985,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         // `push_frame` would. Nothing can still point into the old range:
         // `hir::mark_tail_calls` never marks a call out of a function that
         // owns a buffer.
-        f.stack_bytes.assign(callee.stack_byte_size, std::byte{});
+        f.stack_bytes = runtime::aligned_buffer(callee.stack_byte_size);
         for (size_t i = 0; i < call_args.size(); ++i) {
           f.registers[i] = call_args[i];
         }
@@ -2244,7 +2009,42 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
                           "while compiling may not do",
                           cinder::known_intrinsic_names.at(intrinsic_id)));
         }
-        f.registers[dst] = k_intrinsics.at(intrinsic_id)(call_args);
+        const auto handler = k_intrinsics.at(intrinsic_id);
+        if (handler == nullptr) {
+          throw panic_error(
+              panic_reason::host_failed,
+              std::format("`{}` builds its result in caller storage; call it "
+                          "with `op_call_intrinsic_into`",
+                          cinder::known_intrinsic_names.at(intrinsic_id)));
+        }
+        f.registers[dst] = handler(call_args);
+        break;
+      }
+
+      case opcode::op_call_intrinsic_into: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto intrinsic_id = ops.imm8();
+        const auto first_arg = ops.reg();
+        const auto argc = ops.imm8();
+        f.pc = ops.pos();
+        const std::span<const slot_value> call_args(
+            f.registers.data() + first_arg, argc);
+        if (!limits.allow_effects && intrinsic_has_effects(intrinsic_id)) {
+          throw panic_error(
+              panic_reason::effect_refused,
+              std::format("`{}` reaches outside the program, which code run "
+                          "while compiling may not do",
+                          cinder::known_intrinsic_names.at(intrinsic_id)));
+        }
+        const auto into = into_handler(intrinsic_id);
+        if (into == nullptr) {
+          throw panic_error(
+              panic_reason::host_failed,
+              std::format("`{}` does not build its result in caller storage",
+                          cinder::known_intrinsic_names.at(intrinsic_id)));
+        }
+        // The destination is `call_args[0]`; nothing comes back.
+        into(call_args);
         break;
       }
 
@@ -2317,18 +2117,6 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         break;
       }
 
-      case opcode::op_addr_local: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto dst = ops.reg();
-        const auto src = ops.reg();
-        // `registers` is a `std::vector`; its buffer is stable across the
-        // *frame* vector reallocating on a nested call, so this address
-        // stays valid for the frame's lifetime (see `op_addr_local`'s doc).
-        f.registers[dst].u = static_cast<uint64_t>(
-            reinterpret_cast<uintptr_t>(&f.registers[src]));
-        f.pc = ops.pos();
-        break;
-      }
       case opcode::op_addr_slot: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
@@ -2350,45 +2138,25 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         break;
       }
 
-      case opcode::op_load_str_const: {
+      case opcode::op_global_addr: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto offset = ops.imm32();
+        f.registers[dst] =
+            ptr_to_slot(reinterpret_cast<std::byte *>(global_bytes_.data()) +
+                        offset);
+        f.pc = ops.pos();
+        break;
+      }
+      case opcode::op_str_const_data: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto idx = ops.imm32();
         const auto &text = f.function->string_constants[idx];
-        auto *header = cinder_heap_alloc(2 * sizeof(heap_word));
-        auto *slots = static_cast<heap_word *>(header);
-        slots[0] = heap_word{static_cast<uint64_t>(text.size())};
-        slots[1] = heap_word{ptr_to_slot(const_cast<char *>(text.data()))};
-        f.registers[dst] = ptr_to_slot(header);
+        f.registers[dst] = ptr_to_slot(const_cast<char *>(text.data()));
         f.pc = ops.pos();
         break;
       }
-
-      case opcode::op_load_indexed: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto dst = ops.reg();
-        const auto ptr_reg = ops.reg();
-        const auto index_reg = ops.reg();
-        const auto elem_size = ops.imm8();
-        const auto index = f.registers[index_reg].u;
-        f.registers[dst] = load_sized(
-            raw_bytes_of(f.registers[ptr_reg]) + index * elem_size, elem_size);
-        f.pc = ops.pos();
-        break;
-      }
-      case opcode::op_store_indexed: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto ptr_reg = ops.reg();
-        const auto index_reg = ops.reg();
-        const auto src = ops.reg();
-        const auto elem_size = ops.imm8();
-        const auto index = f.registers[index_reg].u;
-        store_sized(raw_bytes_of(f.registers[ptr_reg]) + index * elem_size,
-                    elem_size, f.registers[src]);
-        f.pc = ops.pos();
-        break;
-      }
-
       case opcode::op_panic_if: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto cond = ops.reg();
@@ -2403,143 +2171,50 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
       case opcode::op_panic:
         raise_panic(panic_reason::explicit_panic);
 
-      case opcode::op_load_direct_fn: {
+      case opcode::op_call_function: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
-        const auto fn_idx = ops.imm16();
-        f.pc = ops.pos();
-        auto *header = cinder_heap_alloc(3 * sizeof(heap_word));
-        auto *slots = static_cast<heap_word *>(header);
-        slots[0] = heap_word{static_cast<uint64_t>(fn_idx)};
-        slots[1] = heap_word{uint64_t{0}}; // null env for direct fn
-        slots[2] = heap_word{uint64_t{0}}; // no drop glue
-        f.registers[dst] = ptr_to_slot(header);
-        break;
-      }
-
-      case opcode::op_make_closure: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto dst = ops.reg();
-        const auto fn_idx = ops.imm16();
-        const auto env_reg = ops.reg();
-        const auto glue_idx = ops.imm16();
-        f.pc = ops.pos();
-        auto *header = cinder_heap_alloc(3 * sizeof(heap_word));
-        auto *slots = static_cast<heap_word *>(header);
-        slots[0] = heap_word{static_cast<uint64_t>(fn_idx)};
-        slots[1] = heap_word{f.registers[env_reg]};
-        slots[2] = heap_word{glue_idx == bytecode::k_no_drop_glue
-                                 ? uint64_t{0}
-                                 : static_cast<uint64_t>(glue_idx) + 1};
-        f.registers[dst] = ptr_to_slot(header);
-        break;
-      }
-      case opcode::op_call_indirect: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto dst = ops.reg();
-        const auto closure_reg = ops.reg();
+        const auto entry_reg = ops.reg();
         const auto first_arg = ops.reg();
         const auto argc = ops.imm8();
         f.pc = ops.pos();
-        const auto *closure = slots_of(f.registers[closure_reg]);
-        const auto fn_idx = static_cast<uint16_t>(closure[0].u);
-        const auto env_ptr = closure[1].as_slot();
-        std::vector<slot_value> call_args;
-        // Direct function references (materialized by `op_load_direct_fn`)
-        // have slot[1] = 0x0000 as a null env sentinel; the VM skips the
-        // env pointer for direct functions rather than passing it as a
-        // hidden argument.  Real closures always have a non-null env_ptr
-        // (even when `free_vars` is empty and the ptr points at slot 0 of
-        // the caller's frame — that slot is never itself zero).
-        if (env_ptr.u != 0) {
-          call_args.reserve(static_cast<size_t>(argc) + 1);
-          call_args.push_back(env_ptr);
-        } else {
-          call_args.reserve(static_cast<size_t>(argc));
+        const auto entry = static_cast<size_t>(f.registers[entry_reg].u);
+        const std::vector<slot_value> call_args(
+            f.registers.begin() + first_arg,
+            f.registers.begin() + first_arg + argc);
+        push_frame(frames, module_.functions.at(entry), call_args, true, dst);
+        continue; // `f` is invalidated by push_frame's push_back.
+      }
+      case opcode::op_drop_function_value: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto value_reg = ops.reg();
+        f.pc = ops.pos();
+        const auto *bytes = raw_bytes_of(f.registers[value_reg]);
+        const auto glue = load_sized(bytes + 16, 8).u;
+        if (glue == 0) {
+          f.registers[dst] = slot_value{};
+          break;
         }
-        call_args.insert(call_args.end(), f.registers.begin() + first_arg,
-                         f.registers.begin() + first_arg + argc);
-        push_frame(frames, module_.functions.at(fn_idx), call_args, true, dst);
+        const std::array<slot_value, 1> call_args = {load_sized(bytes + 8, 8)};
+        push_frame(frames, module_.functions.at(static_cast<size_t>(glue - 1)),
+                   call_args, true, dst);
         continue; // `f` is invalidated by push_frame's push_back.
       }
 
-      case opcode::op_make_generator: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto dst = ops.reg();
-        const auto step_fn_idx = ops.imm16();
-        const auto state_ptr_reg = ops.reg();
-        const auto state_bytes = ops.imm32();
-        f.pc = ops.pos();
-        auto *header = cinder_heap_alloc(runtime::coroutine::k_slot_count *
-                                         sizeof(heap_word));
-        auto *slots = static_cast<heap_word *>(header);
-        slots[runtime::coroutine::k_step_function_slot] =
-            heap_word{static_cast<uint64_t>(step_fn_idx)};
-        slots[runtime::coroutine::k_state_ptr_slot] =
-            heap_word{f.registers[state_ptr_reg]};
-        slots[runtime::coroutine::k_resume_index_slot] = heap_word{uint64_t{0}};
-        slots[runtime::coroutine::k_status_slot] = heap_word{
-            runtime::coroutine::raw(runtime::coroutine::status::suspended)};
-        slots[runtime::coroutine::k_state_bytes_slot] =
-            heap_word{uint64_t{state_bytes}};
-        f.registers[dst] = ptr_to_slot(header);
-        break;
-      }
-      case opcode::op_yield: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto value_reg = ops.reg();
-        const auto generator_reg = ops.reg();
-        const auto next_resume_index = ops.imm8();
-        f.pc = ops.pos();
-        auto *gen_slots = slots_of(f.registers[generator_reg]);
-        // The value area is two words wide, so a 128-bit item fits; a
-        // narrower one leaves the high word unread.
-        store_sized(reinterpret_cast<uint8_t *>( // NOLINT
-                        &gen_slots[runtime::coroutine::k_value_slot]),
-                    16, f.registers[value_reg]);
-        gen_slots[runtime::coroutine::k_resume_index_slot] =
-            heap_word{static_cast<uint64_t>(next_resume_index)};
-
-        const slot_value result{
-            runtime::coroutine::raw(runtime::coroutine::status::suspended)};
-        const bool has_caller = f.has_caller;
-        const auto result_reg = f.result_reg;
-        frames.pop_back();
-        if (!has_caller) {
-          return vm_result{.has_value = true, .value = result};
-        }
-        frames.back().registers[result_reg] = result;
-        continue;
-      }
-      case opcode::op_await_pending: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto task_reg = ops.reg();
-        const auto next_resume_index = ops.imm8();
-        f.pc = ops.pos();
-        slots_of(
-            f.registers[task_reg])[runtime::coroutine::k_resume_index_slot] =
-            heap_word{static_cast<uint64_t>(next_resume_index)};
-        const slot_value result{
-            runtime::coroutine::raw(runtime::coroutine::status::pending)};
-        const bool has_caller = f.has_caller;
-        const auto result_reg = f.result_reg;
-        frames.pop_back();
-        if (!has_caller) {
-          return vm_result{.has_value = true, .value = result};
-        }
-        frames.back().registers[result_reg] = result;
-        continue;
-      }
       case opcode::op_coroutine_resume: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto coroutine_reg = ops.reg();
         f.pc = ops.pos();
         auto *gen_slots = slots_of(f.registers[coroutine_reg]);
-        if (gen_slots[runtime::coroutine::k_status_slot].u !=
+        // Atomic: the scheduler may write the status from another thread.
+        if (const auto status =
+                std::atomic_ref(gen_slots[runtime::coroutine::k_status_slot].u)
+                    .load(std::memory_order_acquire);
+            status !=
             runtime::coroutine::raw(runtime::coroutine::status::suspended)) {
-          f.registers[dst] =
-              gen_slots[runtime::coroutine::k_status_slot].as_slot();
+          f.registers[dst] = slot_value{status};
           break;
         }
         const auto step_fn_idx = static_cast<uint16_t>(
@@ -2573,9 +2248,10 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
           f.registers[dst] = slot_value{};
           break;
         }
-        gen_slots[runtime::coroutine::k_status_slot] =
-            heap_word{runtime::coroutine::raw(
-                runtime::coroutine::status::cancel_requested)};
+        std::atomic_ref(gen_slots[runtime::coroutine::k_status_slot].u)
+            .store(runtime::coroutine::raw(
+                       runtime::coroutine::status::cancel_requested),
+                   std::memory_order_release);
         const auto step_fn_idx = static_cast<uint16_t>(
             gen_slots[runtime::coroutine::k_step_function_slot].u);
         const std::array<slot_value, runtime::coroutine::k_step_arg_count>
@@ -2587,56 +2263,53 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
       }
-      case opcode::op_drop_closure: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto dst = ops.reg();
-        const auto closure_reg = ops.reg();
-        f.pc = ops.pos();
-        const auto *closure = slots_of(f.registers[closure_reg]);
-        if (closure[2].u == 0) {
-          f.registers[dst] = slot_value{};
-          break;
-        }
-        const auto glue_idx = static_cast<uint16_t>(closure[2].u - 1);
-        const std::array<slot_value, 1> call_args = {closure[1].as_slot()};
-        push_frame(frames, module_.functions.at(glue_idx), call_args, true,
-                   dst);
-        continue; // `f` is invalidated by push_frame's push_back.
-      }
       case opcode::op_coroutine_cancelled: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto generator_reg = ops.reg();
         f.pc = ops.pos();
+        // Atomic: the scheduler may write the status from another thread.
         f.registers[dst] = store_bool(
-            slots_of(
-                f.registers[generator_reg])[runtime::coroutine::k_status_slot]
-                .u == runtime::coroutine::raw(
-                          runtime::coroutine::status::cancel_requested));
+            std::atomic_ref(
+                slots_of(f.registers[generator_reg])
+                    [runtime::coroutine::k_status_slot]
+                        .u)
+                .load(std::memory_order_acquire) ==
+            runtime::coroutine::raw(
+                runtime::coroutine::status::cancel_requested));
         break;
       }
-      case opcode::op_str_decode_scalar: {
+      case opcode::op_coroutine_finish: {
         auto ops = operand_cursor{.code = code, .at = ip};
-        const auto dst = ops.reg();
-        const auto str_reg = ops.reg();
-        const auto offset_reg = ops.reg();
+        const auto generator_reg = ops.reg();
         f.pc = ops.pos();
-        const auto view = view_of(f.registers[str_reg]);
-        const auto offset = static_cast<size_t>(f.registers[offset_reg].u);
-        f.registers[dst] = slot_value{static_cast<uint64_t>(
-            cinder::runtime::str_scalar_at(view, offset))};
+        std::atomic_ref(
+            slots_of(f.registers[generator_reg])[runtime::coroutine::k_status_slot]
+                .u)
+            .store(runtime::coroutine::raw(runtime::coroutine::status::done),
+                   std::memory_order_release);
         break;
       }
-      case opcode::op_str_scalar_width: {
+      case opcode::op_copy_bytes: {
         auto ops = operand_cursor{.code = code, .at = ip};
-        const auto dst = ops.reg();
-        const auto str_reg = ops.reg();
-        const auto offset_reg = ops.reg();
+        const auto dst_reg = ops.reg();
+        const auto src_reg = ops.reg();
+        const auto byte_count = ops.imm32();
         f.pc = ops.pos();
-        const auto view = view_of(f.registers[str_reg]);
-        const auto offset = static_cast<size_t>(f.registers[offset_reg].u);
-        f.registers[dst] =
-            slot_value{cinder::runtime::str_scalar_width(view, offset)};
+        if (byte_count != 0) {
+          std::memmove(raw_bytes_of(f.registers[dst_reg]),
+                       raw_bytes_of(f.registers[src_reg]), byte_count);
+        }
+        break;
+      }
+      case opcode::op_zero_bytes: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst_reg = ops.reg();
+        const auto byte_count = ops.imm32();
+        f.pc = ops.pos();
+        if (byte_count != 0) {
+          std::memset(raw_bytes_of(f.registers[dst_reg]), 0, byte_count);
+        }
         break;
       }
       case opcode::op_atomic_fetch_add:

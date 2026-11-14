@@ -45,6 +45,8 @@ cc_library(
       "//src/comptime_vm",
       "//src/hir:hir",
       "//src/llvm_codegen:aot",
+      "//src/llvm_codegen:storage_codegen",
+      "//src/runtime:runtime",
       "//src/semantic:semantic",
       "//src/parser:parser",
       "//src/util:util",

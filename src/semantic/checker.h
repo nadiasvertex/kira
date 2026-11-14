@@ -1942,6 +1942,17 @@ private:
 
   auto resolve_drop_plans_from(std::size_t first) -> void;
 
+  /// The concrete members of every closed struct and sum instance in the
+  /// type table, for `checked_types::shapes`. Run from `take_checked_types`,
+  /// after the table is settled and before it is moved out.
+  [[nodiscard]] auto compute_aggregate_shapes() -> aggregate_shapes;
+
+  /// Adds to `into` the shape of every closed struct and sum instance it does
+  /// not have yet. With `settled_only`, a shape that still names an unknown
+  /// type is left out, so a later call can add it once the type is settled:
+  /// compile-time code lays its values out while checking is under way.
+  auto add_aggregate_shapes(aggregate_shapes &into, bool settled_only) -> void;
+
   auto param_name_of(const ast::param &param) -> std::string;
 
   auto param_types_for(const ast::func_decl &decl, const module_members *owner)
@@ -2442,6 +2453,8 @@ private:
   /// See `checked_types::instance_templates`.
   std::unordered_map<const ast::func_decl *, const ast::func_decl *>
       instance_templates_;
+  /// See `ownership_results::consuming_receivers`.
+  std::unordered_set<const ast::func_decl *> consuming_receivers_;
 
   /// A body's inferred return type that was still open when the body
   /// ended; the implicit generic's result type if it is open on the
@@ -2833,6 +2846,12 @@ private:
                                  const ast::func_decl &decl,
                                  std::string_view owner_module) -> void;
 
+  /// The `fn` type of a module-level function named as a value, read under
+  /// the file that declares it, so its signature sees that file's imports
+  /// rather than the referring file's.
+  auto fn_value_type(const ast::func_decl &decl, const module_members *owner)
+      -> type_id;
+
   auto record_static_const_reference(const ast::expr &reference,
                                      const ast::static_decl &decl, type_id type,
                                      std::string_view owner_module) -> void;
@@ -2890,6 +2909,57 @@ private:
                              std::string_view trait_name,
                              std::string_view op_name, bool wire_dispatch)
       -> type_id;
+
+  /// `==`/`!=` on a tuple, an array, an `option` or a `result`: element by
+  /// element, through the `eq` impl `std.traits` writes for each
+  /// (`traits.structural.cn`). Reports a missing impl, or an element type
+  /// without `eq`, at the operator; wires the dispatch to the impl's
+  /// instance for the operand type. These types have no order, so `<` and
+  /// friends are reported.
+  auto require_structural_operator(const ast::binary_expr &binary,
+                                   type_id target, std::string_view trait_name,
+                                   std::string_view op_name,
+                                   bool wire_dispatch) -> type_id;
+
+  /// Whether `entry` is one of the types whose comparisons go through an
+  /// impl on its structure rather than a declaration or a primitive:
+  /// tuples, arrays, `option` and `result`.
+  [[nodiscard]] static auto is_structural_comparand(const type_entry &entry)
+      -> bool;
+
+  /// The method of `trait_name`'s impl that applies to `target`, a type with
+  /// no declaration of its own (a tuple, an array, a prelude generic), or
+  /// null. `method_name` picks one method when given; otherwise any of the
+  /// impl's methods stands for the impl.
+  auto structural_impl_of(type_id target, std::string_view trait_name,
+                          std::string_view method_name = {})
+      -> const method_entry *;
+
+  /// The help for a bound `subject: trait_name` that fails because
+  /// `subject` is a structural type holding something without the trait;
+  /// nothing when it fails for another reason.
+  auto structural_missing_element(type_id subject, std::string_view trait_name)
+      -> std::optional<std::string>;
+
+  /// "a tuple", "an array", "an `option`", "a `result`", for a diagnostic.
+  [[nodiscard]] static auto structural_noun(const type_entry &entry)
+      -> std::string;
+
+  /// What `==` on one compares: "element by element" for a tuple or an
+  /// array, "the values inside" for an `option` or a `result`.
+  [[nodiscard]] static auto structural_parts(const type_entry &entry)
+      -> std::string_view;
+
+  /// The help for a structural type without `trait_name` because `element`,
+  /// something it holds, lacks it.
+  auto structural_unmet_help(const type_entry &entry, type_id element,
+                             std::string_view trait_name) -> std::string;
+
+  /// The first bound on `method`'s impl block (`impl[A: eq, B: eq] ...`)
+  /// that `target` breaks once the block's parameters are solved from it:
+  /// the parameter's type and the trait it lacks.
+  auto unmet_impl_bound(const method_entry &method, type_id target)
+      -> std::optional<std::pair<type_id, std::string>>;
 
   auto report_non_numeric_arithmetic(const ast::binary_expr &binary,
                                      std::string_view op_name, type_id operand)

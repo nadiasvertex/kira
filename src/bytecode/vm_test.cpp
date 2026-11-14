@@ -2,9 +2,11 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <format>
 #include <iostream>
+#include <span>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -56,21 +58,36 @@ auto emit_store_slot(bc::chunk_writer &writer, uint8_t ptr, uint16_t slot_index,
   writer.emit_u8(8);
 }
 
-auto emit_load_indexed(bc::chunk_writer &writer, uint8_t dst, uint8_t ptr,
-                       uint8_t index_reg, uint8_t elem_size = 8) -> void {
-  writer.emit_opcode(bc::opcode::op_load_indexed);
-  writer.emit_register(dst);
+/// Register `k_scratch` holds an element's address between the two halves
+/// of an indexed load or store.
+constexpr uint8_t k_scratch = 15;
+
+auto emit_addr_indexed(bc::chunk_writer &writer, uint8_t ptr,
+                       uint8_t index_reg, uint8_t elem_size) -> void {
+  writer.emit_opcode(bc::opcode::op_addr_indexed);
+  writer.emit_register(k_scratch);
   writer.emit_register(ptr);
   writer.emit_register(index_reg);
   writer.emit_u8(elem_size);
 }
 
+auto emit_load_indexed(bc::chunk_writer &writer, uint8_t dst, uint8_t ptr,
+                       uint8_t index_reg, uint8_t elem_size) -> void {
+  emit_addr_indexed(writer, ptr, index_reg, elem_size);
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_register(dst);
+  writer.emit_register(k_scratch);
+  writer.emit_u16(0);
+  writer.emit_u8(elem_size);
+}
+
 auto emit_store_indexed(bc::chunk_writer &writer, uint8_t ptr,
-                        uint8_t index_reg, uint8_t src, uint8_t elem_size = 8)
+                        uint8_t index_reg, uint8_t src, uint8_t elem_size)
     -> void {
-  writer.emit_opcode(bc::opcode::op_store_indexed);
-  writer.emit_register(ptr);
-  writer.emit_register(index_reg);
+  emit_addr_indexed(writer, ptr, index_reg, elem_size);
+  writer.emit_opcode(bc::opcode::op_store_slot);
+  writer.emit_register(k_scratch);
+  writer.emit_u16(0);
   writer.emit_register(src);
   writer.emit_u8(elem_size);
 }
@@ -626,9 +643,9 @@ auto test_packed_struct_fields_round_trip_without_clobbering_neighbors()
 
 auto test_narrow_element_array_indexed_load_store_round_trip() -> void {
   // A 5-element `array[int16, 5]`-shaped block (2 bytes/element, 10 bytes
-  // total) — verifies `op_load_indexed`/`op_store_indexed`'s generalized
-  // `elem_size` operand keeps elements tightly packed at their own natural
-  // width instead of the old hardcoded 8-byte stride.
+  // total) — verifies `op_addr_indexed`'s `elem_size` operand keeps
+  // elements tightly packed at their own natural width, and that a 2-byte
+  // `op_store_slot` does not clobber a neighbor.
   auto w = bc::chunk_writer{};
   w.emit_opcode(bc::opcode::op_alloc);
   w.emit_register(0);
@@ -664,7 +681,7 @@ auto test_narrow_element_array_indexed_load_store_round_trip() -> void {
   w.emit_opcode(bc::opcode::op_return_value);
   w.emit_register(7);
 
-  auto function = std::move(w).finish("narrow_array", 0, 8);
+  auto function = std::move(w).finish("narrow_array", 0, 16);
 
   auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
   module.functions.push_back(std::move(function));
@@ -678,27 +695,31 @@ auto test_narrow_element_array_indexed_load_store_round_trip() -> void {
          "(byte offsets 0 and 8) without overlapping");
 }
 
-auto test_load_str_const_produces_len_and_data_slots() -> void {
-  // fn() -> u64 { return len("hi!") } — reads the heap `str` value's own
-  // length slot (slot 0) directly, rather than through a `.len()` call.
+auto test_str_const_data_addresses_the_literal_bytes() -> void {
+  // fn() -> u64 { return "hi!".data[1] } — reads the second byte through the
+  // address `op_str_const_data` produces.
   auto writer = bc::chunk_writer{};
   const auto idx = writer.add_string_constant("hi!");
-  writer.emit_opcode(bc::opcode::op_load_str_const);
+  writer.emit_opcode(bc::opcode::op_str_const_data);
   writer.emit_register(0);
   writer.emit_u32(idx);
-  emit_load_slot(writer, 1, 0, 0);
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_register(1);
+  writer.emit_register(0);
+  writer.emit_u16(1);
+  writer.emit_u8(1);
   writer.emit_opcode(bc::opcode::op_return_value);
   writer.emit_register(1);
 
-  auto function = std::move(writer).finish("str_len", 0, 2);
+  auto function = std::move(writer).finish("str_byte", 0, 2);
 
   auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
   module.functions.push_back(std::move(function));
 
   auto result = bc::vm{module}.run(0, {});
 
-  expect(result.has_value(), "expected loading a string constant not to panic");
-  expect(result->value.u == 3, "expected \"hi!\" to report length 3");
+  expect(result.has_value(), "expected reading a string constant not to panic");
+  expect(result->value.u == 'i', "expected byte 1 of \"hi!\" to be 'i'");
 }
 
 auto test_return_unit_produces_no_value() -> void {
@@ -717,10 +738,12 @@ auto test_return_unit_produces_no_value() -> void {
 }
 
 // ---------------------------------------------------------------------------
-// Intrinsics (op_call_intrinsic, src/intrinsics.h) — see vm.cpp's own doc
-// comment on the "Intrinsics" section for the heap conventions these tests
-// hand-assemble against (a struct is N slots in field-declaration order; a
-// `str`/slice value is a 2-slot `{ len; data_ptr }` header).
+// Intrinsics that build their result in caller storage
+// (`op_call_intrinsic_into`, src/intrinsics.h). Each test hands the VM the
+// address of a host buffer as the destination, and descriptor arguments as
+// the addresses of host bytes in the layout of `src/runtime/value_layout.h`:
+// `raw_fd { value: int64 }` is 8 bytes, a `str`/slice is `{ len, data }`, and
+// `result[T, io_errno]` is a `u64` tag (0 for `@ok`) with the payload at 8.
 // ---------------------------------------------------------------------------
 
 auto intrinsic_id(std::string_view name) -> uint8_t {
@@ -729,136 +752,82 @@ auto intrinsic_id(std::string_view name) -> uint8_t {
   return id.value();
 }
 
-auto test_intrinsic_rt_stdout_returns_fd_one() -> void {
-  // fn() -> int64 { let fd = rt_stdout(); return fd.value }
-  auto writer = bc::chunk_writer{};
-  writer.emit_opcode(bc::opcode::op_call_intrinsic);
-  writer.emit_register(0); // dst
-  writer.emit_u8(intrinsic_id("rt_stdout"));
-  writer.emit_register(0); // first_arg_reg (unused — argc is 0)
-  writer.emit_u8(0);       // argc
-  emit_load_slot(writer, 1, 0, 0);
-  writer.emit_opcode(bc::opcode::op_return_value);
-  writer.emit_register(1);
-  auto function = std::move(writer).finish("stdout_fd", 0, 2);
+/// The address of `bytes` as a register value.
+template <typename T> auto address_of(T &bytes) -> bc::slot_value {
+  return bc::slot_value{
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&bytes))};
+}
 
+/// Runs `name` through `op_call_intrinsic_into` with `args` (the destination
+/// first) and reports whether the VM ran it without a panic.
+auto run_into_intrinsic(std::string_view name,
+                        std::span<const bc::slot_value> args) -> bool {
+  auto writer = bc::chunk_writer{};
+  writer.emit_opcode(bc::opcode::op_call_intrinsic_into);
+  writer.emit_u8(intrinsic_id(name));
+  writer.emit_register(0);
+  writer.emit_u8(static_cast<uint8_t>(args.size()));
+  writer.emit_opcode(bc::opcode::op_return_unit);
+  const auto count = static_cast<uint16_t>(args.size());
+  auto function = std::move(writer).finish(std::string(name), count, count);
   auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
   module.functions.push_back(std::move(function));
+  return bc::vm{module}.run(0, args).has_value();
+}
 
-  auto result = bc::vm{module}.run(0, {});
-  expect(result.has_value(), "expected rt_stdout() to succeed");
-  expect(result->value.i == 1, "expected rt_stdout()'s raw_fd.value to be 1");
+/// A `result[T, io_errno]` destination, filled with a pattern so a test
+/// sees which bytes the intrinsic wrote.
+struct result_bytes {
+  alignas(8) std::array<std::byte, 16> bytes{};
+  result_bytes() { bytes.fill(std::byte{0xAA}); }
+  template <typename T> [[nodiscard]] auto at(size_t offset) const -> T {
+    auto value = T{};
+    std::memcpy(&value, bytes.data() + offset, sizeof(T));
+    return value;
+  }
+};
+
+struct descriptor {
+  uint64_t len;
+  const void *data;
+};
+
+auto test_intrinsic_rt_stdout_returns_fd_one() -> void {
+  auto fd = int64_t{-1};
+  const auto args = std::array{address_of(fd)};
+  expect(run_into_intrinsic("rt_stdout", args),
+         "expected rt_stdout() to succeed");
+  expect(fd == 1, "expected rt_stdout()'s raw_fd.value to be 1");
 }
 
 auto test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe() -> void {
-  // fn(write_fd, read_fd, len, write_ptr, read_ptr) -> i64 {
-  //   let w = rt_write({value: write_fd}, {len; write_ptr})   // result[usize,
-  //   io_errno] let r = rt_read({value: read_fd}, {len; read_ptr})       //
-  //   result[usize, io_errno] return w.tag * 1000000 + r.tag * 10000 +
-  //   r.payload
-  // }
-  // Encodes both results' tags plus the byte count into one return value so
-  // this test can confirm *both* intrinsics returned `@ok(...)` (tag 0) —
-  // not just that some payload came back — without needing branchy
-  // unwrap-or-panic bytecode; the real `@ok`/`@err` unwrap path is exercised
-  // through real Cinder `match` syntax in
-  // src/bytecode_compiler/compile_test.cpp instead.
   int fds[2] = {-1, -1};
   expect(::pipe(fds) == 0, "expected pipe() to succeed");
-
   char write_buf[2] = {'h', 'i'};
   char read_buf[4] = {0, 0, 0, 0};
+  auto write_fd = int64_t{fds[1]};
+  auto read_fd = int64_t{fds[0]};
+  auto out = descriptor{.len = 2, .data = &write_buf[0]};
+  auto in = descriptor{.len = 2, .data = &read_buf[0]};
 
-  auto writer = bc::chunk_writer{};
-  // r5 = { value: r0 } — write_fd as a raw_fd struct.
-  emit_alloc_slots(writer, 5, 1);
-  emit_store_slot(writer, 5, 0, 0);
-  // r6 = { len: r2, data_ptr: r3 } — the write buffer's slice.
-  emit_alloc_slots(writer, 6, 2);
-  emit_store_slot(writer, 6, 0, 2);
-  emit_store_slot(writer, 6, 1, 3);
-  // r7 = rt_write(r5, r6)
-  writer.emit_opcode(bc::opcode::op_call_intrinsic);
-  writer.emit_register(7);
-  writer.emit_u8(intrinsic_id("rt_write"));
-  writer.emit_register(5);
-  writer.emit_u8(2);
-  // r8 = { value: r1 } — read_fd as a raw_fd struct.
-  emit_alloc_slots(writer, 8, 1);
-  emit_store_slot(writer, 8, 0, 1);
-  // r9 = { len: r2, data_ptr: r4 } — the read buffer's slice.
-  emit_alloc_slots(writer, 9, 2);
-  emit_store_slot(writer, 9, 0, 2);
-  emit_store_slot(writer, 9, 1, 4);
-  // r10 = rt_read(r8, r9)
-  writer.emit_opcode(bc::opcode::op_call_intrinsic);
-  writer.emit_register(10);
-  writer.emit_u8(intrinsic_id("rt_read"));
-  writer.emit_register(8);
-  writer.emit_u8(2);
-  // r11 = w.tag (r7[0]), r12 = r.tag (r10[0]), r13 = r.payload (r10[1])
-  emit_load_slot(writer, 11, 7, 0);
-  emit_load_slot(writer, 12, 10, 0);
-  emit_load_slot(writer, 13, 10, 1);
-  // r14 = 1000000, r15 = 10000
-  const auto million_idx =
-      writer.add_constant(bc::slot_value{int64_t{1000000}});
-  writer.emit_opcode(bc::opcode::op_load_const);
-  writer.emit_register(14);
-  writer.emit_u32(million_idx);
-  const auto ten_k_idx = writer.add_constant(bc::slot_value{int64_t{10000}});
-  writer.emit_opcode(bc::opcode::op_load_const);
-  writer.emit_register(15);
-  writer.emit_u32(ten_k_idx);
-  // r16 = w.tag * 1000000, r17 = r.tag * 10000
-  writer.emit_opcode(bc::opcode::op_mul);
-  writer.emit_register(16);
-  writer.emit_register(11);
-  writer.emit_register(14);
-  writer.emit_numeric_kind(bc::numeric_kind::i64);
-  writer.emit_opcode(bc::opcode::op_mul);
-  writer.emit_register(17);
-  writer.emit_register(12);
-  writer.emit_register(15);
-  writer.emit_numeric_kind(bc::numeric_kind::i64);
-  // r18 = r16 + r17, r19 = r18 + r.payload
-  writer.emit_opcode(bc::opcode::op_add);
-  writer.emit_register(18);
-  writer.emit_register(16);
-  writer.emit_register(17);
-  writer.emit_numeric_kind(bc::numeric_kind::i64);
-  writer.emit_opcode(bc::opcode::op_add);
-  writer.emit_register(19);
-  writer.emit_register(18);
-  writer.emit_register(13);
-  writer.emit_numeric_kind(bc::numeric_kind::i64);
-  writer.emit_opcode(bc::opcode::op_return_value);
-  writer.emit_register(19);
-  auto function = std::move(writer).finish("pipe_roundtrip", 5, 20);
-
-  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
-  module.functions.push_back(std::move(function));
-
-  const auto args = std::array{
-      bc::slot_value{int64_t{fds[1]}}, // r0: write fd
-      bc::slot_value{int64_t{fds[0]}}, // r1: read fd
-      bc::slot_value{uint64_t{2}},     // r2: length
-      bc::slot_value{static_cast<uint64_t>(
-          reinterpret_cast<uintptr_t>(&write_buf[0]))}, // r3
-      bc::slot_value{static_cast<uint64_t>(
-          reinterpret_cast<uintptr_t>(&read_buf[0]))}, // r4
-  };
-  auto result = bc::vm{module}.run(0, args);
-
+  auto written = result_bytes{};
+  const auto write_args =
+      std::array{address_of(written.bytes), address_of(write_fd),
+                 address_of(out)};
+  expect(run_into_intrinsic("rt_write", write_args),
+         "expected rt_write() not to panic");
+  auto read = result_bytes{};
+  const auto read_args =
+      std::array{address_of(read.bytes), address_of(read_fd), address_of(in)};
+  expect(run_into_intrinsic("rt_read", read_args),
+         "expected rt_read() not to panic");
   ::close(fds[0]);
   ::close(fds[1]);
 
-  expect(result.has_value(), "expected the rt_write/rt_read round trip to "
-                             "succeed against a real pipe");
-  expect(result->value.i == 2,
-         "expected both rt_write() and rt_read() to return `@ok(...)` (tag "
-         "0) and rt_read() to read exactly 2 bytes — encoded as "
-         "write_tag*1e6 + read_tag*1e4 + read_payload");
+  expect(written.at<uint64_t>(0) == 0 && written.at<uint64_t>(8) == 2,
+         "expected rt_write() to return `@ok(2)`");
+  expect(read.at<uint64_t>(0) == 0 && read.at<uint64_t>(8) == 2,
+         "expected rt_read() to return `@ok(2)`");
   expect(read_buf[0] == 'h' && read_buf[1] == 'i',
          "expected the bytes rt_write() wrote to be the bytes rt_read() "
          "read back");
@@ -867,105 +836,28 @@ auto test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe() -> void {
 auto test_intrinsic_rt_close_returns_ok_on_a_valid_fd() -> void {
   const int duped = ::dup(0);
   expect(duped >= 0, "expected dup(0) to produce a closable fd");
-
-  auto writer = bc::chunk_writer{};
-  emit_alloc_slots(writer, 1, 1);
-  emit_store_slot(writer, 1, 0, 0);
-  writer.emit_opcode(bc::opcode::op_call_intrinsic);
-  writer.emit_register(2);
-  writer.emit_u8(intrinsic_id("rt_close"));
-  writer.emit_register(1);
-  writer.emit_u8(1);
-  // dst(3) = close_result.tag
-  emit_load_slot(writer, 3, 2, 0);
-  writer.emit_opcode(bc::opcode::op_return_value);
-  writer.emit_register(3);
-  auto function = std::move(writer).finish("close_fd", 1, 4);
-
-  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
-  module.functions.push_back(std::move(function));
-
-  const auto args = std::array{bc::slot_value{int64_t{duped}}};
-  auto result = bc::vm{module}.run(0, args);
-  expect(result.has_value(), "expected rt_close() not to panic");
-  expect(result->value.i == 0,
+  auto fd = int64_t{duped};
+  auto closed = result_bytes{};
+  const auto args = std::array{address_of(closed.bytes), address_of(fd)};
+  expect(run_into_intrinsic("rt_close", args),
+         "expected rt_close() not to panic");
+  expect(closed.at<uint64_t>(0) == 0,
          "expected rt_close() on a valid fd to return `@ok(...)` (tag 0)");
 }
 
 auto test_intrinsic_rt_open_returns_err_on_a_missing_file() -> void {
-  // fn(path_len, path_ptr, read, write, append, create, truncate) -> i64 {
-  //   let r = rt_open({len; path_ptr}, {read; write; append; create;
-  //                    truncate})           // result[raw_fd, io_errno]
-  //   return r.tag * 1000000 + r.payload.code
-  // }
   const std::string path = "/definitely/does/not/exist/cinder-vm-test.cn";
-
-  auto writer = bc::chunk_writer{};
-  // r7 = { len: r0, data_ptr: r1 } — the path string.
-  emit_alloc_slots(writer, 7, 2);
-  emit_store_slot(writer, 7, 0, 0);
-  emit_store_slot(writer, 7, 1, 1);
-  // r8 = { read: r2, write: r3, append: r4, create: r5, truncate: r6 } —
-  // five one-byte `bool`s at offsets 0..4, as `runtime::struct_layout`
-  // lays out `open_options`.
-  emit_alloc_slots(writer, 8, 1);
-  for (uint16_t i = 0; i < 5; ++i) {
-    writer.emit_opcode(bc::opcode::op_store_slot);
-    writer.emit_register(8);
-    writer.emit_u16(i);
-    writer.emit_register(static_cast<uint8_t>(2 + i));
-    writer.emit_u8(1);
-  }
-  // r9 = rt_open(r7, r8)
-  writer.emit_opcode(bc::opcode::op_call_intrinsic);
-  writer.emit_register(9);
-  writer.emit_u8(intrinsic_id("rt_open"));
-  writer.emit_register(7);
-  writer.emit_u8(2);
-  // r10 = r9.tag, r11 = r9.payload (an `io_errno` struct pointer for @err)
-  emit_load_slot(writer, 10, 9, 0);
-  emit_load_slot(writer, 11, 9, 1);
-  // r12 = r11.code
-  emit_load_slot(writer, 12, 11, 0);
-  // r13 = 1000000, r14 = r10 * r13, r15 = r14 + r12
-  const auto million_idx =
-      writer.add_constant(bc::slot_value{int64_t{1000000}});
-  writer.emit_opcode(bc::opcode::op_load_const);
-  writer.emit_register(13);
-  writer.emit_u32(million_idx);
-  writer.emit_opcode(bc::opcode::op_mul);
-  writer.emit_register(14);
-  writer.emit_register(10);
-  writer.emit_register(13);
-  writer.emit_numeric_kind(bc::numeric_kind::i64);
-  writer.emit_opcode(bc::opcode::op_add);
-  writer.emit_register(15);
-  writer.emit_register(14);
-  writer.emit_register(12);
-  writer.emit_numeric_kind(bc::numeric_kind::i64);
-  writer.emit_opcode(bc::opcode::op_return_value);
-  writer.emit_register(15);
-  auto function = std::move(writer).finish("open_missing", 7, 16);
-
-  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
-  module.functions.push_back(std::move(function));
-
-  const auto args = std::array{
-      bc::slot_value{uint64_t{path.size()}},
-      bc::slot_value{
-          static_cast<uint64_t>(reinterpret_cast<uintptr_t>(path.data()))},
-      bc::slot_value{uint64_t{1}}, // read
-      bc::slot_value{uint64_t{0}}, // write
-      bc::slot_value{uint64_t{0}}, // append
-      bc::slot_value{uint64_t{0}}, // create
-      bc::slot_value{uint64_t{0}}, // truncate
-  };
-  auto result = bc::vm{module}.run(0, args);
-
-  expect(result.has_value(),
+  auto name = descriptor{.len = path.size(), .data = path.data()};
+  // `open_options`: five one-byte `bool`s (read, write, append, create,
+  // truncate).
+  auto options = std::array<uint8_t, 5>{1, 0, 0, 0, 0};
+  auto opened = result_bytes{};
+  const auto args = std::array{address_of(opened.bytes), address_of(name),
+                               address_of(options)};
+  expect(run_into_intrinsic("rt_open", args),
          "expected rt_open() on a missing file not to panic, only to "
          "return `@err(...)`");
-  expect(result->value.i == 1000000 + ENOENT,
+  expect(opened.at<uint64_t>(0) == 1 && opened.at<int32_t>(8) == ENOENT,
          "expected rt_open() to return `@err({ code: ENOENT })` (tag 1) for "
          "a nonexistent, non-`create` path");
 }
@@ -1003,29 +895,35 @@ auto test_hosted_run_stops_at_its_step_budget() -> void {
 
 /// A hosted run refuses an intrinsic that reaches outside the VM, by name.
 auto test_hosted_run_refuses_effects() -> void {
+  // fn stdout_fd(dst) { rt_stdout_into(dst) }
   auto writer = bc::chunk_writer{};
-  writer.emit_opcode(bc::opcode::op_call_intrinsic);
-  writer.emit_register(0);
+  writer.emit_opcode(bc::opcode::op_call_intrinsic_into);
   writer.emit_u8(intrinsic_id("rt_stdout"));
   writer.emit_register(0);
-  writer.emit_u8(0);
+  writer.emit_u8(1);
   writer.emit_opcode(bc::opcode::op_return_unit);
-  auto function = std::move(writer).finish("stdout_fd", 0, 1);
+  auto function = std::move(writer).finish("stdout_fd", 1, 1);
   auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
   module.functions.push_back(std::move(function));
+  // A `raw_fd { value: int64 }`.
+  alignas(8) auto fd = std::array<std::byte, 8>{};
+  const auto dst = bc::slot_value{
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(fd.data()))};
 
   const auto refused = bc::vm{module}.run_hosted(
-      0, {},
+      0, std::span(&dst, 1),
       bc::run_limits{.step_budget = std::nullopt, .allow_effects = false});
   expect(!refused.has_value() &&
              refused.error().reason == bc::panic_reason::effect_refused &&
              refused.error().message.contains("rt_stdout"),
          "expected rt_stdout to be refused by name");
   const auto allowed = bc::vm{module}.run_hosted(
-      0, {},
+      0, std::span(&dst, 1),
       bc::run_limits{.step_budget = std::nullopt, .allow_effects = true});
-  expect(allowed.has_value(),
-         "expected rt_stdout to run when effects are allowed");
+  auto value = int64_t{0};
+  std::memcpy(&value, fd.data(), sizeof(value));
+  expect(allowed.has_value() && value == 1,
+         "expected rt_stdout to run when effects are allowed and write fd 1");
 }
 
 /// A fatal reason ends the process on an ordinary run; a hosted run gets it
@@ -1110,7 +1008,7 @@ auto main() -> int {
     test_alloc_and_slot_roundtrip_a_two_field_heap_block();
     test_packed_struct_fields_round_trip_without_clobbering_neighbors();
     test_narrow_element_array_indexed_load_store_round_trip();
-    test_load_str_const_produces_len_and_data_slots();
+    test_str_const_data_addresses_the_literal_bytes();
     test_return_unit_produces_no_value();
     test_intrinsic_rt_stdout_returns_fd_one();
     test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe();

@@ -39,3 +39,5 @@ def main() -> int32:
     let still_empty = empty.map(n => n + 100)
     # 42 + (-1) = 41
     return unwrap_or(described, 0) + unwrap_or(still_empty, -1)
+
+# expect: 41

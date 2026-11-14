@@ -21,6 +21,9 @@ namespace cinder::runtime::coroutine {
 //  after (0 at first entry). `value` holds what the last suspension handed
 //  to the resumer (a generator's yielded item); it is two slots wide so an
 //  `int128`/`uint128` item fits, and a narrower item uses only the first.
+//  The storage-form compilers (`storage_compile`, `storage_codegen`) instead
+//  keep the item in the state block and store its address in the first slot,
+//  so an item of any size and alignment needs no extra room in the object.
 //  `record` is null until the scheduler (`scheduler.h`) takes the coroutine
 //  over, and then points at the scheduler's bookkeeping for it; generated code
 //  never reads it. The step function is called with `(state_ptr, resume_index,

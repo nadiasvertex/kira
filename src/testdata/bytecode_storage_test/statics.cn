@@ -1,0 +1,35 @@
+module bytecode_storage_test.statics
+
+# Statics in the storage form: each is built once, in its module's static
+# init, and every function reads the same bytes.
+
+type point = { x: int32, y: int32 }
+type segment = { a: point, b: point }
+
+static table: array[int32, 4] = [10, 20, 30, 40]
+static let origin: point = point { x: 3, y: 4 }
+static let seg: segment = segment { a: point { x: 5, y: 6 }, b: origin }
+static let pair: (int64, int64) = (7, 9)
+static let word: str = "static"
+
+def table_at(i: usize) -> int32:
+    return table[i]
+
+def table_sum() -> int32:
+    let mut total = 0
+    for v in &table:
+        total = total + v
+    return total
+
+def point_mix() -> int32:
+    let p = origin
+    return p.x * 1000 + origin.y * 100 + seg.a.x * 10 + seg.b.y
+
+def pair_mix() -> int64:
+    return pair.0 * 10 + pair.1
+
+def word_len() -> usize:
+    return word.len()
+
+def word_byte(i: usize) -> byte:
+    return word[i]

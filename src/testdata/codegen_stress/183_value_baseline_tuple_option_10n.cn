@@ -1,0 +1,30 @@
+module codegen_stress.value_baseline_tuple_option_10n
+
+# expect: 183311667
+
+# Ten times the length of `182_value_baseline_tuple_option_n.cn`; see that
+# file. Tuple part: 3 * 49995000 = 149985000. Option part:
+# 49995000 - 3 * (0 + 1 + ... + 3333) = 49995000 - 16668333 = 33326667.
+# 149985000 + 33326667 = 183311667.
+
+def pair(i: int32) -> (int32, int32):
+    return (i, i * 2)
+
+def maybe(i: int32) -> option[int32]:
+    if i % 3 == 0:
+        return @none
+    return @some(i)
+
+def main() -> int32:
+    var total: int32 = 0
+    var i: int32 = 0
+    while i < 10000:
+        let (a, b) = pair(i)
+        total = total + a + b
+        match maybe(i):
+            @some(v) =>:
+                total = total + v
+            @none =>:
+                total = total
+        i = i + 1
+    return total

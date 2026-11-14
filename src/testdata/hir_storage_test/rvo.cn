@@ -1,0 +1,164 @@
+module sample
+type pair = { pub a: int32, pub b: int32 }
+type line = { pub from: pair, pub to: pair }
+type shape = @circle(pair) | @rect(int32, int32) | @empty
+
+def make_pair(n: int32) -> pair:
+    return pair { a: n, b: n + 1 }
+
+def ret_if(c: bool, n: int32) -> pair:
+    return if c: make_pair(n) else: pair { a: 0, b: n }
+
+def ret_match(s: shape) -> pair:
+    return match s:
+        @circle(p) => p
+        @rect(a, b) => make_pair(a + b)
+        @empty => make_pair(0)
+
+def tuple_calls(n: int32) -> (pair, pair):
+    return (make_pair(n), make_pair(n + 1))
+
+def array_calls(n: int32) -> array[pair, 2]:
+    return [make_pair(n), make_pair(n + 1)]
+
+def sum_payload(n: int32) -> shape:
+    return @circle(make_pair(n))
+
+def option_payload(n: int32) -> option[pair]:
+    return @some(make_pair(n))
+
+def nested(n: int32) -> line:
+    return line { from: pair { a: n, b: n }, to: make_pair(n) }
+
+def let_if(c: bool, n: int32) -> int32:
+    let p = if c: make_pair(n) else: make_pair(n + 1)
+    return p.a
+
+def try_call(n: int32) -> result[pair, int32]:
+    let p = may_fail(n)?
+    return @ok(p)
+
+def may_fail(n: int32) -> result[pair, int32]:
+    return @ok(make_pair(n))
+
+def or_else(o: option[pair], n: int32) -> pair:
+    return o or else make_pair(n)
+
+def indirect(f: fn(int32) -> pair, n: int32) -> pair:
+    return f(n)
+
+def identity[T](x: T) -> T:
+    return x
+
+def generic_call(n: int32) -> pair:
+    return identity(make_pair(n))
+
+def slice_of(xs: &array[int32, 4]) -> slice[int32]:
+    return xs[1..3]
+
+def tail_if(c: bool, n: int32) -> pair:
+    if c:
+        return make_pair(n)
+    let k = n + 1
+    return make_pair(k)
+
+type noisy = { pub id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+type duo = { pub x: noisy, pub y: noisy }
+type nothing = {}
+
+def make_noisy(n: int32) -> noisy:
+    return noisy { id: n }
+
+def may_noisy(n: int32) -> result[noisy, int32]:
+    if n > 0:
+        return @ok(make_noisy(n))
+    return @err(n)
+
+def duo_try(n: int32) -> result[duo, int32]:
+    let d = duo { x: make_noisy(n), y: may_noisy(n - 1)? }
+    return @ok(d)
+
+def duo_ret(n: int32) -> duo:
+    return duo { x: make_noisy(n), y: make_noisy(n + 1) }
+
+def tuple_try(n: int32) -> result[(noisy, noisy), int32]:
+    return @ok((make_noisy(n), may_noisy(n - 1)?))
+
+def diverge_else(c: bool, n: int32) -> pair:
+    let p = if c:
+        make_pair(n)
+    else:
+        return pair { a: 0, b: 0 }
+    return p
+
+def make_nothing() -> nothing:
+    return nothing {}
+
+def forward_nothing() -> nothing:
+    return make_nothing()
+
+def assign_if(c: bool, n: int32) -> pair:
+    var p = make_pair(0)
+    p = if c: make_pair(n) else: make_pair(n + 1)
+    return p
+
+def assign_field(n: int32) -> line:
+    var l = line { from: make_pair(0), to: make_pair(1) }
+    l.to = make_pair(n)
+    return l
+
+def arg_if(c: bool, n: int32) -> int32:
+    return take_pair(if c: make_pair(n) else: make_pair(n + 1), n)
+
+def take_pair(p: pair, k: int32) -> int32:
+    return p.a + k
+
+def method_chain(n: int32) -> pair:
+    return identity(identity(make_pair(n)))
+
+def ret_field(l: line) -> pair:
+    return l.to
+
+def ret_local_in_branch(c: bool, n: int32) -> pair:
+    let p = make_pair(n)
+    if c:
+        return p
+    return make_pair(0)
+
+def ret_noisy_match(o: option[noisy], n: int32) -> noisy:
+    return match o:
+        @some(x) => x
+        @none => make_noisy(n)
+
+def ret_noisy_if(c: bool, n: int32) -> noisy:
+    return if c: make_noisy(n) else: make_noisy(0)
+
+def noisy_pair(n: int32) -> result[(noisy, noisy), int32]:
+    return @ok((make_noisy(n), may_noisy(n - 1)?))
+
+def parse(n: int32) -> result[int32, int32]:
+    if n > 0:
+        return @ok(n)
+    return @err(n)
+
+def wrap(n: int32) -> result[pair, int32]:
+    let v = parse(n)?
+    return @ok(pair { a: v, b: v + 1 })
+
+def maybe(n: int32) -> option[int32]:
+    if n > 0:
+        return @some(n)
+    return @none
+
+def maybe_pair(n: int32) -> option[pair]:
+    return @some(pair { a: maybe(n)?, b: 8 })
+
+def two_builds(n: int32) -> result[noisy, int32]:
+    let d = duo { x: make_noisy(n), y: make_noisy(n + 1) }
+    let e = may_noisy(n - 1)?
+    return @ok(e)

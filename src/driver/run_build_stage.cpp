@@ -39,7 +39,7 @@ static auto first_source_stem(const cli_config &cfg) -> std::string {
 
 auto run_requested_function(
     const cli_config &cfg, const hir::ptr_vec<hir::hir_module> &lowered_modules,
-    const semantic::checked_types &checked, compile_report &report) -> void {
+    semantic::checked_types &checked, compile_report &report) -> void {
   if (!cfg.run) {
     return;
   }
@@ -58,12 +58,12 @@ auto run_requested_function(
 
   const auto reachable =
       hir::find_reachable_modules(*target_module, lowered_modules);
-  report.run = run_hir_module(reachable, checked.types, cfg.run_function);
+  report.run = run_hir_module(reachable, checked, cfg.run_function);
 }
 
 auto build_requested_function(
     const cli_config &cfg, const hir::ptr_vec<hir::hir_module> &lowered_modules,
-    const semantic::checked_types &checked, compile_report &report) -> void {
+    semantic::checked_types &checked, compile_report &report) -> void {
   if (!cfg.build) {
     return;
   }
@@ -86,7 +86,7 @@ auto build_requested_function(
       cfg.build_output.empty()
           ? std::filesystem::path(first_source_stem(cfg) + ".out")
           : std::filesystem::path(cfg.build_output);
-  report.build = build_hir_module(reachable, checked.types, cfg.build_function,
+  report.build = build_hir_module(reachable, checked, cfg.build_function,
                                   output_path, cfg.program_name, cfg.opt_level);
 }
 

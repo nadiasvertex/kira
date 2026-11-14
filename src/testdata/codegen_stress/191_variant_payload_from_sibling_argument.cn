@@ -1,0 +1,36 @@
+module codegen_stress.variant_payload_from_sibling_argument
+
+# A constructor whose payload type nothing at the constructor names
+# (`@none`, the other side of `@ok`/`@err`) passed to a generic parameter
+# learns that type from a sibling argument, in either order. Without it the
+# payload stayed unknown and the call could not be lowered.
+#
+# expect: 5915
+
+def pick[T](a: &mut T, b: T) -> T:
+    return b
+
+def first[T](b: T, a: &mut T) -> T:
+    return b
+
+def main() -> int64:
+    var o: option[int64] = @some(1)
+    let x = pick(&mut o, @none)
+    let y = first(@none, &mut o)
+    var r: result[int64, int32] = @ok(7)
+    let z = pick(&mut r, @err(9))
+    let w = first(@ok(5), &mut r)
+    var total: int64 = 0
+    total = total + match x:
+        @some(v) => v
+        @none => 5000
+    total = total + match y:
+        @some(v) => v
+        @none => 900
+    total = total + match z:
+        @ok(v) => v
+        @err(e) => e as int64 + 1
+    total = total + match w:
+        @ok(v) => v
+        @err(e) => 0
+    return total
