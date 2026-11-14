@@ -24,12 +24,17 @@ Move-by-default is a surface elaboration policy. The formal core records transfe
 copy construction, loans, and freeze explicitly; checking never chooses an implicit deep copy
 because a witness exists. See the [Q2 ownership decision](affine-capability/decisions.md#q2--ownership-default-and-explicit-copying).
 
-Capability names are verbs describing what the holder may do. Proposed conversion annotations are `&x` for a loan, `&>x` for transfer of an owner or edit handle, and `&!x` for freezing. Unadorned `x` uses the parameter capability and conversion rules below.
+Conversion annotations are `&x` for observation, `&mut x` for editing, `&>x` for transfer of
+an owner or edit handle, and `&!x` for freezing. Unadorned `x` uses the parameter capability
+and conversion rules below. `&x` never becomes an edit loan from the expected parameter type.
+The [surface mapping](affine-capability/surface.md) records accepted experimental spellings,
+reference shorthand, receiver modes, local bindings, and the legacy-sharing boundary.
 
 Local inspection is different: a scoped `inspect` loan permits reading while temporarily
 suspending mutation. It does not produce a persistent `read` value. This distinction is
 deliberate: interpreting every local read as permanent freezing would prevent ordinary local
-construction and update. All notation here is schematic.
+construction and update. Semantic region and loan notation remains schematic; accepted
+surface spellings are distinguished from pending choices in the surface mapping.
 
 Shareability means permission to duplicate a handle, not permission to outlive its storage.
 Persistent shared handles retain their storage; scoped references retain a lifetime obligation.
@@ -441,12 +446,13 @@ kernel alone does not establish those heap properties.
 ## Capability requests and conversions
 
 A prototype declares each requested parameter capability; otherwise its parameter is an
-ordinary by-value parameter. Callers may write `&`, `&>`, or `&!` to request a loan, transfer,
-or freeze. Unannotated owners transfer to owning parameters; `&>` can state that transfer
-explicitly and is required to transfer an existing edit handle instead of reborrowing it
-for an edit parameter. An incompatible explicit annotation is an error. These spellings and
-the operation names below remain schematic pending the rest of Q2; there is no default
-`copy[T]` parameter mode.
+ordinary by-value parameter. Callers may write `&`, `&mut`, `&>`, or `&!` to request observation,
+editing, transfer, or freeze. Unannotated owners transfer to owning parameters; `&>` can state
+that transfer explicitly and is required to transfer an existing edit handle instead of reborrowing it
+for an edit parameter. An incompatible explicit annotation is an error: `&` cannot satisfy
+an edit parameter, and `&mut` requests an edit rather than silently selecting observation.
+Conversion spellings are accepted for the experiment; user-facing copy/materialization
+names remain open. There is no default `copy[T]` parameter mode.
 
 | Requested capability | Available value | Conversion |
 |---|---|---|
@@ -457,19 +463,22 @@ the operation names below remain schematic pending the rest of Q2; there is no d
 | `shared_read[T]` | `own(r,T)`, unannotated or with `&>` | Rejected: sharing requires explicit freezing; transfer alone does not freeze |
 | `shared_read[T]` | `own(r,T)` with `&!` | Freeze original; consume source |
 | `shared_read[T]` | Existing `shared_read(r,T)` | Duplicate shared handle |
-| `inspect[T]` | Owner or shared handle | Begin scoped observation loan |
+| `inspect[T]` | Owner or shared handle, unannotated or with `&` | Begin scoped observation loan |
 | `inspect[T]` | Existing `inspect(l,r,T)`, unannotated | Duplicate the inspection with the same loan identity and dependencies |
 | `inspect[T]` | Existing `inspect(l,r,T)` with `&` | Begin a fresh observation reborrow dependent on `l` |
 | `inspect[T]` | Existing `edit(l,r,T)`, unannotated or with `&` | Begin a fresh observation reborrow; suspend conflicting access through `l` |
-| `edit[T]` | Owner | Begin exclusive edit loan |
-| `edit[T]` | Existing `edit(l,r,T)`, unannotated or with `&` | Begin a fresh edit reborrow; suspend conflicting access through `l` |
+| `edit[T]` | Owner, unannotated or with `&mut` | Begin exclusive edit loan |
+| `edit[T]` | Existing `edit(l,r,T)`, unannotated or with `&mut` | Begin a fresh edit reborrow; suspend conflicting access through `l` |
 | `edit[T]` | Existing `edit(l,r,T)` with `&>` | Transfer the existing edit handle and its dependencies; invalidate the source binding |
+| `edit[T]` | Any argument explicitly annotated `&` | Rejected: the explicit observation request cannot grant editing |
+| `inspect[T]` | Any argument explicitly annotated `&mut` | Rejected: the explicit edit request does not match the observation parameter |
 
 All conversions require their relevant conditions: explicit copying must be supported,
-freezing must be valid, and loans must not conflict. `&x` begins a fresh loan in the mode
-requested by the prototype, or a fresh dependent reborrow when `x` is already a scoped
-handle; `&>x` transfers only; `&!x` freezes owned storage. For a sharing parameter,
-`publish(x)` is rejected when `x` is an owner, `publish(&!x)` consumes and freezes the original,
+freezing must be valid, and loans must not conflict. `&x` begins a fresh observation loan
+or dependent observation reborrow; `&mut x` begins a fresh edit loan or dependent edit
+reborrow when the source permits it. `&>x` transfers only; `&!x` freezes owned storage.
+For a sharing parameter, `publish(x)` is rejected when `x` is an owner,
+`publish(&!x)` consumes and freezes the original,
 and `publish(&!clone(x))` explicitly materializes and freezes a copy while preserving `x`.
 Neither freezing nor independent copy construction is inferred from the requested type.
 A composite containing an uncopyable resource can transfer to an owning parameter without
@@ -992,9 +1001,9 @@ pop[T](xs: edit[sequence[T]]) -> option[T]:
 
 resource = new_resource()        // own(r, Resource), no copy witness
 xs = new_sequence[own[Resource]]()
-push(edit xs, resource)          // owning parameter: move; resource is unavailable
+push(&mut xs, resource)          // owning parameter: move; resource is unavailable
 
-match pop(edit xs):
+match pop(&mut xs):
     @some(item) => use_resource(item)  // move the extracted owner
     @none       => ()
 
@@ -1007,13 +1016,13 @@ library. The list's checked representation contract must justify its sequence op
 
 ```text
 x = new_buffer()                 // own(r, buffer)
-push(edit x, 1)                  // accepted; temporary exclusive loan
-n = length(inspect x)            // accepted; observation ends after call
-push(edit x, 2)                  // accepted
+push(&mut x, 1)                  // accepted; temporary exclusive loan
+n = length(&x)                   // accepted; observation ends after call
+push(&mut x, 2)                  // accepted
 publish(&!clone(x))             // explicitly copy, then freeze; preserve x
-push(edit x, 3)                  // accepted: x still owns mutable r
+push(&mut x, 3)                  // accepted: x still owns mutable r
 y = clone(x)                    // new region s, if buffer supports cloning
-push(edit y, 3)                  // accepted; r is unchanged
+push(&mut y, 3)                  // accepted; r is unchanged
 consume(y)                      // own parameter: move; y is unavailable afterward
 publish(&!x)                    // freeze original; x is unavailable afterward
 ```
@@ -1023,10 +1032,10 @@ ownership and needs no copy witness. Passing `x` directly to `publish` would be 
 because an owning argument is not implicitly frozen or copied.
 
 ```text
-v = inspect x                   // scoped view into mutable x
-push(edit x, 1)                  // rejected if v is used afterward
+v = &x                          // scoped view into mutable x
+push(&mut x, 1)                  // rejected if v is used afterward
 consume_observation(v)           // last carrier use
-push(edit x, 1)                  // accepted after the loan ends
+push(&mut x, 1)                  // accepted after the loan ends
 ```
 
 Required negative cases also include freezing with an active edit loan, storing an edit
@@ -1070,8 +1079,8 @@ and `mutate_then_inspect` mutates an edit parameter and returns a derived inspec
 | Use an inspection binding after its carrier was retired and its loan ended | Rejected even if its former type remains known |
 | Capture an inspection in a closure, retire the original binding, then mutate before calling the closure | Rejected: the capture is a live carrier |
 | Move a container holding an inspection, then mutate before using the destination | Rejected: moving preserves the stored loan dependency |
-| Evaluate `observe_pair(inspect x, mutate_then_inspect(edit x))` from left to right | Rejected: the first argument keeps its inspection active when the second requests editing |
-| Bind the result of `return_view(inspect x)`, then mutate before using that result | Rejected: returning transfers the dependency before argument retirement |
+| Evaluate `observe_pair(&x, mutate_then_inspect(&mut x))` from left to right | Rejected: the first argument keeps its inspection active when the second requests editing |
+| Bind the result of `return_view(&x)`, then mutate before using that result | Rejected: returning transfers the dependency before argument retirement |
 | Return a loan of an unretained temporary owner | Rejected: the return carrier outlives its origin |
 | End an inspection after loading a scalar snapshot, then use the snapshot | Accepted; the scalar is not a loan carrier |
 | Retire a binding on one branch, then use it after the join | Rejected: availability is not restored by merging contexts |
@@ -1090,6 +1099,9 @@ Argument-conversion validation must include existing scoped handles:
 | Pass an existing inspection with `&` to an inspection parameter | Accepted by creating a fresh dependent observation loan |
 | Pass an existing edit to an inspection helper, then reuse the edit after all derived carriers retire | Accepted after the observation reborrow ends and no other loan suspends the requested access |
 | Pass the same edit to two sequential edit helpers that retain no loans | Accepted: each call creates and ends its own reborrow |
+| Pass an owner or edit with `&mut` to an edit helper | Accepted when loan checks permit the explicit edit loan or reborrow |
+| Pass an owner or edit with `&` to an edit helper | Rejected: expected parameter type cannot strengthen explicit observation to editing |
+| Pass an owner or edit with `&mut` to an inspection helper | Rejected: the explicit edit request does not match the requested observation |
 | Return or store a reborrow from a helper, then attempt conflicting reuse of the original edit | Rejected while the retained reborrow is live, including on an error outcome |
 | Pass an edit with `&>`, then use its source binding after the call | Rejected: transfer invalidated the source binding |
 | Transfer a suspended edit to a helper that writes through it while a conflicting child reborrow remains live | Rejected: transfer preserves the suspension and dependencies |

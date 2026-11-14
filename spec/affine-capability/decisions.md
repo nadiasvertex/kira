@@ -61,8 +61,9 @@ it does not promise termination or eventual cleanup for diverging programs.
 
 ## Q2 — Ownership default and explicit copying
 
-Status: ownership-default and contract-inference policies accepted on 2026-11-14;
-Q2 is partially resolved. Detailed surface spellings remain candidates.
+Status: ownership-default, contract-inference, and basic surface-spelling decisions accepted
+on 2026-11-14. Q2 remains partially resolved; copy/materialization names and further mappings
+are pending.
 Owning task: T08. Dependent tasks: T30–T36 and the affected library migrations.
 
 ### Decision
@@ -82,7 +83,7 @@ Declared inspection and edit parameters select borrowing or reborrowing. In part
 existing edit passed to an edit helper reborrows by default so sequential helpers can reuse
 the caller's handle. A returned or stored reborrow continues to constrain the original
 handle until all dependent carriers retire. Explicit transfer of that edit handle remains
-available, schematically `&>e`, and invalidates its source without discarding dependencies.
+available as `&>e`, and invalidates its source without discarding dependencies.
 
 Independent copy construction and materialization require explicit requests and structural
 witnesses. Freezing an owner is explicit as well: a bare owner cannot satisfy a persistent
@@ -129,12 +130,43 @@ satisfy that constraint. This is part of the compiler-as-a-teacher mission: anno
 checked promises, not escape hatches from safety rules. Never infer copying, freezing, or
 new authority merely to resolve missing contract information.
 
+### Accepted surface spellings
+
+Use `own[T]`, `inspect[T]`, `edit[T]`, and `shared_read[T]` for explicit capability types.
+Preserve `&T` as shorthand for `inspect[T]` and `&mut T` as shorthand for `edit[T]`.
+Ordinary by-value `T` remains distinct from the explicit owner-handle type `own[T]`.
+
+Preserve `self` as an inspection receiver and `mut self` as an edit receiver. An explicitly
+consuming receiver writes `self: own[Self]`. Ordinary receiver calls follow the declared mode.
+
+Use `&x` for explicit observation and `&mut x` for explicit editing, including the corresponding
+dependent reborrows. An expected edit parameter cannot strengthen `&x` into editing, and an
+explicit edit request is not silently rewritten as observation for an inspection parameter.
+Bare arguments still follow the parameter mode. Use `&>x` for explicit transfer and `&!x`
+for consuming freeze. Existing edit handles reborrow to edit parameters unless transferred
+explicitly. These choices preserve Cinder's visible observation/edit distinction.
+
+Use existing `let` and `var` for local construction, with optional annotations. No new builder
+keyword or implicit freeze is introduced. Capability authority and local binding mutability
+are both checked: `var` cannot make frozen storage writable, and `let` does not freeze an owner.
+
+Use `shared_read[T]` for retained frozen sharing during the experiment. Legacy `shared[T]`
+and `shared expr` are not aliases or unchecked conversions. Legacy sharing stays available
+in legacy mode; replacement and removal follow the compatibility/adoption gates. Reusing
+the shorter name for the new semantics is a possible adoption-time decision, not an implicit
+compatibility mapping. Sequential frozen sharing does not establish thread-transfer safety.
+
+The [surface mapping](surface.md) gives the accepted spellings and examples. These decisions
+do not amend the normative grammar or implement the new mode.
+
 ### Remaining scope and obligations
 
-Q2 still needs final declaration, result-origin, effect, local-builder, conversion, and
-explicit-copy spellings, plus the mappings for `self`, `&mut`, views, legacy `copy`, and
-legacy `shared`. Operation names and annotations in this decision are schematic. The
-existing `copy` concept and the structural independent-copy witness must remain distinct.
+Q2 still needs user-facing independent-copy/materialization names and a distinct structural
+witness constraint name, full view mappings, callable and capture spellings, and remaining
+contract forms. The worked `from`, `writes`, `outcome`, `entry`, `transfers`, and `preserves`
+clauses remain syntax candidates with the accepted inference policy. The existing `copy`
+concept and the structural independent-copy witness must remain distinct. Core `copy_value`
+and `clone` name semantic operations; their user-facing names are not settled by this decision.
 
 T08 must validate the remaining choices with representative translations. Structural copy,
 separation, freeze, lifetime, and cleanup proofs remain required even though copying is

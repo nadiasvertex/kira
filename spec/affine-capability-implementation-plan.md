@@ -1,7 +1,8 @@
 # Affine Capability Core: Implementation Plan
 
 Status: proposed implementation roadmap; no affine task below is complete. Q1 is resolved;
-Q2's ownership-default decision is accepted, with its remaining syntax choices pending.
+Q2's ownership-default, inference, and basic surface-spelling decisions are accepted;
+copy/materialization names and remaining mappings are pending.
 The remaining T01 work and all proof milestones are pending.
 
 Source: [Affine capability core](affine-capability-core.md).
@@ -102,7 +103,7 @@ Resolved choices do not establish their associated proofs or complete their owni
 | ID | Question | Decision or proposed starting position | Blocks |
 |---|---|---|---|
 | Q1 | Which formalization tool and proof artifact format will establish the required properties? | Resolved: Lean 4 with Lake; version-controlled `.lean` definitions and proofs are authoritative. Require a pinned toolchain and dependencies, reproducible kernel checking, theorem traceability, and assumption reports. See [decision Q1](affine-capability/decisions.md#q1--formalization-toolchain-and-proof-artifacts) and the [formal artifact contract](affine-capability/formal/README.md). Toolchain bootstrap and proofs remain pending in T01–T09. | T02–T09 |
-| Q2 | What are the final declaration, result-origin, effect, local-builder, and conversion syntaxes? How do existing `self`, `&mut`, views, `copy`, and `shared` map? | Partially resolved: owned values move by default; declared loan parameters borrow/reborrow; independent copying and freezing are explicit. A structural witness never enables implicit deep copying or owner duplication. See [decision Q2](affine-capability/decisions.md#q2--ownership-default-and-explicit-copying). Remaining syntax and compatibility mappings are schematic and must be settled through translations in T08; distinguish the existing `copy` concept from the structural witness. | T08, T30–T36 |
+| Q2 | What are the final declaration, result-origin, effect, local-builder, and conversion syntaxes? How do existing `self`, `&mut`, views, `copy`, and `shared` map? | Partially resolved: move-by-default, inferred checked contracts with optional constraints, and basic [surface spellings](affine-capability/surface.md) are accepted. `&` requests observation, `&mut` editing; neither is silently reinterpreted. Preserve reference/receiver shorthand and `let`/`var`; use `shared_read[T]` in the experiment without aliasing legacy `shared[T]`. Copy/materialization names, the structural witness name, views, callable/capture mappings, and remaining contract syntax await T08 translations. See [decision Q2](affine-capability/decisions.md#q2--ownership-default-and-explicit-copying). | T08, T30–T36 |
 | Q3 | How do semantic regions map to the completed value-semantics typed places and genuine backing allocations? | Reuse concrete layouts and storage provenance. Regions denote semantic storage identity, not every C++ or VM allocation. An inline field shares its containing region; address reuse never reuses a semantic identity. | T39–T46 |
 | Q4 | Which frozen-handle representation retains an inline projection's backing allocation? | Use a shared control block plus a checked projection descriptor, or an equivalent representation justified in T39. Reference counting alone does not establish deep freeze. | T39–T44, T49 |
 | Q5 | Which allocation failures are ordinary error outcomes and which remain fatal process failures? | Model recoverable construction failure explicitly. Preserve existing fatal behavior until a deliberate runtime policy is implemented; never imply that panic unwinds. | T04, T39, T41, T57 |
@@ -201,7 +202,8 @@ layout data out of permission logic.
 ## Task Grid
 
 No affine task is complete; T01 has a recorded Q1 decision, with its remaining work pending.
-T08 has an accepted Q2 ownership-default decision; the remaining Q2 choices are pending.
+T08 has accepted Q2 ownership-default, inference, and basic surface-spelling decisions;
+the remaining Q2 choices are pending.
 V0 is an external prerequisite, not an affine implementation task.
 **P0** denotes a semantic foundation or execution-safety gate;
 **P1** denotes required integration, validation, or adoption work. There are no optional tasks
@@ -441,7 +443,9 @@ The ordered call sequence is:
    the instant the call returned.
 
 An unannotated inspection-to-inspection conversion duplicates the same loan. Explicit `&`
-creates a dependent observation loan. An edit passed to an edit helper normally creates a
+creates a dependent observation loan; explicit `&mut` creates an edit loan or edit reborrow.
+Never strengthen `&` from an expected edit type or silently reinterpret an explicit edit
+request as observation. An edit passed to an edit helper normally creates a
 reborrow; `&>` transfers the original handle and invalidates its source. The original edit
 becomes usable again only after all retained descendants of the reborrow are gone.
 

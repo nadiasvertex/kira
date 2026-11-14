@@ -1,8 +1,9 @@
 # Affine surface translations
 
-Status: syntax candidate for Q2 review. These examples are not accepted grammar, runnable
-fixtures, or evidence that T08 is complete. They exercise the accepted ownership-default
-policy from the [decision ledger](decisions.md#q2--ownership-default-and-explicit-copying).
+Status: contract syntax candidate for Q2 review, using the accepted type and conversion
+spellings in the [surface mapping](surface.md). These examples are not implemented grammar,
+runnable fixtures, or evidence that T08 is complete. See the
+[decision ledger](decisions.md#q2--ownership-default-and-explicit-copying).
 
 ## Worked example: inspect, validate, and replace an owned object
 
@@ -56,7 +57,7 @@ def exercise(
     replacement: own[resource]
 ) -> int64:
     var slot = resource_slot{item: initial}
-    let attempt = try_replace(&slot, replacement)
+    let attempt = try_replace(&mut slot, replacement)
 
     match attempt:
         @ok(previous) => drop(previous)
