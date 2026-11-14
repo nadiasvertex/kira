@@ -1,0 +1,4 @@
+direct=true false
+generic=true false
+convertible=true false
+min=-128 -9223372036854775808 -170141183460469231731687303715884105728

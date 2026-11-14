@@ -440,5 +440,48 @@ copying continues to use explicit `copy` operations and the structural witness c
 
 ## Remaining gates
 
-Q2 remains partially resolved; Q3–Q8 remain unresolved. V0 has no recorded baseline evidence
-yet. The accepted decisions do not authorize general language adoption.
+Q2 remains partially resolved; Q3–Q8 remain unresolved. V0 is recorded below. The accepted
+decisions do not authorize general language adoption.
+
+## V0 — Value-semantics baseline
+
+Status: recorded on 2026-11-14 from landed implementation evidence; no affine task is complete.
+
+- Landed T-14 revision: `49f937f8082056ec434cbdccb46de2d3ab950bf4`,
+  “Value semantics (T-14): remove the pointer form; one documented value model”.
+- Interface/target inspection: `88e13397e60c22eb6e0de1228f899b44f2d52378`, a descendant
+  of T-14. The earlier `3a41f74` findings in the affine plan remain historical anchors.
+- Completion evidence: [value-semantics summary](../value-semantics.md#summary) and
+  [T-14 status](../value-semantics.md#t-14--remove-legacy-representation-and-update-references)
+  record all T-01–T-14 tasks complete, the removed pointer representation, resolved earlier
+  open items, and remaining limitations. T-14 reports `bazelisk test //...` passing all 54
+  targets and 205 corpus programs on both tiers with inlining enabled and disabled. This is
+  historical evidence; these tests were not rerun for the affine-plan documentation revision.
+
+| Interface | Landed files / symbols | Required regression targets |
+|---|---|---|
+| Layouts | `src/runtime/value_layout.{h,cpp}`, `runtime::value_layouts` | `//src/runtime:value_layout_test` |
+| Typed storage, destinations, and lowering | `src/hir/storage.{h,cpp}`, `src/hir/storage_lower.{h,cpp}`, `hir::lower_to_storage` | `//src/hir:storage_test` |
+| Prepared program and verification | `src/hir/storage_program.{h,cpp}`, `hir::prepare_storage_program`; `src/hir/storage_verify.{h,cpp}`, `hir::verify` | `//src/hir:storage_test` |
+| Shared NRVO, final frames, and tail-call checks | `src/hir/storage_nrvo.{h,cpp}`, `hir::apply_nrvo`; `src/hir/storage_frame.{h,cpp}`, `hir::plan_frame`; `src/hir/storage_lower.cpp` | `//src/hir:storage_test`, `//src:cli_test` |
+| VM emission | `src/bytecode_compiler/storage_compile.{h,cpp}` | `//src/bytecode_compiler:storage_compile_test`, `//src/bytecode_compiler:compile_test`, `//src/bytecode:vm_test` |
+| LLVM/native emission | `src/llvm_codegen/storage_codegen.{h,cpp}` | `//src/llvm_codegen:storage_codegen_test`, `//src/llvm_codegen:codegen_test`, `//src/llvm_codegen:aot_test` |
+| Hosted and compile-time execution | `src/comptime_vm/program.cpp`; shared prepared storage and runtime intrinsic boundaries | `//src:cli_test`, `//src:std_test`, `//src:codegen_stress_test` |
+
+This gate records the representation foundation, not capability safety, thread-transfer
+safety, or formal correctness of either backend. Keep the T-14 limitations visible during
+integration; representation support does not imply support under the new ownership rules.
+
+## Review proposals awaiting reconciliation
+
+The [revised roadmap](../affine-capability-implementation-plan.md#review-revisions-and-their-status)
+proposes a prototype/ergonomics gate, staged G0/GO/GX/GP proofs, finite static places with
+dynamic backing provenance, checked sequence growth, explicit observable branch cleanup,
+pinned exported/trait contracts, field/path fact versions, and an early machine/thread policy.
+
+These are proposed acceptance criteria for T01/T08, not newly accepted language decisions.
+In particular, pinning exported contracts changes the accepted Q2 public-inference policy;
+field-level fact preservation strengthens the currently permitted allocation-wide invalidation.
+T01 must reconcile the core, surface, translations, formal artifact contract, and this ledger
+before T02 starts. Interior mutability and a user unsafe escape hatch remain excluded until
+separately specified and proved. V0 is the only completed gate recorded by this revision.

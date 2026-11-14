@@ -1,0 +1,8 @@
+module probes.value_index_usize
+# Control for p17: a usize-indexed type passed where another index is required.
+type buf[n: usize] = { len: usize }
+def want8(b: buf[8]) -> usize:
+    return b.len
+def main() -> int32:
+    let b = buf[4] { len: 3 }
+    return want8(b) as int32

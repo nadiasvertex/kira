@@ -26,6 +26,7 @@ def print_fields[T]():
         println("field={field.name} type={field.type_name}")
 
 def main() -> int32:
-    println("names={field_names[point]()}")
+    for name in field_names[point]():
+        println("name={name}")
     print_fields[point]()
     return 0

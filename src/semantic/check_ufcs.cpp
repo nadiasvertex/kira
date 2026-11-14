@@ -2067,11 +2067,9 @@ auto checker::infer_comptime_generic_call(const ast::call_expr &call,
 /// whole call is recognized here purely by shape (base name `implements`,
 /// exactly two bracketed arguments, no parens arguments), the same way
 /// `T.kind()` is recognized purely by field-call shape rather than
-/// resolving to a declared method. Always types as `bool`; the actual
-/// coherence lookup happens at evaluation time
-/// (`evaluator::try_eval_implements_call`, which mirrors this same
-/// shape-recognition independently since the evaluator has no view into
-/// `checker`'s scope-resolution machinery).
+/// resolving to a declared method. Always types as `bool`; the checker
+/// answers it from the coherence table (`fold_implements`) and lowering
+/// emits that constant.
 auto checker::infer_implements_call(const ast::call_expr &call)
     -> std::optional<type_id> {
   auto explicit_args = explicit_generic_args{};
@@ -2122,6 +2120,22 @@ auto checker::infer_implements_call(const ast::call_expr &call)
     return k_error_type;
   }
   record_expr_type(*base, k_unknown_type);
+  // The answer is a constant of the concrete type: lowering emits it in
+  // place of the call (`fold_implements`). A template's answer waits for
+  // each instance's type.
+  if (const auto type = explicit_type_argument(t_arg)) {
+    if (mentions_template_param(*type)) {
+      defer_to_instances(call,
+                         [this, &call, trait_name, type = *type](
+                             instance_subst &subst) -> void {
+                           fold_implements(*clone_of(subst, &call),
+                                           substitute_type(type, subst),
+                                           trait_name);
+                         });
+    } else {
+      fold_implements(call, *type, trait_name);
+    }
+  }
   return session_.types_.builtin("bool");
 }
 

@@ -1,0 +1,10 @@
+module probes.replace_elem
+# Expect accept, result 10: generic element replacement through &mut xs[i].
+def replace_at[T](xs: &mut list[T], i: usize, v: T) -> option[T]:
+    if i >= xs.len():
+        return @none
+    return @some(replace(&mut xs[i], v))
+def main() -> int32:
+    var xs: list[list[int32]] = [[1], [2]]
+    let old = replace_at(&mut xs, 0, [10])
+    return xs[0][0]

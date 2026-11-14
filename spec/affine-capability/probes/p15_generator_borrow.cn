@@ -1,0 +1,12 @@
+module probes.generator_borrow
+# Expect reject: the generator borrows xs, so pushing while g is live conflicts.
+generator def each(xs: &list[int32]) -> some iterator[int32]:
+    for x in xs:
+        yield x
+def main() -> int32:
+    var xs: list[int32] = [1, 2, 3]
+    var g = each(&xs)
+    let a = g.next() or else panic("a")
+    xs.push(4)
+    let b = g.next() or else panic("b")
+    return a + b

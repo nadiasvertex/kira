@@ -1,7 +1,7 @@
 # inference snapshot
-# 2875 interned types
+# 2878 interned types
 
-## node_types (34407)
+## node_types (34414)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -9054,21 +9054,24 @@ std/limits.cn:37:13 [call] str
 std/limits.cn:38:15 [ident] str
 std/limits.cn:38:15 [binary] bool
 std/limits.cn:38:20 [literal] str
-std/limits.cn:39:16 [unary] T
-std/limits.cn:39:17 [literal] T
-std/limits.cn:39:17 [cast] T
+std/limits.cn:39:16 [group] int32
+std/limits.cn:39:16 [cast] T
+std/limits.cn:39:17 [unary] int32
+std/limits.cn:39:18 [literal] int32
 std/limits.cn:40:15 [ident] str
 std/limits.cn:40:15 [binary] bool
 std/limits.cn:40:20 [literal] str
-std/limits.cn:41:16 [unary] T
-std/limits.cn:41:17 [literal] T
-std/limits.cn:41:17 [cast] T
+std/limits.cn:41:16 [group] int32
+std/limits.cn:41:16 [cast] T
+std/limits.cn:41:17 [unary] int32
+std/limits.cn:41:18 [literal] int32
 std/limits.cn:42:15 [ident] str
 std/limits.cn:42:15 [binary] bool
 std/limits.cn:42:20 [literal] str
-std/limits.cn:43:16 [unary] T
-std/limits.cn:43:17 [literal] T
-std/limits.cn:43:17 [cast] T
+std/limits.cn:43:16 [group] int32
+std/limits.cn:43:16 [cast] T
+std/limits.cn:43:17 [unary] int32
+std/limits.cn:43:18 [literal] int32
 std/limits.cn:44:15 [ident] str
 std/limits.cn:44:15 [binary] bool
 std/limits.cn:44:15 [binary] bool
@@ -9076,27 +9079,31 @@ std/limits.cn:44:20 [literal] str
 std/limits.cn:44:31 [ident] str
 std/limits.cn:44:31 [binary] bool
 std/limits.cn:44:36 [literal] str
-std/limits.cn:45:16 [unary] T
-std/limits.cn:45:17 [literal] T
-std/limits.cn:45:17 [cast] T
+std/limits.cn:45:16 [call] int64
+std/limits.cn:45:16 [cast] T
+std/limits.cn:45:22 [unary] int64
+std/limits.cn:45:23 [literal] int64
 std/limits.cn:46:15 [ident] str
 std/limits.cn:46:15 [binary] bool
 std/limits.cn:46:20 [literal] str
-std/limits.cn:47:16 [unary] T
-std/limits.cn:47:17 [literal] T
-std/limits.cn:47:17 [cast] T
+std/limits.cn:47:16 [call] int128
+std/limits.cn:47:16 [cast] T
+std/limits.cn:47:23 [unary] int128
+std/limits.cn:47:24 [literal] int128
 std/limits.cn:48:15 [ident] str
 std/limits.cn:48:15 [binary] bool
 std/limits.cn:48:20 [literal] str
-std/limits.cn:49:16 [unary] T
-std/limits.cn:49:17 [literal] T
-std/limits.cn:49:17 [cast] T
+std/limits.cn:49:16 [group] float64
+std/limits.cn:49:16 [cast] T
+std/limits.cn:49:17 [unary] float64
+std/limits.cn:49:18 [literal] float64
 std/limits.cn:50:15 [ident] str
 std/limits.cn:50:15 [binary] bool
 std/limits.cn:50:20 [literal] str
-std/limits.cn:51:16 [unary] T
-std/limits.cn:51:17 [literal] T
-std/limits.cn:51:17 [cast] T
+std/limits.cn:51:16 [group] float64
+std/limits.cn:51:16 [cast] T
+std/limits.cn:51:17 [unary] float64
+std/limits.cn:51:18 [literal] float64
 std/limits.cn:53:12 [literal] T
 std/limits.cn:56:33 [named_type] T
 std/limits.cn:57:9 [binding_pat] str
@@ -40804,7 +40811,7 @@ zeros$3
 
 ## arena sizes
 synthesized_functor_nodes 0
-synthesized_types 149
+synthesized_types 150
 synthesized_fragments 26
 synthesized_const_literals 70
 elided_contracts 0

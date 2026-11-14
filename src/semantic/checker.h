@@ -3056,10 +3056,8 @@ private:
   /// Reverse of `impl_trait_index_`, keyed by `type_key_of` alone (not
   /// `"{trait_name}:{type_key}"`): every trait name a type has a kind-`*`
   /// impl for. Built alongside `impl_trait_index_` in `validate_impl_
-  /// coherence` and mirrored into the comptime evaluator (`register_
-  /// comptime_coherence_info`) so `implements[T, Trait]()`/`T.traits()`
-  /// (`spec/specification/04-stdlib/type-traits/{58,60}-*.md`) can answer
-  /// without the evaluator reaching back into `checker`.
+  /// coherence`; `fold_implements` answers `implements[T, Trait]()`
+  /// (`spec/specification/04-stdlib/type-traits/{58,60}-*.md`) from it.
   std::unordered_map<std::string, std::vector<std::string>> traits_by_type_key_;
 
   // ==========================================================================
@@ -4460,6 +4458,11 @@ private:
   /// its answer.
   auto reflect_module_call(const ast::call_expr &call, std::string_view method,
                            std::string_view module) -> type_id;
+
+  /// Records whether `type` has an impl of the trait named `trait_name`, as
+  /// what the `implements[T, Trait]()` call `call` evaluates to.
+  auto fold_implements(const ast::call_expr &call, type_id type,
+                       std::string_view trait_name) -> void;
 
   /// Records `value`, of `type`, as what `call` evaluates to.
   auto record_reflection_fold(const ast::call_expr &call,

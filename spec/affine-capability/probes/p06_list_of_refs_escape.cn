@@ -1,0 +1,8 @@
+module probes.list_of_refs_escape
+# Expect reject: refs stored in an outer list outlive n.
+def main() -> int32:
+    var out: list[&int32] = []
+    if true:
+        let n: int32 = 5
+        out.push(&n)
+    return *out[0]

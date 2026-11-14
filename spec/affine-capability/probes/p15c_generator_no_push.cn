@@ -1,0 +1,10 @@
+module probes.generator_no_push
+# Control for p15: no conflicting push. Reaching codegen here is expected.
+generator def each(xs: &list[int32]) -> some iterator[int32]:
+    for x in xs:
+        yield x
+def main() -> int32:
+    var xs: list[int32] = [1, 2, 3]
+    var g = each(&xs)
+    let a = g.next() or else panic("a")
+    return a

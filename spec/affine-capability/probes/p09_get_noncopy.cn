@@ -1,0 +1,6 @@
+module probes.get_noncopy
+# Today `get` needs T: copy; both designs would return option[&T].
+def main() -> int32:
+    let xs: list[list[int32]] = [[1], [2]]
+    let g = xs.get(0)
+    return 0

@@ -1,0 +1,11 @@
+module probes.carried_mut
+# Expect reject: h carries &mut n, so reading n while h is live conflicts.
+type h = { r: &mut int32 }
+def bump(x: h) -> unit:
+    *x.r = *x.r + 1
+def main() -> int32:
+    var n = 1
+    let hh = h { r: &mut n }
+    let k = n
+    bump(hh)
+    return n + k

@@ -1,0 +1,11 @@
+module probes.two_next
+use std.iter.iter
+# Want accept: both results borrow the list, not the iterator.
+def main() -> int32:
+    let xs: list[int32] = [1, 2, 3]
+    var it = iter(&xs)
+    let a = it.next()
+    let b = it.next()
+    let x = a or else panic("a")
+    let y = b or else panic("b")
+    return *x + *y

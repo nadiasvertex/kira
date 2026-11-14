@@ -8,12 +8,18 @@ result-origin bounds, write bounds including `writes nothing` and the callable e
 root `self`, callable receiver spellings with inferred lambda call modes, capture lists
 with value defaults, and capture origins using `from self` are accepted. Remaining contract
 spellings and legacy compatibility mappings are pending.
-The remaining T01 work and all proof milestones are pending.
+The remaining T01 work and all proof milestones are pending. The review revisions below
+are proposed changes to accepted choices, not evidence of new language decisions or proofs.
 
 Source: [Affine capability core](affine-capability-core.md).
+Alternatives: [B scoped value semantics plan](affine-capability/b-plan.md) and
+[C safety and ergonomics plan](affine-capability/c-plan.md), with
+[complete A/B/C application examples](affine-capability/applications/README.md).
+The C alternative includes managed sharing and revised access contracts; it does not silently
+replace this roadmap's accepted A semantics or mark any existing gate complete.
 Historical repository inspection: `3a41f74`, inspected on 2026-11-13.
-Compiler-integration baseline: completed [value semantics](value-semantics.md), with the
-landed revision and verification evidence to be recorded at V0 before integration starts.
+Compiler-integration baseline: completed [value semantics](value-semantics.md) at `49f937f`;
+V0 is recorded in the [decision ledger](affine-capability/decisions.md#v0--value-semantics-baseline).
 Scope: complete roadmap, including formal validation, experimental implementation,
 compiler/runtime integration, standard-library migration, and adoption.
 
@@ -31,15 +37,16 @@ code is emitted. Deliver the same behavior through bytecode, LLVM, and compile-t
 then migrate the library and language documentation through an explicit adoption gate.
 
 This plan does not make the proposal normative or claim its metatheorems already hold.
-Formal validation precedes compiler implementation, as required by the proposal. A small
-executable model may support that validation, but testing is not a substitute for proofs.
+An isolated executable checker prototype and representative library ports precede the safety
+proofs. Production integration follows the applicable proof gate. Testing is not a substitute
+for proofs, and the prototype does not authorize execution through ordinary compiler entry points.
 
 Included are all primitives and validation families in the proposal, structural copy and
 freeze witnesses, sealed capabilities, checked closure contracts, finite proof certificates,
 diagnostics, native-boundary contracts, and a migration path from current Cinder semantics.
-Sequential generators are included, with checked suspension, resume, yielded-result origins,
-stable frame storage, and synchronous disposal of suspended state. Named-field borrowing and
-checked mutable-range splitting are included in the initial model and proof scope.
+Sequential generators remain required for the complete roadmap but have a separate extension
+gate, GX. Outcome-dependent states and proof-certificate erasure have separate gates, GO and
+GP. Named-field borrowing and checked mutable-range splitting are in the initial G0 scope.
 
 Excluded from the initial core are cyclic mutable ownership, interior mutation, raw-pointer
 authority, concurrent mutation, thread-transfer
@@ -48,6 +55,34 @@ user copy axioms, release-only custom cleanup for freezing, and must-consume pro
 Existing Cinder features in those categories require a
 defined interoperability boundary or explicit rejection in the experimental mode. Their
 existence must be reconciled before claiming general Cinder-wide adoption.
+
+### Review revisions and their status
+
+The specified conservative core has no demonstrated unsound rule in this review. Its missing
+rules and implementation correspondence still prevent a soundness claim. This roadmap adopts
+the following proposed work order and acceptance criteria; T01 must reconcile the core,
+surface, translations, formal artifact contract, and decision ledger before T02. In particular,
+the existing accepted public-inference policy is not silently superseded by this plan.
+The existing plan explicitly designates edge disposal as a cleanup point, so early drops
+are a surprising source-semantic choice rather than a demonstrated preservation failure.
+The revision below proposes changing that choice. Likewise, path-prefix overlap is sufficient
+only after resolving aliases and backing provenance; it is not a replacement for those rules.
+
+| Finding | Planned response |
+|---|---|
+| Proof scope exceeds defined rules | G0 proves the non-suspending core; GX, GO, and GP separately define and prove their extensions. Every enabled construct needs a rule and theorem ledger entry. |
+| Static symbolic heap and inline origins | T02 defines places rooted at parameters, locals, temporaries, results, and abstract backing storage. It distinguishes finite static summaries from fresh dynamic identities and proves their relation. Paths alone do not remove dynamic ownership or alias obligations. |
+| Missing sequence growth | T03 defines reserve/relocate and append transitions; T14 implements them. Raw allocation remains a named trusted primitive, not an unchecked implementation of the whole list. |
+| Proofs precede ergonomic feedback | P01/P02 check representative list, option, iter, and string ports before T05–T07, with a measured ergonomics gate. |
+| C++ checker differs from the model | Execute the Lean checker as the differential oracle and prove its acceptance sound. Keep the C++ checker in the trusted implementation base until a checked certificate or refinement proof closes that gap. |
+| Implicit early destructor calls | Require source-explicit disposal on a nonmoving branch for custom or otherwise observable cleanup; normalization cannot invent that cleanup point. |
+| Public inference changes callers | Propose pinned contracts for exports and trait methods, with inferred suggestions and checked signature defaults; keep inference for private bodies. T01/T08 must reconcile this change with Q2. |
+| Allocation-wide fact invalidation | Require field/path dependency versions and structural epochs; preserve facts about disjoint fields. |
+| Machine/thread policy arrives too late | T01 fixes the boundary before proofs; reject unaudited machine wrappers, thread transfer, and concurrency in the experimental subset. T30/T38 enforce it before execution; T52 audits it. |
+
+Interior mutability and a user unsafe escape hatch are deliberate expressive limits, not
+cost-free additions. Their absence is measured at P02. Adding either requires new authority,
+effect, and trust rules plus revalidated theorems; it cannot be smuggled into library migration.
 
 ## Repository Findings
 
@@ -76,16 +111,16 @@ under `spec/specification/`, especially chapters 14–17, 33–34, and 62–67.
 
 ### Required value-semantics foundation
 
-The [value-semantics work](value-semantics.md) is nearing completion and is the required
+The [value-semantics work](value-semantics.md) is complete and is the required
 foundation for affine compiler integration. Plan against its completed representation:
 inline aggregates and descriptors, concrete recursive layouts, typed places, explicit
 initialization and transfers, caller-provided result storage, mandatory RVO, shared NRVO,
 and verified frame/lifetime decisions on both backends and compile-time paths.
 
-**V0** is the external baseline gate: record the landed revision, actual interfaces and test
-targets, and completion evidence for value-semantics T-01–T-14 in
-`spec/affine-capability/decisions.md`. Refresh the historical findings above at that revision.
-This plan does not certify those tasks complete or alter their status. Formal work T01–T09
+**V0** is recorded from the landed T-14 evidence at `49f937f`, with current interface and
+target checks at `88e1339`; see `spec/affine-capability/decisions.md`. The recorded full-suite
+result belongs to T-14 and was not rerun for this documentation revision. Refresh historical
+navigation anchors when touching their subsystem. Formal work T01–T09
 and the independent core/kernel T10–T29 can proceed without V0; source integration T30–T38
 and runtime/HIR integration T39–T46 require it. The task grid expresses those dependencies
 through T30 and T39. No integration path falls back to pre-value-semantics boxed aggregates.
@@ -99,7 +134,7 @@ layout engine, aggregate ABI, destination-lowering pass, or backend ownership an
 |---|---|
 | T-02–T-04: concrete layouts, typed places, aggregate ABI, initialization and drops | T39/T42 map semantic regions and checked copy/transfer/cleanup recipes onto those interfaces; authority never follows from layout alone. |
 | T-05–T-08: VM/LLVM storage, runtime boundaries, containers, statics, compile-time marshalling | T40–T45 extend the same prepared storage and call/result contracts for capability operations and retained projections. |
-| T-09: captures, stable suspension storage, arbitrary-size results | T27/T42 preserve capture and sequential-generator frame ownership, dependencies, and address stability under the T02–T04 model. T52 covers async/concurrency crossings; representation support alone does not establish affine safety. |
+| T-09: captures, stable suspension storage, arbitrary-size results | T27/T42 preserve capture and sequential-generator frame ownership, dependencies, and address stability under the XG extension of the T02–T04 model. T52 covers async/concurrency crossings; representation support alone does not establish affine safety. |
 | T-10–T-12: mandatory RVO, shared NRVO, frame budgets and tail-call safety | T46 preserves these guarantees and validates transformations against capability origins, source availability, and cleanup obligations. |
 | T-13–T-14: allocation/backend evidence and removal of legacy representations | V0 records the baseline evidence; T55–T58 retain those regressions and measure capability-specific costs separately. |
 
@@ -112,12 +147,12 @@ Resolved choices do not establish their associated proofs or complete their owni
 | ID | Question | Decision or proposed starting position | Blocks |
 |---|---|---|---|
 | Q1 | Which formalization tool and proof artifact format will establish the required properties? | Resolved: Lean 4 with Lake; version-controlled `.lean` definitions and proofs are authoritative. Require a pinned toolchain and dependencies, reproducible kernel checking, theorem traceability, and assumption reports. See [decision Q1](affine-capability/decisions.md#q1--formalization-toolchain-and-proof-artifacts) and the [formal artifact contract](affine-capability/formal/README.md). Toolchain bootstrap and proofs remain pending in T01–T09. | T02–T09 |
-| Q2 | What are the final declaration, result-origin, effect, local-builder, and conversion syntaxes? How do existing `self`, `&mut`, views, `copy`, and `shared` map? | Partially resolved: move-by-default, inferred checked contracts with optional constraints, and basic [surface spellings](affine-capability/surface.md) are accepted. `&` requests observation, `&mut` editing; neither is silently reinterpreted. Preserve reference/receiver shorthand and `let`/`var`; use `shared_read[T]` in the experiment without aliasing legacy `shared[T]`. Use `copy(x)` for same-type value copying and `copy_owned(h)` for fresh-owner materialization; neither operation is named `clone`. The `copy` constraint requires a structural witness; retire its legacy implicit-duplication meaning in the experiment without introducing another public constraint. Collapse cells into `inspect[T]`/`edit[T]`, including checked slot views; preserve slice/text spellings. Scoped ranges observe by default, use explicit mutable slicing, reborrow by parameter mode, and transfer affine views without losing origins. Retained frozen ranges use `shared_slice[T]`/`shared_str` and ordinary library `.slice()` over a checked intrinsic. Callable parameter names and per-invocation result-origin bounds are accepted; write bounds use `writes nothing` or nonempty root sets, with `self` naming the callable environment. Callable receivers use `fn(self, ...)`, `fn(mut self, ...)`, or `fn(self: own[Self], ...)`, with lambda call modes inferred and optional constraints checked. Captures use `[x]`, `[&x]`, `[&mut x]`, or `[]`; omitted lists infer value captures. Capture-derived result bounds use `from self` or mixed origins such as `from {part, self}`, preserving actual dependencies. Remaining contract syntax and legacy compatibility mappings stay open for T08. See [decision Q2](affine-capability/decisions.md#q2--ownership-default-and-explicit-copying). | T08, T30–T36 |
-| Q3 | How do semantic regions map to the completed value-semantics typed places and genuine backing allocations? | Reuse concrete layouts and storage provenance. Regions denote semantic storage identity, not every C++ or VM allocation. An inline field shares its containing region; checked field paths and range partitions refine access footprints without creating new regions. Address reuse never reuses a semantic identity. | T39–T46 |
+| Q2 | What are the final declaration, result-origin, effect, local-builder, and conversion syntaxes? How do existing `self`, `&mut`, views, `copy`, and `shared` map? | Partially resolved: move-by-default, checked contract inference, and accepted surface spellings and mappings are recorded in [decision Q2](affine-capability/decisions.md#q2--ownership-default-and-explicit-copying). Remaining contract syntax and legacy compatibility mappings stay open for T08. | T08, T30–T36 |
+| Q3 | What identities and lifetimes do inline values, places, and backing allocations have? | Resolve the semantic model in T02, including locals, temporaries, results, moves, relocation, and address reuse. Use finite static place/path summaries with fresh dynamic instances; retain abstract backing identities where paths cannot express aliasing. T39 realizes this already-defined model in storage. | T02–T06, T39–T46 |
 | Q4 | Which frozen-handle representation retains an inline projection's backing allocation? | Use a shared control block plus a checked projection descriptor, or an equivalent representation justified in T39. Reference counting alone does not establish deep freeze. | T39–T44, T49 |
 | Q5 | Which allocation failures are ordinary error outcomes and which remain fatal process failures? | Model recoverable construction failure explicitly. Preserve existing fatal behavior until a deliberate runtime policy is implemented; never imply that panic unwinds. | T04, T39, T41, T57 |
 | Q6 | How is the standard library selected during the experimental transition, and may legacy and capability modules mix? | One semantics mode per compilation session, including the selected prelude. Reject unchecked cross-mode calls; permit only explicitly contracted adapters. | T30, T37–T38, T47–T52 |
-| Q7 | Can existing async, scheduler, machine, and shared APIs remain available under the eventual default? | Sequential generators, including loans across yield and synchronous suspended-state disposal, are inside the core claim. Async, asynchronous cancellation, scheduler/concurrency, and unchecked machine/shared APIs remain outside it. T52 must choose tested boundaries, an explicit unsupported subset, or a separately specified extension before general adoption. | T52, T60–T62 |
+| Q7 | What machine and thread-transfer policy bounds the theorem? | T01 fixes an audited primitive allowlist and rejects uncontracted machine/FFI authority, thread transfer, scheduler calls, mutex access, and concurrent mutation in the experimental subset, including transitive library calls. Sequential generators require GX. T30/T38 enforce the policy; T52 tests it and proposes separately proved extensions before general adoption. | T02–T09, P01, T30, T38, T52, T60–T62 |
 | Q8 | What compile-time and runtime resource limits are acceptable? | Establish baseline workloads first. Set certificate-node, integer-bit, abstract-state, compile-time, and retained-memory budgets from measurements, never by accepting unverified results. | T20–T23, T29, T58, T60 |
 
 ## Assumptions
@@ -135,27 +170,32 @@ Resolved choices do not establish their associated proofs or complete their owni
 5. The initial checker may conservatively reject programs when aliasing, lifetimes, effects,
    or loop invariants cannot be established. Resource-limit exhaustion is an explicit failure
    to check, never proof success or permission to ignore an obligation.
-6. Fresh runtime regions allocated in loops require symbolic allocation sites, binders, and
-   sound summaries in static analysis. They cannot be modeled by an ever-growing list of
-   concrete identities during fixed-point iteration.
+6. T02 must define a finite static place/path domain and its abstraction of dynamic storage.
+   Recursive containers, stored aliases, repeated allocation, and split instances still need
+   sound summaries or explicit rejection. Finiteness, freshness, and simulation are proof
+   obligations, not assumptions discharged by renaming regions as places.
 7. Last-use analysis proposes explicit retirement. The verifier checks it. The specified
-   observable cleanup schedule includes predecessor-edge disposal for values moved on only
-   some branches, as well as scope exits, replacement, and explicit disposal. Moving cleanup
-   earlier than those points requires a separate checked transformation.
+   observable cleanup schedule includes scope exits, replacement, and source-explicit
+   disposal. Join normalization cannot silently advance custom or otherwise observable
+   cleanup; the nonmoving branch must dispose explicitly or establish a common owner.
 8. Native memory and external-resource operations form a small, documented trusted boundary.
-   Ordinary Cinder modules cannot mint authority, witnesses, or effect summaries by assertion.
-9. C++ changes follow `spec/CONVENTIONS.md`: Clang 22.1+, C++26 mode, snake_case, explicit value
+   T01 defines its allowlist and contracts before proofs. Experimental modules cannot mint
+   authority, witnesses, or effect summaries through arbitrary machine functions; T30/T38
+   reject such paths, including wrappers and imports. Existing ordinary-mode machine access
+   is not evidence that this restriction is already enforced.
+9. Use the repository toolchain requirement in `CLAUDE.md`: Clang 23.1+, C++26 mode.
+   Follow `spec/CONVENTIONS.md` for snake_case, explicit value
    ownership, RAII, and `std::expected` for recoverable checking failures. Runtime C ABI glue
-   may require raw addresses; isolate it and document the storage contract.
+   may require raw addresses; isolate it and document the storage contract. The conventions
+   document still names Clang 22.1+; reconcile that stale minimum before implementation.
 10. All source tasks include their matching Bazel declarations and focused tests. New tests
     follow existing adjacent `*_test.cpp` and `src/testdata/<suite>/` patterns.
 11. Formal proof completion and language adoption are gates with evidence, not calendar
     estimates. Split theorem work into individual lemmas when T01 selects the formal system.
 12. Both legacy and experimental source modes use the completed value-semantics storage
     foundation. Their source ownership rules differ; experimental mode must not restore
-    aggregate shell allocations or bypass shared storage verification. References below to
-    `value_storage`, `value_lowering`, `value_verify`, and `return_storage` use the interface
-    names from that plan; V0 maps them to the actual landed files and symbols.
+    aggregate shell allocations or bypass shared storage verification. Use the landed
+    `src/hir/storage*` and `src/runtime/value_layout*` interfaces recorded at V0.
 
 ## Architecture and Integration Boundaries
 
@@ -205,8 +245,9 @@ storage transformations. Preserve the origin, initialization, and cleanup inform
 for downstream checks even when proof terms have already been erased. Apply both gates to
 normal compilation, synthesized functions, compile-time calls, and direct-HIR test helpers.
 
-The core state must distinguish region IDs, loan IDs, carrier IDs, immutable value IDs,
-storage version IDs, and outcome IDs. It records exclusive and frozen edges separately,
+The model must distinguish dynamic storage/lifetime identities from finite static place/path
+and backing summaries, as well as loan IDs, carrier IDs, immutable value IDs, field/path
+versions, structural epochs, and extension outcome IDs. It records exclusive and frozen edges separately,
 initialization/cleaning states, pending cleanup, capability availability, loan granting chains,
 lifetime dependencies, and facts with their complete dependency sets. Keep representation
 layout data out of permission logic.
@@ -231,10 +272,11 @@ such as `forest.{h,cpp}` denotes the corresponding header and implementation fil
 
 ### Required model decisions before proofs
 
-The following decisions are requirements for T02–T04, not deferred compiler choices for
-T32 or compatibility choices for T52. T01 records them and reconciles the core, surface,
-translation, and formal documents. T08 supplies the representative translations before
-T05–T07 begin. Acceptance criteria below require proof of these rules, not just prose agreement.
+The following G0 decisions are requirements for T02–T04, not deferred compiler choices
+for T32 or compatibility choices for T52. Generator, outcome-state, and proof-kernel rules
+belong to XG, XO, and T07 respectively, before each extension is proved or enabled. T01
+reconciles the core, surface, translation, and formal documents; T08 supplies G0 translations
+before P01/P02 and T05/T06. Every gate requires actual rules and proofs, not prose agreement.
 
 **Named-field separation.** Keep allocation identities for ownership and lifetime while
 refining access and loan footprints by checked named-field paths. Distinct structural fields
@@ -242,8 +284,10 @@ may be borrowed independently; equal and prefix paths overlap. Preserve resolved
 provenance through stored aliases and private abstraction contracts. Whole-parent operations
 and whole-receiver requirements cover every affected field and owned descendant. Ownership
 edge changes check the containing slot and incoming/outgoing owners before changing the
-forest. Effects preserve any required footprint precision; fact invalidation may remain
-allocation-wide. T05 proves separation and lifetime safety before migration relies on them.
+forest. Fact dependencies use the same field/path precision plus structural epochs; a write
+to `self.total` preserves a fact about `self.items.len()`. Whole-owner replacement, relocation,
+and unknown alias effects invalidate every overlapping dependency. T05 proves separation,
+lifetime safety, and sound fact preservation before migration relies on them.
 
 **Checked mutable range splitting.** Include built-in `split_at(view, index)` and its core
 partition transition. Check the index against the visible range before exposing either
@@ -267,7 +311,12 @@ explicit structural-copy policy remain unchanged. See the
 **Loan-bearing type parameters.** Associate each opaque type parameter with abstract loan
 dependency variables and constraints; absence of known fields never means an empty dependency
 set. Define composition through products, sums, containers, and callable environments,
-including `list[str]` and `option[&T]`. Moves, extraction, replacement, returns, and cleanup
+including `list[str]` and `option[&T]`. Existential results (`some Trait`) must package hidden
+dependency binders and preserve them on opening/dispatch. Higher-kinded `F[T]` needs a checked
+dependency transformer and substitution/composition rules; it cannot default to no loans.
+T02/T08 must either define these rules with substitution obligations or explicitly reject
+these forms in G0 and assign an extension gate before enabling them. Moves, extraction,
+replacement, returns, and cleanup
 preserve or discharge the corresponding carrier obligations. Type and region substitution
 also substitutes these summaries, preserving loan identity, granting chains, and lifetime
 constraints without inventing independence between symbolic origins. T05 establishes the
@@ -287,16 +336,17 @@ remaining live when advancing it cannot invalidate either result. A result borro
 receiver-owned storage may prevent another mutating call or receiver disposal. Neither the
 origin bound nor a dependency binder bypasses authority or conflict checks.
 
-**Cleanup at joins.** Predecessor-edge disposal is a specified source-language cleanup point.
-When a value is moved on one branch and unavailable after the join, each predecessor that
-still owns it disposes it before the join, in the specified cleanup order. This can run an
-observable destructor before lexical scope exit; it is not a last-use optimization. Apply
-its effects before merging facts and reject disposal conflicting with a surviving loan.
-Alternatively, predecessors may initialize a compatible common result. The core does not
-retain maybe-initialized obligations through runtime drop flags. Assumption 7 protects this
-schedule, including the edge disposal points, from unjustified movement.
+**Cleanup at joins.** For a custom-cleanup value, `if c: consume(guard)` without an
+explicit nonmoving-branch disposal is rejected if normalization would drop the guard before
+its existing source cleanup point. Require an explicit `else: drop(guard)` (illustrative
+spelling, finalized in T08), move both branches into a common result, or restructure the
+scope. Apply the same rule to structural cleanup with observable descendant effects. Only
+cleanup proved unobservable and lifetime-safe may be inserted on an edge. Apply explicit
+cleanup effects before merging facts and reject disposal conflicting with a surviving loan.
+The core retains no hidden maybe-initialized obligation or runtime drop flag at this join.
+This is a proposed surface-policy change, not a newly proved property of the current core.
 
-**Sequential generators.** Model a generator as a closure environment plus a state machine
+**Sequential generators (GX, after G0).** Model a generator as a closure environment plus a state machine
 with stable frame storage. Define creation, resume, yield, completion, modeled failure, and
 synchronous disposal transitions. Each suspension state records initialized slots, live
 carriers, authority, pending cleanup, and result origins. Loans remain active across yield;
@@ -315,23 +365,67 @@ edits of split children, and nested/empty splits with returned or stored child d
 Include rejected same/prefix-field accesses, whole-receiver conflicts, stored aliases,
 invalid split bounds, forged/widened partitions, and premature parent reuse. These complement
 a generic container of views, two live iterator results through a trait,
-an observable destructor on the nonmoving branch, and a borrowed generator suspended then
-resumed or dropped. Include rejected dangling-backing and conflicting frame-loan variants.
-These examples validate model coverage before proofs; T54–T57 later supply executable evidence.
+an observable destructor on the nonmoving branch. XG adds a borrowed generator suspended
+then resumed or dropped, including rejected dangling-backing and conflicting frame loans.
+P01/P02 execute the G0 translations before T05/T06; extension examples execute before their
+own proofs. T54–T57 later supply full compiler and backend evidence.
+
+### Staged proof and prototype scope
+
+G0 covers non-suspending sequential operations: places and backing lifetimes, named fields,
+checked range splitting, generic carried dependencies and receiver-stored origins, structural
+copy/freeze, sequence growth, cleanup, and calls with one conservative post-state. Runtime
+bounds checks remain. Ordinary sum results are supported; result-dependent authority remains
+conservatively joined until GO. G0 rejects generators, user proof certificates, proof-driven
+check erasure, and generic forms whose dependency rules remain undefined.
+
+T02 defines the static domain separately from the dynamic semantics. Inline roots include
+parameters, locals, expression temporaries, call results, and closure environments. Structural
+fields extend paths; dereference follows resolved backing provenance, not textual path names.
+Moves transfer carrier obligations but cannot silently relocate borrowed inline storage.
+Borrowed backing allocations keep their identity when owner handles move. New lifetime
+instances, even at a reused address or loop site, never revive old loans or facts. Recursive
+owned contents and collections use finite opaque summaries, with checked opening and closing
+rules. T05 must prove abstraction/simulation and checker acceptance soundness; a resource
+limit or an unrepresentable invariant produces rejection.
+
+T03 specifies reserve/relocate and append before T48 can call list growth checked. Require
+unique affected authority, valid capacity arithmetic/layout, an initialized prefix, and no
+loan/address dependency invalidated by relocation. Prepare fallible allocation before commit;
+move each initialized element exactly once without user callbacks, transfer owned-child
+edges, retire old storage only after installation, and update backing epochs. Append checks
+capacity and element ownership before extending the initialized prefix. Failure contracts
+state who retains the input element and old buffer, with no implicit rollback of earlier
+argument evaluation. Cover zero-sized and noncopyable elements, allocation failure, and
+views into slots versus separately owned children. If these transitions cannot be checked,
+record the precise additional trusted contract and revise the claim; do not trust all of list.
+
+| ID | Task | Target File(s) | Depends On | Priority | Acceptance Criteria |
+|---|---|---|---|---|---|
+| P01 | Build an isolated executable Lean checker and library prototype | **new** `spec/affine-capability/formal/AffineCapability/Model.lean`, `spec/affine-capability/prototype/` | T04, T08 | P0 | Execute reference checking with deterministic serialized inputs, states, and rejection traces. Port representative list, option, iter, and string operations to the experimental subset; include growth, generic views, two live iterator results through a trait, explicit branch cleanup, sibling-field mutation, and inline temporary rejection. Keep prototype execution separate from compiler entry points. |
+| P02 | Evaluate ergonomics before committing to proofs | **new** `spec/affine-capability/ergonomics.md` | P01 | P0 | Record per-port annotations and pinned contract size, explicit copies/allocations, rejected idioms and reasons, and workarounds versus the original APIs. Required examples must pass without redundant copies, unnecessary receiver loans, or lost sibling-field facts; unsupported examples must be named. Set and approve remaining budgets before measuring; failed criteria revise T02–T04/T08 and rerun the prototype before T05–T07. |
+| XG | Define and prove sequential generator extension | **new** `spec/affine-capability/formal/AffineCapability/Generators.lean`; core/surface/translations | T09, XO | P0 | Define suspension/frame/yield/resume/completion/failure/disposal rules and extend the executable checker. Prove preservation, caller interference safety, result lifetimes, cleanup, and simulation for all suspension states. Run positive/negative generator translations before proofs. Publish GX evidence; storage support alone is insufficient. |
+| XO | Define and prove outcome-dependent state extension | **new** `spec/affine-capability/formal/AffineCapability/Outcomes.lean`; core/surface/translations | T09 | P0 | Specify pending alternatives, carrier protection, common authority, later effects, discrimination, and sound joins/loop summaries. Extend the oracle and prove preservation and acceptance soundness, with error-retained loans and changed-owner examples. Publish GO evidence before T25. |
+
+T07 supplies GP after G0 and GO; it proves certificate checking and erasure separately.
+XG supplies GX after G0 and GO. Each extension records a feature manifest, its assumptions,
+and preservation of earlier theorems. Cross-feature use requires composition evidence: T07
+must cover GX before proof erasure is enabled inside generators. T29 requires the combined
+manifest. No theorem about G0 is presented as a theorem about unsupported Cinder features.
 
 ### Formal foundation
 
 | ID | Task | Target File(s) | Depends On | Priority | Acceptance Criteria |
 |---|---|---|---|---|---|
-| T01 | Establish requirement IDs, decision records, and formal tooling | `spec/affine-capability/decisions.md`, `spec/affine-capability/requirements.md`, `spec/affine-capability/formal/README.md` | — | P0 | Every proposal rule and example has an ID; Q1 is resolved; proof commands, assumptions, and the validation matrix format are specified. Record all required model decisions and reconcile their scope and cleanup semantics across the core, surface, translation, and formal documents before T02. |
-| T02 | Define core syntax, heap typing, contexts, and state well-formedness | `spec/affine-capability/formal/state.md`, `spec/affine-capability/formal/syntax.md` | T01 | P0 | Regions, carriers, loans, facts, initialization, cleanup, and distinct edge kinds have precise judgments. Separate allocation identity from named-field footprints and checked range partitions, including resolved target provenance, indexed-access conservatism, partition ancestry, and owning-slot paths. Include type-parameter dependency variables and composition, abstract receiver-stored origins, and sequential-generator frames with per-suspension initialization and loan invariants. |
-| T03 | Define primitive, projection, copy, freeze, and disposal transitions | `spec/affine-capability/formal/primitives.md` | T02 | P0 | Every primitive has a transition rule, rejection conditions, and pre/post-state invariants, including partial construction and atomic commit points. Define named-field projection and atomic split_at reborrowing with checked bounds, empty/nested partitions, and no partial result on bounds failure. Define generator creation/resume/yield/completion/failure/disposal transitions, with stable storage, conflict checks, and exactly-once state cleanup. |
-| T04 | Define contracts, outcome alternatives, sequencing, joins, and loops | `spec/affine-capability/formal/control.md`, `spec/affine-capability/formal/contracts.md` | T03 | P0 | Evaluation contexts retain intermediates; ordinary error variants have complete states; loops and cleanup exits are explicit. Define dependency substitution and stored-origin contract relationships, preserving field footprints and split ancestry through returned/stored views; predecessor disposal is a specified cleanup point. Sequential suspension preserves loans across intervening caller operations and exposes yielded-result origins. |
-| T05 | Establish preservation, progress, and loan/freeze safety lemmas | `spec/affine-capability/formal/safety.md`, formal proof modules selected in T01 | T04, T08 | P0 | Derivations establish preservation, progress modulo stated failures, no conflicting access, permanent freeze, and nonescape of dead storage under documented assumptions. Prove named-field and split-partition separation, no conflicting parent access, dependency-preserving transfers, and whole-parent transition safety. Prove generic dependency substitution and safety of trait stored-origin instantiation and sequential suspension/resume, including intervening caller actions. |
-| T06 | Establish copy equivalence/separation and cleanup accounting lemmas | `spec/affine-capability/formal/copy-cleanup.md`, formal proof modules | T04, T08 | P0 | Copy recipes preserve source state and construct equivalent fresh mutable reach; every completed exit accounts for each obligation once. Cover observable predecessor-edge cleanup timing and each generator suspension state on completion, failure, and synchronous disposal. |
-| T07 | Establish kernel soundness and proof-erasure correspondence | `spec/affine-capability/formal/proofs.md`, `spec/affine-capability/formal/erasure.md`, formal proof modules | T04, T08 | P0 | Assumption discharge, machine-integer premises, dependency preservation, and erasure are justified without granting new authority. Preserve stored/generic dependencies, suspension invariants, and specified cleanup points through erasure. |
-| T08 | Translate representative Cinder programs and define the surface mapping | `spec/affine-capability/surface.md`, `spec/affine-capability/translations.md`, `spec/affine-capability/decisions.md` | T04 | P0 | Resolve the remaining Q2 syntax and compatibility mappings under the accepted move-by-default policy; mutation, resource pop, fallible calls, closures, sharing, and generic examples translate to explicit core operations, including explicit copy/freeze and default reborrows. Before T05–T07, settle trait stored-origin spelling and translate all required model examples with their rejection counterparts; no model requirement is deferred to T32/T52. |
-| T09 | Publish the formal readiness evidence | `spec/affine-capability/formal/README.md`, `spec/affine-capability/requirements.md` | T05, T06, T07, T08 | P0 | Required theorem artifacts check reproducibly, unresolved assumptions are visible, and no unproved theorem is described as established. Compiler work below starts only after this gate. |
+| T01 | Establish requirement IDs, decision records, and formal tooling | `spec/affine-capability/decisions.md`, `spec/affine-capability/requirements.md`, `spec/affine-capability/formal/README.md` | — | P0 | Every proposal rule and example has an ID; Q1 is resolved; proof commands, assumptions, and the validation matrix format are specified. Record the staged feature manifests and machine/thread allowlist, including rejection of unaudited wrappers and transfers. Reconcile required model decisions, their scope and cleanup semantics across the core, surface, translation, and formal documents before T02. |
+| T02 | Define dynamic storage, finite static places, and well-formed states | `spec/affine-capability/formal/state.md`, `spec/affine-capability/formal/syntax.md` | T01 | P0 | Resolve Q3 before proofs. Define inline roots and lifetime instances, path overlap, abstract backing provenance, dynamic freshness, static summaries, and their abstraction relation. Specify loan/carrier/init/cleanup state, field versions and structural epochs, partitions, generic dependency composition, and receiver-stored origins. Define or explicitly exclude existential and higher-kinded dependency forms. State finiteness and simulation obligations; generator state belongs to XG. |
+| T03 | Define primitive, projection, copy, freeze, and disposal transitions | `spec/affine-capability/formal/primitives.md` | T02 | P0 | Give G0 primitives precise transitions, rejection conditions, failure states, and atomic commit points. Include named-field projection, split_at, reserve/relocate, append, exchange/remove_last, copy/freeze, and cleanup. Specify backing lifetime and loan conflicts for inline and allocated storage. No unchecked list implementation substitutes for missing rules; generator transitions belong to XG. |
+| T04 | Define G0 contracts, sequencing, joins, and loops | `spec/affine-capability/formal/control.md`, `spec/affine-capability/formal/contracts.md` | T03 | P0 | Define one conservative call post-state, runtime checks, evaluation temporaries, explicit failure cleanup, source-authorized join disposal, dependency substitution, stored-origin relationships, and finite loop summaries. Returned/stored views preserve paths and split ancestry. G0 rejects uses requiring outcome-specific authority; XO adds those states. Apply the T01 native/thread policy to every transition. |
+| T05 | Establish preservation, progress, and loan/freeze safety lemmas | `spec/affine-capability/formal/safety.md`, formal proof modules selected in T01 | T04, T08, P02 | P0 | Prove G0 preservation, progress modulo stated failures, loan/freeze/lifetime safety, field and partition separation, generic substitution and stored-origin instantiation, field-fact preservation, and whole-parent transition safety. Prove the finite static abstraction simulates dynamic storage and that executable Lean checker acceptance implies the declarative judgment. No generator, outcome-specific authority, or proof-erasure claim belongs to G0. |
+| T06 | Establish copy equivalence/separation and cleanup accounting lemmas | `spec/affine-capability/formal/copy-cleanup.md`, formal proof modules | T04, T08, P02 | P0 | Prove G0 structural copy equivalence, fresh mutable reach, source preservation, and exactly-once obligations on completed exits. Cover reserve/relocate/append failures and explicit branch disposal without silently advancing observable cleanup. Generator cleanup is proved in XG. |
+| T07 | Establish kernel soundness and proof-erasure correspondence | `spec/affine-capability/formal/proofs.md`, `spec/affine-capability/formal/erasure.md`, formal proof modules | T09, XO, P02 | P0 | Publish GP: prove finite certificate acceptance soundness, assumption discharge, arithmetic premises, dependency preservation, and erasure correspondence without granting authority. Extend the executable oracle. Cover GX before enabling erasure in generators; otherwise reject that combination explicitly. |
+| T08 | Translate representative Cinder programs and define the surface mapping | `spec/affine-capability/surface.md`, `spec/affine-capability/translations.md`, `spec/affine-capability/decisions.md` | T04 | P0 | Resolve remaining Q2 mappings and proposed pinned export/trait contracts, including stored-origin spelling. Translate the G0 library examples and rejection counterparts before P01/P02 and T05/T06. Explicitly inventory excluded existential/higher-kinded forms. XG/XO/T07 add their translations before their proofs; no undefined feature is admitted by a prose promise. |
+| T09 | Publish G0 formal readiness evidence | `spec/affine-capability/formal/README.md`, `spec/affine-capability/requirements.md` | T05, T06, T08, P02 | P0 | Publish the exact G0 feature manifest, native/thread assumptions, finite abstraction and executable-checker acceptance theorems, and reproducible Lean evidence. Production core work may begin for this subset. GX, GO, and GP are separate required gates for their extensions; prototype work already ran in P01/P02. |
 
 Formal `.md` files are explanatory companions. The selected Lean modules and planned Lake
 target are named in the [formal artifact contract](affine-capability/formal/README.md).
@@ -343,37 +437,37 @@ fixed one-session promises.
 
 | ID | Task | Target File(s) | Depends On | Priority | Acceptance Criteria |
 |---|---|---|---|---|---|
-| T10 | Add typed core identifiers, IR, and deterministic dumps | `src/capability/ids.h`, `src/capability/ir.{h,cpp}`, `src/capability/dump.{h,cpp}`, `src/capability/BUILD.bazel` | T09 | P0 | Every proposed primitive has an explicit operand/result form, source span, and carrier/region references; malformed IDs fail validation. |
-| T11 | Implement region state, forest queries, and checked edge updates | `src/capability/state.{h,cpp}`, `src/capability/forest.{h,cpp}`, `src/capability/forest_test.cpp` | T10 | P0 | Ownership is acyclic and single-parent; inline paths share allocation identity but distinct named fields have checked disjoint footprints. Equal/prefix paths overlap; unknown aliases and arbitrary indices remain conservative. Range partitions preserve ancestry. All transfers/replacements validate affected slots, old/new ownership paths, and surviving state. |
-| T12 | Implement carriers, dependent loans, and suspended authority | `src/capability/carriers.{h,cpp}`, `src/capability/loans.{h,cpp}`, `src/capability/loans_test.cpp` | T11 | P0 | Duplication, reborrow, transfer, retirement, and end-loan preserve dependencies, including slot allocation/path and range partition provenance through stored and returned views; granting-chain exceptions never exempt competing loans. Track abstract dependency summaries for opaque generic components and suspended generator frames without erasing nested origins. |
+| T10 | Add typed core identifiers, IR, and deterministic dumps | `src/capability/ids.h`, `src/capability/ir.{h,cpp}`, `src/capability/dump.{h,cpp}`, `src/capability/BUILD.bazel` | T09 | P0 | Every enabled G0 primitive has an explicit operand/result form, source span, and carrier/place/backing references; extensions add forms after their gates; malformed IDs fail validation. |
+| T11 | Implement static place state, backing summaries, and checked edge updates | `src/capability/state.{h,cpp}`, `src/capability/forest.{h,cpp}`, `src/capability/forest_test.cpp` | T10 | P0 | Implement the T02 finite static domain and checked backing summaries. Dynamic ownership is acyclic and single-parent; inline paths share a storage lifetime but distinct named fields have checked disjoint footprints. Equal/prefix paths overlap; unknown aliases and arbitrary indices remain conservative. Range partitions preserve ancestry. All transfers/replacements validate affected slots, old/new ownership paths, and surviving state. |
+| T12 | Implement carriers, dependent loans, and suspended authority | `src/capability/carriers.{h,cpp}`, `src/capability/loans.{h,cpp}`, `src/capability/loans_test.cpp` | T11 | P0 | Duplication, reborrow, transfer, retirement, and end-loan preserve dependencies, including slot allocation/path and range partition provenance through stored and returned views; granting-chain exceptions never exempt competing loans. Track abstract dependency summaries for opaque generic components without erasing nested origins; T27 adds suspended generator-frame support after GX. |
 | T13 | Implement slot initialization, moves, take-field, and init-field | `src/capability/initialization.{h,cpp}`, `src/capability/initialization_test.cpp` | T12 | P0 | Moves transfer obligations; empty fields prevent whole-value operations; owner-only extraction and reinitialization are enforced. |
-| T14 | Implement exchange, remove-last, and consuming sum elimination | `src/capability/structural_ops.{h,cpp}`, `src/capability/structural_ops_test.cpp` | T13 | P0 | Noncopyable elements transfer once; sequence prefixes and sum payload states remain valid; preparation failures precede commit. |
+| T14 | Implement sequence growth, exchange, removal, and sum elimination | `src/capability/structural_ops.{h,cpp}`, `src/capability/structural_ops_test.cpp` | T13 | P0 | Implement T03 reserve/relocate/append transitions with checked authority, capacity arithmetic, backing epochs, initialized prefixes, and failure ownership. Noncopyable and zero-sized elements transfer once; exchange/remove_last and sum payload states remain valid; no surviving view is invalidated by growth. |
 | T15 | Implement structural/custom cleanup and replacement recipes | `src/capability/cleanup.{h,cpp}`, `src/capability/cleanup_test.cpp` | T14 | P0 | Reverse structural order, cleanup effects, private teardown, replacement temporaries, and completed-exit accounting are enforced without double cleanup. |
 | T16 | Implement capability-dependent projection and deep freeze | `src/capability/projection.{h,cpp}`, `src/capability/freeze.{h,cpp}`, `src/capability/freeze_test.cpp` | T15 | P0 | Contents projection and checked slot borrowing preserve distinct target authority; slot views verify paths, initialization, bounds, and permitted replacement, preserving named-field separation and inherited range partitions. Range construction checks bounds, initialized storage, and text boundaries, preserving backing-allocation and granting dependencies; subranges alone do not establish disjoint authority. Implement split_at with bounds validation before either child exists, affine child loans, empty/nested partitions, and parent suspension until conflicting descendants end. Retained frozen ranges preserve checked backing identity and visible bounds, independently retaining storage without a source-handle loan or element copying. Owned descendants freeze recursively; inline shared projections retain backing storage; scoped loans and mandatory custom unique cleanup block freezing. |
 | T17 | Derive and verify structural copy/materialization witnesses | `src/capability/copy_witness.{h,cpp}`, `src/capability/copy_witness_test.cpp` | T16 | P0 | Product/sum/sequence/owned-child recipes prove equivalence and fresh mutable reach; frozen handles retain independently; unsupported opaque or scoped components are rejected. Witness availability neither enables implicit construction nor makes owners duplicable; transfer needs no witness. |
 | T18 | Add core CFG liveness and explicit retirement insertion | `src/capability/liveness.{h,cpp}`, `src/capability/retirement.{h,cpp}`, `src/capability/liveness_test.cpp` | T15 | P0 | Temporaries, stored components, captures, and cleanup uses participate; early retirement never silently advances observable disposal. |
-| T19 | Normalize joins and verify loop invariants | `src/capability/control_flow.{h,cpp}`, `src/capability/control_flow_test.cpp` | T18, T16 | P0 | Incoming edges reconcile obligations and initialization; unavailable bindings never revive; bounded fixed points preserve possible origins and loop freshness. Joins and loop summaries preserve field/partition relationships without identifying unrelated split instances or inventing separation. Predecessor disposal occurs at the specified language cleanup point, with observable trace checks and rejection when surviving loans prevent normalization. |
+| T19 | Normalize joins and verify loop invariants | `src/capability/control_flow.{h,cpp}`, `src/capability/control_flow_test.cpp` | T18, T16 | P0 | Incoming edges reconcile obligations and initialization; unavailable bindings never revive; bounded fixed points preserve possible origins and loop freshness. Joins and loop summaries preserve field/partition relationships without identifying unrelated split instances or inventing separation. Custom/observable predecessor disposal requires a source-explicit cleanup point; reject implicit early drops and conflicts with surviving loans, and verify observable traces. |
 
 ### Proofs, effects, calls, and abstractions
 
 | ID | Task | Target File(s) | Depends On | Priority | Acceptance Criteria |
 |---|---|---|---|---|---|
-| T20 | Implement proposition syntax and finite certificate validation | `src/proof/terms.{h,cpp}`, `src/proof/certificate.h`, `src/proof/kernel.{h,cpp}`, `src/proof/BUILD.bazel` | T09 | P0 | Stable IDs, scoped assumptions, logical constructors, nominal equality, and acyclicity are checked; resource exhaustion cannot return success. |
+| T20 | Implement proposition syntax and finite certificate validation | `src/proof/terms.{h,cpp}`, `src/proof/certificate.h`, `src/proof/kernel.{h,cpp}`, `src/proof/BUILD.bazel` | T07 | P0 | Stable IDs, scoped assumptions, logical constructors, nominal equality, and acyclicity are checked; resource exhaustion cannot return success. |
 | T21 | Implement arbitrary-precision linear certificate checking | `src/proof/integer.{h,cpp}`, `src/proof/linear_certificate.{h,cpp}`, `src/proof/kernel_test.cpp`; `MODULE.bazel` if a new dependency is required | T20 | P0 | Coefficients normalize exactly; nonnegative combinations and encoded domain bounds are checked; malformed arithmetic and overflow assumptions are rejected. |
 | T22 | Make bounded arithmetic automation emit checked certificates | `src/semantic/reason.{h,cpp}`, `src/semantic/linear_poly.{h,cpp}`, `src/proof/automation.{h,cpp}`, `src/semantic/reason_test.cpp` | T21 | P0 | Every proof used by the new mode carries a kernel-accepted certificate; unsupported reasoning returns unknown without weakening an obligation. |
-| T23 | Track storage versions and complete fact dependencies | `src/capability/facts.{h,cpp}`, `src/capability/effects.{h,cpp}`, `src/capability/facts_test.cpp` | T11, T19, T21 | P0 | Writes, transitions, ancestors, and cleanup invalidate affected facts across old and possible new forests; snapshots never become current facts by relabeling. Disjoint field or partition authority does not imply fact preservation; allocation-wide invalidation remains permitted. |
+| T23 | Track storage versions and complete fact dependencies | `src/capability/facts.{h,cpp}`, `src/capability/effects.{h,cpp}`, `src/capability/facts_test.cpp` | T11, T19, T21 | P0 | Version facts by resolved field/path dependencies and structural epochs. Preserve self.items length facts across self.total writes; invalidate overlapping paths, owner replacement, relocation, unknown aliases, and relevant ancestor/transition dependencies in old and possible new forests. Snapshots cannot be relabeled as current facts. |
 | T24 | Define callable, representation, and native contract schemas | `src/capability/contracts.{h,cpp}`, `src/capability/representation_contract.h`, `src/capability/contract_test.cpp` | T10, T23 | P0 | Modes, abstract regions, writes, transitions, origins, outcomes, initialization, cleanup, and postconditions are representable without inspecting a callee body. Contracts preserve named-field footprints and split provenance; whole-receiver requirements remain whole-receiver loans. Callable origin binders are independent of spelling and instantiate separately per invocation. Represent type-parameter dependency variables and receiver-stored origin binders/result relationships for traits, closures, and generators independently of private layout. |
-| T25 | Instantiate calls and preserve per-outcome states | `src/capability/calls.{h,cpp}`, `src/capability/outcomes.{h,cpp}`, `src/capability/calls_test.cpp` | T24, T12, T23, T19 | P0 | Arguments stay live in order; preconditions use the post-conversion input state; results acquire dependencies before argument retirement; later effects update every pending alternative. Instantiate stored origins separately from the temporary receiver loan, preserving carried-loan versus dependent-reborrow relationships. |
+| T25 | Instantiate calls and preserve per-outcome states | `src/capability/calls.{h,cpp}`, `src/capability/outcomes.{h,cpp}`, `src/capability/calls_test.cpp` | T24, T12, T23, T19, XO | P0 | Arguments stay live in order; preconditions use the post-conversion input state; results acquire dependencies before argument retirement; later effects update every pending alternative. Instantiate stored origins separately from the temporary receiver loan, preserving carried-loan versus dependent-reborrow relationships. |
 | T26 | Check bodies against declared contracts | `src/capability/check_contract.{h,cpp}`, `src/capability/check_contract_test.cpp` | T24, T25, T15, T19 | P0 | All returns establish their output states after cleanup; recursive calls use declared summaries; callbacks/cleanup are included and false `writes nothing` claims fail, including writes through captured edit targets. |
-| T27 | Check closure environments, call modes, and sequential generators | `src/capability/closures.{h,cpp}`, `src/capability/closures_test.cpp`; **new** `src/capability/generators.{h,cpp}`, `src/capability/generators_test.cpp` | T17, T25, T26 | P0 | Infer lambda entry authority and check optional receiver constraints; consuming/editing/observing entries respect captures, with call mode separate from callback passing mode and effects; capture-owned result loans remain supported, while duplicated captured observations retain original dependencies; freeze validates a shared-callable body; copied environments substitute fresh identities without inventing proofs. Verify sequential-generator suspension states and resume/yield/completion/failure/disposal transitions; external-backed and frame-backed results obey distinct dependencies, and reentrant/conflicting resumes fail. |
+| T27 | Check closure environments, call modes, and sequential generators | `src/capability/closures.{h,cpp}`, `src/capability/closures_test.cpp`; **new** `src/capability/generators.{h,cpp}`, `src/capability/generators_test.cpp` | T17, T25, T26, XG | P0 | Infer lambda entry authority and check optional receiver constraints; consuming/editing/observing entries respect captures, with call mode separate from callback passing mode and effects; capture-owned result loans remain supported, while duplicated captured observations retain original dependencies; freeze validates a shared-callable body; copied environments substitute fresh identities without inventing proofs. Verify sequential-generator suspension states and resume/yield/completion/failure/disposal transitions; external-backed and frame-backed results obey distinct dependencies, and reentrant/conflicting resumes fail. |
 | T28 | Check sealed capability constructors and operations | `src/capability/tokens.{h,cpp}`, `src/capability/tokens_test.cpp` | T25, T26, T17 | P0 | Private authority cannot be duplicated; hidden storage effects and retained loans remain exposed; tokens cannot acquire copy witnesses from their byte layout. |
-| T29 | Assemble the verifier and model-conformance harness | `src/capability/verify.{h,cpp}`, `src/capability/verify_test.cpp`, `src/capability/model_test.cpp`, `spec/affine-capability/requirements.md` | T16, T17, T19, T26, T27, T28 | P0 | Each core feature is checked together, with deterministic diagnostics, conservative resource limits, and traces comparable to the formal transition model. |
+| T29 | Assemble the verifier and model-conformance harness | `src/capability/verify.{h,cpp}`, `src/capability/verify_test.cpp`, `src/capability/model_test.cpp`, `spec/affine-capability/requirements.md` | T16, T17, T19, T26, T27, T28 | P0 | Require G0/GX/GO/GP and their composition evidence for the combined feature manifest. Differentially compare C++ acceptance, rejection, and state traces against the executable Lean checker, including malformed states and bounded loops. Name C++ checking/serialization and backend realization as trusted until machine-checked refinement or proof certificates close each gap; testing alone does not prove correspondence. |
 
 ### Source elaboration and compiler integration
 
 | ID | Task | Target File(s) | Depends On | Priority | Acceptance Criteria |
 |---|---|---|---|---|---|
-| T30 | Add experimental mode, syntax, and AST preservation | `src/driver/cli.{h,cpp}`, `src/driver/driver.h`, `src/parser/token.h`, `src/parser/lexer.h`, `src/parser/parser.cpp`, `src/parser/ast.h`, `src/parser/ast_clone.cpp`, `src/parser/ast_traversal.h` | T08, T09, V0 | P0 | Capability/conversion syntax follows the chosen mapping, including `writes nothing` and nonempty write root sets in declarations and callable types; `writes {}` is rejected with guidance distinguishing prohibition from inference; optional leading callable receivers `self`, `mut self`, and `self: own[Self]` remain distinct from ordinary arguments; preserve capture-list presence and modes plus environment/mixed result origins; cloning and traversal retain these forms; ordinary mode retains the completed value-semantics behavior and diagnostics. |
+| T30 | Add experimental mode, syntax, and AST preservation | `src/driver/cli.{h,cpp}`, `src/driver/driver.h`, `src/parser/token.h`, `src/parser/lexer.h`, `src/parser/parser.cpp`, `src/parser/ast.h`, `src/parser/ast_clone.cpp`, `src/parser/ast_traversal.h` | T08, T09, V0 | P0 | Enforce the T01 experimental feature/primitive policy during source selection and reject unsupported machine or thread interfaces. Capability/conversion syntax follows the chosen mapping, including `writes nothing` and nonempty write root sets in declarations and callable types; `writes {}` is rejected with guidance distinguishing prohibition from inference; optional leading callable receivers `self`, `mut self`, and `self: own[Self]` remain distinct from ordinary arguments; preserve capture-list presence and modes plus environment/mixed result origins; cloning and traversal retain these forms; ordinary mode retains the completed value-semantics behavior and diagnostics. |
 | T31 | Resolve capability types and callable signatures | `src/semantic/type_table.{h,cpp}`, `src/semantic/checker_results.h`, `src/semantic/check_type_resolution.cpp`, **new** `src/semantic/capability_types.{h,cpp}` | T30, T24 | P0 | Experimental single-element views use `inspect[T]`/`edit[T]`; any cell compatibility spellings are exact aliases. Slot `edit[own[T]]` and child `edit[T]` remain distinct; slice/text types retain range shape and scoped parameter modes. `shared_slice[T]`/`shared_str` are distinct retained frozen range types; wrapping scoped descriptors must not erase loans. Representation type and authority stay separate; parameter/result modes and loan origins survive function values, methods, and explicit annotations. Callable environment receiver modes remain distinct from outer parameter borrowing or ownership; lambda modes are inferred and optional explicit constraints checked. Result `from self` binds the environment root, including in mixed input/environment sets. Optional callable parameter names bind result-origin clauses; consistent renaming and different implementation parameter names preserve meaning. Omission retains sufficient checked summaries or sound conservative defaults. |
 | T32 | Integrate witnesses, generics, private representations, and dispatch | `src/semantic/check_bounds.cpp`, `src/semantic/check_generic_calls.cpp`, `src/semantic/check_instances.cpp`, `src/semantic/check_lowering_view.cpp`, **new** `src/semantic/capability_witnesses.{h,cpp}` | T31, T17, T27, T28 | P0 | Experimental `copy` constraints resolve to structural witnesses, never the legacy implicit-duplication classification; introduce no public duplication constraint. Generic substitution preserves abstract regions and obligations; owning generic parameters need no copy witness unless they explicitly copy/materialize; trait/indirect implementations cannot exceed promised effects or strengthen required authority. Check generic bodies once with dependency variables; substitute nested loan summaries and abstract stored-origin binders through trait dispatch without requiring concrete layouts or erasing obligations. |
 | T33 | Elaborate expressions into ordered core bindings | **new** `src/semantic/capability_elaboration.{h,cpp}`; `src/capability/ir.h` | T31, T13, T16 | P0 | Names, places, aggregates, captures, scalar/shared loads, and temporaries have explicit carriers and access operations with source spans. Named-field projection narrows the checked footprint without first borrowing the entire parent. Elaborate split_at to the explicit checked partition operation with source-relative bounds and affine result carriers. Explicit and inferred value captures move affine values and duplicate only by checked rules; explicit observation/edit captures preserve loans and reborrows without escape-dependent mode changes. `*slot` preserves checked place provenance; exchange and replacement use slot authority without first extracting its owner. Range indexing observes by default; explicit observation/edit range requests return capabilities directly, with checked bounds and text boundaries, rather than references to temporary descriptors. |
@@ -381,7 +475,7 @@ fixed one-session promises.
 | T35 | Elaborate branches, loops, matches, failures, and cleanup | **new** `src/semantic/capability_control.{h,cpp}`; `src/capability/control_flow.cpp` | T34, T19, T15, T27 | P0 | All exits, argument failures, result transfers, predecessor disposal, and consuming patterns have explicit core operations and valid schedules. Elaborate generator creation/resume/yield and for-loop completion, failure, and early-exit disposal under the checked suspension invariants. |
 | T36 | Route refinements and erased checks through core facts and certificates | `src/semantic/check_reasoning.cpp`, `src/semantic/predicates.{h,cpp}`, `src/semantic/narrowing.{h,cpp}`, `src/semantic/try_from_proof.cpp`, `src/semantic/checker_results.h` | T35, T22, T23, T26 | P0 | Name-based or pre-effect proofs cannot authorize an access; runtime tests remain executable, and only checked evidence justifies erasure. |
 | T37 | Version exported contracts and metadata | `src/module_metadata.proto`, `src/driver/module_metadata.{h,cpp}`, `src/semantic/check_lowering_view.cpp` | T32, T24 | P0 | Metadata carries the semantics version and portable contract/witness descriptions, including callable entry modes, formal/environment origin binders and captured-dependency relations, slot/range-origin, named-field footprints, range-partition relationships, scoped-dependency, and retained frozen-projection summaries; session-local pointers/IDs are not serialized as authority; incompatible inputs fail closed. Export generic dependency variables, trait stored-origin relationships, and generator yield/resume/disposal contracts without serializing private frame layout as authority. |
-| T38 | Require verified bodies at every execution/lowering entry | `src/driver/driver.cpp`, `src/driver/lowering_stage.cpp`, `src/semantic/check_lowering_view.cpp`, `src/comptime_vm/program.cpp`, `src/testing/stdlib_fixtures.h` | T29, T36, T37 | P0 | Normal execution, native compilation, compile-time preparation, and experimental fixtures cannot execute unchecked capability bodies; unfinished recursive bodies use safe preparation states. |
+| T38 | Require verified bodies at every execution/lowering entry | `src/driver/driver.cpp`, `src/driver/lowering_stage.cpp`, `src/semantic/check_lowering_view.cpp`, `src/comptime_vm/program.cpp`, `src/testing/stdlib_fixtures.h` | T29, T36, T37 | P0 | Enforce T01 policy transitively through imports, wrappers, indirect calls, and native bindings before execution. Normal execution, native compilation, compile-time preparation, and experimental fixtures cannot execute unchecked capability bodies; unfinished recursive bodies use safe preparation states. |
 
 T30 must select a minimal, capability-compatible bootstrap prelude for integration fixtures,
 with checked scalar/core declarations and explicitly contracted primitives. Expand it in T47.
@@ -391,13 +485,18 @@ T25 applies declared interfaces, including recursive ones, as local checking ass
 T26 discharges those assumptions by checking every body in a recursive dependency group;
 T29/T38 prevent any group with an unverified implementation from reaching execution.
 
-Omitted effect, origin, and outcome clauses request sound, conservative inference from
-checked source bodies, including public definitions. T26 must infer and verify complete
-summaries and check optional programmer constraints; recursive candidates must be verified
-for the whole group. T37 exports the checked interfaces, without requiring callers to inspect
-bodies. Native/opaque interfaces require sufficient declarations or sound defaults.
+Private bodies retain sound conservative inference for omitted contracts. The proposed
+public-boundary policy requires pinned authority, effect, origin, stored-dependency, and
+outcome contracts on exported definitions and trait methods, including default methods. T08
+settles source declarations or a reviewed interface artifact and signature-determined
+defaults; inferred suggestions may help authors pin them. T26 checks bodies against those
+contracts, so a body edit that exceeds a pin fails at the definition. T37 exports the pin
+and checks implementations/overrides without inspecting their bodies. Recursive private
+groups still verify their inferred candidates together. This proposal requires reconciling
+the accepted Q2 inference policy in T01; no blanket requirement for lifetime annotations
+on local code is introduced.
 T53 must explain missing information or conservative approximations, why they prevent the
-requested use, and the smallest relevant annotation or legal code change. Request author
+requested use, and the smallest relevant annotation or legal code change. For private inference, request author
 input only when inference and sound defaults cannot establish the required contract;
 never infer copying, freezing, or new authority merely to make a contract fit.
 
@@ -408,25 +507,25 @@ fall back to legacy lowering to keep those paths running.
 
 | ID | Task | Target File(s) | Depends On | Priority | Acceptance Criteria |
 |---|---|---|---|---|---|
-| T39 | Specify capability extensions to the completed value-storage ABI | `spec/affine-capability/runtime-abi.md`, `spec/affine-capability/decisions.md`; landed value-storage interfaces identified at V0 | T09, V0 | P0 | Q3–Q5 are resolved against actual typed places, layouts, parameter storage, and result destinations; region/provenance mappings and owned/frozen/loan/projection extensions reuse the aggregate ABI, alignment, and initialization contracts. |
-| T40 | Extend storage owners with frozen retention and projection lifetimes | **new** `src/runtime/frozen_storage.{h,cpp}`, `src/runtime/frozen_storage_test.cpp`; `src/runtime/layout.{h,cpp}`, `src/runtime/allocator.{h,cpp}` | T39 | P1 | Inline owners are retained or safely relocated before persistent projections escape; outstanding loans and address stability are respected; retained ranges/subranges preserve visible bounds and backing identity after source release, including small ranges retaining whole allocations; final release waits for all handles/projections and scoped lifetime dependencies and never runs mutable cleanup or thaws storage. |
-| T41 | Implement copy recipes, transfer commits, and failure cleanup on typed storage | **new** `src/runtime/capability_storage.{h,cpp}`, `src/runtime/capability_storage_test.cpp`; `src/intrinsics.h`, `src/runtime/allocator.cpp`; `src/hir/value_storage.h` | T40 | P1 | Witness-authorized recipes construct into fresh destinations and allocate only required backing storage; initialized-part cleanup reuses storage state; exchange/pop commit without callbacks or recoverable failure between removal and installation. |
-| T42 | Adapt verified core to the shared value-storage pipeline | **new** `src/hir/lower_capability.{h,cpp}`, `src/hir/capability_check.{h,cpp}`; `src/hir/nodes.h`, `src/hir/lower.cpp`, `src/hir/drop_schedule.cpp`, `src/hir/reference_check.cpp`, `src/hir/value_storage.h`, `src/hir/value_lowering.{h,cpp}`, `src/hir/value_verify.{h,cpp}` | T38, T39, T41 | P1 | Checked copy/retain/release/transfer and cleanup reach shared destinations with required provenance; structural witnesses remain distinct from legacy `copy`; capability cleanup is the sole logical schedule, with no second legacy disposal pass; both verification gates apply. Map sequential-generator states and loans to stable suspension storage; preserve frame identity across handle moves and use checked state-specific disposal, including early loop exit. |
-| T43 | Extend bytecode emission for prepared capability operations | `src/bytecode_compiler/compile.cpp`, `src/bytecode_compiler/compile_test.cpp`; `src/bytecode/opcodes.h`, `src/bytecode/vm.cpp`, `src/bytecode/vm_test.cpp` | T42 | P1 | VM emission consumes the shared verified storage decisions and existing aggregate ABI; private by-value parameters, caller result storage, projections, and failure paths preserve distinct copy/transfer semantics without aggregate shell allocations. |
-| T44 | Extend LLVM emission and native linkage for capability operations | `src/llvm_codegen/codegen.cpp`, `src/llvm_codegen/codegen_test.cpp`, `src/llvm_codegen/aot_test.cpp`, `src/llvm_codegen/runtime.cpp`; `src/driver/aot.cpp` | T42 | P1 | LLVM/JIT/AOT consume the same prepared storage decisions and aggregate ABI as VM; native wrappers retain typed result owners through decoding; alignment, cleanup, and retained-interior projections agree across backends. |
+| T39 | Specify capability extensions to the completed value-storage ABI | `spec/affine-capability/runtime-abi.md`, `spec/affine-capability/decisions.md`; landed value-storage interfaces identified at V0 | T09, V0 | P0 | Implement the T02/Q3 semantic mapping and resolve Q4–Q5 against actual typed places, layouts, parameter storage, and result destinations; region/provenance mappings and owned/frozen/loan/projection extensions reuse the aggregate ABI, alignment, and initialization contracts. |
+| T40 | Extend storage owners with frozen retention and projection lifetimes | **new** `src/runtime/frozen_storage.{h,cpp}`, `src/runtime/frozen_storage_test.cpp`; `src/runtime/value_layout.{h,cpp}`, `src/runtime/allocator.{h,cpp}` | T39 | P1 | Inline owners are retained or safely relocated before persistent projections escape; outstanding loans and address stability are respected; retained ranges/subranges preserve visible bounds and backing identity after source release, including small ranges retaining whole allocations; final release waits for all handles/projections and scoped lifetime dependencies and never runs mutable cleanup or thaws storage. |
+| T41 | Implement copy recipes, transfer commits, and failure cleanup on typed storage | **new** `src/runtime/capability_storage.{h,cpp}`, `src/runtime/capability_storage_test.cpp`; `src/intrinsics.h`, `src/runtime/allocator.cpp`; `src/hir/storage.h` | T40 | P1 | Witness-authorized recipes construct into fresh destinations and allocate only required backing storage; initialized-part cleanup reuses storage state; exchange/pop commit without callbacks or recoverable failure between removal and installation. |
+| T42 | Adapt verified core to the shared value-storage pipeline | **new** `src/hir/lower_capability.{h,cpp}`, `src/hir/capability_check.{h,cpp}`; `src/hir/nodes.h`, `src/hir/lower.cpp`, `src/hir/drop_schedule.cpp`, `src/hir/reference_check.cpp`, `src/hir/storage.h`, `src/hir/storage_lower.{h,cpp}`, `src/hir/storage_verify.{h,cpp}` | T38, T39, T41 | P1 | Checked copy/retain/release/transfer and cleanup reach shared destinations with required provenance; structural witnesses remain distinct from legacy `copy`; capability cleanup is the sole logical schedule, with no second legacy disposal pass; both verification gates apply. Map sequential-generator states and loans to stable suspension storage; preserve frame identity across handle moves and use checked state-specific disposal, including early loop exit. |
+| T43 | Extend bytecode emission for prepared capability operations | `src/bytecode_compiler/storage_compile.cpp`, `src/bytecode_compiler/compile_test.cpp`; `src/bytecode/opcodes.h`, `src/bytecode/vm.cpp`, `src/bytecode/vm_test.cpp` | T42 | P1 | VM emission consumes the shared verified storage decisions and existing aggregate ABI; private by-value parameters, caller result storage, projections, and failure paths preserve distinct copy/transfer semantics without aggregate shell allocations. |
+| T44 | Extend LLVM emission and native linkage for capability operations | `src/llvm_codegen/storage_codegen.cpp`, `src/llvm_codegen/codegen_test.cpp`, `src/llvm_codegen/aot_test.cpp`, `src/llvm_codegen/runtime.cpp`; `src/driver/aot.cpp` | T42 | P1 | LLVM/JIT/AOT consume the same prepared storage decisions and aggregate ABI as VM; native wrappers retain typed result owners through decoding; alignment, cleanup, and retained-interior projections agree across backends. |
 | T45 | Extend compile-time storage preparation, marshalling, and caches | `src/comptime_vm/backend.cpp`, `src/comptime_vm/program.cpp`, `src/comptime_vm/values.cpp`; `src/semantic/check_lowering_view.cpp`; **new** `src/comptime_vm/capability_test.cpp` | T43, T38 | P1 | Static calls pass both verification gates and reuse typed host/result storage; owners survive decoding and cleanup; cached lowering carries capability provenance and agrees with final verified storage preparation. |
-| T46 | Preserve capability semantics through RVO, NRVO, and storage optimization | `src/hir/inline.cpp`, `src/hir/tail_calls.cpp`, `src/hir/frame_budget.cpp`, `src/hir/value_lowering.{h,cpp}`, `src/hir/value_verify.{h,cpp}`, `src/hir/return_storage.{h,cpp}`, `src/hir/value_lowering_test.cpp`, `src/hir/return_storage_test.cpp`; **new** `src/hir/capability_check_test.cpp` | T43, T44 | P1 | Mandatory RVO works at low optimization with inlining disabled; shared NRVO remains enabled by default with safe inline-move fallback; both preserve copy independence, origin lifetimes, initialization, effects, and cleanup; final frame budgets and tail-call provenance checks remain enforced. |
+| T46 | Preserve capability semantics through RVO, NRVO, and storage optimization | `src/hir/inline.cpp`, `src/hir/tail_calls.cpp`, `src/hir/frame_budget.cpp`, `src/hir/storage_lower.{h,cpp}`, `src/hir/storage_verify.{h,cpp}`, `src/hir/storage_nrvo.{h,cpp}`, `src/hir/storage_test.cpp`; **new** `src/hir/capability_check_test.cpp` | T43, T44 | P1 | Mandatory RVO works at low optimization with inlining disabled; shared NRVO remains enabled by default with safe inline-move fallback; both preserve copy independence, origin lifetimes, initialization, effects, and cleanup; final frame budgets and tail-call provenance checks remain enforced. |
 
 ### Standard library and compatibility
 
 | ID | Task | Target File(s) | Depends On | Priority | Acceptance Criteria |
 |---|---|---|---|---|---|
-| T47 | Define the trusted memory boundary and experimental prelude | `src/std/mem.cn`, `src/std/intrinsics.cn`, `src/std/prelude.cn`; `src/intrinsics.h`; **new** `src/semantic/capability_intrinsics.{h,cpp}`; `src/driver/driver.cpp` | T38, T41, T43, T44 | P1 | Trusted operations have explicit authority/effect/failure contracts. The split_at builtin maps to the verified core partition operation and the selected bounds-failure policy; it cannot infer authority from addresses or bounds alone. The retained frozen-projection intrinsic requires existing persistent frozen authority, checked backing provenance, and valid initialized ranges/text boundaries; it establishes retention before exposing results. Raw pointers or scoped views cannot supply that authority. Experimental source selection is complete and does not exempt the library from checking. |
-| T48 | Migrate list storage and noncopyable sequence operations | `src/std/list.cn`, `src/std/traits.index.cn`; **new fixtures** under `src/testdata/affine_std_test/` | T47 | P1 | Initialized prefix, reserve/growth, push transfer, pop, replacement, indexing, views, and reverse cleanup are checked; noncopyable resources are supported. Element borrowing returns `inspect[T]`/`edit[T]` with checked slot origins and needs no copy witness; audit indexing trait relationships accordingly. Range indexing preserves its view shape and observation default; mutable slicing is explicit. Range APIs preserve reborrow/transfer dependencies, validate bounds and text boundaries where applicable, and do not infer disjoint editing from subrange bounds. Exercise split_at on mutable ranges, including nested/empty partitions and surviving returned views; verify that direct edits of a sibling named field remain usable during iteration. Replace cell `get`/`set` with permitted loads/observations and checked replacement/cleanup. |
+| T47 | Implement the T01 trusted memory boundary and experimental prelude | `src/std/mem.cn`, `src/std/intrinsics.cn`, `src/std/prelude.cn`; `src/intrinsics.h`; **new** `src/semantic/capability_intrinsics.{h,cpp}`; `src/driver/driver.cpp` | T38, T41, T43, T44 | P1 | Trusted operations have explicit authority/effect/failure contracts. The split_at builtin maps to the verified core partition operation and the selected bounds-failure policy; it cannot infer authority from addresses or bounds alone. The retained frozen-projection intrinsic requires existing persistent frozen authority, checked backing provenance, and valid initialized ranges/text boundaries; it establishes retention before exposing results. Raw pointers or scoped views cannot supply that authority. Experimental source selection is complete and does not exempt the library from checking. |
+| T48 | Migrate list storage and noncopyable sequence operations | `src/std/list.cn`, `src/std/traits.index.cn`; **new fixtures** under `src/testdata/affine_std_test/` | T47 | P1 | Reserve/growth and push use T03/T14 primitives with declared failure ownership and backing epochs; initialized prefix, pop, replacement, indexing, views, and reverse cleanup are checked; noncopyable resources are supported. Element borrowing returns `inspect[T]`/`edit[T]` with checked slot origins and needs no copy witness; audit indexing trait relationships accordingly. Range indexing preserves its view shape and observation default; mutable slicing is explicit. Range APIs preserve reborrow/transfer dependencies, validate bounds and text boundaries where applicable, and do not infer disjoint editing from subrange bounds. Exercise split_at on mutable ranges, including nested/empty partitions and surviving returned views; verify that direct edits of a sibling named field remain usable during iteration. Replace cell `get`/`set` with permitted loads/observations and checked replacement/cleanup. |
 | T49 | Provide frozen sharing, `copy`, and `copy_owned` APIs | `src/std/shared.cn`, `src/std/string.cn`, `src/std/traits.conversion.cn`; **new fixtures** under `src/testdata/affine_std_test/` | T47 | P1 | `copy` preserves the source value type; `copy_owned` materializes represented contents in a fresh `own[T]`. Both preserve their sources and require the relevant witnesses. Neither is a `clone` alias. Sharing cannot expose mutable authority or mandatory unique destructors; freezing is explicit; inline and child projections outlive released parents. `shared_slice[T]`/`shared_str` expose ordinary library `.slice(range)` methods over the checked retained-projection intrinsic, including retained subranges and UTF-8 checks. Range indexing stays scoped; handle duplication needs no element-copy witness. No universal `retain_range` builtin or new expression syntax is introduced. |
 | T50 | Migrate consuming sums, iterators, generators, callbacks, and generic helpers | `src/std/option.cn`, `src/std/result.cn`, `src/std/iter.cn`, `src/std/algo.cn`, `src/std/traits.cn`, `src/std/deriving.cn`; **new fixtures** under `src/testdata/affine_std_test/` | T48, T49, T32, T42 | P1 | Resource payloads move once; iterator/callback contracts expose retained loans and writes; generic helpers use owning or borrowing modes as intended, requiring structural `copy` constraints only for explicit independent copying/materialization. Audit legacy `copy` bounds by body operations; remove unnecessary bounds for transfer or replace implicit copies with explicit checked operations or loans. Preserve named-field and split-result footprints through iterator/callback contracts rather than requiring whole-receiver loans unnecessarily. Migrate sequential generators and for loops over borrowed data; two external-backed iterator results remain live through trait dispatch when effects permit, and early exit disposes suspended state. |
 | T51 | Migrate sequential external-resource APIs to sealed contracts | `src/std/io.cn`, `src/std/console.cn`, `src/std/fs/path.cn`, `src/std/platform.cn`, `src/std/time.cn`; `src/runtime/io.cpp`, `src/runtime/platform.cpp` | T47, T28 | P1 | Native resources are not automatically copyable/freezable; transitions, cleanup, failures, and external effects have explicit interfaces. |
-| T52 | Implement the legacy/machine/concurrency boundary policy | `src/semantic/check_expr.cpp`, `src/semantic/check_ufcs.cpp`, `src/driver/driver.cpp`, `src/std/sync.cn`; `spec/affine-capability/compatibility.md` | T38, T47 | P1 | Unsupported crossings produce useful errors; approved adapters are tested; async, asynchronous cancellation, and thread safety are not inferred from sequential checking or frozen sharing alone. Do not classify checked sequential yield or synchronous suspended-generator disposal as excluded cancellation; reject unsupported async/concurrent crossings explicitly. |
+| T52 | Implement the legacy/machine/concurrency boundary policy | `src/semantic/check_expr.cpp`, `src/semantic/check_ufcs.cpp`, `src/driver/driver.cpp`, `src/std/sync.cn`; `spec/affine-capability/compatibility.md` | T38, T47 | P1 | Audit the T01 policy already enforced at T30/T38, including machine wrappers, imports, thread transfer, and mutex APIs. Unsupported crossings produce useful errors; approved adapters are tested; async, asynchronous cancellation, and thread safety are not inferred from sequential checking or frozen sharing alone. Do not classify checked sequential yield or synchronous suspended-generator disposal as excluded cancellation; reject unsupported async/concurrent crossings explicitly. |
 
 T47 may select a separate experimental prelude or versioned modules, depending on Q6. If new
 module files are necessary, record their exact paths in `decisions.md` before adding them.
@@ -584,7 +683,8 @@ cannot be released simply because another unrelated shared handle keeps the allo
 ### 3. Keep copy witnesses separate from duplication and ordinary trait methods
 
 Move-by-default is the surface policy; every selected operation is explicit in the core.
-Ordinary transfer requires no copy witness and preserves the incoming storage identity.
+Ordinary transfer requires no copy witness. Moving an owning handle preserves its backing
+identity; moving inline contents changes places only under T02 relocation and loan rules.
 Scalars, retained frozen handles, and other duplicable values follow their checked duplication
 rules, including lifetime dependencies. A structural copy witness authorizes explicit
 independent construction; it does not make an owner duplicable or trigger implicit copying.
@@ -642,10 +742,10 @@ destroyed. `exchange` returns the outgoing value instead of destroying it; `remo
 transfers the final element without running its destructor. Prepare fallible result storage
 before their indivisible commit. No callback or recoverable failure runs inside that commit.
 
-At joins, explicitly clean still-initialized predecessor values that will be unavailable, or
-initialize a compatible common result. Predecessor disposal is a specified cleanup point,
-including observable destructors before lexical scope exit on the nonmoving branch. It is
-not last-use retirement or an optimization. Apply cleanup effects before merging facts. Do not hide
+At joins, require source-explicit disposal for custom or otherwise observable cleanup on
+a nonmoving branch, or initialize a compatible common result. Compiler-inserted disposal
+requires proof that it is unobservable and lifetime-safe. Apply cleanup effects before
+merging facts. Do not hide
 obligations behind an unavailable binding or use runtime drop flags as a substitute for the
 core's required normalization. A loop back edge must establish the same kind of invariant.
 
@@ -684,8 +784,9 @@ Every conversion-table row and every incompatible annotation needs a source-leve
 
 ### 6. Couple effect checking to storage versions and outcomes
 
-The invalidation set includes the pre-call may-write footprint, changed transition regions,
-and owning ancestors in the input and every possible output forest. Include detached old
+The invalidation set includes overlapping field/path dependencies of the pre-call may-write
+footprint and structural epochs changed by transitions in every possible output forest.
+Ancestor-dependent facts are invalidated without discarding unrelated sibling-field facts. Include detached old
 parents, newly attached descendants, callbacks, hidden token targets, closure captures, and
 cleanup effects. Transferring a handle does not by itself mutate its region contents.
 
@@ -778,7 +879,7 @@ the represented ownership structure requires it. Preserve source availability, c
 fresh mutable reach even when eliding temporary storage. Keep initialization state and logical
 ownership distinct from the bytes used to implement them.
 
-Capability cleanup supplies the logical schedule, including predecessor-edge disposal,
+Capability cleanup supplies the logical schedule, including source-authorized edge disposal,
 state-specific synchronous generator disposal, reverse structural order, and custom recipes
 that discharge their own obligations. Shared storage lowering realizes that
 schedule through initialized-place cleanup and partial-construction state. It must not append
@@ -823,17 +924,17 @@ The following groups define minimum coverage; they do not replace row-by-row tra
 | Conversion | Every conversion-table row, bare owner transfer with and without a copy witness, use after transfer, scalar/frozen duplication, rejection of implicit freeze/materialization, explicit-annotation mismatches, same-loan duplication versus fresh reborrow, repeated helpers, suspended-edit transfer, retained loans on error | T34, T54 |
 | Retained frozen ranges | `shared_slice[T]`/`shared_str` and ordinary library `.slice()` over a contracted intrinsic; return/store after source release; retained subranges stay within visible bounds; frozen backing identity and whole-allocation retention; no element copying or element-copy witness for handle duplication; scoped indexing remains dependent; reject scoped/raw-pointer promotion and invalid bounds/text boundaries; final frozen release exactly once | T16, T31, T37, T40, T47, T49, T54–T55 |
 | Copy/materialization | Structural `copy` constraint resolution and rejection of legacy duplication as witness evidence; owner satisfying `copy` still moves, duplicable inspection fails `copy`; explicit `copy`/`copy_owned` requests; same-type handle copy versus represented-content materialization; scoped-handle copy rejection versus supported referent materialization; witness availability never enables implicit copying or owner duplication; exact contents and fresh mutable descendants, unrelated old mutable child rejection, independent frozen retention, source preservation, scoped/token rejection, frozen-source materialization, proof identity substitution | T17, T27–T28, T32, T34, T41, T49–T50 |
-| Generic dependencies | Check once with opaque dependency variables; substitute `list[str]`, `option[&T]`, nested containers and iterator results; preserve origins through move/extraction/replacement/drop; reject backing destruction while any nested view survives | T02–T05, T12, T24–T25, T32, T37, T54 |
+| Generic dependencies | Existential dependency packing/opening and higher-kinded transformer substitution, or explicit unsupported-form rejection; check once with opaque dependency variables; substitute `list[str]`, `option[&T]`, nested containers and iterator results; preserve origins through move/extraction/replacement/drop; reject backing destruction while any nested view survives | T02–T05, T12, T24–T25, T32, T37, T54 |
 | Receiver-stored origins | Two live external-backed results through trait dispatch and metadata; distinguish receiver/frame-owned loans from carried external loans and dependent reborrows; reject conflicting mutation, resume, or disposal without exposing private fields | T04–T05, T08, T24–T27, T32, T37, T50, T54–T55 |
-| Sequential generators | Loans across yield; intervening caller actions; external-backed versus frame-backed results; stable frame identity on handle moves; rejection of reentrant/conflicting resume and dead backing; state-specific cleanup on completion, failure, and early loop exit/drop | T02–T08, T27, T35, T42–T45, T50, T54–T57 |
-| Initialization/cleanup | Partial products, reinitialization, forbidden partial custom destruction, replacement borrowing old contents, branch-edge disposal with observable destructor timing before the join and surviving-loan rejection, partial-construction failure, specified order, exactly-once accounting | T13–T15, T19, T57 |
-| Exchange/pop/match | Noncopyable resources, initialized prefix, empty pop, slot versus child authority, outgoing loans, prepared-result failure, consuming sum payload exactly once | T14, T41, T48, T50 |
+| Sequential generators | Loans across yield; intervening caller actions; external-backed versus frame-backed results; stable frame identity on handle moves; rejection of reentrant/conflicting resume and dead backing; state-specific cleanup on completion, failure, and early loop exit/drop | XG, T27, T35, T42–T45, T50, T54–T57 |
+| Initialization/cleanup | Partial products, reinitialization, forbidden partial custom destruction, replacement borrowing old contents, explicit branch-edge disposal traces, rejection of implicit early observable cleanup, and surviving-loan rejection, partial-construction failure, specified order, exactly-once accounting | T13–T15, T19, T57 |
+| Exchange/pop/match | Reserve/relocate/append, capacity overflow, zero-sized elements, allocation failure ownership, live-view rejection, noncopyable resources, initialized prefix, empty pop, slot versus child authority, outgoing loans, prepared-result failure, consuming sum payload exactly once | T14, T41, T48, T50 |
 | Callback origins | Named/unnamed callable parameters; consistent binder renaming and different implementation names; inferred implementation/forwarding contracts; per-invocation origins across different inputs; preserved summaries through stored values and metadata; compatible computation-only captures versus rejected capture-backed or earlier-input results; omission never erases dependencies | T24–T27, T30–T31, T34, T37, T53–T55 |
 | Captures and origins | Explicit value/observation/edit/no-capture lists; omitted list infers value captures; affine moves versus checked duplication with dependencies; no implicit copying or escape-dependent borrowing; closed-list enforcement; escaping borrowed lifetimes; `from self` and mixed bounds; captured-owner views retain supporting ownership; duplicated captured observations preserve original dependencies without unnecessary environment loans; conservative boundary summaries; reject results whose backing invocation cleanup destroys | T24–T27, T30–T31, T33–T34, T37, T53–T55 |
 | Callable receivers | Inferred and explicit observing/editing/consuming entries; omitted receiver retains sufficient mode information; implicit call-site receivers; callback passing mode separate from entry mode; reusable owned/borrowed editing callbacks; earlier input-derived results do not retain environment loans; retained capture loans; reject editing through observation and consuming through loans; write bounds independent of modes; portable mode summaries and teacher diagnostics | T25–T27, T30–T31, T34, T37, T53–T55 |
-| Effects/facts | Ancestor invalidation, disjoint preservation, `writes nothing` versus omission, rejected `writes {}` syntax, named argument and callable-environment write bounds, hidden callback/token writes, earlier argument proof invalidated later, cleanup invalidating postconditions | T23–T26, T36 |
-| Outcomes | Error states retaining loans/replacing owners, no implicit rollback, no success-only authority before match, later effects on all alternatives, conversion failure before invocation | T25, T35, T54–T55 |
-| Proof kernel | All constructors, scoped assumption discharge, huge coefficients, negative certificate weights, malformed/cyclic proofs, overflow domains, stale versions, region equality, resource limits | T20–T22, T56 |
+| Effects/facts | Field/path versions and structural epochs, sibling-field fact preservation, whole-parent invalidation, `writes nothing` versus omission, rejected `writes {}` syntax, named argument and callable-environment write bounds, hidden callback/token writes, earlier argument proof invalidated later, cleanup invalidating postconditions | T23–T26, T36 |
+| Outcomes | Error states retaining loans/replacing owners, no implicit rollback, no success-only authority before match, later effects on all alternatives, conversion failure before invocation | XO, T25, T35, T54–T55 |
+| Proof kernel | All constructors, scoped assumption discharge, huge coefficients, negative certificate weights, malformed/cyclic proofs, overflow domains, stale versions, region equality, resource limits | T07, T20–T22, T56 |
 | Abstractions | Generic nominal identity, private fields, trait/indirect subtyping, recursive summaries, copy/freeze closure contracts, sealed constructors, native trust boundaries | T24–T28, T32, T37, T47 |
 | Execution/adoption | Both backends, compile-time preparation, metadata mismatch, optimization on/off, unsupported machine/concurrency crossings, CLI and package selection | T38, T43–T46, T52, T55, T61 |
 | Value-storage foundation | Inline layouts and descriptors, independent parameter storage, caller-owned results, mandatory RVO without inlining, NRVO enabled/disabled and fallback, replacement aliasing, partial initialization, bounded frames, safe tail calls, no ordinary aggregate shell allocations | V0, T39–T46, T55–T58 |
@@ -841,7 +942,8 @@ The following groups define minimum coverage; they do not replace row-by-row tra
 Use three complementary levels:
 
 1. **Core verifier tests:** build small core programs directly and assert accepted states or
-   precise rejection reasons. Compare bounded generated traces with the formal model. Do not
+   precise rejection reasons. Compare acceptance, rejection, and bounded generated traces with the executable Lean checker,
+   whose acceptance theorem is required at G0. Do not
    share the verifier's conflict routine with the reference model used as the test oracle.
 2. **Source conformance tests:** compile complete programs through the mode's real semantic
    path, including library contracts, generics, diagnostics, and compile-time calls. A missing
@@ -874,10 +976,10 @@ Existing targeted commands, verified from the build declarations, include:
 ```sh
 bazelisk test --config=debug //src/parser:parser_test
 bazelisk test --config=debug //src/semantic:ownership_check_test //src/semantic:reason_test
-bazelisk test --config=debug //src/hir:lower_test //src/hir:inline_test
-bazelisk test --config=debug //src/bytecode_compiler:compile_test //src/bytecode:vm_test
-bazelisk test --config=debug //src/llvm_codegen:codegen_test //src/llvm_codegen:aot_test
-bazelisk test --config=debug //src/runtime:allocator_test //src/runtime:layout_test
+bazelisk test --config=debug //src/hir:lower_test //src/hir:inline_test //src/hir:storage_test
+bazelisk test --config=debug //src/bytecode_compiler:compile_test //src/bytecode_compiler:storage_compile_test //src/bytecode:vm_test
+bazelisk test --config=debug //src/llvm_codegen:codegen_test //src/llvm_codegen:storage_codegen_test //src/llvm_codegen:aot_test
+bazelisk test --config=debug //src/runtime:allocator_test //src/runtime:value_layout_test
 bazelisk test --config=debug //src:cli_test //src:std_test //src:codegen_stress_test
 just test
 ```
@@ -887,16 +989,19 @@ Add focused targets such as `//src/capability:verify_test`, `//src/proof:kernel_
 tasks; those targets do not exist at planning time. Run targeted suites per change and the
 full suite at integration/adoption gates. T57 must add or confirm supported ASan/UBSan build
 configurations rather than assume the existing `tsan` configuration supplies those checks.
-V0 records the landed value-storage, return-storage, frame-budget, and hosted/compile-time
-test targets as additional required regression commands; use their actual names rather than
-assuming the interface names proposed in the value-semantics plan became build targets.
+V0 records the landed storage, NRVO/frame, and hosted/compile-time regression targets.
+The commands above use those actual targets; proposed affine targets remain future work.
 
 ## Milestones and Adoption Gates
 
 | Gate | Required evidence | Permitted next step |
 |---|---|---|
 | V0: value-semantics baseline | Landed revision, mapped interfaces/test targets, and completion evidence for value-semantics T-01–T-14 | Begin source/runtime/HIR integration after its formal/core prerequisites; independent formal/core work does not wait for V0 |
-| G0: formal readiness | T09; explicit assumptions and reproducible theorem evidence | Implement the compiler core and kernel |
+| P: prototype ergonomics | P01/P02; executable library ports and recorded annotations, copies, rejections, and budgets | Begin T05/T06; revise rules first if the gate fails |
+| G0: minimal formal readiness | T09; non-suspending feature manifest, static abstraction and Lean checker acceptance proofs, native/thread assumptions | Implement the G0 compiler core |
+| GO: outcome states | XO; pending alternatives and common-authority proofs plus oracle coverage | Implement outcome-specific authority in T25 |
+| GX: sequential generators | XG; suspension, interference, frame lifetime, and cleanup proofs plus oracle coverage | Implement generator checking in T27 |
+| GP: proof kernel and erasure | T07; certificate soundness and erasure, with explicit cross-feature composition scope | Implement T20–T22; enable only proved feature combinations |
 | G1: core completeness | T29 plus kernel coverage; all primitive/contract families represented | Integrate source elaboration, still opt-in |
 | G2: checked source | T38 and T54; every route to execution requires verification | Execute the supported experimental subset once its backend is ready |
 | G3: execution parity | V0, T43–T46 and T55–T57; lifetime/failure evidence, preserved value-storage guarantees, RVO/NRVO checks, and baseline regressions on both backends | Expand experimental library use and evaluate performance |
@@ -907,8 +1012,8 @@ The shortest useful demonstration is a verified buffer/list program that constru
 edits it, observes its length, copies it independently, freezes one owner, retains a child or
 inline projection, releases the parent, and disposes all remaining resources correctly.
 Add noncopyable `pop` plus a consuming match and one error-returning mutator before calling
-the prototype representative. Formal readiness additionally requires the four translations
-listed under required model decisions. A passing demonstration is not a substitute for any gate.
+the prototype representative. G0 additionally requires P02 and all G0 translations; each extension requires its own
+executable translations and proofs. A passing demonstration is not a substitute for any gate.
 
 General adoption must not silently disable existing async or machine features. If T52 cannot
 provide a sound supported boundary, keep the experimental mode opt-in and record that T60 is
@@ -924,9 +1029,14 @@ bulk rewrite should infer resource transfer where independent copying was intend
 
 - [ ] Required formal properties are established with stated assumptions and reproducible artifacts.
 - [ ] Generic dependency substitution, trait stored-origin relationships, branch cleanup points,
-      and sequential generator transitions are settled and translated before safety proofs.
+      and sequential generator transitions are settled and translated before their respective safety proofs.
 - [ ] Sequential generators preserve loans across yield and dispose suspended state exactly once.
-- [ ] V0 records the completed value-semantics baseline, actual interfaces, and regression evidence.
+- [x] V0 records the completed value-semantics baseline, actual interfaces, and historical regression evidence.
+- [ ] P01/P02 pass the measured library-port ergonomics gate before safety proofs.
+- [ ] G0, GO, GX, and GP have separate manifests, oracle coverage, and composition evidence.
+- [ ] Static place summaries and inline lifetime instances have a proved dynamic abstraction.
+- [ ] Sequence growth has checked primitives; trusted machine/thread boundaries are enforced.
+- [ ] Proposed explicit observable cleanup, pinned interfaces, and field versions are reconciled with accepted documents.
 - [ ] Every proposal primitive, conversion, table row, and prose counterexample is traced to tests.
 - [ ] All supported runtime and compile-time execution paths consume verified bodies.
 - [ ] Copies preserve source state and equivalent contents with independently owned mutable reach.

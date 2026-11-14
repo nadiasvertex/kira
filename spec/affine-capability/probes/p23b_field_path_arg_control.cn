@@ -1,0 +1,13 @@
+module probes.field_path_arg_control
+# Control for p23, result 6: no loan on a.items is live across the call.
+type acc = { items: list[int32], total: int32 }
+def add(t: &mut int32, n: int32) -> unit:
+    *t = *t + n
+def main() -> int32:
+    var a = acc { items: [1, 2, 3], total: 0 }
+    var i: usize = 0
+    while i < a.items.len():
+        let x = a.items[i]
+        add(&mut a.total, x)
+        i = i + 1
+    return a.total

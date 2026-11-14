@@ -1,0 +1,12 @@
+module probes.view_across_method
+# Want accept under C, result 11: a caller's view of a.items survives a method
+# that writes only a.total. B rejects.
+type acc = { items: list[int32], total: int32 }
+extend acc:
+    def bump(mut self, n: int32) -> unit:
+        self.total = self.total + n
+def main() -> int32:
+    var a = acc { items: [1, 2, 3], total: 0 }
+    let v = a.items.as_slice()
+    a.bump(10)
+    return v[0] + a.total

@@ -1,0 +1,10 @@
+module probes.origin_precision
+# Want accept: the result borrows only a, so changing b is fine.
+def pick(a: &list[int32], b: &list[int32]) -> slice[int32]:
+    return a.as_slice()
+def main() -> int32:
+    let a: list[int32] = [1, 2]
+    var b: list[int32] = [3]
+    let s = pick(&a, &b)
+    b.push(4)
+    return s[0]

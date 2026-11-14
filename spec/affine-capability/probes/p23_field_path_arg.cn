@@ -1,0 +1,10 @@
+module probes.field_path_arg
+# Want accept under B and C, result 6: the call borrows only a.total.
+type acc = { items: list[int32], total: int32 }
+def add(t: &mut int32, n: int32) -> unit:
+    *t = *t + n
+def main() -> int32:
+    var a = acc { items: [1, 2, 3], total: 0 }
+    for x in &a.items:
+        add(&mut a.total, *x)
+    return a.total

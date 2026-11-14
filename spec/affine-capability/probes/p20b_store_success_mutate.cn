@@ -1,0 +1,11 @@
+module probes.store_success_mutate
+# Must reject: the registry holds a view of src after a successful register.
+type registry = { names: list[slice[int32]] }
+def register(reg: &mut registry, s: slice[int32]) -> unit:
+    reg.names.push(s)
+def main() -> int32:
+    var r = registry { names: [] }
+    var src: list[int32] = [1]
+    register(&mut r, src.as_slice())
+    src.push(2)
+    return r.names[0][0]

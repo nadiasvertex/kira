@@ -1,0 +1,35 @@
+module main
+
+# `implements[T, Trait]()` answers from the coherence table. The checker
+# folds it to a constant: directly for a concrete type, and per instance
+# when `T` is a template parameter. Values are asserted, not just a clean
+# compile: the evaluator that used to answer this was removed with the AST
+# interpreter, which left every call unlowerable. `std.limits.min` is here
+# because it also stopped compiling: `-128 as T` is `-(128 as T)`.
+
+use std.traits.is_convertible
+use std.traits.into
+use std.limits.min
+
+static pure def has_show[T]() -> bool:
+    return implements[T, show]()
+
+type celsius = { degrees: float64 }
+
+impl into[float64] for celsius:
+    def into(self) -> float64:
+        return self.degrees
+
+def main() -> int32:
+    println("direct={implements[pt, show]()} {implements[qt, show]()}")
+    println("generic={has_show[pt]()} {has_show[qt]()}")
+    println("convertible={is_convertible[celsius, float64]()} {is_convertible[int32, str]()}")
+    println("min={min[int8]()} {min[int64]()} {min[int128]()}")
+    return 0
+
+type pt = { x: int32 }
+type qt = { x: int32 }
+
+impl show for pt:
+    def show(self) -> str:
+        return "pt"

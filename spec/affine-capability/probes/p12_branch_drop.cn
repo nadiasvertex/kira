@@ -1,0 +1,11 @@
+module probes.branch_drop
+# Expect accept: moved on one branch, dropped at scope end on the other.
+def consume(xs: list[int32]) -> int32:
+    return xs[0]
+def pick(flag: bool) -> int32:
+    let xs: list[int32] = [7]
+    if flag:
+        return consume(xs)
+    return 1
+def main() -> int32:
+    return pick(true) + pick(false)
