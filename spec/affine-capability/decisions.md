@@ -61,9 +61,9 @@ it does not promise termination or eventual cleanup for diverging programs.
 
 ## Q2 — Ownership default and explicit copying
 
-Status: ownership-default, contract-inference, and basic surface-spelling decisions accepted
-on 2026-11-14. Q2 remains partially resolved; copy/materialization names and further mappings
-are pending.
+Status: ownership-default, contract-inference, basic surface-spelling, and `copy`/`copy_owned`
+naming decisions accepted on 2026-11-14. Q2 remains partially resolved; witness naming and
+further mappings are pending.
 Owning task: T08. Dependent tasks: T30–T36 and the affected library migrations.
 
 ### Decision
@@ -87,8 +87,8 @@ available as `&>e`, and invalidates its source without discarding dependencies.
 
 Independent copy construction and materialization require explicit requests and structural
 witnesses. Freezing an owner is explicit as well: a bare owner cannot satisfy a persistent
-sharing parameter by implicit freezing or copy-then-freeze. Schematic `publish(&!x)` freezes
-and consumes the original; `publish(&!clone(x))` explicitly materializes and freezes a copy,
+sharing parameter by implicit freezing or copy-then-freeze. `publish(&!x)` freezes
+and consumes the original; `publish(&!copy_owned(x))` explicitly materializes and freezes a copy,
 preserving `x` when both operations are valid. An existing frozen handle can satisfy the
 sharing parameter through independent retention.
 
@@ -156,17 +156,36 @@ in legacy mode; replacement and removal follow the compatibility/adoption gates.
 the shorter name for the new semantics is a possible adoption-time decision, not an implicit
 compatibility mapping. Sequential frozen sharing does not establish thread-transfer safety.
 
+### Independent-copy operation names
+
+Use `copy(x)` for source-preserving structural value copying, returning the same surface
+value type. Use `copy_owned(h)` to observe represented `T` through a live capability and
+construct equivalent contents in a fresh `own[T]` root. Both are explicit, witness-authorized
+operations; neither consumes its source or is selected implicitly by a parameter type.
+
+Copying a `shared_read[T]` handle retains the same frozen target and requires the handle
+value's witness. `copy_owned` through that handle instead needs represented `T`'s witness
+and constructs fresh mutable reach. The same materialization is available through a valid
+inspection or edit of copyable represented data; copying cannot remove scoped loans stored
+inside that representation. `copy` on the scoped handle itself has no witness in the initial
+core even when materializing its referent is supported.
+
+The core uses `copy_value` for the operation exposed as `copy`, and `copy_owned` for
+fresh-owner materialization. `clone` is not an alias for either. Legacy and user-defined
+`clone` methods remain ordinary calls with their own contracts and do not establish a
+structural witness by name. `copy`/`copy_owned` avoid the ambiguity of a second copy-like
+operation whose name does not identify its authority or result-type distinction.
+
 The [surface mapping](surface.md) gives the accepted spellings and examples. These decisions
 do not amend the normative grammar or implement the new mode.
 
 ### Remaining scope and obligations
 
-Q2 still needs user-facing independent-copy/materialization names and a distinct structural
-witness constraint name, full view mappings, callable and capture spellings, and remaining
+Q2 still needs a distinct structural witness constraint name, full view mappings,
+callable and capture spellings, and remaining
 contract forms. The worked `from`, `writes`, `outcome`, `entry`, `transfers`, and `preserves`
 clauses remain syntax candidates with the accepted inference policy. The existing `copy`
-concept and the structural independent-copy witness must remain distinct. Core `copy_value`
-and `clone` name semantic operations; their user-facing names are not settled by this decision.
+concept and the structural independent-copy witness must remain distinct.
 
 T08 must validate the remaining choices with representative translations. Structural copy,
 separation, freeze, lifetime, and cleanup proofs remain required even though copying is

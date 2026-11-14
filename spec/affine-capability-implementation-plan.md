@@ -1,8 +1,8 @@
 # Affine Capability Core: Implementation Plan
 
 Status: proposed implementation roadmap; no affine task below is complete. Q1 is resolved;
-Q2's ownership-default, inference, and basic surface-spelling decisions are accepted;
-copy/materialization names and remaining mappings are pending.
+Q2's ownership-default, inference, basic surface-spelling, and `copy`/`copy_owned` naming
+decisions are accepted; witness naming and remaining mappings are pending.
 The remaining T01 work and all proof milestones are pending.
 
 Source: [Affine capability core](affine-capability-core.md).
@@ -103,7 +103,7 @@ Resolved choices do not establish their associated proofs or complete their owni
 | ID | Question | Decision or proposed starting position | Blocks |
 |---|---|---|---|
 | Q1 | Which formalization tool and proof artifact format will establish the required properties? | Resolved: Lean 4 with Lake; version-controlled `.lean` definitions and proofs are authoritative. Require a pinned toolchain and dependencies, reproducible kernel checking, theorem traceability, and assumption reports. See [decision Q1](affine-capability/decisions.md#q1--formalization-toolchain-and-proof-artifacts) and the [formal artifact contract](affine-capability/formal/README.md). Toolchain bootstrap and proofs remain pending in T01–T09. | T02–T09 |
-| Q2 | What are the final declaration, result-origin, effect, local-builder, and conversion syntaxes? How do existing `self`, `&mut`, views, `copy`, and `shared` map? | Partially resolved: move-by-default, inferred checked contracts with optional constraints, and basic [surface spellings](affine-capability/surface.md) are accepted. `&` requests observation, `&mut` editing; neither is silently reinterpreted. Preserve reference/receiver shorthand and `let`/`var`; use `shared_read[T]` in the experiment without aliasing legacy `shared[T]`. Copy/materialization names, the structural witness name, views, callable/capture mappings, and remaining contract syntax await T08 translations. See [decision Q2](affine-capability/decisions.md#q2--ownership-default-and-explicit-copying). | T08, T30–T36 |
+| Q2 | What are the final declaration, result-origin, effect, local-builder, and conversion syntaxes? How do existing `self`, `&mut`, views, `copy`, and `shared` map? | Partially resolved: move-by-default, inferred checked contracts with optional constraints, and basic [surface spellings](affine-capability/surface.md) are accepted. `&` requests observation, `&mut` editing; neither is silently reinterpreted. Preserve reference/receiver shorthand and `let`/`var`; use `shared_read[T]` in the experiment without aliasing legacy `shared[T]`. Use `copy(x)` for same-type value copying and `copy_owned(h)` for fresh-owner materialization; neither operation is named `clone`. The structural witness name, views, callable/capture mappings, and remaining contract syntax await T08 translations. See [decision Q2](affine-capability/decisions.md#q2--ownership-default-and-explicit-copying). | T08, T30–T36 |
 | Q3 | How do semantic regions map to the completed value-semantics typed places and genuine backing allocations? | Reuse concrete layouts and storage provenance. Regions denote semantic storage identity, not every C++ or VM allocation. An inline field shares its containing region; address reuse never reuses a semantic identity. | T39–T46 |
 | Q4 | Which frozen-handle representation retains an inline projection's backing allocation? | Use a shared control block plus a checked projection descriptor, or an equivalent representation justified in T39. Reference counting alone does not establish deep freeze. | T39–T44, T49 |
 | Q5 | Which allocation failures are ordinary error outcomes and which remain fatal process failures? | Model recoverable construction failure explicitly. Preserve existing fatal behavior until a deliberate runtime policy is implemented; never imply that panic unwinds. | T04, T39, T41, T57 |
@@ -174,7 +174,7 @@ bodies and substituted witnesses retain those constraints.
 
 | Component | Owns | Must not do |
 |---|---|---|
-| Elaborator | Evaluation order, explicit conversions, carriers, source spans, proposed cleanup and evidence | Invent permission, erase dependencies, or select unchecked implicit clones |
+| Elaborator | Evaluation order, explicit conversions, carriers, source spans, proposed cleanup and evidence | Invent permission, erase dependencies, or insert unchecked implicit copies |
 | Core verifier | Well-formed state, forest conflicts, loans, initialization, cleanup accounting, effects, outcome transitions | Re-run arbitrary Cinder code or assume distinct region names imply disjointness |
 | Proof kernel | Finite derivations over immutable identities, versioned terms, linear arithmetic, and nominal witnesses | Manufacture ownership, retarget region identities, or trust automation output |
 | HIR adapter | Translate checked copy, transfer, retain/release, allocation, and cleanup into typed HIR consumed by shared storage lowering | Recompute a different cleanup schedule or collapse structural copy into a byte transfer |
@@ -202,7 +202,7 @@ layout data out of permission logic.
 ## Task Grid
 
 No affine task is complete; T01 has a recorded Q1 decision, with its remaining work pending.
-T08 has accepted Q2 ownership-default, inference, and basic surface-spelling decisions;
+T08 has accepted Q2 ownership-default, inference, surface-spelling, and copy-operation naming decisions;
 the remaining Q2 choices are pending.
 V0 is an external prerequisite, not an affine implementation task.
 **P0** denotes a semantic foundation or execution-safety gate;
@@ -318,7 +318,7 @@ fall back to legacy lowering to keep those paths running.
 |---|---|---|---|---|---|
 | T47 | Define the trusted memory boundary and experimental prelude | `src/std/mem.cn`, `src/std/intrinsics.cn`, `src/std/prelude.cn`; `src/intrinsics.h`; **new** `src/semantic/capability_intrinsics.{h,cpp}`; `src/driver/driver.cpp` | T38, T41, T43, T44 | P1 | Trusted operations have explicit authority/effect/failure contracts; experimental source selection is complete and does not exempt the library from checking. |
 | T48 | Migrate list storage and noncopyable sequence operations | `src/std/list.cn`, `src/std/traits.index.cn`; **new fixtures** under `src/testdata/affine_std_test/` | T47 | P1 | Initialized prefix, reserve/growth, push transfer, pop, replacement, indexing, views, and reverse cleanup are checked; noncopyable resources are supported. |
-| T49 | Provide frozen sharing and independent clone APIs | `src/std/shared.cn`, `src/std/string.cn`, `src/std/traits.conversion.cn`; **new fixtures** under `src/testdata/affine_std_test/` | T47 | P1 | Sharing cannot expose mutable authority or mandatory unique destructors; handle duplication differs from explicit materialization; freezing an owner and copying then freezing are explicit requests; inline and child projections outlive released parents. |
+| T49 | Provide frozen sharing, `copy`, and `copy_owned` APIs | `src/std/shared.cn`, `src/std/string.cn`, `src/std/traits.conversion.cn`; **new fixtures** under `src/testdata/affine_std_test/` | T47 | P1 | `copy` preserves the source value type; `copy_owned` materializes represented contents in a fresh `own[T]`. Both preserve their sources and require the relevant witnesses. Neither is a `clone` alias. Sharing cannot expose mutable authority or mandatory unique destructors; freezing is explicit; inline and child projections outlive released parents. |
 | T50 | Migrate consuming sums, iterators, callbacks, and generic helpers | `src/std/option.cn`, `src/std/result.cn`, `src/std/iter.cn`, `src/std/algo.cn`, `src/std/traits.cn`, `src/std/deriving.cn`; **new fixtures** under `src/testdata/affine_std_test/` | T48, T49, T32 | P1 | Resource payloads move once; iterator/callback contracts expose retained loans and writes; generic helpers use owning or borrowing modes as intended, requiring structural witnesses only for explicit independent copying/materialization. |
 | T51 | Migrate sequential external-resource APIs to sealed contracts | `src/std/io.cn`, `src/std/console.cn`, `src/std/fs/path.cn`, `src/std/platform.cn`, `src/std/time.cn`; `src/runtime/io.cpp`, `src/runtime/platform.cpp` | T47, T28 | P1 | Native resources are not automatically copyable/freezable; transitions, cleanup, failures, and external effects have explicit interfaces. |
 | T52 | Implement the legacy/machine/concurrency boundary policy | `src/semantic/check_expr.cpp`, `src/semantic/check_ufcs.cpp`, `src/driver/driver.cpp`, `src/std/sync.cn`; `spec/affine-capability/compatibility.md` | T38, T47 | P1 | Unsupported crossings produce useful errors; approved adapters are tested; async/cancellation/thread safety are not inferred from sequential checking or frozen sharing alone. |
@@ -381,7 +381,15 @@ Move-by-default is the surface policy; every selected operation is explicit in t
 Ordinary transfer requires no copy witness and preserves the incoming storage identity.
 Scalars, retained frozen handles, and other duplicable values follow their checked duplication
 rules, including lifetime dependencies. A structural copy witness authorizes explicit
-independent construction; it does not make an owner duplicable or trigger implicit cloning.
+independent construction; it does not make an owner duplicable or trigger implicit copying.
+
+Expose core `copy_value` as source-level `copy(x)` and use `copy_owned(h)` for fresh-owner
+materialization in both surface and core. T34/T49 must preserve the source-observation
+semantics of both operations rather than applying ordinary move-by-default to the source.
+`copy` on a frozen handle retains its target; `copy_owned` through that handle requires a
+witness for represented `T`. A scoped handle can support observation of a materializable
+referent without having its own independent value-copy witness. Legacy `clone` methods
+remain ordinary calls, not implicit implementations of either operation.
 
 The initial witness derives from representation structure and checked component operations.
 It establishes `equiv_T` and that every mutable region reachable from the result is fresh
@@ -396,7 +404,7 @@ every private represented field. Custom equality, cache omission, and arbitrary 
 do not establish a witness. Scoped components and protocol authority block derivation of an
 independent copy witness, even when separate capability duplication rules permit duplication.
 
-For a frozen represented owner field, `clone` constructs a fresh owned child. A field declared
+For a frozen represented owner field, `copy_owned` constructs a fresh owned child. A field declared
 as a shared handle retains its existing frozen target. Copying an aggregate containing proof
 data cannot silently retarget propositions to new regions or versions. Reject the recipe
 unless the needed derivation is checked.
@@ -453,7 +461,7 @@ An unannotated owner passed to an owning parameter transfers and invalidates its
 `&>` may state that transfer explicitly. This works for uncopyable resources and generic
 values without a copy bound. An explicit independent copy/materialization preserves the
 source under its witness obligations. Passing an owner bare to `shared_read` is rejected;
-`&!` consumes and freezes the original, while schematic `&!clone(x)` explicitly materializes
+`&!` consumes and freezes the original, while `&!copy_owned(x)` explicitly materializes
 and freezes a copy. Neither inspection nor edit can be promoted to persistent sharing or ownership.
 Every conversion-table row and every incompatible annotation needs a source-level test.
 
@@ -593,7 +601,7 @@ The following groups define minimum coverage; they do not replace row-by-row tra
 | Carriers | Duplicated observations, captured/stored loans, moved containers, in-flight arguments, returned views, temporary origins, retired bindings, scalar snapshots, branch availability | T12, T18–T19, T25, T54 |
 | Projection/freeze | Frozen owned child cannot yield ownership/edit; retained child/inline projection survives parent release; scoped access cannot promote; mutating closures and custom unique cleanup cannot freeze | T16, T27, T40, T49 |
 | Conversion | Every conversion-table row, bare owner transfer with and without a copy witness, use after transfer, scalar/frozen duplication, rejection of implicit freeze/materialization, explicit-annotation mismatches, same-loan duplication versus fresh reborrow, repeated helpers, suspended-edit transfer, retained loans on error | T34, T54 |
-| Copy/materialization | Explicit requests only; witness availability never enables implicit deep copying or owner duplication; exact contents and fresh mutable descendants, unrelated old mutable child rejection, independent frozen retention, source preservation, scoped/token rejection, frozen clone, proof identity substitution | T17, T27–T28, T41 |
+| Copy/materialization | Explicit `copy`/`copy_owned` requests; same-type handle copy versus represented-content materialization; scoped-handle copy rejection versus supported referent materialization; witness availability never enables implicit copying or owner duplication; exact contents and fresh mutable descendants, unrelated old mutable child rejection, independent frozen retention, source preservation, scoped/token rejection, frozen-source materialization, proof identity substitution | T17, T27–T28, T34, T41, T49 |
 | Initialization/cleanup | Partial products, reinitialization, forbidden partial custom destruction, replacement borrowing old contents, branch-edge disposal, partial-construction failure, specified order, exactly-once accounting | T13–T15, T19, T57 |
 | Exchange/pop/match | Noncopyable resources, initialized prefix, empty pop, slot versus child authority, outgoing loans, prepared-result failure, consuming sum payload exactly once | T14, T41, T48, T50 |
 | Effects/facts | Ancestor invalidation, disjoint preservation, empty versus omitted writes, hidden callback/token writes, earlier argument proof invalidated later, cleanup invalidating postconditions | T23–T26, T36 |

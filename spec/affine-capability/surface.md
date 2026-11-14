@@ -1,7 +1,7 @@
 # Affine capability surface mapping
 
 Status: accepted experimental-subset spellings for declarations, receivers, loans, transfer,
-freeze, and local bindings. Contract inference and optional programmer constraints are accepted
+freeze, copying, and local bindings. Contract inference and optional programmer constraints are accepted
 policies; the worked contract clauses remain syntax candidates. This document does not amend
 the implemented grammar or establish T08 completion. See [Q2 decisions](decisions.md#q2--ownership-default-and-explicit-copying)
 and the [worked translation](translations.md).
@@ -101,6 +101,52 @@ still exercise its existing authority over its referent. Binding an owner with `
 not freeze it. Binding a frozen handle with `var` permits replacing the binding but cannot
 make its target writable. Allocation and resource-constructor APIs are not chosen here.
 
+## Explicit copying
+
+Use the language-provided `copy(x)` and `copy_owned(x)` operations. Both observe and preserve
+their source; neither applies the usual move-by-default conversion to consume that source.
+They require live read authority and the relevant checked structural witness. Copying
+mutable contents may allocate and fail under the modeled failure policy; a partial result
+must be cleaned up without changing the source. Frozen backing may be shared when retained
+independently and permitted by the recipe.
+
+| Operation | Result | Witness requirement |
+|---|---|---|
+| `copy(x)` | Same surface value type as `x`; equivalent representation with fresh mutable reach | Structural witness for the source value type |
+| `copy_owned(h)` | `own[T]` containing equivalent represented `T` under fresh exclusive authority | Structural witness for represented `T` and valid observation through `h` |
+
+`copy` elaborates to the core `copy_value` operation. The fresh-owner core operation is
+named `copy_owned` as well. The operation is selected by its resolved identity and checked
+witness, not by the spelling of an arbitrary user-declared function. The existing `copy`
+concept remains distinct from this value-level operation and from the independent-copy
+witness, whose constraint name is still pending.
+
+```cinder
+# frozen: shared_read[config]; config has a structural copy witness
+let retained = copy(frozen)          # shared_read[config]; same frozen target
+var editable = copy_owned(frozen)    # own[config]; fresh mutable reach
+
+# view: inspect[config]
+var from_view = copy_owned(view)     # own[config]; independent of view's loan
+```
+
+`copy(frozen)` requires a witness for the frozen handle value; it does not require copying
+the target's contents. `copy_owned(frozen)` requires a witness for the represented target
+and reconstructs owned descendants even when their source edges are frozen. It never thaws
+the original. `copy_owned` can observe an owner, frozen handle, or valid scoped inspection
+or edit; an edit source is reborrowed for observation during construction.
+
+Scoped inspection and edit handles have no independent value-copy witness in the initial
+core. `copy(view)` therefore fails even when `copy_owned(view)` succeeds. Ordinary inspection
+duplication and edit reborrowing retain their existing capability rules. If represented
+`T` itself contains scoped loans or unsupported resources, `copy_owned` cannot shed those
+dependencies by copying; its witness must be rejected.
+
+`clone` is not a synonym for either operation. Existing user or legacy library `clone`
+methods retain their own declared contracts; their names establish no structural witness.
+The paired names `copy` and `copy_owned` make the preserved value type versus fresh-owner
+result explicit without assigning another meaning to `clone`.
+
 ## Legacy sharing
 
 Use `shared_read[T]` for retained frozen sharing in the experiment. Legacy `shared[T]` and
@@ -116,10 +162,8 @@ spelling alone establishes thread-transfer safety.
 
 ## Remaining Q2 choices
 
-- User-facing independent-copy and fresh-owner materialization operation names, and the
-  distinct structural witness constraint name. Core `copy_value` and `clone` remain semantic
-  operation identifiers rather than settled user APIs; legacy `copy` and arbitrary `clone`
-  methods do not establish those witnesses.
+- The distinct structural witness constraint name. Legacy `copy` classification and
+  arbitrary `clone` methods do not establish independent-copy witnesses.
 - Full view mappings, callable contract spellings, closure call-mode and capture spellings,
   and contract forms beyond the worked replacement example.
 - Complete translations and grammar integration for the advertised experimental subset.

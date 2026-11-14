@@ -14,10 +14,14 @@ or enable implicit independent copying. A function can request a capability such
 `shared_read[T]`, `inspect[T]`, or `edit[T]`; inspection and edit parameters borrow or reborrow
 according to the conversion table below.
 
-Independent copying and freezing are explicit requests. `copy_value` constructs an equivalent
-value with independent mutable storage; `clone` materializes represented contents in a fresh
-owned root. Both require structural copy witnesses. Immutable strings and frozen subobjects
-may share backing storage when lifetime management is preserved. Freezing consumes an owner
+Independent copying and freezing are explicit requests. Surface `copy(x)` elaborates to
+core `copy_value` and constructs an equivalent value of the same surface type with independent
+mutable storage. `copy_owned(h)` materializes represented contents in a fresh owned root and
+returns `own[T]` for represented `T`. Both preserve their sources and require the relevant
+structural copy witnesses. Copying a frozen handle retains its existing target;
+`copy_owned` instead constructs a fresh owner of the target's represented contents.
+Immutable strings and frozen subobjects may share backing storage when lifetime management
+is preserved. Freezing consumes an owner
 and permanently removes mutable authority over its region and owned descendants.
 
 Move-by-default is a surface elaboration policy. The formal core records transfer, duplication,
@@ -56,7 +60,7 @@ region state S ::= unique | frozen | dead
 
 operations ::= new | project | load | store | move | take_field | init_field
              | exchange | remove_last | match_move
-             | freeze | copy_value | clone
+             | freeze | copy_value | copy_owned
              | begin_inspect | begin_edit | retire | end_loan | call | drop
 ```
 
@@ -184,7 +188,7 @@ include carrier availability and loan dependencies as well as affine authority.
 | `end_loan(l)` | No live carrier or dependent loan of `l` | Restore authority only where no remaining loan suspends it |
 | `freeze(h)` | Fully initialized unique owner; permitted forest transition; contents and cleanup are recursively freezable | Consume owner, mark region frozen, return `shared_read` |
 | `copy_value(v)` | Live read authority; structural copy witness for the value type | Equivalent independent value under the checked-copy rules |
-| `clone(h)` | Live read authority; structural copy witness for represented `T` | Equivalent contents in fresh owned storage, with fresh mutable descendants |
+| `copy_owned(h)` | Live read authority; structural copy witness for represented `T` | Equivalent contents in fresh owned storage, with fresh mutable descendants |
 | `call(f,args)` | Argument capabilities, loans, and preconditions satisfy the instantiated contract | Apply storage effects, capability transitions, result dependencies, and checked postconditions |
 | `drop(h)` | Valid cleanup recipe for the initialized value; forest conflicts and lifetime dependencies permit disposal | Discharge cleanup once, retire the carrier, and reclaim or release storage as appropriate |
 
@@ -192,7 +196,7 @@ An edit loan may create nested observation or edit loans only by suspending its 
 authority until those loans end. This is reborrowing, using the same rules as an owner.
 
 There is no `shared_read -> own` conversion. Even discovering that a frozen handle has one remaining
-reference does not thaw it. An independent mutable copy requires `clone` and a fresh region.
+reference does not thaw it. An independent mutable copy requires `copy_owned` and a fresh region.
 Rebinding a variable to fresh storage does not mutate the old frozen value.
 
 Freezing is deep: recursively consume and freeze exclusively owned reachable regions; already
@@ -294,7 +298,7 @@ available ownership token. Its former exclusive authority has been consumed by f
 
 `project(h,p,mode)` selects a valid path `p` through `h` and requests observation, editing,
 or persistent sharing. Array paths require bounds evidence and sum paths require evidence
-of the active variant. Projection does not move a field or implicitly clone its contents.
+of the active variant. Projection does not move a field or implicitly copy its contents.
 For a field represented as `own(s,U)`, the rules are:
 
 | Source capability | Requested mode | Result and obligation |
@@ -356,8 +360,8 @@ becoming a duplicable owner; copying never produces a second owner of the origin
 Explicit independent copying or materialization requires a structural copy witness for `T`.
 Ordinary ownership transfer does not require one, including for generic parameters. The initial core
 derives this witness from the type's representation and checked component operations; a
-user function named `copy` or `clone` does not supply one by declaration alone. The witness
-specifies a value relation `equiv_T` and a construction recipe with these obligations on
+user function named `copy`, `copy_owned`, or `clone` does not supply one by declaration alone.
+The witness specifies a value relation `equiv_T` and a construction recipe with these obligations on
 every successful return, where `H_in` and `H_out` are the input and output heaps:
 
 ```text
@@ -426,7 +430,7 @@ data mentioning concrete regions or versions cannot be silently retargeted to co
 storage. A copied representation that needs such evidence requires a checked derivation
 for its fresh identities; otherwise its copy witness is rejected.
 
-`clone(h)` uses the same structural obligations to materialize the represented `T` in a
+`copy_owned(h)` uses the same structural obligations to materialize the represented `T` in a
 fresh owned root. When its source is frozen, it observes through the capability-dependent
 projection rules and reconstructs owned fields with fresh regions, even if those source
 fields are retained frozen edges. Fields declared `shared_read` retain frozen targets.
@@ -434,11 +438,20 @@ This creates new mutable authority from allocation, not by extracting or thawing
 authority. In contrast, copying a `shared_read` handle as a value only duplicates the
 handle; it does not invoke this materialization operation.
 
-Explicit `copy_value` and `clone` requests use these obligations. Preserving an owner while
+Surface `copy(x)` selects core `copy_value`; `copy_owned(h)` selects the fresh-owner operation.
+Both observe their sources without consuming them; edit sources require valid observation
+reborrows during construction. These source-preserving operations are explicit requests,
+not ordinary by-value argument transfers. A copied `shared_read[T]` handle needs a witness
+for the handle value, while `copy_owned` through that handle needs a witness for represented
+`T`. A scoped handle has no independent value-copy witness in the initial core, even when
+its referent can be materialized with `copy_owned`.
+
+Explicit `copy_value` and `copy_owned` requests use these obligations. Preserving an owner while
 sharing its contents requires explicitly constructing an independent copy and then checking
 freezing on that copy. Neither an owning parameter nor a sharing parameter implicitly selects
-such construction. An arbitrary user-defined cloning function remains an ordinary explicit
-call with its own effect and result contract; its name does not authorize a structural recipe.
+such construction. An arbitrary user-defined function, including a legacy `clone` method,
+remains an ordinary explicit call with its own effect and result contract; its name does
+not authorize a structural recipe.
 The formalization must establish that the
 structural recipe preserves `equiv_T` and mutable separation. The bounded arithmetic proof
 kernel alone does not establish those heap properties.
@@ -451,15 +464,15 @@ editing, transfer, or freeze. Unannotated owners transfer to owning parameters; 
 that transfer explicitly and is required to transfer an existing edit handle instead of reborrowing it
 for an edit parameter. An incompatible explicit annotation is an error: `&` cannot satisfy
 an edit parameter, and `&mut` requests an edit rather than silently selecting observation.
-Conversion spellings are accepted for the experiment; user-facing copy/materialization
-names remain open. There is no default `copy[T]` parameter mode.
+Conversion spellings and the user-facing `copy`/`copy_owned` names are accepted for the
+experiment. There is no default `copy[T]` parameter mode.
 
 | Requested capability | Available value | Conversion |
 |---|---|---|
 | Ordinary by-value `T` | Affine value of the matching type | Transfer its carrier contents and cleanup obligations; consume source; no copy witness required |
 | Ordinary by-value `T` | Value with a checked duplication rule | Duplicate under that rule; retain frozen storage and preserve any loan dependencies; never independently deep-copy mutable storage |
 | `own[T]` | `own(r,T)`, unannotated or with `&>` | Transfer; consume source; no copy witness required |
-| `own[T]` | Explicit `clone(h)` result | Transfer the fresh owner produced by checked materialization; preserve `h` |
+| `own[T]` | Explicit `copy_owned(h)` result | Transfer the fresh owner produced by checked materialization; preserve `h` |
 | `shared_read[T]` | `own(r,T)`, unannotated or with `&>` | Rejected: sharing requires explicit freezing; transfer alone does not freeze |
 | `shared_read[T]` | `own(r,T)` with `&!` | Freeze original; consume source |
 | `shared_read[T]` | Existing `shared_read(r,T)` | Duplicate shared handle |
@@ -479,7 +492,7 @@ or dependent observation reborrow; `&mut x` begins a fresh edit loan or dependen
 reborrow when the source permits it. `&>x` transfers only; `&!x` freezes owned storage.
 For a sharing parameter, `publish(x)` is rejected when `x` is an owner,
 `publish(&!x)` consumes and freezes the original,
-and `publish(&!clone(x))` explicitly materializes and freezes a copy while preserving `x`.
+and `publish(&!copy_owned(x))` explicitly materializes and freezes a copy while preserving `x`.
 Neither freezing nor independent copy construction is inferred from the requested type.
 A composite containing an uncopyable resource can transfer to an owning parameter without
 an annotation or a copy witness, or be lent to a suitable `inspect` or `edit` parameter.
@@ -1019,15 +1032,15 @@ x = new_buffer()                 // own(r, buffer)
 push(&mut x, 1)                  // accepted; temporary exclusive loan
 n = length(&x)                   // accepted; observation ends after call
 push(&mut x, 2)                  // accepted
-publish(&!clone(x))             // explicitly copy, then freeze; preserve x
+publish(&!copy_owned(x))         // explicitly copy, then freeze; preserve x
 push(&mut x, 3)                  // accepted: x still owns mutable r
-y = clone(x)                    // new region s, if buffer supports cloning
+y = copy_owned(x)               // new region s, if buffer has a structural witness
 push(&mut y, 3)                  // accepted; r is unchanged
 consume(y)                      // own parameter: move; y is unavailable afterward
 publish(&!x)                    // freeze original; x is unavailable afterward
 ```
 
-Here `clone` observes its source and requires a structural witness; `consume` requests
+Here `copy_owned` observes its source and requires a structural witness; `consume` requests
 ownership and needs no copy witness. Passing `x` directly to `publish` would be rejected
 because an owning argument is not implicitly frozen or copied.
 
@@ -1094,7 +1107,7 @@ Argument-conversion validation must include existing scoped handles:
 | Pass a scalar or retained frozen handle by value, then reuse the source | Accepted under its duplication rule; the new frozen handle retains storage independently |
 | Pass an owner bare or with `&>` to a `shared_read` parameter | Rejected: neither form requests freezing or independent copy construction |
 | Pass an owner with `&!` to a `shared_read` parameter, then reuse the owner binding | Rejected: freezing consumes the owner |
-| Explicitly clone an owner and freeze the clone for a sharing parameter, then mutate the original | Accepted when copying, freezing, and loans are valid; the original remains owned |
+| Explicitly materialize an owner with `copy_owned` and freeze that copy for a sharing parameter, then mutate the original | Accepted when copying, freezing, and loans are valid; the original remains owned |
 | Pass an existing inspection unannotated to an inspection parameter | Accepted by duplicating the same loan and dependencies; the source remains available |
 | Pass an existing inspection with `&` to an inspection parameter | Accepted by creating a fresh dependent observation loan |
 | Pass an existing edit to an inspection helper, then reuse the edit after all derived carriers retire | Accepted after the observation reborrow ends and no other loan suspends the requested access |
@@ -1139,12 +1152,15 @@ Copy validation must distinguish equivalent contents from independent storage:
 | Allocate a fresh record but reuse its source's mutable child | Rejected: the result's mutable reach is not fresh |
 | Substitute unrelated pre-existing mutable storage for a child | Rejected even when it is disjoint from the source |
 | Copy a value with a retained frozen child, then release the source | Accepted: the copy independently retains the frozen child |
+| Call `copy` on a frozen handle | Accepted with the handle's structural witness; retain the same frozen target and preserve the source |
+| Call `copy_owned` through a frozen handle or inspection | Accepted when represented `T` has a structural witness and observation authority is valid; construct `own[T]` with fresh mutable reach |
+| Call `copy` on an inspection or edit handle itself | Rejected in the initial core: scoped capability duplication/reborrowing is distinct from independent value copying |
 | Copy an owned record, mutate the copy, then observe the source | Accepted; the source retains its original contents and versions |
 | Duplicate an inspection explicitly | Accepted with the same loan dependencies; this is not an independent value copy |
 | Request an independent value copy of a record or closure containing a scoped loan | Rejected in the initial core; capability duplication is a separate operation |
 | Copy a protocol token's backing bytes into a fresh allocation | Rejected: external authority has not been duplicated legitimately |
 | Use a user-defined clone that mutates the source as an implicit copy | Rejected even if it returns equivalent contents in fresh storage |
-| Materialize a frozen record with an owned child using `clone` | Accepted when both root and reconstructed owned child are fresh and contents are equivalent |
+| Materialize a frozen record with an owned child using `copy_owned` | Accepted when both root and reconstructed owned child are fresh and contents are equivalent |
 | Retarget a captured bounds proof from the source region to the copy without a derivation | Rejected: region and version identities are not interchangeable |
 
 Cleanup validation must cover both resource accounting and the authority used by disposal:
