@@ -10,7 +10,8 @@ migrate. Reconcile the revised choice with the decision ledger and T01/T08 of th
 [affine roadmap](../affine-capability-implementation-plan.md) before implementation adoption.
 
 Public contract syntax and compatibility details remain the next design discussion.
-The specific cross-thread synchronization API is also open; its required scope is recorded below.
+Synchronization and channel decisions are recorded below. Exact signatures, remaining API
+details, and their formal contracts still require completion before detailed implementation planning.
 
 ## Goal and effort model
 
@@ -170,9 +171,9 @@ establish resource identity, uniqueness, or a generative brand.
 Explicitly selected mutable shared ownership uses single-threaded reference counting,
 weak handles, and runtime-checked access. Strong cycles retain objects until broken;
 weak back-references permit reclamation. There is no automatic cycle collector.
-The existing application examples spell this abstraction `managed[T]`; that is provisional
-API vocabulary, not a managed runtime or the default representation of values.
-Final public spellings remain open.
+The agreed name is `shared[T]`. Existing application examples spelling this abstraction
+`managed[T]` need alignment; that spelling does not designate a managed runtime or the
+default representation of values.
 
 Duplicating a handle retains the same object without deep copying. Readers exclude editing;
 an editor excludes other access, including reentrant callbacks. Conflicts return an error
@@ -217,9 +218,165 @@ any surviving borrows. Cleanup cannot suspend; explicit asynchronous shutdown mu
 
 Ordinary shared handles are thread-confined, avoiding atomic reference-counting costs.
 Unique owners may transfer when their contents permit it. Cross-thread mutable sharing requires
-an explicitly selected synchronization abstraction with checked access. Its concrete API,
-transfer constraints, and cancellation/guard interactions remain to be specified; the
-non-suspending runtime-guard rule applies. No concurrency proof is implied by sequential safety.
+an explicitly selected synchronization abstraction with checked access, as specified below.
+The non-suspending runtime-guard rule applies. No concurrency proof is implied by sequential safety.
+
+## Synchronization API decisions
+
+These primitives are part of the complete first milestone. Synchronization is explicitly
+selected; ordinary values do not acquire locking or atomic reference-counting costs.
+
+### Mutexes and reader–writer locks
+
+- A mutex protects a value. Acquisition returns a scoped exclusive-access guard; releasing
+  the guard unlocks it. References into the contents cannot outlive the guard.
+- `lock()` blocks the thread; `try_lock()` returns a guard or busy immediately. Locks are
+  non-reentrant. Locking a mutex already held by the caller can deadlock; trying returns busy.
+  Owner tracking and deadlock detection are not required.
+- An explicit async mutex suspends the task while waiting. Cancelling acquisition removes
+  its request without leaving the lock held. An acquired guard cannot cross another `await`.
+- Reader–writer locks have blocking and async variants, multiple read guards or one write
+  guard, and immediate `try_read()` / `try_write()` operations. The same cleanup and
+  cancellation rules apply. There is no read-to-write upgrade: release, acquire, and recheck.
+- `downgrade()` consumes a write guard and returns a read guard without unlocking between
+  them. Outstanding borrows through the write guard must end first.
+- All lock guards are thread-confined, including guards obtained through async acquisition;
+  they must be released on the acquiring thread and cannot cross `await`.
+- Cleanup unlocks without poisoning. Partial updates are not rolled back; exclusive access
+  does not guarantee completion of application invariants or transactions.
+- Releasing a lock makes protected updates visible to subsequent acquiring callers; ordinary
+  lock use requires no explicit atomic fences from the programmer.
+- Acquisition order is unspecified, with no fairness or starvation-freedom guarantee.
+- Cross-thread mutex contents must be transferable; a mutex cannot make an aliased,
+  thread-confined value transferable. Cross-thread read guards additionally require contents
+  that permit safe concurrent reads.
+- `borrow_exclusive()` borrows the contents for mutation without locking when exclusive
+  access to the lock object is proved. `remove_synchronization()` consumes the lock and
+  returns its contents without synchronization protection. The returned value remains
+  subject to ordinary safety and transfer rules. Shared ownership must first be uniquely
+  extracted before these operations can use exclusive access.
+- Guards, pending acquisitions, and associated condition variables keep the lock alive.
+  Borrowed use constrains the owner's lifetime; use through shared ownership retains it.
+  Destruction or consuming removal cannot invalidate these dependencies.
+
+### Atomic shared ownership
+
+The explicit `atomic_shared[T]` reference-counted handle supports ownership across threads,
+separately from synchronization of contents. `atomic_shared[mutex[T]]` combines shared lifetime
+with protected access; `atomic_shared[T]` alone does not grant concurrent mutable access to `T`.
+Scoped threads may instead borrow a lock whose owner
+outlives them, avoiding shared ownership when unnecessary.
+
+Atomic shared ownership follows the ordinary shared ownership lifecycle: strong and weak
+handles, cleanup after the last strong owner and retained access dependencies, no resurrection,
+and strong cycles retained until broken. Reference-count overflow terminates before wrapping.
+Thread-safe retention does not itself grant access to mutable contents.
+
+Unique extraction is fallible and nonblocking. Success returns unique ownership and permanently
+disables weak upgrades, including racing attempts; failure returns the original handle unchanged.
+It requires one strong owner and no active access guards or dependent borrows. It never waits
+for other owners to disappear.
+
+### Condition variables and deadlines
+
+- Blocking and async condition variables are statically associated with one mutex when
+  created. Waiting accepts only a guard from that mutex; no runtime identity check substitutes
+  for the static association.
+- Waiting consumes the guard, atomically releases the lock and starts waiting, then reacquires
+  the lock and returns a new guard. Async waiting holds no guard while suspended. Callers
+  recheck their condition in a loop; notifications are not stored messages.
+- Cancelling an async condition wait removes the waiter without reacquiring the mutex.
+  Invariants must be restored before waiting; cancellation cleanup cannot require lock acquisition.
+- `notify_one()` and `notify_all()` require a borrow of the associated mutex's exclusive guard.
+  A read-only borrow of that guard suffices. Notification does not consume it; notified waiters
+  must reacquire the lock before accessing the value.
+- Associated condition variables keep the mutex borrowed even with no waiters. Release them
+  before `borrow_exclusive()`, `remove_synchronization()`, or destruction. Ordinary lock
+  acquisition remains available while they exist.
+- Lock acquisition and condition waits have blocking and async deadline operations using a
+  monotonic clock. Acquisition timeout returns no guard. Condition timeout reacquires the lock
+  and returns a guard with a timeout indication; reacquisition can finish after the deadline.
+
+### Atomic values
+
+Explicit atomic types cover booleans, supported integer widths, and raw pointers. Operations
+default to sequential consistency; weaker memory orderings must be explicit compile-time
+choices. Invalid operation/ordering combinations are compilation errors, including release
+loads and compare-and-exchange failure ordering stronger than its success ordering.
+
+Atomic types are available only where their implementation is lock-free; unsupported target
+types produce a compile-time diagnostic rather than silently using locks. Callers may explicitly
+choose a mutex instead. Lock-free does not promise wait-free: operations may retry. Atomic
+pointer operations establish neither ownership nor permission to dereference.
+
+## Channel API decisions
+
+Channels, including blocking and async operations, belong to the same complete milestone.
+
+### Ownership, capacity, and ordering
+
+- Bounded channels have explicit positive capacity. Sending waits when full; `try_send()`
+  returns the unsent value with a full result immediately if space is unavailable.
+- Successful send transfers ownership to the channel; receive transfers it to the receiver.
+  Values crossing threads must be transferable. Receipt makes the sender's writes preceding
+  the successful send visible to the receiver, without requiring explicit atomic fences.
+- The same endpoints support blocking threads and async tasks: `send()` / `receive()` block
+  the calling thread, `send_async()` / `receive_async()` return operations to await, and
+  `try_send()` / `try_receive()` never wait. Calling context does not implicitly choose a
+  waiting mode; communication across these modes requires no adapter.
+- Constructing `send_async(value)` immediately transfers the value into the operation, but
+  delivery attempts start only when awaited or polled. Constructing `receive_async()` consumes
+  no message. Dropping an unstarted operation cleans its owned values and endpoint dependency.
+- Pending channel operations can transfer between threads when all retained values permit it,
+  including a pending send's message. Migration transfers the existing registration without
+  duplicating the operation. Its representation must preserve storage/lifetime dependencies.
+- Explicitly cloned endpoints support multiple senders and multiple receivers. Each message
+  goes to exactly one receiver; this is not broadcast delivery.
+- Messages are received FIFO in acceptance order. Sequential sends from one sender preserve
+  order; concurrent sends are ordered at acceptance. Receiver processing may complete in a
+  different order. Waiting senders and receivers have no fairness guarantee.
+- `rendezvous()` creates an unbuffered channel. A send succeeds only when a receiver actually
+  takes ownership, not merely when a waiter is paired or notified. Before handoff either pending
+  operation can be withdrawn by timeout or cancellation. After handoff the send is committed.
+
+### Closure, cancellation, and timeouts
+
+- Dropping the last sender lets receivers drain queued messages and then observe end-of-channel.
+  Dropping the last receiver cleans queued messages; uncommitted and future sends fail and
+  return their unsent values. Endpoint drops wake waiters that can no longer succeed.
+- `close()` on either endpoint closes the channel for all senders, including clones. It is
+  idempotent. Accepted messages remain available to drain; uncommitted and future sends fail
+  with their unsent values. Receivers observe end-of-channel once the queue is drained.
+- Cancelling an async send before acceptance removes it and cleans its owned value. After
+  acceptance, the message remains available even if the sending task is cancelled before
+  observing success. Cancellation does not return values to a stopped task; ordinary send
+  errors do return unsent values.
+- A pending receive consumes no message until completion returns it. Cancelling even a notified
+  waiter removes it without consuming a message. After return, ordinary receiver ownership
+  and cancellation cleanup apply.
+- `try_receive()` returns a value, empty, or closed-and-drained. `send_until(deadline, value)`
+  returns the unsent value on timeout or closure. `receive_until(deadline)` returns a value,
+  timeout, or closed-and-drained. Deadline operations have blocking and async forms and use a
+  monotonic clock. Timed-out sends cannot later deliver; timed-out receives consume nothing.
+
+### Selection
+
+Blocking and async `select` wait for one of several sends or receives, optionally with a
+deadline. Exactly one branch commits. Losing receives consume nothing; losing sends return
+their unsent values. Selection among ready branches is unspecified.
+
+A selection cannot satisfy itself by pairing its own send and receive alternatives on a
+rendezvous channel. Handoff must involve an operation outside that selection. Pairing with
+another selection commits exactly one branch in each selection together.
+
+Closure is a ready result: a receive can win with closed-and-drained, and a send can win with
+closed and its unsent value. Closed branches are not silently ignored; callers remove them
+when continuing to wait on other channels.
+
+Exact signatures and result shapes, formal synchronization memory-order contracts, static mutex
+association, and the composition of selection with rendezvous, cancellation, and deadlines
+must be made concrete and verified. These are implementation-planning obligations, not
+claims that the agreed semantics have already been implemented or proved.
 
 ## Stable public contracts and restricted I/O
 
@@ -253,11 +410,12 @@ authority guarantee; it is not by itself an OS sandbox for untrusted native code
 | C04 | C03 | Add group abstraction, structural invalidation, and fact dependencies, including generic/nested storage. Demonstrate that narrow method access is acquired before invocation. |
 | C05 | C04 | Add per-outcome states with safe pending-result handling and checked postconditions. Validate errors that retain loans or replace storage. |
 | C06 | C03 | Add authority-backed capabilities, generative brands, and checked native minting boundaries. Reject safe in-module forgery as well as outside forgery. |
-| C07 | C04–C06, CS, CT | Implement/version complete interfaces, optional pinned guarantees, release compatibility comparison, and transitive restricted-I/O checking. |
+| C07 | C04–C06, CS, CT, CC | Implement/version complete interfaces, optional pinned guarantees, release compatibility comparison, and transitive restricted-I/O checking. |
 | C08 | C01, C02 | Specify and prototype explicit shared ownership, weak handles, access guards, failure, extraction, and cleanup. Validate reentrancy, escape rejection, cycles, and final release. |
 | CS | C02, C05, C08 | Define and verify generator suspension, yielded loans, static borrows across await, cooperative cancellation, and synchronous cleanup; reject runtime guards across await. |
-| CT | C03, C06, C08, CS | Specify and verify explicit synchronization APIs, thread confinement, owner/task transfer, and concurrent access. |
-| C09 | C04–C08, CS, CT | Elaborate the application corpus for all three options, execute accepted programs, and record programmer work and runtime costs. Revise ergonomics before production integration. |
+| CT | C03, C06, C08, CS | Specify and verify mutexes, reader–writer locks, condition variables, atomic ownership and values, thread confinement, owner/task transfer, and concurrent access under the agreed API contracts. |
+| CC | CT, C05, CS | Specify and verify bounded and rendezvous channels, multiple endpoints, closure/draining, ownership on cancellation and timeout, and blocking/async selection with exactly one committed branch. |
+| C09 | C04–C08, CS, CT, CC | Elaborate the application corpus for all three options, execute accepted programs, and record programmer work and runtime costs. Revise ergonomics before production integration. |
 | C10 | C09 | Consolidate safety and composition evidence developed from C01 onward; map evidence to G0/GO/GX/GP and runtime/backend gates. Only supported, validated combinations proceed to adoption. |
 
 Implementation proceeds in dependency order within one complete milestone. Experimental
@@ -305,6 +463,20 @@ Additional acceptance/rejection cases for the agreed scope:
 - Cooperative cancellation cleans remaining owners exactly once without suspending cleanup.
 - Thread-confined handles reject transfer; approved unique transfers and synchronized sharing
   preserve access rules under concurrent execution.
+- Locks reject escaping loans and cross-thread guard transfer; cleanup unlocks without poisoning.
+  Read-to-write upgrade is unavailable; downgrade leaves no gap for a competing writer.
+- Condition variables reject guards from another mutex and block exclusive borrowing or removal
+  of synchronization until released. Notification requires the associated guard. Cancellation
+  does not reacquire; condition timeout does reacquire, potentially after its deadline.
+- Atomic ownership extraction races with weak upgrade without duplicating ownership or resurrecting
+  an extracted value. Unsupported atomic types and invalid memory orderings fail compilation.
+- Channel closure drains accepted messages and returns uncommitted sends; last-receiver cleanup
+  destroys queued values exactly once. Send cancellation distinguishes acceptance from observation.
+- Cancelled or timed-out receives consume nothing; timed-out sends cannot subsequently deliver.
+  Rendezvous succeeds only at actual ownership handoff, including when a notified waiter cancels.
+- Selection commits exactly one branch, returns losing send values, and consumes no losing receive.
+  Exercise buffered and rendezvous channels, simultaneous readiness, closure, timeout, cancellation,
+  and competing selections without duplicate delivery or ownership loss.
 
 Use executable reference checks, source fixtures, and VM/LLVM execution as appropriate.
 Test lifetime cases with actual reclamation and allocation-failure injection. Tests provide
