@@ -1,10 +1,16 @@
 # Design C: safety and ergonomics plan
 
-Status: proposed design and implementation plan. No task or proof below is complete.
-This extends C in the [comparison](ergonomics-comparison.md) on the
-[standalone B baseline](b-plan.md); it does not change the
-accepted A core, current compiler behavior, or the decision ledger. Reconcile adoption
-with T01/T08 of the [affine roadmap](../affine-capability-implementation-plan.md).
+Status: design revision in progress. The semantic decisions below were agreed on
+2026-11-15; implementation tasks and proofs remain incomplete. A was previously accepted;
+that choice is now being reconsidered. This document extends C in the
+[comparison](ergonomics-comparison.md) on the [standalone B baseline](b-plan.md).
+The first milestone covers the complete design, implemented step by step, rather than
+introducing language features over successive releases. There are no existing users to
+migrate. Reconcile the revised choice with the decision ledger and T01/T08 of the
+[affine roadmap](../affine-capability-implementation-plan.md) before implementation adoption.
+
+Public contract syntax and compatibility details remain the next design discussion.
+The specific cross-thread synchronization API is also open; its required scope is recorded below.
 
 ## Goal and effort model
 
@@ -16,18 +22,22 @@ It must not be necessary to abandon safety to escape ownership complexity.
 | Concern | Convenient path | More explicit path |
 |---|---|---|
 | Ownership | Inferred moves, borrows, summaries, and conditional cleanup | Pinned contracts and explicit transfers |
-| Sharing | Retained frozen values; managed mutable handles where needed | Unique owners and scoped views |
-| Aliasing | Runtime-checked managed access | Statically checked access and disjoint partitions |
+| Sharing | Unique ownership by default; explicitly selected sharing | Unique owners and scoped views |
+| Aliasing | Static borrowing; explicit checked separation | Statically checked access and disjoint partitions |
 | Bounds | Checked indexing | Checked proof witnesses and branded indices |
 | Interfaces | Inferred checked summaries | Stable explicit guarantees |
 | Resources | Scoped deterministic cleanup | Checked authority and protocol transitions |
 | I/O | Broad authority supplied to script entry points | Explicit, transitively enforced capability boundaries |
 
 Choose representations through types and APIs. A failed static check must not silently
-insert deep copies, managed sharing, freezing, or runtime borrowing. Managed values and
+insert deep copies, shared ownership, freezing, or runtime borrowing. Shared values and
 owned values can coexist in one program; there is no global weaker-safety language mode.
 Static typing with inference is the starting point. This plan does not by itself provide
 Python's dynamic object model or its ecosystem.
+
+The goal is sane defaults and zero-cost abstractions wherever possible. There is no
+language-wide managed runtime. Reference counting and runtime access checks belong to
+explicitly selected abstractions; ordinary ownership and borrowing are statically checked.
 
 ## Required static semantics
 
@@ -118,45 +128,98 @@ Affine does not mean must-consume: abandoning a token follows its cleanup contra
 not prove an explicit `close` occurred. Pinning a boolean state parameter does not by itself
 establish resource identity, uniqueness, or a generative brand.
 
-## Managed mutable sharing
+### Agreed borrowing, movement, and cleanup rules
 
-Add an explicit proposed `managed[T]` library/runtime abstraction for application code.
-The initial candidate is single-threaded strong reference counting with weak handles and
-runtime-checked scoped access. A strong cycle retains its objects; weak back edges break
-cycles. This is a defined limitation to measure in the application gate, not a claim of
-automatic collection. Do not advertise arbitrary-cycle reclamation until an alternative
-collector or ownership discipline is specified and validated.
+- Infer the fields a method needs and acquire only that access before invocation; check
+  its body against those requirements. Imprecise inference conservatively uses all access
+  and effects permitted by declared contracts. Reject calls unsafe under that fallback.
+- Direct simultaneous mutable borrowing requires statically proved separation. An explicit
+  checked operation can validate runtime indices once and return disjoint views or an
+  overlap/bounds error before creating either view. Successful views need no repeated alias checks.
+- List growth is rejected while an element view is live, even with spare capacity.
+  Unrelated fields remain accessible; replacement, removal, and destruction must preserve loans.
+- Moving a reference transfers its restrictions without moving its target. Moving an inline
+  aggregate with borrowed inline fields is rejected. Moving a heap-owning handle is allowed
+  when its allocation stays stable and restrictions follow the new owner. No implicit boxing.
+- Borrows end after their last possible use, including stored references, captures, and cleanup.
+  Ending a loan does not run observable cleanup early.
+- Functions may store caller-provided borrows when lifetime and conflicting-access restrictions
+  are tracked. Inferred contracts expose store flows, including those on error paths.
+- Pending outcomes protect all possible loans. Matching selects the applicable state without
+  rolling back mutations. An error containing no borrow releases that outcome's loan obligation.
+- Conditional moves are allowed. Later use requires definite availability; scope exit may use
+  drop flags to clean up only values still owned there.
+- Custom cleanup requires a complete object: extracting a field requires a valid replacement.
+  Without custom cleanup, partial moves are allowed and remaining fields are cleaned up.
+- Automatic cleanup suffices for safety but does not prove an explicit protocol step occurred.
+  It cannot propagate recoverable errors or suspend. Explicit fallible close/flush operations
+  report completion failures; asynchronous shutdown is an explicit awaited operation.
+- Permanent freezing consumes unique ownership and excludes outstanding mutable access.
+  Owned mutable descendants freeze with it; independently shared mutable objects do not
+  silently freeze. Freezing introduces no implicit deep copy.
+- Read-only loans prevent mutation through every alias to their referenced storage.
+  Interior mutation requires an explicit abstraction with checked access rules. Reading a
+  shared handle does not itself grant access to its contents.
+- Uncertain preservation invalidates a fact. Rechecking is required before using it to omit
+  checks. Sorting can preserve bounds while invalidating content-dependent facts.
+- Generic bodies are checked against declared constraints for every satisfying type.
+  Concrete types may improve optimization, but cannot change validity through private details.
 
-The proposed API used in the application examples is:
+## Explicit mutable sharing
 
-```text
-managed.new(T) -> managed[T]
-managed[T].try_read(fn(&T) -> R) -> result[R, borrow_error]
-managed[T].try_edit(fn(&mut T) -> R) -> result[R, borrow_error]
-```
+Explicitly selected mutable shared ownership uses single-threaded reference counting,
+weak handles, and runtime-checked access. Strong cycles retain objects until broken;
+weak back-references permit reclamation. There is no automatic cycle collector.
+The existing application examples spell this abstraction `managed[T]`; that is provisional
+API vocabulary, not a managed runtime or the default representation of values.
+Final public spellings remain open.
 
-These are proposed contracts, not existing standard-library declarations. Handle duplication
-retains the same object; it does not deep-copy `T`. Active readers exclude editing; an editor
-excludes all other access, including reentrant callbacks. A conflict returns `@err` before
-the callback executes. The callback runs once on success. Retention and the runtime access
-reservation remain live until callback cleanup completes, including an error return.
-Neither a reference, view, borrowing closure, nor other value carrying the access loan may
-escape in `R` or be stored into a longer-lived destination. Returning another independently
-retained handle is permitted if it does not contain that loan.
+Duplicating a handle retains the same object without deep copying. Readers exclude editing;
+an editor excludes other access, including reentrant callbacks. Conflicts return an error
+before access is granted or a callback runs. Successful callback access runs the callback once
+and retains the object and reservation through callback cleanup. No loan-dependent reference,
+view, closure, or stored value can escape callback-scoped access. Independently retained
+handles may be returned if they do not contain that loan.
 
-The wrapper remains alive throughout access, and all aliasing handles share the same access
-state. Retention alone never authorizes an element view across buffer relocation. Managed
-objects cannot contain escaping stack borrows, are not implicitly frozen, and are not
-implicitly thread-transferable. Initial managed access cannot suspend across yield/await.
-Custom cleanup, partial construction, final release, weak upgrade, and reference-count
-overflow need specified failure and cleanup behavior. Destruction cannot expose a live
-access path to a finalized object. Concurrency needs a separate checked synchronization API.
+Explicit access guards also support synchronous borrowing iterators and generators that
+retain access across yield. Guards keep both the object and reservation alive; dependent
+borrows prevent premature release. All aliases share the same access state. Retention alone
+never permits invalidating an element view through relocation. Shared objects cannot contain
+escaping stack borrows. They are neither implicitly frozen nor transferable across threads.
 
-More explicit code replaces managed state with unique ownership and passes state to callbacks,
-or uses statically verified partitions. Crossings remain visible and checked: no implicit
-conversion of a managed alias into a unique owner, or of managed mutability into permanent
-freeze. Extracting an owner requires proof/checking that no retaining or accessing aliases
-remain, under a separately specified operation.
+Finalization starts only after access guards are released. Once it starts, weak upgrades fail
+and no new access guard can be acquired; resurrection is prohibited. Cleanup runs exactly once.
+Ordinary allocation failure terminates; explicit fallible APIs return errors and safely clean
+up partial construction without exposing uninitialized values. Reference-count overflow
+terminates before wrapping. Termination is not a promise of recoverable-error cleanup.
+
+An explicit fallible extraction operation recovers unique ownership only with one strong
+owner and no active access guards or dependent borrows. Success permanently disables existing
+weak upgrades; failure returns the original shared handle unchanged. There is no implicit
+conversion to unique ownership or permanent freezing.
+
+## Suspension, cancellation, and threads
+
+These features belong to the complete first milestone, with their own verification obligations.
+Synchronous generators may retain static loans across suspension. Suspended frames preserve
+restrictions; destruction runs cleanup and releases remaining loans. Yielded views prevent
+destruction of any storage they still reference.
+
+Runtime access guards cannot cross `await`. Release them before awaiting and reacquire afterward,
+rechecking invalidated facts. Statically checked borrows may cross `await` when the compiler
+proves lifetime, storage stability, exclusion of conflicting access, and cancellation safety.
+Tasks moving between threads must additionally satisfy transfer rules for all retained values
+and borrows.
+
+Cancellation is cooperative at defined cancellation points. It runs cleanup exactly once for
+remaining owned values and releases outstanding reservations, while preserving obligations to
+any surviving borrows. Cleanup cannot suspend; explicit asynchronous shutdown must be awaited.
+
+Ordinary shared handles are thread-confined, avoiding atomic reference-counting costs.
+Unique owners may transfer when their contents permit it. Cross-thread mutable sharing requires
+an explicitly selected synchronization abstraction with checked access. Its concrete API,
+transfer constraints, and cancellation/guard interactions remain to be specified; the
+non-suspending runtime-guard rule applies. No concurrency proof is implied by sequential safety.
 
 ## Stable public contracts and restricted I/O
 
@@ -184,22 +247,24 @@ authority guarantee; it is not by itself an OS sandbox for untrusted native code
 
 | Task | Depends on | Deliverable and acceptance condition |
 |---|---|---|
-| C01 | — | Specify access acquisition, storage identity, reborrows, transitions, pending outcomes, and trusted boundaries. Give acceptance/rejection rules for each adversarial case below. |
+| C01 | — | Formalize the agreed semantics, feature manifest, proof obligations, access acquisition, storage identity, reborrows, transitions, pending outcomes, and trusted boundaries. Give acceptance/rejection rules for each adversarial case below. |
 | C02 | C01 | Implement finite place/provenance summaries and store-flow checking in an isolated model; reject local escape and retain loans stored through mutable parameters. |
 | C03 | C02 | Infer access and effect summaries across recursive groups, indirect calls, captures, and cleanup. Use terminating widening/budgets and sound conservative fallback; check each body against its resulting summary. |
 | C04 | C03 | Add group abstraction, structural invalidation, and fact dependencies, including generic/nested storage. Demonstrate that narrow method access is acquired before invocation. |
 | C05 | C04 | Add per-outcome states with safe pending-result handling and checked postconditions. Validate errors that retain loans or replace storage. |
 | C06 | C03 | Add authority-backed capabilities, generative brands, and checked native minting boundaries. Reject safe in-module forgery as well as outside forgery. |
-| C07 | C03 | Implement/version complete interfaces, optional pinned guarantees, release compatibility comparison, and transitive restricted-I/O checking. |
-| C08 | C01, C02 | Specify and prototype managed retention, weak handles, access reservations, failure, and cleanup. Validate reentrancy, escape rejection, cycles, and final release. |
-| C09 | C04–C08 | Elaborate the application corpus for all three options, execute accepted programs, and record programmer work and runtime costs. Revise ergonomics before production integration. |
-| C10 | C09 | Establish static-model and managed-boundary safety arguments; map evidence to G0/GO/GX/GP and runtime/backend gates. Only supported, validated combinations proceed to adoption. |
+| C07 | C04–C06, CS, CT | Implement/version complete interfaces, optional pinned guarantees, release compatibility comparison, and transitive restricted-I/O checking. |
+| C08 | C01, C02 | Specify and prototype explicit shared ownership, weak handles, access guards, failure, extraction, and cleanup. Validate reentrancy, escape rejection, cycles, and final release. |
+| CS | C02, C05, C08 | Define and verify generator suspension, yielded loans, static borrows across await, cooperative cancellation, and synchronous cleanup; reject runtime guards across await. |
+| CT | C03, C06, C08, CS | Specify and verify explicit synchronization APIs, thread confinement, owner/task transfer, and concurrent access. |
+| C09 | C04–C08, CS, CT | Elaborate the application corpus for all three options, execute accepted programs, and record programmer work and runtime costs. Revise ergonomics before production integration. |
+| C10 | C09 | Consolidate safety and composition evidence developed from C01 onward; map evidence to G0/GO/GX/GP and runtime/backend gates. Only supported, validated combinations proceed to adoption. |
 
-C02–C09 are prototypes, not permission to bypass the affine roadmap's verification gates
-on production execution paths. Managed sharing extends the core's excluded interior
-mutation and therefore requires its own rules and composition evidence before adoption.
-Async/cancellation and concurrent managed access remain explicitly unsupported until their
-extensions meet corresponding gates. No gate here is recorded as passed.
+Implementation proceeds in dependency order within one complete milestone. Experimental
+models and executions do not bypass verification gates on production paths. Explicit interior
+mutation, async/cancellation, and concurrency require their own rules and composition evidence.
+Map the existing G0/GO/GX/GP gates to the revised scope and define additional async/concurrency
+and sharing obligations before enabling those paths. No gate is recorded as passed.
 
 ## Application and adversarial validation
 
@@ -219,11 +284,27 @@ Required negative/edge cases include:
 - An outcome is held, discarded, overwritten, or matched after intervening mutation or cleanup.
 - An error stores a borrow or replaces an owner; matching the error does not roll back effects.
 - A safe constructor tries to duplicate lock/index/peripheral authority inside its module.
-- Reentrant managed access conflicts; returned/nested views and stored callbacks cannot escape access.
+- Reentrant shared access conflicts; returned/nested views and stored callbacks cannot escape access.
 - Allocation/access failure and final release preserve exactly-once cleanup; weak upgrade after
   final release fails; strong cycles retain and weak back edges permit reclamation.
 - A restricted module reaches unrestricted I/O through a higher-order, native, or cleanup path.
 - A fresh checkout checks against a released interface and detects each incompatible summary change.
+
+Additional acceptance/rejection cases for the agreed scope:
+
+- Runtime overlap/bounds failures create neither view; successful partitions remain disjoint.
+- List growth with a live element view fails; access to unrelated fields succeeds.
+- Moving stable heap owners preserves loans; relocating borrowed inline storage fails.
+- Last-use release includes captures, stored loans, and cleanup; conditional moves clean up once.
+- Custom-cleanup objects reject partial moves without replacement; ordinary aggregates permit them.
+- Frozen and read-only storage cannot be mutated through aliases; generic validity is contract-based.
+- Reference-count overflow terminates before wrapping; fallible allocation cleans partial construction.
+- Extraction disables weak upgrades on success and preserves the shared handle on failure.
+- Borrowing iterators retain guards; yielded views prevent premature frame/storage destruction.
+- Static loans across await meet lifetime/cancellation rules; runtime guards across await fail.
+- Cooperative cancellation cleans remaining owners exactly once without suspending cleanup.
+- Thread-confined handles reject transfer; approved unique transfers and synchronized sharing
+  preserve access rules under concurrent execution.
 
 Use executable reference checks, source fixtures, and VM/LLVM execution as appropriate.
 Test lifetime cases with actual reclamation and allocation-failure injection. Tests provide
