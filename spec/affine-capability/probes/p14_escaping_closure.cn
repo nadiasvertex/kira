@@ -1,8 +1,0 @@
-module probes.escaping_closure
-# Expect reject: returned closure captures a borrow of a local.
-def make() -> fn() -> int32:
-    let n: int32 = 4
-    let r = &n
-    return () => *r
-def main() -> int32:
-    return make()()

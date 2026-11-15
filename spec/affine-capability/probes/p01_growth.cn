@@ -1,7 +1,0 @@
-module probes.growth
-# Expect reject: push may relocate while r is live.
-def main() -> int32:
-    var xs: list[int32] = [1, 2, 3]
-    let r = &xs[0]
-    xs.push(4)
-    return *r

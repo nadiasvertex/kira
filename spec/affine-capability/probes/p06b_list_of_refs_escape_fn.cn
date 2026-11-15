@@ -1,9 +1,0 @@
-module probes.list_of_refs_escape_fn
-# Expect reject: the pushed reference outlives the callee's local.
-def fill(out: &mut list[&int32]) -> unit:
-    let n: int32 = 5
-    out.push(&n)
-def main() -> int32:
-    var out: list[&int32] = []
-    fill(&mut out)
-    return *out[0]

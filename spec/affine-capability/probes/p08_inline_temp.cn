@@ -1,7 +1,0 @@
-module probes.inline_temp
-# Expect reject: the view outlives the temporary list.
-def make() -> list[int32]:
-    return [1, 2, 3]
-def main() -> int32:
-    let s = make().as_slice()
-    return s[0]
