@@ -1,0 +1,13 @@
+# todo: 12
+# tier: both
+# currently-error: cannot dereference a value of type `mutex_guard
+# want: `*guard += 1` on a `mutex_guard` compiles and `main` returns 6.
+module known_gaps.no_mutable_deref_on_guard
+
+use std.sync.mutex
+
+def main() -> int32:
+    let m = mutex.new(5)
+    var guard = m.lock()
+    *guard += 1
+    return *guard.get()

@@ -1,0 +1,17 @@
+# todo: 20
+# tier: both
+# currently-error: reading the errors out would leave the crew's tasks without them
+# want: `c.errors()` is accepted for a crew whose tasks finish with a non-`copy` result, and the `ok` results stay readable; main returns 1.
+module known_gaps.crew_errors_non_copy
+
+async def check(n: int32) -> result[list[int32], list[int32]]:
+    if n % 3 == 0:
+        return @err([n])
+    return @ok([n])
+
+async def main() -> int32:
+    let (errs, a) = crew c(on_error: collect):
+        let a = c.spawn(check(4))
+        let b = c.spawn(check(9))
+        (c.errors(), a)
+    return errs.len() as int32

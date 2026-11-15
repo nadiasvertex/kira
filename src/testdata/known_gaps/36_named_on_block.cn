@@ -1,0 +1,10 @@
+# todo: 36
+# tier: both
+# currently-error: an `on(...)` did not resolve to a task type
+# want: `let w = on(cpu): ...` binds a task that `await w` reads; main returns 42.
+module known_gaps.named_on_block
+
+async def main() -> int32:
+    let w = on(cpu):
+        41 + 1
+    return await w

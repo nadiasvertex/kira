@@ -1,0 +1,13 @@
+# todo: 19
+# tier: both
+# currently-error: cannot return a closure that borrows
+# want: the escaping closure captures `xs` by move automatically and main returns 3.
+module known_gaps.escaping_closure_moves
+
+def make() -> fn() -> int32:
+    let xs: list[int32] = [1, 2, 3]
+    return () => xs.len() as int32
+
+def main() -> int32:
+    let f = make()
+    return f()

@@ -1,0 +1,13 @@
+# todo: 30
+# tier: both
+# currently-accepted
+# currently-result: 5
+# want: rejected, because the reference pushed into `out` outlives the block-local `n` it borrows.
+module known_gaps.list_of_refs_escape
+
+def main() -> int32:
+    var out: list[&int32] = []
+    if true:
+        let n: int32 = 5
+        out.push(&n)
+    return *out[0]

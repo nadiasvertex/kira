@@ -1,0 +1,23 @@
+module codegen_stress.compound_assign_through_mut_ref
+
+# expect: 83
+
+# `*p += x` and `*p *= 2` through a `&mut int32`, in the function that made
+# the reference and in a function that receives it.
+
+def bump(p: &mut int32, x: int32):
+    *p += x
+    *p *= 2
+
+def main() -> int32:
+    var v: int32 = 5
+    let p = &mut v
+    *p += 3
+    *p *= 2
+    # v = 16
+    bump(&mut v, 4)
+    # v = 40
+    var w: int32 = 1
+    bump(&mut w, 2)
+    # w = 6
+    return v + w * 6 + 7

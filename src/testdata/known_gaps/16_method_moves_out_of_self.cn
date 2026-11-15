@@ -1,0 +1,24 @@
+# todo: 16
+# tier: both
+# currently-error: cannot move `tok` out of a reference
+# want: the checker rejects `@full(v) => v` in `grab`, because it moves a non-`copy` part out of `self`.
+module known_gaps.method_moves_out_of_self
+
+type tok = { n: int32 }
+
+impl drop for tok:
+    def drop(mut self):
+        let _ = 0
+
+type holder = @full(tok) | @empty
+
+extend holder:
+    def grab(self) -> tok:
+        return match self:
+            @full(v) => v
+            @empty => tok { n: 0 }
+
+def main() -> int32:
+    let h = @full(tok { n: 5 })
+    let t = h.grab()
+    return t.n

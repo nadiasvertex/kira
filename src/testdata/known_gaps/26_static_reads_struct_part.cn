@@ -1,0 +1,19 @@
+# todo: 26
+# tier: both
+# currently-error: a struct-valued `static` has no runtime storage yet
+# want: compile-time code reads the `form` part of a struct-valued static; main returns 12.
+module known_gaps.static_reads_struct_part
+
+type shape = @circle(int32) | @square(int32)
+type holder = { form: shape, n: int32 }
+
+def area(s: shape) -> int32:
+    return match s:
+        @circle(r) => r * 3
+        @square(w) => w * w
+
+static let h: holder = holder { form: @square(3), n: 1 }
+static let b = area(h.form)
+
+def main() -> int32:
+    return b + 3

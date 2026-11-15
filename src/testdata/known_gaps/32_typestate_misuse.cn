@@ -1,0 +1,20 @@
+# todo: 32
+# tier: both
+# currently-accepted
+# currently-result: 2
+# want: rejected, because `send` takes `conn[true]` and `d` has type `conn[false]`, so the bool index does not match.
+module known_gaps.typestate_misuse
+
+type conn[open: bool] = { fd: int32 }
+
+def send(c: conn[true], m: int32) -> conn[true]:
+    return conn[true] { fd: c.fd + m }
+
+def close(c: conn[true]) -> conn[false]:
+    return conn[false] { fd: c.fd }
+
+def main() -> int32:
+    let c = conn[true] { fd: 1 }
+    let d = close(c)
+    let e = send(d, 1)
+    return e.fd

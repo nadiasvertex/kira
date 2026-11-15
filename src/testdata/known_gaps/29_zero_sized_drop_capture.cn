@@ -1,0 +1,19 @@
+# todo: 29
+# tier: both
+# currently-error: zero-sized value that needs a drop
+# want: accepted; the closure owns the marker, its drop runs when the closure drops, and main returns 30.
+module known_gaps.zero_sized_drop_capture
+
+type marker = {}
+
+impl drop for marker:
+    def drop(mut self):
+        let _ = 0
+
+def weight(m: &marker) -> int32:
+    return 3
+
+def main() -> int32:
+    let m = marker{}
+    let f = move () => weight(&m) * 10
+    return f()

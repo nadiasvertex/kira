@@ -1,0 +1,16 @@
+# todo: 20
+# tier: both
+# currently-crash: 11
+# want: both reads of the task succeed (the second `get()` on a non-`copy` result too) and main returns 6.
+module known_gaps.second_get_non_copy
+
+async def make() -> list[int32]:
+    return [1, 2, 3]
+
+async def main() -> int32:
+    let t = crew k:
+        let t = k.spawn(make())
+        t
+    let a = t.get()
+    let b = t.get()
+    return a.len() as int32 + b.len() as int32

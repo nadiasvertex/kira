@@ -1,0 +1,21 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+# The typed core: the checker's single output (spec/unified-checker-plan.md).
+cc_library(
+    name = "core",
+    hdrs = ["nodes.h"],
+    deps = [
+        "//src/parser:parser",
+        "//src/semantic:semantic",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "nodes_test",
+    srcs = ["nodes_test.cpp"],
+    deps = [
+        ":core",
+        "//src/testing",
+    ],
+)

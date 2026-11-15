@@ -1,0 +1,15 @@
+# todo: 33
+# tier: both
+# currently-error: conflicting types for `T`
+# want: accepted, and `replace(&mut xs[i], v)` on a `list[T]` exchanges the element and returns the old value. The program returns 10.
+module known_gaps.replace_elem
+
+def replace_at[T](xs: &mut list[T], i: usize, v: T) -> option[T]:
+    if i >= xs.len():
+        return @none
+    return @some(replace(&mut xs[i], v))
+
+def main() -> int32:
+    var xs: list[list[int32]] = [[1], [2]]
+    let old = replace_at(&mut xs, 0, [10])
+    return xs[0][0]

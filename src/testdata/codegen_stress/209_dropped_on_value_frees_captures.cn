@@ -1,0 +1,18 @@
+module codegen_stress.dropped_on_value_frees_captures
+
+# expect: 0
+# max-live-blocks: 0
+# max-allocations: 5
+
+# A task that owns a list, wrapped with `on(cpu, task)` and dropped without
+# being awaited, frees the list it captured.
+
+async def total(xs: list[int32]) -> int32:
+    var s: int32 = 0
+    for x in xs:
+        s = s + x
+    return s
+
+async def main() -> int32:
+    let w = on(cpu, total([1, 2, 3]))
+    return 0

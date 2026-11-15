@@ -1,0 +1,11 @@
+# todo: 9
+# tier: both
+# currently-error: no concrete checked type is available for this node
+# want: `int64.zero()` with `use std.traits.zero` compiles and `main` returns 0.
+module known_gaps.trait_static_call_on_builtin
+
+use std.traits.zero
+
+def main() -> int32:
+    let z = int64.zero()
+    return z as int32

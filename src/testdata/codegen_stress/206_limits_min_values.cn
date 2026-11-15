@@ -1,0 +1,22 @@
+module codegen_stress.limits_min_values
+
+# expect: 7
+
+use std.limits.min
+
+# `min[T]()` is the most negative value of a signed type. Its body negates the
+# magnitude's bit pattern, so the value must be right for each width; the
+# result is 7 only if all three are.
+
+def main() -> int32:
+    let a = min[int64]()
+    let b = min[int32]()
+    let c = min[int128]()
+    var score: int32 = 0
+    if a == -9223372036854775807 - 1:
+        score = score + 1
+    if b == -2147483647 - 1:
+        score = score + 2
+    if c == -170141183460469231731687303715884105727 - 1:
+        score = score + 4
+    return score

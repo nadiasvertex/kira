@@ -1,0 +1,16 @@
+# todo: 35
+# tier: both
+# currently-error: no concrete checked type is available for this node
+# want: a user sum type with variants `@ok` and `@none` lowers like one with other variant names; `match self: @ok(v) => v` in an `extend` method compiles. (Building a value with `@ok(7)` annotated as that type is also refused today: "expected `shape`, found `result[_, _]`".)
+module known_gaps.ok_none_variants
+
+type shape = @ok(int32) | @none
+
+extend shape:
+    def value(self) -> int32:
+        return match self:
+            @ok(v) => v
+            @none => 0
+
+def main() -> int32:
+    return 0

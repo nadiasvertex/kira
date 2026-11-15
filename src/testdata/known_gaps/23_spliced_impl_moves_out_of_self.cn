@@ -1,0 +1,21 @@
+# todo: 23
+# tier: both
+# currently-error: did not verify
+# want: a diagnostic from the ownership check that the spliced `take` moves the non-`copy` field `inner` out of `self`.
+module known_gaps.spliced_impl_moves_out_of_self
+
+trait taker:
+    def take(self) -> list[int32]
+
+type pack = { inner: list[int32] }
+
+static def make_impl() -> def_expr:
+    return `(impl taker for pack:
+        def take(self) -> list[int32]:
+            return self.inner)`
+
+~make_impl()
+
+def main() -> int32:
+    let p = pack { inner: [1, 2, 3] }
+    return p.take().len() as int32

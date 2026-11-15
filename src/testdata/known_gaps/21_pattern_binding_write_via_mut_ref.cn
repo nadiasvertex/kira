@@ -1,0 +1,16 @@
+# todo: 21
+# tier: both
+# currently-error: cannot assign to immutable binding `n`
+# want: a plain `@some(n)` binding through a `&mut` subject can be assigned, as `xs.push(9)` is in 21a, and `main` returns 6.
+module known_gaps.pattern_binding_write_via_mut_ref
+
+def bump(o: &mut option[int32]) -> unit:
+    if let @some(n) = o:
+        n = n + 1
+
+def main() -> int32:
+    var o: option[int32] = @some(5)
+    bump(&mut o)
+    return match o:
+        @some(n) => n
+        @none => 0

@@ -1,0 +1,15 @@
+module codegen_stress.limits_min_in_run_time_code
+
+# expect: 42
+
+use std.limits.min
+
+# `min[int64]()` called from ordinary run-time code in `main`, then used in
+# arithmetic: adding one to the minimum gives `-(2^63 - 1)`.
+
+def main() -> int32:
+    let a = min[int64]()
+    let b = a + 1
+    if b == -9223372036854775807:
+        return 42
+    return 1

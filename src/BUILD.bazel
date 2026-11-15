@@ -24,6 +24,12 @@ filegroup(
 )
 
 filegroup(
+    name = "known_gaps_corpus",
+    srcs = glob(["testdata/known_gaps/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
     name = "codegen_stress_corpus",
     srcs = glob(["testdata/codegen_stress/*.cn"]),
     visibility = ["//visibility:public"],
@@ -266,6 +272,30 @@ cc_test(
     ],
     tags = ["no-sandbox"],
     deps = ["//src/driver:driver"],
+)
+
+cc_test(
+    name = "known_gaps_test",
+    # Every function compile-time code runs on the VM is re-lowered from the
+    # final checker results and must lower identically (`vm_backend::verify`).
+    env = {"CINDER_COMPTIME_VERIFY": "1"},
+    size = "medium",
+    srcs = ["known_gaps_test.cpp"],
+    data = [
+        ":known_gaps_corpus",
+        ":std_sources",
+        "//src/llvm_codegen:aot_runtime",
+        "//src/parser:parser",
+        "//src/runtime:runtime",
+        "//src/runtime:string_ops",
+        "//src/semantic:semantic",
+        "//src/utf8",
+    ],
+    tags = ["no-sandbox"],
+    deps = [
+        "//src/driver:driver",
+        "//src/testing",
+    ],
 )
 
 cc_test(

@@ -1,0 +1,19 @@
+# todo: 25
+# tier: both
+# currently-error: was not unrolled during checking
+# want: the block `static for` unrolls over a list of a user sum type; main returns 15.
+module known_gaps.static_for_over_variants
+
+type shape = @circle(int32) | @square(int32)
+
+def area(s: &shape) -> int32:
+    return match s:
+        @circle(r) => r * 3
+        @square(w) => w * w
+
+def main() -> int32:
+    let forms: list[shape] = [@circle(2), @square(3)]
+    var total: int32 = 0
+    static for f in forms:
+        total = total + area(&f)
+    return total
