@@ -751,8 +751,18 @@ auto checker::compute_aggregate_shapes() -> aggregate_shapes {
   return shapes;
 }
 
-auto checker::add_aggregate_shapes(aggregate_shapes &shapes, bool settled_only)
-    -> void {
+/// The members of every struct and sum type that mentions a template
+/// parameter and no inference variable (`pair[T]` inside a generic body),
+/// in terms of those parameters, for `checked_types::open_shapes`. Only the
+/// typed core reads them. Run after `compute_aggregate_shapes`.
+auto checker::compute_open_aggregate_shapes() -> aggregate_shapes {
+  auto shapes = aggregate_shapes{};
+  add_aggregate_shapes(shapes, /*settled_only=*/false, /*open=*/true);
+  return shapes;
+}
+
+auto checker::add_aggregate_shapes(aggregate_shapes &shapes, bool settled_only,
+                                   bool open) -> void {
   for (std::size_t raw = 0; raw < session_.types_.count(); ++raw) {
     const auto id = static_cast<type_id>(raw);
     if (shapes.contains(id)) {
@@ -767,7 +777,7 @@ auto checker::add_aggregate_shapes(aggregate_shapes &shapes, bool settled_only)
         entry.kind != type_kind::sum_kind && !is_prelude_sum) {
       continue;
     }
-    if (mentions_type_var(id) || mentions_template_param(id)) {
+    if (mentions_type_var(id) || mentions_template_param(id) != open) {
       continue;
     }
     auto shape = aggregate_shape{};

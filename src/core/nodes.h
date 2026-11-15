@@ -47,6 +47,7 @@ enum class node_kind : std::uint8_t {
   use,        ///< Read a place by value: a copy or a move.
   borrow,     ///< `&place` / `&mut place`, written or inserted.
   call,
+  function_ref, ///< A declared function used as a value.
   primitive,  ///< A builtin scalar operator; never a user impl.
   cast,
   tuple_init,
@@ -91,6 +92,18 @@ struct node {
 };
 
 /// A value-position node. `type` is never unknown or an error type.
+///
+/// An expression diverges when control never leaves it normally:
+///
+///   * an expression of type `never`;
+///   * a block whose result diverges, or which has no result and ends in a
+///     `return`, `break` or `continue`, or in a statement whose expression
+///     diverges;
+///   * an `if` with an `else`, or a `match`, whose every branch diverges;
+///   * a block that ends in a `while_loop` with no condition, or the literal
+///     `true` as its condition, and no `break` of that loop.
+///
+/// The type of a diverging expression is not compared with anything.
 struct expr : node {
   type_id type = k_unknown_type;
   expr(node_kind k, source_span s, type_id t) : node(k, s), type(t) {}
@@ -112,7 +125,8 @@ struct projection {
     tuple_element,   ///< `.N` of a tuple.
     variant_payload, ///< Payload `index` of variant `name`, after a test.
     deref,           ///< `*` of a `&T`, `&mut T`, `*T` or `*mut T`.
-    element,         ///< `[i]` of an array, slice or `str`: a builtin element.
+    element,         ///< `[i]` of an array, slice, `str`, raw pointer or
+                     ///< `uninit` buffer: a builtin element.
   };
   step kind;
   type_id type = k_unknown_type;
@@ -128,8 +142,10 @@ struct projection {
 struct place_root {
   enum class origin : std::uint8_t {
     local,     ///< A parameter, binding, or capture, named by `symbol`.
+               ///< Symbols are unique within one function, lambdas included.
     global,    ///< A reified `static`, named by `name` in `module`.
     temporary, ///< The value of `value`, held until the statement ends.
+               ///< It may be written and mutably borrowed.
   };
   origin kind = origin::local;
   symbol_id symbol = semantic::k_invalid_symbol_id;
@@ -160,7 +176,6 @@ enum class writability : std::uint8_t {
   immutable_binding, ///< Rooted at a `let`, or a by-value pattern binding.
   behind_shared_ref, ///< Reached through a `&T`, a `*T`, or a shared view.
   static_value,      ///< Rooted at a `static`.
-  temporary_value,   ///< Rooted at a temporary that is not a reference.
 };
 
 // ==========================================================================
@@ -198,20 +213,28 @@ struct borrow : expr {
 };
 
 /// How a function treats its receiver. A property of the signature, read
-/// the same way for every call.
+/// the same way for every call. The mode fixes the type of the first
+/// parameter, with `S` the type the method is on:
+///
+///   shared     `&S`      exclusive  `&mut S`
+///   by_value   `S`, and `S` is `copy`
+///   consuming  `S`, and the callee owns it
 enum class receiver_mode : std::uint8_t {
   none,     ///< Not a method.
   shared,   ///< `self`
   exclusive, ///< `mut self`
   by_value, ///< A scalar `self`, passed by value.
-  consuming, ///< Takes ownership of what `self` refers to (`into_iter`).
+  consuming, ///< Takes ownership of the receiver (`into_iter`).
 };
 
 /// What a call calls.
 struct callee {
   enum class form : std::uint8_t {
     function,  ///< A declared function or method, or an instance of one.
-    value,     ///< A closure or function value held in `value`.
+    value,     ///< A closure or function value: `value` has the signature's
+               ///< `fn` type, or a `&` of it. A call does not consume a
+               ///< closure, so one held in a place is called through an
+               ///< inserted borrow of that place.
     intrinsic, ///< A compiler intrinsic or host call named by `name`.
   };
   form kind = form::function;
@@ -243,6 +266,14 @@ struct call : expr {
   call(source_span s, type_id t) : expr(node_kind::call, s, t) {}
 };
 
+/// A declared function named in value position: bound, passed or returned
+/// without being called. `type` is the target's signature.
+struct function_ref : expr {
+  callee target;
+  function_ref(source_span s, type_id t)
+      : expr(node_kind::function_ref, s, t) {}
+};
+
 /// A builtin operator on scalars, or a comparison of raw pointers.
 struct primitive : expr {
   std::optional<ast::binary_op> binary;
@@ -256,10 +287,14 @@ struct cast : expr {
   cast(source_span s, type_id t) : expr(node_kind::cast, s, t) {}
 };
 
-/// Tuple, array and struct construction. `elements` are in declaration order.
+/// Tuple, array and struct construction. `elements` are evaluated in order.
+/// A tuple's and an array's are in member order. A struct's are in source
+/// order: `elements[i]` initializes the field named `field_names[i]`, whose
+/// position in the declaration is `field_indices[i]`.
 struct aggregate_init : expr {
   ptr_vec<expr> elements;
-  std::vector<std::string> field_names; ///< `struct_init` only.
+  std::vector<std::string> field_names;   ///< `struct_init` only.
+  std::vector<std::size_t> field_indices; ///< `struct_init` only.
   /// `array_init` only: `[value; count]`.
   std::optional<std::uint64_t> repeat;
   aggregate_init(node_kind k, source_span s, type_id t) : expr(k, s, t) {}
@@ -287,7 +322,12 @@ struct param {
   type_id type = k_unknown_type;
 };
 
-/// How a closure holds one value from its environment.
+/// How a closure holds one value from its environment. A `copy` or `move`
+/// capture is the closure's own value and may be written. Inside the body
+/// `symbol` is a local of type `type`, which is the type of `from` in every
+/// mode: a borrowed capture names the captured place, as an `alias` pattern
+/// binding does. The body may root a local place only at its own parameters,
+/// captures and bindings.
 struct capture {
   enum class mode : std::uint8_t { copy, move, borrow, borrow_mut };
   symbol_id symbol = semantic::k_invalid_symbol_id; ///< Name inside the body.
@@ -320,7 +360,7 @@ struct pattern_test {
   enum class form : std::uint8_t {
     any,     ///< Matches everything.
     literal, ///< Equal to `low`.
-    range,   ///< Between `low` and `high`.
+    range,   ///< Between `low` and `high`; one of them may be absent.
     variant, ///< Is variant `variant_index`; `parts` test its payloads.
     tuple,   ///< `parts` test the elements.
     record,  ///< `parts` test the fields named by `field_indices`.
@@ -337,12 +377,17 @@ struct pattern_test {
   std::vector<pattern_test> parts;
 };
 
-/// One name a pattern binds: a part of the subject's place.
+/// One name a pattern binds: a part of the subject's place. `type` is the
+/// type of that part in every mode. An `alias` binding is not a new value:
+/// a place rooted at it is the part itself, so a write to it writes the
+/// subject.
 struct pattern_binding {
   enum class mode : std::uint8_t {
     copy,  ///< The part is `copy`.
     move,  ///< The part moves out of the subject.
-    alias, ///< The subject is behind a reference; the name is that part.
+    /// The part cannot be moved (verifier rule A2): it is behind a
+    /// reference, an element, or part of a static. The name is that part.
+    alias,
   };
   symbol_id symbol = semantic::k_invalid_symbol_id;
   std::string name;
@@ -452,7 +497,14 @@ struct function {
   /// ordinary function and for an instance.
   std::vector<type_id> generic_params;
   std::vector<param> params;
+  /// The type a caller sees: `generator[T]` for a `generator def`, the task
+  /// type for an async function.
   type_id return_type = k_unknown_type;
+  /// What `return` takes inside the body. Equal to `return_type` except in a
+  /// coroutine: `unit` in a generator, the awaited type in a task.
+  type_id body_type = k_unknown_type;
+  /// `generator` only: what `yield` takes.
+  type_id yield_type = k_unknown_type;
   receiver_mode receiver = receiver_mode::none;
   coroutine_kind coroutine = coroutine_kind::none;
   /// Produced by a `deriving` clause or an item splice.
@@ -467,6 +519,17 @@ struct static_global {
   ptr<expr> value;
 };
 
+/// An `intrinsic def`: a function the runtime supplies. An `intrinsic` callee
+/// names either one of these or an operation of the compiler's own
+/// (`src/core/intrinsics.h`).
+struct intrinsic_decl {
+  std::string name;
+  /// The declared `fn` type. For a generic declaration it mentions the
+  /// declaration's parameters, and a call's signature is an instance of it.
+  type_id signature = k_unknown_type;
+  bool generic = false;
+};
+
 /// One module's functions and statics. Type declarations, impl tables and
 /// trait bounds stay in the session's type table and method table; the core
 /// refers to them by `type_id` and by `callee`.
@@ -475,6 +538,8 @@ struct module {
   std::optional<file_id_type> file_id;
   std::vector<ptr<function>> functions;
   std::vector<static_global> statics;
+  /// The `intrinsic def`s this module declares.
+  std::vector<intrinsic_decl> intrinsics;
 };
 
 } // namespace cinder::core

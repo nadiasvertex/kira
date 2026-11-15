@@ -11,11 +11,84 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+# The core verifier: re-checks the core's rules without inference.
+cc_library(
+    name = "verify",
+    srcs = [
+        "intrinsics.cpp",
+        "verify.cpp",
+    ],
+    hdrs = [
+        "intrinsics.h",
+        "verify.h",
+    ],
+    deps = [
+        ":core",
+        "//src/parser:parser",
+        "//src/semantic:semantic",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Builds the core from the AST and the checker's side tables. Temporary:
+# removed when the checker emits the core directly (plan phase 12).
+cc_library(
+    name = "adapter",
+    srcs = [
+        "adapter.cpp",
+        "adapter_builder.h",
+        "adapter_contract.cpp",
+        "adapter_expr.cpp",
+        "adapter_interp.cpp",
+        "adapter_lambda.cpp",
+        "adapter_loop.cpp",
+        "adapter_pattern.cpp",
+        "adapter_static.cpp",
+        "adapter_task.cpp",
+        "adapter_stmt.cpp",
+    ],
+    hdrs = ["adapter.h"],
+    deps = [
+        ":core",
+        "//src/parser:parser",
+        "//src/semantic:semantic",
+        "//src/util",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 cc_test(
     name = "nodes_test",
     srcs = ["nodes_test.cpp"],
     deps = [
         ":core",
         "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "verify_test",
+    srcs = ["verify_test.cpp"],
+    deps = [
+        ":core",
+        ":verify",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "adapter_test",
+    size = "medium",
+    srcs = ["adapter_test.cpp"],
+    data = ["//src:std_sources"],
+    deps = [
+        ":adapter",
+        ":core",
+        ":verify",
+        "//src/comptime_vm",
+        "//src/parser:parser",
+        "//src/semantic:semantic",
+        "//src/testing",
+        "//src/testing:stdlib_fixtures",
     ],
 )

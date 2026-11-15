@@ -1,6 +1,6 @@
 # Unified type checker plan
 
-Status: accepted, 2026-11-15. Phase 1 is complete; phase 2 has not started.
+Status: accepted, 2026-11-15. Phases 1 and 2 are complete; phase 3 has not started.
 
 The type-checking bugs in [todo.md](todo.md) share three structural causes. The checker
 hands later stages about 85 side tables keyed by AST node, and each later stage decides
@@ -13,7 +13,7 @@ adds an independent verifier for that core, and gives each construct (call, plac
 type equality) one implementation. The ownership check then runs over the core with
 field-level places and inferred function summaries. The work is twelve phases; each lands with
 all tests passing. The plan is self-contained: it defines the ownership rules it needs and
-does not depend on the affine-capability designs. It closes 24 of the 30 open todo items.
+does not depend on the affine-capability designs. It closes 28 of the 34 open todo items.
 The six items left out are not checker problems.
 
 ## Causes
@@ -33,7 +33,7 @@ checking a call. A bare call binds explicit type arguments and a module-qualifie
 does not (item 8). A static method through a bound works and the same method on a builtin
 type does not (item 9). A method call on a pattern binding and an assignment to it follow
 different mutability rules (item 21). `&mut xs[i]` produces a view type and `&mut x`
-produces a reference (item 33). A `usize` type index is compared and a `bool` index is
+produces a reference (items 33 and 38). A `usize` type index is compared and a `bool` index is
 not (item 32). A trait can be queried with `implements` and a concept cannot (item 14).
 A user variant named `@ok` resolves to the prelude's in one path and to the user's in
 another (item 35).
@@ -165,17 +165,22 @@ Each phase leaves the tree green and removes the code it replaces.
 | Phase | Work | Done when | Todo items |
 |---|---|---|---|
 | 1. Baseline (done) | A `known_gaps` corpus and test (`//src:known_gaps_test`): one program per in-scope todo item, with the wrong behavior the compiler shows today recorded beside it. Each program runs in its own process on both tiers. The test passes while the gap is open and fails when it closes, so the program is then moved to the regular corpus. | Done 2026-11-15: 29 programs cover every in-scope item except 24, which corpus 110 and 167 pin. Items 6, 7, 11, and 13 no longer reproduce and have corpus programs 206 to 209. | — |
-| 2. Core and verifier | Define the core. Build it from the AST and the current side tables with an adapter. Write the verifier and run it over the corpus and the standard library. | The verifier passes on every program that compiles today, or each failure is filed. | 32 found here |
-| 3. Lowering reads the core | HIR lowering takes the core as input. Refusals move into the adapter as user diagnostics or become assertions. Compile-time execution lowers from the same core, and the lowering view is deleted. Lower `await yield` and a named `on` block. | Lowering no longer includes the AST or the side tables. | 15, 26 (stale message), 36 |
-| 4. Places and patterns | One place function and one pattern elaboration, emitting core directly. Add the mutable dereference trait. A binding through a `&mut` subject is writable without `mut`. | Compound assignment to a list element, `replace(&mut xs[i], v)`, `*guard += 1`, and or-pattern bindings run on both tiers with `# expect:`. | 12, 21, 22, 33, 37 |
-| 5. Calls and names | One call pipeline emitting core directly. One lookup for a variant name, used by construction and by patterns, in which a user's variant shadows the prelude's. | The 17 entry points are gone; qualified, static, and trait-static calls share tests. | 8, 9, 27, 35 |
+| 2. Core and verifier (done) | Define the core. Build it from the AST and the current side tables with an adapter. Write the verifier and run it over the corpus and the standard library. | Done 2026-11-15: every concrete function of the corpus and the standard library builds and verifies, except five (item 39). About a third of the generic templates build; the rest wait for phase 5. See "Phase 2 results". | 38 to 41 found here; cause of 32 located |
+| 3. Lowering reads the core | HIR lowering takes the core as input. Refusals move into the adapter as user diagnostics or become assertions. Compile-time execution lowers from the same core, and the lowering view is deleted. Lower `await yield` and a named `on` block. | Lowering no longer includes the AST or the side tables. | 15, 26 (stale message), 36, 40 |
+| 4. Places and patterns | One place function and one pattern elaboration, emitting core directly. Add the mutable dereference trait. A binding through a `&mut` subject is writable without `mut`. | Compound assignment to a list element, `replace(&mut xs[i], v)`, `*guard += 1`, and or-pattern bindings run on both tiers with `# expect:`. | 12, 21, 22, 33, 37, 38 |
+| 5. Calls and names | One call pipeline emitting core directly. One lookup for a variant name, used by construction and by patterns, in which a user's variant shadows the prelude's. | The 17 entry points are gone; qualified, static, and trait-static calls share tests. | 8, 9, 27, 35, 41 |
 | 6. Equality and predicates | One type equality and one satisfaction query. | The `bool`-index program is rejected; `implements[T, copy]` works. | 14, 32 |
-| 7. Ownership graph on the core | Rebuild the ownership graph from the core with field-level places. Check generated code. Reject moves out of `self` in every body. Record loan origins for diagnostics. | Existing ownership tests pass on the new graph; a derived impl that moves out of `self` gets a diagnostic; the item 34 program names the closure. | 16, 23, 34 |
+| 7. Ownership graph on the core | Rebuild the ownership graph from the core with field-level places. Check generated code. Reject moves out of `self` in every body. Record loan origins for diagnostics. | Existing ownership tests pass on the new graph; a derived impl that moves out of `self` gets a diagnostic; the item 34 program names the closure. | 16, 23, 34, 39 |
 | 8. Summaries and escape | Infer function summaries, apply them at calls, check stores through parameters, carry argument borrows in generator and task values, and decide closure capture by escape. | The `known_gaps` programs for items 30 and 31 are rejected; an escaping closure moves its captures with no `move` keyword. | 19, 30, 31 |
 | 9. Drop glue and task results | One drop-glue rule for every owner. `get()` and `errors()` return borrows. | Corpus programs for a droppable zero-sized capture and a second `get()` of a `list` result pass with `# max-live-blocks: 0` on both tiers. | 20, 29 |
 | 10. Compile-time values | One static value representation covering user sum types and partial reads. | `static for` over a list of variants unrolls. | 25, 26 |
 | 11. Owned strings | Add `string`, with `str` as its view. Change interpolation, `show`, and the allocating `std.string` methods to return it. Update chapters 7 and 14 and the standard library. | A loop that formats a value on every pass runs with `# max-live-blocks: 0` on both tiers; corpus 110 and 167 drop their allowances. | 24 |
 | 12. Remove the adapter | The elaborator emits all core directly. Delete the side tables. Update the specification chapters the phases changed, and implementation chapters 62 and 63. | `checked_types` no longer exists. | — |
+
+Phase 2 located the cause of item 32. The checker records `conn[true]` and `conn[false]`
+as the same type, `conn[_]`: a `bool` index is left as an unknown slot instead of a value.
+The core cannot hold an unsettled type, so the adapter leaves the item's functions out.
+The fix stays with phase 6.
 
 Phases 4, 5, and 6 are independent of each other after phase 3. Phase 7 depends on phase 4
 for places, and phases 8 and 9 follow it in order. Phase 10 depends on phase 5 for call
@@ -184,6 +189,32 @@ folding. Phase 11 depends on phases 7 to 9 for places, summaries, and drop glue.
 Phase 3 is the largest. HIR lowering is about 10,000 lines that read the AST, and all of
 it changes its input. The adapter keeps the checker untouched during that phase, so the
 two large changes do not overlap.
+
+## Phase 2 results
+
+Phase 2 produced the core (`src/core/nodes.h`), the verifier (`src/core/verify.h`, about
+45 rules with ids, each with passing and failing tests), the adapter
+(`src/core/adapter*.cpp`), and `//src:core_corpus_test`, which builds and verifies the
+core for the codegen corpus and the standard library. Implementation chapter 70 describes
+them. The core is built only when the driver's `core_check` switch or
+`CINDER_CORE_VERIFY` is set; lowering does not read it yet.
+
+The adapter stands in for decisions the checker does not record. Each is a debt a later
+phase removes.
+
+| Debt | Removed in |
+|---|---|
+| The verifier runs only in the core tests, not in every test build. | Phase 3 |
+| A type invariant is checked in the core after a write through a reference, but not by lowering (item 40). | Phase 3 |
+| `cell[T]` and `&T` convert through intrinsic calls the adapter inserts (item 38). | Phase 4 |
+| A bare call to a function of the same module has no callee record; the adapter looks the name up. Recording it in the checker changes ownership checking and lowering, which both branch on whether the record exists. | Phase 5 |
+| No record holds the generic arguments an instance was made with, so verifier rule C8 is allow-listed for every call to an instance. | Phase 5 |
+| About 250 templates do not build. Most defer a call, an operator, or a cast to their instances and have no record of their own. Implicit generics and reads of a value parameter have no core form yet. | Phase 5 |
+| The task type of an `async def` and the `std.fmt` helpers interpolation calls are derived by the adapter. | Phase 5 |
+| A struct literal with an `@none` field has an unsettled recorded type (item 41). | Phase 5 |
+| The verifier does not check that a generic call meets the callee's bounds, or that a `match` is exhaustive. | Phase 6 |
+| Closure capture modes and pattern binding modes are read from the ownership check's own graph. | Phase 7 |
+| `for` over a borrowed collection of `copy` elements moves out of a reference (item 39). | Phase 7 |
 
 ## Work assignment
 

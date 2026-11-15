@@ -45,3 +45,4 @@ An impl may target a type with no declaration: a builtin scalar, a prelude gener
 
 - [Proof Solving](64-proof-solving.md) — the reasoning engine the checker calls for refinements and contracts.
 - [Compile-Time Execution in the Compiler](65-compile-time-execution-in-the-compiler.md) — how the checker runs code while checking.
+- [The Typed Core](70-the-typed-core.md) — the representation built from these tables and checked by a verifier, not yet read by lowering.

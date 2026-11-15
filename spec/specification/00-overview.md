@@ -129,6 +129,7 @@ Informative. Describes the reference compiler, not requirements on the language.
 67. [LLVM and Ahead-of-Time Compilation](05-implementation/67-llvm-and-aot.md)
 68. [JIT Execution](05-implementation/68-jit-execution.md) — Partial
 69. [The Task Scheduler](05-implementation/69-task-scheduler.md)
+70. [The Typed Core](05-implementation/70-the-typed-core.md) — Partial
 
 ## Diagnostics
 

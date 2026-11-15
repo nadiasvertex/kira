@@ -1,0 +1,21 @@
+# todo: 40
+# tier: both
+# currently-accepted
+# currently-result: 0
+# want: a panic, "invariant violated", because the field write through a `mut self` method breaks `value > 0`.
+module known_gaps.invariant_write_in_mut_self_method
+
+type pos = { pub value: int32 }
+    invariant self.value > 0
+
+def opaque(x: int32) -> int32:
+    return x
+
+extend pos:
+    def set(mut self, v: int32) -> unit:
+        self.value = v
+
+def main() -> int32:
+    var p = pos{value: opaque(1)}
+    p.set(opaque(0))
+    return p.value

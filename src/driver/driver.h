@@ -10,6 +10,8 @@
 #include "interpret.h"
 #include "lower.h"
 #include "module_metadata.h"
+#include "src/core/adapter.h"
+#include "src/core/verify.h"
 
 namespace cinder::driver {
 /// Parsed command-line inputs for one `cinder` invocation.
@@ -90,6 +92,24 @@ struct cli_config {
                           ///< caller to provide one — see
                           ///< `discover_and_inject_test_runner`
                           ///< (`test_discovery.h`).
+  bool core_check =
+      false; ///< After the ownership check, build the typed core with the
+             ///< adapter (`src/core/adapter.h`) and run the core verifier
+             ///< over it, reporting the result in `compile_report::core`.
+             ///< Only when checking found no errors. The environment
+             ///< variable `CINDER_CORE_VERIFY` turns it on as well.
+};
+
+/// What building and verifying the typed core found (`cli_config::core_check`).
+struct core_report {
+  /// The functions the adapter built, as (module, function) pairs.
+  std::vector<std::pair<std::string, std::string>> built;
+  /// The subset of `built` that are generic templates.
+  std::vector<std::pair<std::string, std::string>> templates;
+  /// The functions it could not build, and why.
+  std::vector<core::gap> gaps;
+  /// What the verifier rejected in the functions that were built.
+  std::vector<core::violation> violations;
 };
 
 /// Aggregate result of compiling all requested source files.
@@ -105,6 +125,8 @@ struct compile_report {
       run; ///< Populated only when `cli_config::run` was set.
   std::optional<build_outcome>
       build; ///< Populated only when `cli_config::build` was set.
+  std::optional<core_report>
+      core; ///< Populated only when the core check ran (`core_check`).
 };
 
 /// Parse, validate, and emit metadata for each requested source file.

@@ -1018,6 +1018,11 @@ struct checked_types {
   /// Concrete struct fields and sum payloads of every settled instance, for
   /// `runtime::value_layouts`; see `aggregate_shape.h`.
   aggregate_shapes shapes;
+  /// Member types of struct and sum types that mention a generic parameter
+  /// (`pair[T]` inside a generic body), in terms of those parameters. Kept
+  /// apart from `shapes` because no layout exists for them. Read only by the
+  /// typed core (`src/core`), to check generic templates.
+  aggregate_shapes open_shapes;
 
   /// Whether a value of `id` copies rather than moves: `type_table::is_copy`,
   /// a type parameter bounded by `copy`, or a `copy` sum.

@@ -54,3 +54,4 @@ The checker also records the concrete fields of every struct instance and the co
 ## See also
 
 - [Compile-Time Semantics](../03-advanced/32-compile-time-semantics.md) — the language-level model that the checker and comptime VM implement.
+- [The Typed Core](70-the-typed-core.md) — a verified representation built after the ownership check when a check is switched on; not yet a stage of the default pipeline.

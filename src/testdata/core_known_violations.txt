@@ -1,0 +1,10 @@
+# Core verifier violations the core corpus test (`//src:core_corpus_test`)
+# accepts for now. One entry per line: `<rule> <module> <function>  # <reason>`,
+# with `-` for the function of a static. A module or function ending in `*`
+# matches by prefix (`forget*` covers every instance of `forget`; `*` covers
+# every name). Remove an entry once it is fixed.
+
+# The checker records no generic arguments for a call to an instance, so a
+# call to `first$int32` has none while its template `first` has parameters.
+# Phase 5 of spec/unified-checker-plan.md removes this entry.
+C8 * *  # missing record: the generic arguments each instance was made with

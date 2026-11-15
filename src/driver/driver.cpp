@@ -393,6 +393,28 @@ auto compile_sources(const cli_config &cfg, bool use_color)
                               std::numeric_limits<unsigned>::max());
   }
 
+  // The typed core, built from the checker's side tables and verified, when
+  // asked for (`cli_config::core_check`). Its findings go to the report only.
+  if ((effective_cfg.core_check ||
+       std::getenv("CINDER_CORE_VERIFY") != nullptr) &&
+      !effective_cfg.parse_only && session_diagnostics.error_count() == 0) {
+    auto adapted = core::adapt_program(semantic_inputs, file_has_errors, checked);
+    auto program = std::vector<const core::module *>{};
+    auto core_result = core_report{};
+    for (const auto &built : adapted.modules) {
+      program.push_back(built.get());
+      for (const auto &function : built->functions) {
+        core_result.built.emplace_back(built->name, function->name);
+        if (!function->generic_params.empty()) {
+          core_result.templates.emplace_back(built->name, function->name);
+        }
+      }
+    }
+    core_result.violations = core::verify(program, checked);
+    core_result.gaps = std::move(adapted.gaps);
+    report.core = std::move(core_result);
+  }
+
   report.error_count += session_diagnostics.error_count();
   append_text(
       report.diagnostics,

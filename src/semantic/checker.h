@@ -1951,7 +1951,15 @@ private:
   /// not have yet. With `settled_only`, a shape that still names an unknown
   /// type is left out, so a later call can add it once the type is settled:
   /// compile-time code lays its values out while checking is under way.
-  auto add_aggregate_shapes(aggregate_shapes &into, bool settled_only) -> void;
+  ///
+  /// With `open`, it covers the other side instead: the types that mention a
+  /// template parameter (and no inference variable), for `open_shapes`.
+  auto add_aggregate_shapes(aggregate_shapes &into, bool settled_only,
+                            bool open = false) -> void;
+
+  /// The members of every struct and sum type that mentions a template
+  /// parameter, for `checked_types::open_shapes` (read only by `src/core`).
+  [[nodiscard]] auto compute_open_aggregate_shapes() -> aggregate_shapes;
 
   auto param_name_of(const ast::param &param) -> std::string;
 

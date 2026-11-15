@@ -299,6 +299,22 @@ cc_test(
 )
 
 cc_test(
+    name = "core_corpus_test",
+    size = "medium",
+    srcs = ["core_corpus_test.cpp"],
+    data = [
+        ":codegen_stress_corpus",
+        ":std_sources",
+        "testdata/core_known_violations.txt",
+    ],
+    tags = ["no-sandbox"],
+    deps = [
+        "//src/driver:driver",
+        "//src/testing",
+    ],
+)
+
+cc_test(
     name = "std_test",
     # Every function compile-time code runs on the VM is re-lowered from the
     # final checker results and must lower identically (`vm_backend::verify`).

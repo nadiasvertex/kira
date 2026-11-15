@@ -1,0 +1,20 @@
+# todo: 40
+# tier: both
+# currently-accepted
+# currently-result: 0
+# want: a panic, "invariant violated", because the field write through a `&mut` parameter breaks `value > 0`.
+module known_gaps.invariant_write_through_mut_ref
+
+type pos = { pub value: int32 }
+    invariant self.value > 0
+
+def opaque(x: int32) -> int32:
+    return x
+
+def poke(p: &mut pos, v: int32) -> unit:
+    p.value = v
+
+def main() -> int32:
+    var p = pos{value: opaque(1)}
+    poke(&mut p, opaque(0))
+    return p.value
