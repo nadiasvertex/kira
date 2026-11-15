@@ -22,11 +22,12 @@ Each open item traces to one of three causes.
 
 **Stages disagree about what a valid program is.** The checker records its decisions in
 side tables. Ownership checking, HIR lowering, storage lowering, and both backends each
-walk the AST again and read those tables. HIR lowering has about 450 places where it can
-refuse a program, and each backend has about 150. A program the checker accepts can fail
-in any of them, with a message written for compiler authors. Compile-time code reads a
-second copy of the tables (the lowering view), which can omit a record the first copy has.
-Items 9, 15, 22, 25, 26, 27, 29, 36, and 37 are of this kind.
+walk the AST again and read those tables. HIR lowering has about 150 places where it can
+refuse a program, storage lowering and its verifier about 250, and each backend about 50.
+A program the checker accepts can fail in any of them, with a message written for compiler
+authors. Compile-time code reads a second copy of the tables (the lowering view), which can
+omit a record the first copy has. Items 9, 15, 22, 25, 26, 27, 29, 36, and 37 are of this
+kind.
 
 **One construct has several implementations.** The checker has 17 entry points for
 checking a call. A bare call binds explicit type arguments and a module-qualified call

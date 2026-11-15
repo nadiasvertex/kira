@@ -56,6 +56,30 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+# HIR lowering from the typed core (`lower_core.h`), beside the old
+# AST-reading lowerer until it covers everything.
+cc_library(
+    name = "lower_core",
+    srcs = [
+        "lower_core.cpp",
+        "lower_core_expr.cpp",
+        "lower_core_stmt.cpp",
+    ],
+    hdrs = [
+        "lower_core.h",
+        "lower_core_lowerer.h",
+    ],
+    deps = [
+        ":hir",
+        "//src/core",
+        # `is_compiler_operation`.
+        "//src/core:verify",
+        "//src/parser:parser",
+        "//src/semantic:semantic",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 cc_test(
     name = "intrinsic_abi_test",
     srcs = ["intrinsic_abi_test.cpp"],
