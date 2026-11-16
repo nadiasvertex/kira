@@ -5,6 +5,7 @@ cc_library(
     srcs = [
         "abi.cpp",
         "captures.cpp",
+        "drop_emission.cpp",
         "drop_schedule.cpp",
         "frame_budget.cpp",
         "inline.cpp",
@@ -24,6 +25,7 @@ cc_library(
     hdrs = [
         "abi.h",
         "captures.h",
+        "drop_emission.h",
         "drop_schedule.h",
         "frame_budget.h",
         "ids.h",
@@ -62,8 +64,12 @@ cc_library(
     name = "lower_core",
     srcs = [
         "lower_core.cpp",
+        "lower_core_contract.cpp",
         "lower_core_expr.cpp",
+        "lower_core_lambda.cpp",
+        "lower_core_match.cpp",
         "lower_core_stmt.cpp",
+        "lower_core_task.cpp",
     ],
     hdrs = [
         "lower_core.h",
@@ -75,6 +81,7 @@ cc_library(
         # `is_compiler_operation`.
         "//src/core:verify",
         "//src/parser:parser",
+        "//src/runtime:runtime",
         "//src/semantic:semantic",
     ],
     visibility = ["//visibility:public"],

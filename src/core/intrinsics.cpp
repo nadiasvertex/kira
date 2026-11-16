@@ -671,6 +671,10 @@ struct operation {
 constexpr auto k_operations = std::to_array<operation>({
     {"ptr_offset", op_ptr_offset},
     {"range_view", op_range_view},
+    // `xs[a..=b]`: the same view with `b` included. Kept apart from
+    // `range_view(xs, a, b + 1)`, which overflows when `b` is the largest
+    // value of its type.
+    {"range_view_inclusive", op_range_view},
     {"len", op_len},
     {"container_data", op_container_data},
     {"as_bytes", op_as_bytes},

@@ -19,12 +19,14 @@
 namespace cinder::core {
 
 auto body_builder::contract_check_of(const ast::expr &condition,
-                                     std::string message, source_span span)
+                                     std::string message, source_span span,
+                                     contract_check::clause kind)
     -> result<ptr<stmt>> {
   CORE_TRY(value, value_as(condition, checked_.types.bool_type()));
   auto made = make_node<contract_check>(span);
   made->condition = std::move(value);
   made->message = std::move(message);
+  made->kind = kind;
   return ptr<stmt>(std::move(made));
 }
 
@@ -32,16 +34,18 @@ auto body_builder::post_checks_into(ptr_vec<stmt> &out) -> result<void> {
   for (const auto *contract : post_contracts_) {
     CORE_TRY(check, contract_check_of(*contract->condition,
                                       contract->message.value_or(std::string{}),
-                                      contract->span));
+                                      contract->span,
+                                      contract_check::clause::post));
     out.push_back(std::move(check));
   }
   return {};
 }
 
-auto body_builder::return_of(ptr<expr> value, source_span span)
-    -> result<ptr<stmt>> {
+auto body_builder::return_of(ptr<expr> value, source_span span,
+                             const void *origin) -> result<ptr<stmt>> {
   if (post_contracts_.empty() && open_crews_.empty()) {
     auto made = make_node<jump>(node_kind::return_stmt, span);
+    made->origin = origin;
     made->value = std::move(value);
     return ptr<stmt>(std::move(made));
   }
@@ -50,6 +54,7 @@ auto body_builder::return_of(ptr<expr> value, source_span span)
   auto exit = make_node<block>(span, unit_type());
   auto built = [&]() -> result<void> {
     auto leave = make_node<jump>(node_kind::return_stmt, span);
+    leave->origin = origin;
     if (value != nullptr) {
       const auto type = value->type;
       auto bound = let_of("return", type, false, std::move(value), span);
@@ -91,7 +96,7 @@ auto body_builder::contracts_into(const ast::func_decl &decl, block &body)
     CORE_TRY(check,
              contract_check_of(*contract.condition,
                                contract.message.value_or(std::string{}),
-                               contract.span));
+                               contract.span, contract_check::clause::pre));
     pre.push_back(std::move(check));
   }
   if (!pre.empty()) {
@@ -135,7 +140,8 @@ auto body_builder::invariant_check_of(const ast::expr &invariant,
   auto bound = let_of("self", type, false, std::move(self_value), span);
   const auto symbol = bound->symbol;
   out.push_back(std::move(bound));
-  CORE_TRY(check, contract_check_of(invariant, std::string{}, span));
+  CORE_TRY(check, contract_check_of(invariant, std::string{}, span,
+                                    contract_check::clause::invariant));
   out.push_back(std::move(check));
   return symbol;
 }

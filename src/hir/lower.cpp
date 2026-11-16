@@ -15,6 +15,7 @@
 
 #include "src/comptime/fragments.h"
 #include "src/hir/captures.h"
+#include "src/hir/drop_emission.h"
 #include "src/hir/drop_schedule.h"
 #include "src/hir/ids.h"
 #include "src/hir/nodes.h"
@@ -152,45 +153,6 @@ template <typename T>
   }
 }
 
-/// Whether control can never reach the statement *after* `node` — every path
-/// through it returns. Postcondition lowering asks this about a function
-/// body's tail: a tail that always returns has already checked the
-/// postcondition at each of those returns, and appending anything after it
-/// would be not just dead code but invalid (both backends terminate the
-/// current basic block on the last `return`, and LLVM's verifier rejects an
-/// instruction that follows a terminator).
-[[nodiscard]] auto always_returns(const hir_node &node) -> bool {
-  switch (node.kind) {
-  case hir_node_kind::hir_return:
-    return true;
-  case hir_node_kind::hir_expr_stmt:
-    return always_returns(*dynamic_cast<const hir_expr_stmt &>(node).expr);
-  case hir_node_kind::hir_block: {
-    const auto &block = dynamic_cast<const hir_block &>(node);
-    return std::ranges::any_of(block.stmts, [](const auto &stmt) -> bool {
-      return always_returns(*stmt);
-    });
-  }
-  case hir_node_kind::hir_if: {
-    const auto &node2 = dynamic_cast<const hir_if &>(node);
-    // Without an `else`, the condition can simply be false, and control
-    // arrives at whatever follows.
-    return node2.else_body != nullptr && always_returns(*node2.else_body) &&
-           std::ranges::all_of(node2.branches, [](const auto &branch) -> bool {
-             return always_returns(*branch.body);
-           });
-  }
-  case hir_node_kind::hir_match: {
-    const auto &node2 = dynamic_cast<const hir_match &>(node);
-    return std::ranges::all_of(node2.arms, [](const auto &arm) -> bool {
-      return always_returns(*arm.body);
-    });
-  }
-  default:
-    return false;
-  }
-}
-
 /// Broader than `always_returns` above: also true for `hir_break`/
 /// `hir_continue`, not just `hir_return`. Used, together with a separate
 /// check on the block's own type (see `lower_block`'s and `lower_function`'s
@@ -210,38 +172,6 @@ template <typename T>
 /// deliberately conservative skip: such a scope's locals are simply not
 /// scheduled for a drop call at all there, a leak rather than a double-drop
 /// or use-after-drop.
-[[nodiscard]] auto always_exits(const hir_node &node) -> bool {
-  switch (node.kind) {
-  case hir_node_kind::hir_return:
-  case hir_node_kind::hir_break:
-  case hir_node_kind::hir_continue:
-    return true;
-  case hir_node_kind::hir_expr_stmt:
-    return always_exits(*dynamic_cast<const hir_expr_stmt &>(node).expr);
-  case hir_node_kind::hir_block: {
-    const auto &block = dynamic_cast<const hir_block &>(node);
-    return std::ranges::any_of(block.stmts, [](const auto &stmt) -> bool {
-      return always_exits(*stmt);
-    });
-  }
-  case hir_node_kind::hir_if: {
-    const auto &node2 = dynamic_cast<const hir_if &>(node);
-    return node2.else_body != nullptr && always_exits(*node2.else_body) &&
-           std::ranges::all_of(node2.branches, [](const auto &branch) -> bool {
-             return always_exits(*branch.body);
-           });
-  }
-  case hir_node_kind::hir_match: {
-    const auto &node2 = dynamic_cast<const hir_match &>(node);
-    return std::ranges::all_of(node2.arms, [](const auto &arm) -> bool {
-      return always_exits(*arm.body);
-    });
-  }
-  default:
-    return false;
-  }
-}
-
 /// A variant-constructor expression (`@some(x)`) parses to an `ident_expr`
 /// whose span still covers the leading `@` — this must stay exactly in
 /// sync with the identically-named, identically-implemented predicate in
@@ -371,7 +301,16 @@ auto lower_static_global_value(
 class lowerer {
 public:
   lowerer(const checked_types &checked, const lowering_options &options)
-      : checked_(checked), options_(options) {}
+      : checked_(checked), options_(options),
+        drops_(checked,
+               drop_emitter::environment{
+                   .mint = [this]() -> symbol_id { return mint_symbol(); },
+                   .whole_local = [this](const void *node)
+                       -> std::optional<symbol_id> {
+                     return lookup_whole_local(node);
+                   },
+                   .function_symbol = [this](std::string_view name)
+                       -> symbol_id { return resolve_reference(name); }}) {}
 
   [[nodiscard]] auto lower_function(const ast::func_decl &decl)
       -> std::expected<ptr<hir_function>, lowering_error>;
@@ -488,7 +427,7 @@ private:
   /// Whether the bindings of `pattern` own the parts of the value they bind,
   /// as the ownership checker decided (`drop_schedule::owning_patterns`).
   [[nodiscard]] auto binds_owned_parts(const ast::node &pattern) const -> bool {
-    return drop_schedule_.owning_patterns.contains(&pattern);
+    return drops_.schedule().owning_patterns.contains(&pattern);
   }
 
   /// Declares the arm's `<subject>` local when the arm owns the whole value
@@ -498,7 +437,7 @@ private:
   auto own_matched_subject(const ast::node &pattern,
                            const std::function<ptr<hir_expr>()> &make_place,
                            std::vector<ptr<hir_node>> &pending) -> void {
-    if (!drop_schedule_.owning_subjects.contains(&pattern)) {
+    if (!drops_.schedule().owning_subjects.contains(&pattern)) {
       return;
     }
     auto place = make_place();
@@ -616,7 +555,7 @@ private:
                                              const std::string &name)
       -> std::expected<ptr<hir_expr>, lowering_error> {
     if (owns_static_reads_ ||
-        drop_schedule_.owned_static_reads.contains(&ref)) {
+        drops_.schedule().owned_static_reads.contains(&ref)) {
       for (const auto &[decl, def] : checked_.lowering.static_global_defs) {
         if (def.name == name) {
           return lower_static_global_value(
@@ -713,22 +652,22 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_expr_unflagged(const ast::expr &expr)
       -> std::expected<ptr<hir_expr>, lowering_error>;
-  /// A read of drop flag `flag`, which must already be declared.
-  [[nodiscard]] auto flag_ref(std::size_t flag, source_span span)
-      -> std::expected<ptr<hir_expr>, lowering_error>;
-  /// Appends `flag = value` for each of `flags`.
+  /// The drop flags and drops of `drop_emitter` (`drop_emission.h`).
   [[nodiscard]] auto set_flags(const std::vector<std::size_t> &flags,
                                bool value, source_span span,
                                ptr_vec<hir_node> &out)
-      -> std::expected<void, lowering_error>;
-  /// Appends the declarations of the drop flags set where `node` binds its
-  /// value (`drop_schedule::binding_flags`).
+      -> std::expected<void, lowering_error> {
+    return drops_.set_flags(flags, value, span, out);
+  }
   auto declare_flags(const void *node, source_span span, ptr_vec<hir_node> &out)
-      -> void;
-  /// `body`, run only when every flag in `flags` is set.
+      -> void {
+    drops_.declare_flags(node, span, out);
+  }
   [[nodiscard]] auto guarded(const std::vector<std::size_t> &flags,
                              ptr_vec<hir_node> body, source_span span)
-      -> std::expected<ptr_vec<hir_node>, lowering_error>;
+      -> std::expected<ptr_vec<hir_node>, lowering_error> {
+    return drops_.guarded(flags, std::move(body), span);
+  }
   [[nodiscard]] auto lower_literal(const ast::literal_expr &lit)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_ident(const ast::ident_expr &ident)
@@ -778,59 +717,31 @@ private:
                        ptr<hir_expr> object, ptr<hir_expr> subject,
                        ptr<hir_expr> value = nullptr)
       -> std::expected<ptr<hir_expr>, lowering_error>;
-  /// Builds every synthesized drop call `drop` (this type's own `impl drop`,
-  /// then each droppable field in declaration order — see `drop_plan`'s doc
-  /// comment) needs for one value, appending each as its own `hir_expr_stmt`
-  /// onto `out`. `make_receiver` is invoked once per call actually built
-  /// (own-drop, then once per recursed-into field), never shared, since each
-  /// use needs its own freshly-built HIR expression tree — the same pattern
-  /// `lower_pattern`'s `make_place` callbacks already use. `moved_paths`
-  /// are field paths already moved out of the value (see `pending_drop`):
-  /// those fields are skipped.
-  using place_fn = std::function<ptr<hir_expr>()>;
-  using field_paths = std::vector<moved_path>;
+  using place_fn = drop_emitter::place_fn;
+  using field_paths = drop_emitter::field_paths;
   [[nodiscard]] auto build_drop_calls(const place_fn &make_receiver,
                                       type_id type, source_span span,
                                       ptr_vec<hir_node> &out,
                                       const field_paths &moved_paths = {})
-      -> std::expected<void, lowering_error>;
+      -> std::expected<void, lowering_error> {
+    return drops_.build_drop_calls(make_receiver, type, span, out,
+                                   moved_paths);
+  }
   /// Whether `decl`, or the template it is an instance of, owns the value its
   /// `self` refers to (`ownership_results::consuming_receivers`).
   [[nodiscard]] auto owns_receiver(const ast::func_decl *decl) const -> bool {
-    if (decl == nullptr) {
-      return false;
-    }
-    const auto &owners = checked_.ownership.consuming_receivers;
-    if (owners.contains(decl)) {
-      return true;
-    }
-    const auto tmpl = checked_.ownership.instance_templates.find(decl);
-    return tmpl != checked_.ownership.instance_templates.end() &&
-           owners.contains(tmpl->second);
+    return hir::owns_receiver(checked_, decl);
   }
-  [[nodiscard]] auto build_array_drop(const place_fn &make_receiver,
-                                      const semantic::drop_plan &plan,
-                                      source_span span, ptr_vec<hir_node> &out,
-                                      const field_paths &moved_paths)
-      -> std::expected<void, lowering_error>;
-  /// Builds and appends the drop call(s) for one scheduled binding.
-  [[nodiscard]] auto emit_one_drop(const pending_drop &drop,
-                                   ptr_vec<hir_node> &stmts)
-      -> std::expected<void, lowering_error>;
-  /// Appends the drop calls `drop_schedule_.exits[key]` lists, if any — for
-  /// `lower_block` (per block) and `lower_function`'s own parameter scope.
   [[nodiscard]] auto emit_scope_exit_drops(const void *key,
                                            ptr_vec<hir_node> &stmts)
-      -> std::expected<void, lowering_error>;
-  /// Like `emit_scope_exit_drops`, for a scope whose last statement is a
-  /// value: that value is evaluated into a temporary first, the drops run,
-  /// and the temporary becomes the scope's tail again. Without it the drops
-  /// would replace the value as the structural tail, and both backends read a
-  /// block's value off `stmts.back()`. A tail whose type is unknown or
-  /// `unit`, or a scope with no tail expression, takes the plain path.
+      -> std::expected<void, lowering_error> {
+    return drops_.emit_scope_exit_drops(key, stmts);
+  }
   [[nodiscard]] auto emit_tail_scope_exit_drops(const void *key,
                                                 ptr_vec<hir_node> &stmts)
-      -> std::expected<void, lowering_error>;
+      -> std::expected<void, lowering_error> {
+    return drops_.emit_tail_scope_exit_drops(key, stmts);
+  }
   /// The drops of the exit keyed by `key`, which leaves the function or the
   /// innermost loop (`kind`): every scope it passes through, innermost
   /// first, after the temporaries it leaves alive.
@@ -853,15 +764,7 @@ private:
   /// returns what the checker inferred from its body (`unit` for a `drop`).
   [[nodiscard]] auto declared_result_type(const ast::func_decl &decl) const
       -> type_id {
-    if (decl.return_type == nullptr) {
-      const auto inferred = checked_.inferred_return_types.find(&decl);
-      return inferred != checked_.inferred_return_types.end() &&
-                     inferred->second != k_unknown_type
-                 ? inferred->second
-                 : interning_types().builtin("unit");
-    }
-    const auto found = checked_.node_types.find(decl.return_type.get());
-    return found != checked_.node_types.end() ? found->second : k_unknown_type;
+    return drops_.declared_result_type(decl);
   }
 
   /// The check a task makes after each suspension: when it was cancelled,
@@ -1412,62 +1315,6 @@ private:
     return stmts;
   }
 
-  /// Rebuilds a *place* expression — a chain of pure projections rooted at a
-  /// local (`p`, `p.inner`, `p.0`) — so it can be evaluated a second time.
-  /// Only these shapes: re-reading them is free of side effects and yields
-  /// the same value, which is exactly the property `lower_pattern`'s
-  /// `make_place` factories rely on. Anything else (a call, an index with a
-  /// computed subscript) is refused rather than silently duplicated.
-  [[nodiscard]] auto clone_place(const hir_expr &place)
-      -> std::expected<ptr<hir_expr>, lowering_error> {
-    switch (place.kind) {
-    case hir_node_kind::hir_local_ref: {
-      const auto &ref = dynamic_cast<const hir_local_ref &>(place);
-      return ptr<hir_expr>(make<hir_local_ref>(ref.span, ref.type, ref.symbol,
-                                               ref.name, ref.owner_module));
-    }
-    case hir_node_kind::hir_field: {
-      const auto &field = dynamic_cast<const hir_field &>(place);
-      auto object = clone_place(*field.object);
-      if (!object.has_value()) {
-        return std::unexpected(object.error());
-      }
-      return ptr<hir_expr>(make<hir_field>(
-          field.span, field.type, std::move(*object), field.field_name));
-    }
-    case hir_node_kind::hir_tuple_index: {
-      const auto &index = dynamic_cast<const hir_tuple_index &>(place);
-      auto object = clone_place(*index.object);
-      if (!object.has_value()) {
-        return std::unexpected(object.error());
-      }
-      return ptr<hir_expr>(make<hir_tuple_index>(
-          index.span, index.type, std::move(*object), index.index));
-    }
-    case hir_node_kind::hir_unary: {
-      const auto &unary = dynamic_cast<const hir_unary &>(place);
-      if (unary.op != ast::unary_op::deref || unary.operand == nullptr) {
-        return fail(lowering_error_kind::unsupported_construct, place.span,
-                    "this place cannot be read again: only a local, a field "
-                    "or tuple projection of one, or a `*` through a "
-                    "reference can");
-      }
-      auto operand = clone_place(*unary.operand);
-      if (!operand.has_value()) {
-        return std::unexpected(operand.error());
-      }
-      return ptr<hir_expr>(hir::make<hir_unary>(unary.span, unary.type,
-                                                unary.op, std::move(*operand)));
-    }
-    default:
-      return fail(lowering_error_kind::unsupported_construct, place.span,
-                  "this value's type declares an `invariant`, but the "
-                  "expression being assigned through is not a simple place "
-                  "(a local, or a field/tuple projection of one), so the "
-                  "invariant cannot be re-checked after the write yet");
-    }
-  }
-
   /// The `invariant` clause declared on `type`'s `type` declaration, if it
   /// has one and it is still worth checking at run time.
   [[nodiscard]] auto invariant_of(type_id type) const -> const ast::expr * {
@@ -1581,14 +1428,11 @@ private:
   /// at the top of `lower_function`, before the real walk below consults it.
   /// See `drop_schedule`'s doc comment (`src/hir/drop_schedule.h`) for why
   /// this needs no new plumbing through `lower_block`'s parameters.
-  drop_schedule drop_schedule_;
+  drop_emitter drops_;
   /// A compile-time expression has no drop schedule to say which static
   /// reads it owns, so each gets a fresh value: a static never changes, so
   /// a fresh value reads the same as the global would.
   bool owns_static_reads_ = false;
-  /// The local each drop flag of `drop_schedule_` is declared as, once its
-  /// binding has been lowered.
-  std::vector<symbol_id> flag_symbols_;
 
   /// The enclosing function's postconditions that still need checking — read
   /// by `lower_return_value` at every exit. Empty while lowering a lambda
@@ -1691,98 +1535,10 @@ auto lowerer::lower_expr(const ast::expr &expr)
   if (lowered.has_value()) {
     (*lowered)->origin = &expr;
   }
-  const auto clears = drop_schedule_.move_clears.find(&expr);
-  if (!lowered.has_value() || clears == drop_schedule_.move_clears.end()) {
+  if (!lowered.has_value()) {
     return lowered;
   }
-  // `{flag = false; value}`: the value moves, so the binding it came from
-  // no longer owns it.
-  const auto span = (*lowered)->span;
-  const auto type = (*lowered)->type;
-  auto stmts = ptr_vec<hir_node>{};
-  if (auto cleared = set_flags(clears->second, false, span, stmts);
-      !cleared.has_value()) {
-    return std::unexpected(cleared.error());
-  }
-  stmts.push_back(
-      ptr<hir_node>(make<hir_expr_stmt>(span, std::move(*lowered))));
-  auto block = make<hir_block>(span, type, std::move(stmts));
-  block->origin = &expr;
-  return ok_expr(std::move(block));
-}
-
-auto lowerer::flag_ref(std::size_t flag, source_span span)
-    -> std::expected<ptr<hir_expr>, lowering_error> {
-  if (flag >= flag_symbols_.size() ||
-      flag_symbols_[flag] == k_invalid_symbol_id) {
-    return fail(lowering_error_kind::unsupported_construct, span,
-                "internal error: a drop flag is used before the binding "
-                "that declares it was lowered");
-  }
-  return ok_expr(make<hir_local_ref>(span, checked_.types.bool_type(),
-                                     flag_symbols_[flag],
-                                     std::string("<drop flag>")));
-}
-
-auto lowerer::set_flags(const std::vector<std::size_t> &flags, bool value,
-                        source_span span, ptr_vec<hir_node> &out)
-    -> std::expected<void, lowering_error> {
-  for (const auto flag : flags) {
-    auto target = flag_ref(flag, span);
-    if (!target.has_value()) {
-      return std::unexpected(target.error());
-    }
-    out.push_back(ptr<hir_node>(hir::make<hir_assign>(
-        span, ast::assign_op::assign, std::move(*target),
-        ptr<hir_expr>(make<hir_literal>(span, checked_.types.bool_type(),
-                                        value ? token_kind::kw_true
-                                              : token_kind::kw_false,
-                                        value ? "true" : "false")))));
-  }
-  return {};
-}
-
-auto lowerer::declare_flags(const void *node, source_span span,
-                            ptr_vec<hir_node> &out) -> void {
-  const auto found = drop_schedule_.binding_flags.find(node);
-  if (found == drop_schedule_.binding_flags.end()) {
-    return;
-  }
-  for (const auto flag : found->second) {
-    flag_symbols_[flag] = mint_symbol();
-    out.push_back(ptr<hir_node>(make<hir_let>(
-        span, flag_symbols_[flag], std::string("<drop flag>"),
-        ptr<hir_expr>(make<hir_literal>(span, checked_.types.bool_type(),
-                                        token_kind::kw_true, "true")),
-        /*mut=*/true)));
-  }
-}
-
-auto lowerer::guarded(const std::vector<std::size_t> &flags,
-                      ptr_vec<hir_node> body, source_span span)
-    -> std::expected<ptr_vec<hir_node>, lowering_error> {
-  if (flags.empty() || body.empty()) {
-    return body;
-  }
-  // One `if` per flag, the last innermost, rather than one `if` on their
-  // `&&`: each test reads a flag itself, which is how the storage form's
-  // verifier ties a value's drop to the flag that says it is still held.
-  auto out = std::move(body);
-  for (auto flag = flags.rbegin(); flag != flags.rend(); ++flag) {
-    auto condition = flag_ref(*flag, span);
-    if (!condition.has_value()) {
-      return std::unexpected(condition.error());
-    }
-    auto branches = std::vector<hir_if_branch>{};
-    branches.push_back(hir_if_branch{
-        .condition = std::move(*condition),
-        .body = make<hir_block>(span, k_unknown_type, std::move(out))});
-    out = ptr_vec<hir_node>{};
-    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, ptr<hir_expr>(make<hir_if>(span, k_unknown_type,
-                                         std::move(branches), nullptr)))));
-  }
-  return out;
+  return drops_.clear_moved(&expr, std::move(*lowered));
 }
 
 auto lowerer::lower_expr_unflagged(const ast::expr &expr)
@@ -2927,7 +2683,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
     receiver_ast = resolved.receiver;
     target_decl = resolved.decl;
     // The same rule as the ownership checker's `receiver_mode`.
-    consumes_receiver = drop_schedule_.consuming_calls.contains(&call);
+    consumes_receiver = drops_.schedule().consuming_calls.contains(&call);
     const auto local_name =
         resolved.impl_target_type.empty()
             ? resolved.decl->name
@@ -3344,323 +3100,6 @@ auto lowerer::lower_index_dispatch(source_span span, type_id result,
                              resolved.decl));
 }
 
-/// An array's drop: each element in index order, through a pointer to the
-/// elements, as `std.mem.drop_range` would. Taking the pointer ends the array
-/// (`hir_container_data::takes_elements`), so the elements are its only drops.
-/// The checker moves no single element out of an owned array, so the array is
-/// either whole here or not dropped at all.
-auto lowerer::build_array_drop(const place_fn &make_receiver,
-                               const semantic::drop_plan &plan,
-                               source_span span, ptr_vec<hir_node> &out,
-                               const field_paths &moved_paths)
-    -> std::expected<void, lowering_error> {
-  if (!moved_paths.empty()) {
-    return fail(lowering_error_kind::unsupported_construct, span,
-                "internal error: an array drop was scheduled for an array "
-                "that was moved out of in part");
-  }
-  const auto element = *plan.element;
-  const auto length = plan.length;
-  const auto usize_type = checked_.types.usize_type();
-  const auto pointer_type = plan.element_pointer;
-  const auto data_symbol = mint_symbol();
-  const auto index_symbol = mint_symbol();
-  auto data = make<hir_container_data>(span, pointer_type, make_receiver());
-  data->takes_elements = true;
-  out.push_back(ptr<hir_node>(make<hir_let>(span, data_symbol,
-                                            std::string("<drop elements>"),
-                                            ptr<hir_expr>(std::move(data)))));
-  out.push_back(ptr<hir_node>(make<hir_let>(
-      span, index_symbol, std::string("<drop index>"),
-      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
-                                      std::string("0"))),
-      /*mut=*/true)));
-  const place_fn element_place = [span, element, pointer_type, data_symbol,
-                                  usize_type, index_symbol]() -> ptr<hir_expr> {
-    return {make<hir_index>(
-        span, element,
-        ptr<hir_expr>(make<hir_local_ref>(span, pointer_type, data_symbol,
-                                          std::string("<drop elements>"))),
-        ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
-                                          std::string("<drop index>"))))};
-  };
-  auto body = ptr_vec<hir_node>{};
-  if (auto ok = build_drop_calls(element_place, element, span, body);
-      !ok.has_value()) {
-    return ok;
-  }
-  auto step = ptr_vec<hir_node>{};
-  step.push_back(ptr<hir_node>(hir::make<hir_assign>(
-      span, ast::assign_op::add_assign,
-      ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
-                                        std::string("<drop index>"))),
-      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
-                                      std::string("1"))))));
-  auto condition = ptr<hir_expr>(hir::make<hir_binary>(
-      span, checked_.types.bool_type(), ast::binary_op::lt,
-      ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
-                                        std::string("<drop index>"))),
-      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
-                                      std::to_string(length)))));
-  out.push_back(ptr<hir_node>(
-      make<hir_while>(span, std::move(condition),
-                      make<hir_block>(span, k_unknown_type, std::move(body)),
-                      make<hir_block>(span, k_unknown_type, std::move(step)))));
-  return {};
-}
-
-auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
-                               source_span span, ptr_vec<hir_node> &out,
-                               const field_paths &moved_paths)
-    -> std::expected<void, lowering_error> {
-  const auto found = checked_.drop.drop_plans.find(type);
-  if (found == checked_.drop.drop_plans.end()) {
-    return fail(lowering_error_kind::unsupported_construct, span,
-                "internal error: scope-exit drop was scheduled for a type "
-                "with no resolved drop plan — the drop-schedule pass and "
-                "checker::resolve_drop_plans have gotten out of sync");
-  }
-  const auto &plan = found->second;
-  if (plan.cancels_generator) {
-    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, ptr<hir_expr>(make<hir_coroutine_cancel>(span, k_unknown_type,
-                                                       make_receiver())))));
-    return {};
-  }
-  if (plan.closure_glue.has_value()) {
-    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, ptr<hir_expr>(make<hir_closure_drop>(span, k_unknown_type,
-                                                   make_receiver())))));
-    return {};
-  }
-  if (plan.element.has_value()) {
-    return build_array_drop(make_receiver, plan, span, out, moved_paths);
-  }
-  if (plan.own_drop.has_value()) {
-    const auto &resolved = *plan.own_drop;
-    // Same convention as `lower_index_dispatch` just above: an empty
-    // `impl_target_type` means `decl` is already a monomorphized instance
-    // carrying its own mangled name.
-    const auto local_name =
-        resolved.impl_target_type.empty()
-            ? resolved.decl->name
-            : std::format("{}::{}", resolved.impl_target_type,
-                          resolved.decl->name);
-    const auto symbol = resolve_reference(local_name);
-    auto callee = ptr<hir_expr>(make<hir_local_ref>(
-        span, k_unknown_type, symbol, local_name, resolved.owner_module));
-    auto args = ptr_vec<hir_expr>{};
-    args.push_back(make_receiver());
-    const auto result_type = declared_result_type(*resolved.decl);
-    auto own_drop = direct_call(span, result_type, std::move(callee),
-                                std::move(args), resolved.decl);
-    own_drop->is_drop = true;
-    out.push_back(ptr<hir_node>(
-        make<hir_expr_stmt>(span, ptr<hir_expr>(std::move(own_drop)))));
-  }
-  // Field-wise, in declaration order, regardless of whether this type had
-  // its own `impl drop` above — the spec's implicit field-wise rule applies
-  // either way (`drop_plan`'s doc comment, types.h).
-  // A field moved out whole is skipped; one moved out of in part drops
-  // what it still owns.
-  for (const auto &[field_name, field_type] : plan.droppable_fields) {
-    auto moved_whole = false;
-    auto whole_flag = std::optional<std::size_t>{};
-    auto moved_below = field_paths{};
-    for (const auto &moved : moved_paths) {
-      if (moved.path.empty() || moved.path.front() != field_name) {
-        continue;
-      }
-      if (moved.path.size() == 1) {
-        moved_whole = !moved.flag.has_value();
-        whole_flag = moved.flag;
-      } else {
-        moved_below.push_back(
-            moved_path{.path = std::vector<std::string>(moved.path.begin() + 1,
-                                                        moved.path.end()),
-                       .flag = moved.flag});
-      }
-    }
-    if (moved_whole) {
-      continue;
-    }
-    // A tuple's members are named by position.
-    const auto position =
-        checked_.types.entry(type).kind == semantic::type_kind::tuple_kind
-            ? semantic::tuple_index_of(field_name)
-            : std::nullopt;
-    const place_fn field_place = [make_receiver, field_name, field_type,
-                                  position]() -> ptr<hir_expr> {
-      if (position.has_value()) {
-        return {make<hir_tuple_index>(source_span::dummy(), field_type,
-                                      make_receiver(), *position)};
-      }
-      return {make<hir_field>(source_span::dummy(), field_type, make_receiver(),
-                              field_name)};
-    };
-    // A field moved out on some paths only drops when its flag says it is
-    // still there.
-    auto field_drops = ptr_vec<hir_node>{};
-    if (auto sub = build_drop_calls(field_place, field_type, span, field_drops,
-                                    moved_below);
-        !sub.has_value()) {
-      return sub;
-    }
-    auto flags = std::vector<std::size_t>{};
-    if (whole_flag.has_value()) {
-      flags.push_back(*whole_flag);
-    }
-    auto checked_drops = guarded(flags, std::move(field_drops), span);
-    if (!checked_drops.has_value()) {
-      return std::unexpected(checked_drops.error());
-    }
-    for (auto &drop : *checked_drops) {
-      out.push_back(std::move(drop));
-    }
-  }
-  if (!plan.variant_drops.empty()) {
-    // A sum value: match on the active variant and drop only its payload.
-    // The subject is the place itself, so nothing is copied out first.
-    const auto subject_symbol = mint_symbol();
-    const place_fn subject_place = [type, subject_symbol]() -> ptr<hir_expr> {
-      return {make<hir_local_ref>(source_span::dummy(), type, subject_symbol,
-                                  std::string("<drop subject>"))};
-    };
-    auto arms = std::vector<hir_match_arm>{};
-    for (const auto &vd : plan.variant_drops) {
-      auto body_stmts = ptr_vec<hir_node>{};
-      for (const auto &[index, payload_type] : vd.droppable_payloads) {
-        const auto variant_name = vd.variant;
-        const auto slot = index;
-        const place_fn payload_place = [subject_place, variant_name, slot,
-                                        payload_type]() -> ptr<hir_expr> {
-          return {make<hir_variant_payload>(source_span::dummy(), payload_type,
-                                            subject_place(), variant_name,
-                                            slot)};
-        };
-        if (auto sub =
-                build_drop_calls(payload_place, payload_type, span, body_stmts);
-            !sub.has_value()) {
-          return sub;
-        }
-      }
-      auto pattern_args = ptr_vec<hir_pattern>{};
-      for (size_t i = 0; i < vd.arity; ++i) {
-        pattern_args.push_back(
-            ptr<hir_pattern>(make<hir_wildcard_pattern>(span)));
-      }
-      auto pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
-          span, vd.variant, std::move(pattern_args)));
-      pattern->subject_type = type;
-      arms.push_back(
-          hir_match_arm{.pattern = std::move(pattern),
-                        .guard = nullptr,
-                        .body = make<hir_block>(span, k_unknown_type,
-                                                std::move(body_stmts))});
-    }
-    arms.push_back(hir_match_arm{
-        .pattern = ptr<hir_pattern>(make<hir_wildcard_pattern>(span)),
-        .guard = nullptr,
-        .body = make<hir_block>(span, k_unknown_type, ptr_vec<hir_node>{})});
-    auto match =
-        ptr<hir_expr>(make<hir_match>(span, k_unknown_type, make_receiver(),
-                                      subject_symbol, std::move(arms)));
-    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(span, std::move(match))));
-  }
-  return {};
-}
-
-auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
-    -> std::expected<void, lowering_error> {
-  auto drops = ptr_vec<hir_node>{};
-  {
-    const auto symbol = lookup_whole_local(drop.node);
-    if (!symbol.has_value()) {
-      return fail(lowering_error_kind::unsupported_construct,
-                  source_span::dummy(),
-                  std::format("internal error: drop schedule named `{}`, "
-                              "which is not a local in scope at this point",
-                              drop.name));
-    }
-    const auto drop_symbol = *symbol;
-    const auto drop_type = drop.type;
-    const auto drop_name = drop.name;
-    const place_fn make_receiver = [drop_symbol, drop_type,
-                                    drop_name]() -> ptr<hir_expr> {
-      return {make<hir_local_ref>(source_span::dummy(), drop_type, drop_symbol,
-                                  drop_name)};
-    };
-    if (auto built =
-            build_drop_calls(make_receiver, drop.type, source_span::dummy(),
-                             drops, drop.moved_paths);
-        !built.has_value()) {
-      return built;
-    }
-  }
-  // Moved on some paths to this exit only: drop it when its flag says it is
-  // still here.
-  auto flags = std::vector<std::size_t>{};
-  if (drop.flag.has_value()) {
-    flags.push_back(*drop.flag);
-  }
-  auto checked_drops = guarded(flags, std::move(drops), source_span::dummy());
-  if (!checked_drops.has_value()) {
-    return std::unexpected(checked_drops.error());
-  }
-  for (auto &node : *checked_drops) {
-    stmts.push_back(std::move(node));
-  }
-  return {};
-}
-
-auto lowerer::emit_scope_exit_drops(const void *key, ptr_vec<hir_node> &stmts)
-    -> std::expected<void, lowering_error> {
-  const auto found = drop_schedule_.exits.find(key);
-  if (found == drop_schedule_.exits.end()) {
-    return {};
-  }
-  for (const auto &drop : found->second) {
-    if (auto result = emit_one_drop(drop, stmts); !result.has_value()) {
-      return result;
-    }
-  }
-  return {};
-}
-
-auto lowerer::emit_tail_scope_exit_drops(const void *key,
-                                         ptr_vec<hir_node> &stmts)
-    -> std::expected<void, lowering_error> {
-  const auto scheduled = drop_schedule_.exits.find(key);
-  if (scheduled == drop_schedule_.exits.end() || scheduled->second.empty()) {
-    return {};
-  }
-  const auto has_value_tail =
-      !stmts.empty() && stmts.back()->kind == hir_node_kind::hir_expr_stmt &&
-      [&] {
-        const auto &tail = dynamic_cast<const hir_expr_stmt &>(*stmts.back());
-        return tail.expr->type != k_unknown_type &&
-               !checked_.types.is_unit(tail.expr->type);
-      }();
-  if (!has_value_tail) {
-    return emit_scope_exit_drops(key, stmts);
-  }
-  auto tail = std::move(dynamic_cast<hir_expr_stmt &>(*stmts.back()).expr);
-  const auto tail_span = tail->span;
-  const auto tail_type = tail->type;
-  stmts.pop_back();
-  const auto temp = mint_symbol();
-  const auto temp_name = std::format("<tail value {}>", temp);
-  stmts.push_back(ptr<hir_node>(
-      make<hir_let>(tail_span, temp, temp_name, std::move(tail))));
-  if (auto result = emit_scope_exit_drops(key, stmts); !result.has_value()) {
-    return result;
-  }
-  stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      tail_span, ptr<hir_expr>(make<hir_local_ref>(tail_span, tail_type, temp,
-                                                   temp_name)))));
-  return {};
-}
-
 auto lowerer::emit_jump_drops(const ast::node &node, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
   return emit_exit_drops(&node,
@@ -3679,11 +3118,7 @@ auto lowerer::emit_exit_drops(const void *key, jump_exit kind, source_span span,
   if (auto ended = emit_crew_exits(kind, span, stmts); !ended.has_value()) {
     return ended;
   }
-  auto placeholder = make<hir_block>(span, k_unknown_type, ptr_vec<hir_node>{});
-  placeholder->exit = kind;
-  stmts.push_back(ptr<hir_node>(
-      make<hir_expr_stmt>(span, ptr<hir_expr>(std::move(placeholder)))));
-  return emit_scope_exit_drops(key, stmts);
+  return drops_.emit_jump_drops(key, kind, span, stmts);
 }
 
 void lowerer::emit_crew_end(symbol_id crew, source_span span,
@@ -4130,8 +3565,8 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
   // What the ownership checker decided this lambda borrows, resolved here
   // for the same reason as a capture list.
   auto borrowed = std::unordered_map<symbol_id, ast::capture_mode>{};
-  if (const auto found = drop_schedule_.borrowed_captures.find(&lambda);
-      found != drop_schedule_.borrowed_captures.end()) {
+  if (const auto found = drops_.schedule().borrowed_captures.find(&lambda);
+      found != drops_.schedule().borrowed_captures.end()) {
     for (const auto &capture : found->second) {
       const auto symbol = capture_symbol(capture.name, capture.node);
       if (!symbol.has_value()) {
@@ -4285,8 +3720,8 @@ auto lowerer::implicit_capture_plan(
 auto lowerer::lower_drop_glue(const ast::lambda_expr &lambda,
                               const hir_lambda &closure)
     -> std::expected<ptr<hir_lambda>, lowering_error> {
-  const auto owned = drop_schedule_.owned_captures.find(&lambda);
-  if (owned == drop_schedule_.owned_captures.end()) {
+  const auto owned = drops_.schedule().owned_captures.find(&lambda);
+  if (owned == drops_.schedule().owned_captures.end()) {
     return ptr<hir_lambda>{};
   }
   const auto plan = checked_.drop.drop_plans.find(closure.type);
@@ -4380,8 +3815,8 @@ auto lowerer::lower_where(const ast::where_expr &where)
   // The bindings' drops run after the inner expression is evaluated, so its
   // value is held in a temporary across them; a block's tail is read off its
   // last statement.
-  if (const auto scheduled = drop_schedule_.exits.find(&where);
-      scheduled != drop_schedule_.exits.end() && !scheduled->second.empty()) {
+  if (const auto scheduled = drops_.schedule().exits.find(&where);
+      scheduled != drops_.schedule().exits.end() && !scheduled->second.empty()) {
     const auto held = mint_symbol();
     const auto held_type = (*inner)->type;
     stmts.push_back(ptr<hir_node>(make<hir_let>(where.inner->span, held,
@@ -4611,9 +4046,9 @@ auto lowerer::lower_task_function(
   const auto task_type = task_type_of(declared);
   static const auto no_captures =
       std::vector<semantic::ownership::task_capture>{};
-  const auto found = drop_schedule_.task_captures.find(key);
+  const auto found = drops_.schedule().task_captures.find(key);
   const auto &captures =
-      found != drop_schedule_.task_captures.end() ? found->second : no_captures;
+      found != drops_.schedule().task_captures.end() ? found->second : no_captures;
 
   // The body is a function of its own: nothing it does leaves through the
   // enclosing function's exits, crews or suspension points.
@@ -5630,7 +5065,7 @@ auto lowerer::lower_or_else(const ast::or_else_expr &or_else)
   auto failure_pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
       or_else.span, failure_variant, std::move(failure_args)));
   auto failure_stmts = ptr_vec<hir_node>{};
-  if (drop_schedule_.unmatched_drops.contains(&or_else)) {
+  if (drops_.schedule().unmatched_drops.contains(&or_else)) {
     if (auto dropped = build_drop_calls(make_place, subject_type, or_else.span,
                                         failure_stmts);
         !dropped.has_value()) {
@@ -6353,7 +5788,7 @@ auto lowerer::lower_stmt(const ast::node &node)
       if (!else_block.has_value()) {
         return std::unexpected(else_block.error());
       }
-      if (drop_schedule_.unmatched_drops.contains(let.pattern.get())) {
+      if (drops_.schedule().unmatched_drops.contains(let.pattern.get())) {
         // The pattern missed, so nothing bound the subject; drop it before
         // the diverging else body runs.
         auto drops = std::vector<ptr<hir_node>>{};
@@ -6438,9 +5873,9 @@ auto lowerer::lower_stmt(const ast::node &node)
     // value is evaluated as part of the return, so a drop placed before it
     // would run too early.
     auto stmts = ptr_vec<hir_node>{};
-    const auto scheduled = drop_schedule_.exits.find(&node);
+    const auto scheduled = drops_.schedule().exits.find(&node);
     const auto has_drops =
-        scheduled != drop_schedule_.exits.end() && !scheduled->second.empty();
+        scheduled != drops_.schedule().exits.end() && !scheduled->second.empty();
     if ((has_drops || !open_crews_.empty()) &&
         (*value)->type != k_unknown_type) {
       const auto value_type = (*value)->type;
@@ -6589,59 +6024,12 @@ auto lowerer::lower_stmt(const ast::node &node)
     const auto *invariant =
         object == nullptr ? nullptr : invariant_of(object->type);
 
-    // Assigning over a value drops the old one, after the new one is
-    // computed (ch. 17, When drops run): the new value goes to a temporary,
-    // the old one drops, and the temporary is stored.
     auto stmts = ptr_vec<hir_node>{};
-    const auto scheduled = assign.op == ast::assign_op::assign
-                               ? drop_schedule_.assignments.find(&assign)
-                               : drop_schedule_.assignments.end();
-    if (scheduled != drop_schedule_.assignments.end() &&
-        scheduled->second.drop_old &&
-        checked_.drop.drop_plans.contains((*target)->type)) {
-      const auto temp_type = (*value)->type;
-      const auto temp_symbol = mint_symbol();
-      stmts.push_back(ptr<hir_node>(make<hir_let>(assign.span, temp_symbol,
-                                                  std::string("<assigned>"),
-                                                  std::move(*value))));
-      const auto &old_place = **target;
-      if (auto probe = clone_place(old_place); !probe.has_value()) {
-        return std::unexpected(probe.error());
-      }
-      const place_fn make_place = [this, &old_place]() -> ptr<hir_expr> {
-        return std::move(*clone_place(old_place));
-      };
-      auto drops = ptr_vec<hir_node>{};
-      if (auto dropped =
-              build_drop_calls(make_place, (*target)->type, assign.span, drops,
-                               scheduled->second.moved_paths);
-          !dropped.has_value()) {
-        return std::unexpected(dropped.error());
-      }
-      // Moved on some paths: drop the old value only where it is still
-      // there.
-      auto checked_drops =
-          guarded(scheduled->second.when, std::move(drops), assign.span);
-      if (!checked_drops.has_value()) {
-        return std::unexpected(checked_drops.error());
-      }
-      for (auto &drop : *checked_drops) {
-        stmts.push_back(std::move(drop));
-      }
-      value = ptr<hir_expr>(make<hir_local_ref>(
-          assign.span, temp_type, temp_symbol, std::string("<assigned>")));
-    }
-    // Moving the `ptr` doesn't move the node, so `object` stays valid — it
-    // points into the `hir_assign` this now owns.
-    stmts.push_back(ptr<hir_node>(hir::make<hir_assign>(
-        assign.span, assign.op, std::move(*target), std::move(*value))));
-    // The target holds a value again.
-    if (scheduled != drop_schedule_.assignments.end()) {
-      if (auto set =
-              set_flags(scheduled->second.sets, true, assign.span, stmts);
-          !set.has_value()) {
-        return std::unexpected(set.error());
-      }
+    if (auto assigned = drops_.assignment(&assign, assign.op,
+                                          std::move(*target), std::move(*value),
+                                          assign.span, stmts);
+        !assigned.has_value()) {
+      return std::unexpected(assigned.error());
     }
     if (invariant == nullptr) {
       return stmts;
@@ -6992,7 +6380,7 @@ auto lowerer::lower_if_let_chain(
   if (*unmatched_body == nullptr) {
     *unmatched_body = make<hir_block>(span, type, ptr_vec<hir_node>{});
   }
-  if (drop_schedule_.unmatched_drops.contains(branch.let_pattern.get())) {
+  if (drops_.schedule().unmatched_drops.contains(branch.let_pattern.get())) {
     // The subject was moved into the test and nothing bound it, so the
     // branch that did not match still has to drop it.
     auto drops = std::vector<ptr<hir_node>>{};
@@ -7083,7 +6471,7 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   const auto &loop_var = plain_var != nullptr ? *plain_var : subject;
   // Whether the loop variables own what they bind is the ownership
   // checker's decision (`drop_schedule::owning_loops`).
-  const auto owns = drop_schedule_.owning_loops.contains(&for_stmt);
+  const auto owns = drops_.schedule().owning_loops.contains(&for_stmt);
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
       inner_stmts =
@@ -7627,7 +7015,7 @@ auto lowerer::lower_generator_loop(
   // and with the scopes a jump out of the body leaves.
   push_scope();
   const auto generator_symbol =
-      drop_schedule_.loop_handles.contains(handle_scope)
+      drops_.schedule().loop_handles.contains(handle_scope)
           ? declare_local("<for iterator>", iterable_type, /*whole=*/true,
                           handle_scope)
           : mint_symbol();
@@ -7760,7 +7148,7 @@ auto lowerer::lower_iterator_loop(
   // scopes a jump out of the body leaves. One made from a borrowed
   // collection only copies it, and owns nothing.
   push_scope();
-  const auto handle_symbol = drop_schedule_.loop_handles.contains(handle_scope)
+  const auto handle_symbol = drops_.schedule().loop_handles.contains(handle_scope)
                                  ? declare_local("<for iterator>", handle_type,
                                                  /*whole=*/true, handle_scope)
                                  : mint_symbol();
@@ -8131,7 +7519,7 @@ auto lowerer::lower_comprehension_clause(
   }
   const auto &loop_var = plain_var != nullptr ? *plain_var : subject;
   const auto span = clause.iterable->span;
-  const auto owns = drop_schedule_.owning_loops.contains(&clause);
+  const auto owns = drops_.schedule().owning_loops.contains(&clause);
   const auto owns_element = plain_var != nullptr && owns;
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
@@ -8393,7 +7781,7 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
 
   auto result = ptr_vec<hir_node>{};
   const auto drops_unmatched =
-      drop_schedule_.unmatched_drops.contains(while_stmt.let_pattern.get());
+      drops_.schedule().unmatched_drops.contains(while_stmt.let_pattern.get());
   if (drops_unmatched || !hoisted.empty()) {
     // The subject is moved into each test. When the pattern misses, nothing
     // bound it, so the exit path drops it; `hir_while_let` has no such path,
@@ -8451,7 +7839,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
   switch (pattern.kind) {
   case ast::node_kind::wildcard_pattern: {
     // `_` binds nothing, so nothing else would ever drop this part.
-    if (drop_schedule_.leftover_drops.contains(&pattern)) {
+    if (drops_.schedule().leftover_drops.contains(&pattern)) {
       auto place = make_place();
       const auto place_type = place->type;
       if (auto dropped =
@@ -8470,7 +7858,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
   case ast::node_kind::binding_pattern: {
     const auto &binding = ast::cast<const ast::binding_pattern>(pattern);
     auto place = make_place();
-    const auto whole = drop_schedule_.owned_bindings.contains(&pattern);
+    const auto whole = drops_.schedule().owned_bindings.contains(&pattern);
     const auto symbol =
         declare_local(binding.name, place->type, whole, &pattern);
     pending.push_back(ptr<hir_node>(
@@ -8492,7 +7880,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     }
     if (group.alias.has_value()) {
       auto place = make_place();
-      const auto owner = drop_schedule_.owned_bindings.contains(&group);
+      const auto owner = drops_.schedule().owned_bindings.contains(&group);
       const auto symbol =
           declare_local(*group.alias, place->type, owner, &group);
       pending.push_back(ptr<hir_node>(
@@ -8618,7 +8006,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
                     "type-checked, fully-annotated code");
       }
       const auto ftype = found->second;
-      const auto whole = drop_schedule_.owned_bindings.contains(&field);
+      const auto whole = drops_.schedule().owned_bindings.contains(&field);
       const auto symbol = declare_local(field_name, ftype, whole, &field);
       pending.push_back(ptr<hir_node>(
           make<hir_let>(field_span, symbol, field_name,
@@ -8633,7 +8021,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     }
     // `..` binds nothing, so the fields it skips would never be dropped.
     const auto struct_type = make_place()->type;
-    if (drop_schedule_.leftover_drops.contains(&pattern)) {
+    if (drops_.schedule().leftover_drops.contains(&pattern)) {
       if (const auto plan = checked_.drop.drop_plans.find(struct_type);
           plan != checked_.drop.drop_plans.end()) {
         for (const auto &[field_name, field_type] :
@@ -8992,9 +8380,8 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   // A generator's body drops like any other, in its step function: its
   // locals live in the generator's state across a `yield`, and a generator
   // dropped while suspended is resumed to return (`hir_coroutine_cancel`).
-  drop_schedule_ = compute_drop_schedule(decl, checked_);
+  drops_.start(compute_drop_schedule(decl, checked_));
   function_name_ = decl.name;
-  flag_symbols_.assign(drop_schedule_.flag_count, k_invalid_symbol_id);
 
   // An implicit generic has no body of its own to lower — only the instances
   // the checker made for each call's argument types.
@@ -9319,9 +8706,8 @@ auto lowerer::lower_expression_function(
     const ast::expr &expr, std::span<const comptime_capture> captures,
     std::string name) -> std::expected<ptr<hir_function>, lowering_error> {
   // Nothing it owns is dropped: it runs once, at compile time.
-  drop_schedule_ = {};
+  drops_.start({});
   owns_static_reads_ = true;
-  flag_symbols_.clear();
   auto return_type = checked_type_of(expr);
   if (!return_type.has_value()) {
     return std::unexpected(return_type.error());
@@ -9361,28 +8747,13 @@ auto lowerer::finish_function(hir_function &function)
       function, checked_, [this]() -> symbol_id { return mint_symbol(); },
       [this, &drop_failure](const temporary &temp,
                             ptr_vec<hir_node> &out) -> void {
-        const auto symbol = temp.symbol;
-        const auto type = temp.type;
-        const place_fn place = [symbol, type]() -> ptr<hir_expr> {
-          return {make<hir_local_ref>(source_span::dummy(), type, symbol,
-                                      std::string("<temporary>"))};
-        };
-        auto moved = field_paths{};
-        for (const auto &path : temp.moved_paths) {
-          moved.push_back(moved_path{.path = path, .flag = std::nullopt});
-        }
-        if (auto dropped =
-                build_drop_calls(place, type, source_span::dummy(), out, moved);
+        if (auto dropped = drops_.drop_temporary(temp, out);
             !dropped.has_value() && !drop_failure.has_value()) {
           drop_failure = dropped.error();
         }
       },
       [this](const void *origin) -> std::optional<const void *> {
-        const auto found = drop_schedule_.temporary_ends.find(origin);
-        if (found == drop_schedule_.temporary_ends.end()) {
-          return std::nullopt;
-        }
-        return found->second;
+        return drops_.temporary_end(origin);
       });
   if (drop_failure.has_value()) {
     return std::unexpected(*drop_failure);

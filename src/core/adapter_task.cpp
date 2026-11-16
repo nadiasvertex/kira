@@ -33,7 +33,7 @@ namespace cinder::core {
 using semantic::type_kind;
 
 auto body_builder::task_block_of(const void *key,
-                                 std::span<const ast::ptr<ast::node>> body,
+                                 const std::vector<ast::ptr<ast::node>> &body,
                                  type_id declared, source_span span)
     -> result<ptr<expr>> {
   auto &types = checked_.types;
@@ -153,7 +153,7 @@ auto body_builder::await_task_form(const ast::await_expr &awaited)
 }
 
 auto body_builder::crew_of(const std::string &name,
-                           std::span<const ast::ptr<ast::node>> body,
+                           const std::vector<ast::ptr<ast::node>> &body,
                            source_span span, type_id type)
     -> result<ptr<expr>> {
   const auto crew_type = checked_.types.builtin_generic("crew", {});

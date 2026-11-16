@@ -111,6 +111,7 @@ auto body_builder::binding_of(const std::string &name, const void *key,
   made.type = type;
   made.path = copy_path(path);
   made.span = span;
+  made.origin = key;
   // Rule A2 decides: a part that could not be moved out of the subject is
   // the part itself; otherwise the binding copies or moves it.
   auto access = context.subject_access;
@@ -152,6 +153,7 @@ auto body_builder::test_of(const ast::node &pattern, type_id type,
     return settle(found->second, part.span);
   };
   auto test = any_test(type, pattern.span);
+  test.origin = &pattern;
   switch (pattern.kind) {
   case ast::node_kind::wildcard_pattern:
     return test;
@@ -401,6 +403,7 @@ auto body_builder::subject_of(const ast::expr &subject,
   CORE_TRY(p, place_of(subject));
   while (is_ref(p.type())) {
     add_deref(p);
+    ++context.subject_derefs;
   }
   context.subject_access = access_of(p);
   context.subject_type = p.type();
@@ -410,9 +413,11 @@ auto body_builder::subject_of(const ast::expr &subject,
 auto body_builder::arm_of(std::vector<pattern_alternative> alternatives,
                           const ast::expr *guard,
                           const std::function<result<ptr<block>>()> &body,
-                          source_span span) -> result<match_arm> {
+                          source_span span, const void *origin)
+    -> result<match_arm> {
   auto arm = match_arm{};
   arm.span = span;
+  arm.origin = origin;
   push_scope();
   if (!alternatives.empty()) {
     bind_all(alternatives.front().bindings);
@@ -485,6 +490,8 @@ auto body_builder::match_of(const ast::expr &subject,
   const auto subject_type = subject_place.type();
   auto made = make_node<match_expr>(span, type);
   made->subject = std::move(subject_place);
+  made->subject_origin = &subject;
+  made->subject_derefs = context.subject_derefs;
   for (const auto &arm_ast : arms) {
     if (arm_ast.has_error || arm_ast.pattern == nullptr) {
       return fail("error node", "the arm carries a parse error", arm_ast.span);
@@ -506,7 +513,10 @@ auto body_builder::match_of(const ast::expr &subject,
                       std::move(alternatives), arm_ast.guard.get(),
                       [&]() -> result<ptr<block>> {
                         if (arm_ast.body_expr != nullptr) {
+                          // The arm's scope is keyed as if its value were
+                          // its one statement.
                           auto body = make_node<block>(arm_ast.span, type);
+                          body->origin = &arm_ast.body_stmts;
                           if (checked_.types.is_unit(type)) {
                             CORE_TRY(value, value_of(*arm_ast.body_expr));
                             body->statements.push_back(
@@ -521,7 +531,7 @@ auto body_builder::match_of(const ast::expr &subject,
                         return block_of(arm_ast.body_stmts, arm_ast.span,
                                         type);
                       },
-                      arm_ast.span));
+                      arm_ast.span, arm_ast.pattern.get()));
     made->arms.push_back(std::move(arm));
   }
   return ptr<expr>(std::move(made));
@@ -540,6 +550,9 @@ auto body_builder::if_let_of(const std::vector<ast::if_branch> &branches,
   const auto subject_type = subject_place.type();
   auto made = make_node<match_expr>(span, type);
   made->subject = std::move(subject_place);
+  made->form = match_form::if_let;
+  made->subject_origin = branch.let_expr.get();
+  made->subject_derefs = context.subject_derefs;
   auto alternatives = std::vector<pattern_alternative>{};
   for (const auto *alternative : top_alternatives(*branch.let_pattern)) {
     CORE_TRY(made_alternative,
@@ -549,7 +562,7 @@ auto body_builder::if_let_of(const std::vector<ast::if_branch> &branches,
   CORE_TRY(arm, arm_of(
                     std::move(alternatives), nullptr,
                     [&]() { return block_of(branch.body, branch.span, type); },
-                    branch.span));
+                    branch.span, branch.let_pattern.get()));
   made->arms.push_back(std::move(arm));
   auto otherwise = ptr<block>{};
   if (index + 1 < branches.size()) {
@@ -579,6 +592,9 @@ auto body_builder::while_let_of(const ast::while_stmt &loop)
   const auto subject_type = subject_place.type();
   auto matched = make_node<match_expr>(loop.span, unit);
   matched->subject = std::move(subject_place);
+  matched->form = match_form::while_let;
+  matched->subject_origin = loop.let_expr.get();
+  matched->subject_derefs = context.subject_derefs;
   auto alternatives = std::vector<pattern_alternative>{};
   for (const auto *alternative : top_alternatives(*loop.let_pattern)) {
     CORE_TRY(made_alternative,
@@ -588,7 +604,7 @@ auto body_builder::while_let_of(const ast::while_stmt &loop)
   CORE_TRY(arm, arm_of(
                     std::move(alternatives), nullptr,
                     [&]() { return block_of(loop.body, loop.span, unit); },
-                    loop.span));
+                    loop.span, loop.let_pattern.get()));
   matched->arms.push_back(std::move(arm));
   auto stop = make_node<block>(loop.span, unit);
   stop->statements.push_back(make_node<jump>(node_kind::break_stmt, loop.span));
@@ -601,7 +617,8 @@ auto body_builder::while_let_of(const ast::while_stmt &loop)
 
 auto body_builder::let_pattern_of(const ast::let_stmt &let_ast,
                                   std::span<const ast::ptr<ast::node>> rest,
-                                  source_span block_span, type_id block_type)
+                                  source_span block_span, type_id block_type,
+                                  const void *scope_key)
     -> result<ptr<expr>> {
   if (let_ast.pattern == nullptr || let_ast.initializer == nullptr) {
     return fail("let pattern", "no pattern or initializer", let_ast.span);
@@ -611,6 +628,9 @@ auto body_builder::let_pattern_of(const ast::let_stmt &let_ast,
   const auto subject_type = subject_place.type();
   auto made = make_node<match_expr>(let_ast.span, block_type);
   made->subject = std::move(subject_place);
+  made->form = match_form::let_pattern;
+  made->subject_origin = let_ast.initializer.get();
+  made->subject_derefs = context.subject_derefs;
   auto alternatives = std::vector<pattern_alternative>{};
   for (const auto *alternative : top_alternatives(*let_ast.pattern)) {
     CORE_TRY(made_alternative,
@@ -619,8 +639,12 @@ auto body_builder::let_pattern_of(const ast::let_stmt &let_ast,
   }
   CORE_TRY(arm, arm_of(
                     std::move(alternatives), nullptr,
-                    [&]() { return block_of(rest, block_span, block_type); },
-                    let_ast.span));
+                    [&]() {
+                      // The rest of the block is still the block's scope.
+                      return block_from(rest, block_span, block_type,
+                                        scope_key);
+                    },
+                    let_ast.span, let_ast.pattern.get()));
   made->arms.push_back(std::move(arm));
   if (!let_ast.else_body.empty()) {
     CORE_TRY(otherwise, block_of(let_ast.else_body, let_ast.span, block_type));
@@ -681,6 +705,9 @@ auto body_builder::or_else_of(const ast::or_else_expr &or_else)
   }
   auto made = make_node<match_expr>(or_else.span, type);
   made->subject = std::move(subject_place);
+  made->form = match_form::or_else;
+  made->subject_origin = or_else.operand.get();
+  made->subject_derefs = context.subject_derefs;
 
   auto step = step_of(projection::step::variant_payload, payload.front());
   step.name = wrapper->success;
@@ -746,6 +773,9 @@ auto body_builder::try_of(const ast::try_expr &try_expr) -> result<ptr<expr>> {
 
   auto made = make_node<match_expr>(try_expr.span, type);
   made->subject = std::move(subject_place);
+  made->form = match_form::try_operator;
+  made->subject_origin = try_expr.operand.get();
+  made->subject_derefs = context.subject_derefs;
 
   // `@ok(v)` / `@some(v)` => v
   const auto &success_payload =
@@ -830,7 +860,8 @@ auto body_builder::try_of(const ast::try_expr &try_expr) -> result<ptr<expr>> {
       returned_value->payload.push_back(std::move(converted));
     }
     auto body = make_node<block>(try_expr.span, type);
-    CORE_TRY(leave, return_of(std::move(returned_value), try_expr.span));
+    CORE_TRY(leave,
+             return_of(std::move(returned_value), try_expr.span, &try_expr));
     body->statements.push_back(std::move(leave));
     auto arm = match_arm{};
     arm.span = try_expr.span;

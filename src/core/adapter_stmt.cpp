@@ -61,11 +61,57 @@ auto body_builder::expr_stmt_of(ptr<expr> value, source_span span)
   return made;
 }
 
-auto body_builder::block_of(std::span<const ast::ptr<ast::node>> stmts,
+auto body_builder::block_of(const std::vector<ast::ptr<ast::node>> &stmts,
                             source_span span, type_id type)
+    -> result<ptr<block>> {
+  return block_from(stmts, span, type, &stmts);
+}
+
+namespace {
+
+/// Marks the core statements `out[first..]`, made from the one AST
+/// statement `node`: every one after the first continues it, and the one
+/// that plays its role for drops carries it as `origin` (a jump, the
+/// assignment of an `assign_stmt`, else the first).
+auto stamp_statement(const ast::node &node, ptr_vec<stmt> &out,
+                     std::size_t first) -> void {
+  if (first >= out.size()) {
+    return;
+  }
+  for (auto i = first + 1; i < out.size(); ++i) {
+    out[i]->continues_statement = true;
+  }
+  const auto role = [&]() -> node_kind {
+    switch (node.kind) {
+    case ast::node_kind::return_stmt: return node_kind::return_stmt;
+    case ast::node_kind::break_stmt: return node_kind::break_stmt;
+    case ast::node_kind::continue_stmt: return node_kind::continue_stmt;
+    case ast::node_kind::assign_stmt: return node_kind::assign;
+    default: return node_kind::literal;
+    }
+  }();
+  auto *carrier = out[first].get();
+  if (role != node_kind::literal) {
+    for (auto i = first; i < out.size(); ++i) {
+      if (out[i]->kind == role) {
+        carrier = out[i].get();
+        break;
+      }
+    }
+  }
+  if (carrier->origin == nullptr) {
+    carrier->origin = &node;
+  }
+}
+
+} // namespace
+
+auto body_builder::block_from(std::span<const ast::ptr<ast::node>> stmts,
+                              source_span span, type_id type, const void *key)
     -> result<ptr<block>> {
   push_scope();
   auto made = make_node<block>(span, type);
+  made->origin = key;
   const auto valued = !checked_.types.is_unit(type);
   auto last = std::optional<std::size_t>{};
   for (std::size_t i = stmts.size(); i-- > 0;) {
@@ -89,11 +135,15 @@ auto body_builder::block_of(std::span<const ast::ptr<ast::node>> stmts,
             stmts.subspan(i + 1);
         CORE_TRY(matched,
                  let_pattern_of(ast::cast<const ast::let_stmt>(node), rest,
-                                span, type));
+                                span, type, key));
         if (valued) {
+          if (matched->origin == nullptr) {
+            matched->origin = &node;
+          }
           made->result = std::move(matched);
         } else {
           made->statements.push_back(expr_stmt_of(std::move(matched), node.span));
+          made->statements.back()->origin = &node;
         }
         return {};
       }
@@ -114,6 +164,7 @@ auto body_builder::block_of(std::span<const ast::ptr<ast::node>> stmts,
           }
           CORE_TRY(value,
                    if_of(tail.branches, tail.else_body, 0, node.span, type));
+          value->origin = &node;
           made->result = std::move(value);
           return {};
         }
@@ -131,11 +182,14 @@ auto body_builder::block_of(std::span<const ast::ptr<ast::node>> stmts,
             return fail("match_stmt", "no subject", node.span);
           }
           CORE_TRY(value, match_of(*tail.subject, tail.arms, node.span, type));
+          value->origin = &node;
           made->result = std::move(value);
           return {};
         }
       }
+      const auto first = made->statements.size();
       CORE_CHECK(stmt_into(node, made->statements));
+      stamp_statement(node, made->statements, first);
     }
     return {};
   }();
@@ -176,6 +230,92 @@ auto body_builder::if_of(const std::vector<ast::if_branch> &branches,
     made->else_branch = std::move(fallback);
   }
   return ptr<expr>(std::move(made));
+}
+
+namespace {
+
+/// Whether evaluating `subscript` again gives the same value with no effect:
+/// a literal or a read of a local.
+[[nodiscard]] auto is_pure_subscript(const expr &subscript) -> bool {
+  if (subscript.kind == node_kind::literal) {
+    return true;
+  }
+  if (subscript.kind != node_kind::use) {
+    return false;
+  }
+  const auto &read = static_cast<const use &>(subscript);
+  return read.from.root.kind == place_root::origin::local &&
+         read.from.path.empty();
+}
+
+/// A copy of `subscript`, which `is_pure_subscript`.
+[[nodiscard]] auto copy_pure_subscript(const expr &subscript) -> ptr<expr> {
+  if (subscript.kind == node_kind::literal) {
+    const auto &lit = static_cast<const literal &>(subscript);
+    auto made = make_node<literal>(lit.span, lit.type);
+    made->token = lit.token;
+    made->spelling = lit.spelling;
+    return made;
+  }
+  const auto &read = static_cast<const use &>(subscript);
+  auto made = make_node<use>(read.span, read.type);
+  made->from.root.kind = read.from.root.kind;
+  made->from.root.symbol = read.from.root.symbol;
+  made->from.root.name = read.from.root.name;
+  made->from.root.type = read.from.root.type;
+  made->how = read.how;
+  return made;
+}
+
+} // namespace
+
+auto body_builder::bind_impure_parts(place &target, source_span span,
+                                     ptr_vec<stmt> &out) -> void {
+  const auto bind = [&](std::string name, ptr<expr> value) -> place {
+    const auto type = value->type;
+    auto bound = let_of(std::move(name), type, false, std::move(value), span);
+    auto read = place{};
+    read.root.kind = place_root::origin::local;
+    read.root.symbol = bound->symbol;
+    read.root.name = bound->name;
+    read.root.type = type;
+    out.push_back(std::move(bound));
+    return read;
+  };
+  if (target.root.kind == place_root::origin::temporary) {
+    auto held = bind("<compound place>", std::move(target.root.value));
+    target.root = std::move(held.root);
+  }
+  for (auto &step : target.path) {
+    if (step.kind == projection::step::element && step.subscript != nullptr &&
+        !is_pure_subscript(*step.subscript)) {
+      const auto subscript_span = step.subscript->span;
+      auto held = bind("<compound index>", std::move(step.subscript));
+      step.subscript = use_of(std::move(held), subscript_span);
+    }
+  }
+}
+
+auto body_builder::pure_copy(const place &p) -> place {
+  auto copy = place{};
+  copy.root.kind = p.root.kind;
+  copy.root.symbol = p.root.symbol;
+  copy.root.name = p.root.name;
+  copy.root.module = p.root.module;
+  copy.root.type = p.root.type;
+  for (const auto &step : p.path) {
+    auto next = projection{};
+    next.kind = step.kind;
+    next.type = step.type;
+    next.name = step.name;
+    next.index = step.index;
+    next.in_bounds = step.in_bounds;
+    if (step.subscript != nullptr) {
+      next.subscript = copy_pure_subscript(*step.subscript);
+    }
+    copy.path.push_back(std::move(next));
+  }
+  return copy;
 }
 
 auto body_builder::assign_into(const ast::assign_stmt &assign,
@@ -230,8 +370,11 @@ auto body_builder::assign_into(const ast::assign_stmt &assign,
                             checked_.types.display(target_type)),
                 assign.span);
   }
-  // `a op= b` is `a = a op b`, with `a`'s place built once for each use.
-  CORE_TRY(read_place, place_of(*assign.target));
+  // `a op= b` is `a = a op b` with `a` evaluated once: each impure part of
+  // its place is bound first, and both uses read the pure place left.
+  const auto first = out.size();
+  bind_impure_parts(target, assign.span, out);
+  auto read_place = pure_copy(target);
   const auto shift = *op == ast::binary_op::shl || *op == ast::binary_op::shr;
   CORE_TRY(value_type, type_of(*assign.value));
   CORE_TRY(rhs, value_as(*assign.value,
@@ -243,6 +386,9 @@ auto body_builder::assign_into(const ast::assign_stmt &assign,
   made->target = std::move(target);
   made->value = std::move(combined);
   finish();
+  for (auto i = first + 1; i < out.size(); ++i) {
+    out[i]->continues_statement = true;
+  }
   return {};
 }
 
@@ -288,6 +434,7 @@ auto body_builder::stmt_into(const ast::node &node, ptr_vec<stmt> &out)
     made->value = std::move(value);
     made->symbol = declare(binding.name, type, binding.is_mut);
     made->origin = &node;
+    made->binding_origin = let_ast.pattern.get();
     out.push_back(std::move(made));
     return {};
   }
@@ -315,6 +462,7 @@ auto body_builder::stmt_into(const ast::node &node, ptr_vec<stmt> &out)
     made->value = std::move(value);
     made->symbol = declare(var.name, type, true);
     made->origin = &node;
+    made->binding_origin = &node;
     out.push_back(std::move(made));
     return {};
   }
@@ -327,6 +475,7 @@ auto body_builder::stmt_into(const ast::node &node, ptr_vec<stmt> &out)
             ast::as<const ast::yield_expr>(statement.expr.get());
         yielded != nullptr && yielded->value != nullptr) {
       auto made = make_node<jump>(node_kind::yield_stmt, node.span);
+      made->suspension = yielded;
       CORE_TRY(value, value_as(*yielded->value, yield_type_));
       made->value = std::move(value);
       out.push_back(std::move(made));
@@ -343,17 +492,19 @@ auto body_builder::stmt_into(const ast::node &node, ptr_vec<stmt> &out)
       CORE_TRY(returned, value_as(*ret.value, body_type_));
       value = std::move(returned);
     }
-    CORE_TRY(made, return_of(std::move(value), node.span));
+    CORE_TRY(made, return_of(std::move(value), node.span, &node));
     out.push_back(std::move(made));
     return {};
   }
   case ast::node_kind::break_stmt:
     crew_exits_into(true, node.span, out);
     out.push_back(make_node<jump>(node_kind::break_stmt, node.span));
+    out.back()->origin = &node;
     return {};
   case ast::node_kind::continue_stmt:
     crew_exits_into(true, node.span, out);
     out.push_back(make_node<jump>(node_kind::continue_stmt, node.span));
+    out.back()->origin = &node;
     return {};
   case ast::node_kind::crew_stmt: {
     const auto &crew = ast::cast<const ast::crew_stmt>(node);
@@ -507,7 +658,8 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
     }
     made->params.push_back(param{.symbol = declare(binding->name, sig.params[i], true),
                                  .name = binding->name,
-                                 .type = sig.params[i]});
+                                 .type = sig.params[i],
+                                 .origin = binding});
   }
   auto body = [&]() -> result<ptr<block>> {
     if (decl.body_expr != nullptr) {

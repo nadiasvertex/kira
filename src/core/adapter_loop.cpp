@@ -108,9 +108,10 @@ auto body_builder::bind_element(place element,
   alternative.test = std::move(test);
   auto alternatives = std::vector<pattern_alternative>{};
   alternatives.push_back(std::move(alternative));
-  CORE_TRY(arm, arm_of(std::move(alternatives), nullptr, body, span));
+  CORE_TRY(arm, arm_of(std::move(alternatives), nullptr, body, span, nullptr));
   auto made = make_node<match_expr>(span, unit_type());
   made->subject = std::move(element);
+  made->form = match_form::for_element;
   made->arms.push_back(std::move(arm));
   return ptr<expr>(std::move(made));
 }
@@ -142,9 +143,10 @@ auto body_builder::next_loop(ptr<expr> next, type_id element_type,
   alternative.test.parts.push_back(std::move(part));
   auto alternatives = std::vector<pattern_alternative>{};
   alternatives.push_back(std::move(alternative));
-  CORE_TRY(arm, arm_of(std::move(alternatives), nullptr, body, span));
+  CORE_TRY(arm, arm_of(std::move(alternatives), nullptr, body, span, nullptr));
   auto matched = make_node<match_expr>(span, unit_type());
   matched->subject = std::move(subject);
+  matched->form = match_form::for_next;
   matched->arms.push_back(std::move(arm));
   auto stop = make_node<block>(span, unit_type());
   stop->statements.push_back(make_node<jump>(node_kind::break_stmt, span));
@@ -197,10 +199,12 @@ auto body_builder::container_len(place container, source_span span)
 auto body_builder::loop_of(const ast::expr &iterable,
                            std::span<const ast::node *const> patterns,
                            const semantic::iterator_loop_dispatch *dispatch,
-                           const loop_body &body, source_span span)
+                           const loop_body &body, source_span span,
+                           const void *handle_key, const void *loop_key)
     -> result<ptr<expr>> {
   push_scope();
   auto made = make_node<block>(span, unit_type());
+  made->origin = handle_key;
   auto built = [&]() -> result<void> {
     // A range: `let start; let end; let mut i = start; while i < end`.
     if (iterable.kind == ast::node_kind::binary_expr) {
@@ -229,6 +233,7 @@ auto body_builder::loop_of(const ast::expr &iterable,
         made->statements.push_back(std::move(start_let));
         made->statements.push_back(std::move(end_let));
         made->statements.push_back(std::move(index_let));
+        loop->origin = loop_key;
         made->statements.push_back(std::move(loop));
         return {};
       }
@@ -264,9 +269,12 @@ auto body_builder::loop_of(const ast::expr &iterable,
       alternative.test.parts.push_back(std::move(part));
       auto alternatives = std::vector<pattern_alternative>{};
       alternatives.push_back(std::move(alternative));
-      CORE_TRY(arm, arm_of(std::move(alternatives), nullptr, body, span));
+      CORE_TRY(arm,
+               arm_of(std::move(alternatives), nullptr, body, span, nullptr));
       auto matched = make_node<match_expr>(span, unit_type());
       matched->subject = std::move(subject);
+      matched->form = match_form::for_option;
+      matched->subject_origin = &iterable;
       matched->arms.push_back(std::move(arm));
       matched->arms.push_back(
           fallback_arm(iterable_type, make_node<block>(span, unit_type()), span));
@@ -281,6 +289,7 @@ auto body_builder::loop_of(const ast::expr &iterable,
       CORE_TRY(handle, value_of(iterable));
       auto handle_let =
           let_of("<for iterator>", iterable_type, true, std::move(handle), span);
+      handle_let->binding_origin = handle_key;
       const auto option_type =
           checked_.types.builtin_generic("option", {entry.args[0]});
       auto args = ptr_vec<expr>{};
@@ -292,6 +301,7 @@ auto body_builder::loop_of(const ast::expr &iterable,
       CORE_TRY(loop, next_loop(std::move(next), entry.args[0], patterns, body,
                                span));
       made->statements.push_back(std::move(handle_let));
+      loop->origin = loop_key;
       made->statements.push_back(std::move(loop));
       return {};
     }
@@ -335,6 +345,7 @@ auto body_builder::loop_of(const ast::expr &iterable,
       const auto handle_type = handle->type;
       auto handle_let =
           let_of("<for iterator>", handle_type, true, std::move(handle), span);
+      handle_let->binding_origin = handle_key;
       CORE_TRY(next_target,
                callee_of(semantic::resolved_callee{
                              .decl = dispatch->decl,
@@ -354,6 +365,7 @@ auto body_builder::loop_of(const ast::expr &iterable,
       CORE_TRY(loop,
                next_loop(std::move(next), element_type, patterns, body, span));
       made->statements.push_back(std::move(handle_let));
+      loop->origin = loop_key;
       made->statements.push_back(std::move(loop));
       return {};
     }
@@ -410,6 +422,7 @@ auto body_builder::loop_of(const ast::expr &iterable,
       loop->step->statements.push_back(std::move(advance));
       made->statements.push_back(std::move(container_let));
       made->statements.push_back(std::move(cursor_let));
+      loop->origin = loop_key;
       made->statements.push_back(std::move(loop));
       return {};
     }
@@ -446,6 +459,7 @@ auto body_builder::loop_of(const ast::expr &iterable,
                               std::move(loop_body_block), span);
     made->statements.push_back(std::move(container_let));
     made->statements.push_back(std::move(index_let));
+    loop->origin = loop_key;
     made->statements.push_back(std::move(loop));
     return {};
   }();
@@ -457,7 +471,7 @@ auto body_builder::loop_of(const ast::expr &iterable,
 }
 
 auto body_builder::guarded_body(const ast::expr *guard,
-                                std::span<const ast::ptr<ast::node>> stmts,
+                                const std::vector<ast::ptr<ast::node>> &stmts,
                                 source_span span) -> result<ptr<block>> {
   if (guard == nullptr) {
     return block_of(stmts, span, unit_type());
@@ -492,7 +506,7 @@ auto body_builder::for_of(const ast::for_stmt &loop) -> result<ptr<stmt>> {
                            return guarded_body(loop.guard.get(), loop.body,
                                                loop.span);
                          },
-                         loop.span));
+                         loop.span, &loop.iterable, &loop));
   return expr_stmt_of(std::move(made), loop.span);
 }
 
@@ -593,7 +607,8 @@ auto body_builder::comprehension_of(const ast::for_expr &comprehension)
               : nullptr;
       CORE_TRY(loop, loop_of(*clause.iterable, patterns, loop_dispatch,
                              [&]() { return clause_body(index + 1); },
-                             clause.iterable->span));
+                             clause.iterable->span, &clause.iterable,
+                             &clause));
       auto wrapper = make_node<block>(span, unit_type());
       wrapper->statements.push_back(expr_stmt_of(std::move(loop), span));
       return wrapper;

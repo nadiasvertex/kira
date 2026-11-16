@@ -1663,6 +1663,14 @@ auto test_c5_compiler_operations() -> void {
       "range_view: a list by value");
   bad(op_call(w, "range_view", {ref_list, boolean, usize}, slice), "C5",
       "range_view: a non-integer bound");
+  ok(op_call(w, "range_view_inclusive", {ref_list, usize, usize}, slice),
+     "range_view_inclusive: `&list` to a slice");
+  ok(op_call(w, "range_view_inclusive", {ref_str, usize, usize}, str),
+     "range_view_inclusive: `&str` to `str`");
+  bad(op_call(w, "range_view_inclusive", {list, usize, usize}, slice), "C5",
+      "range_view_inclusive: a list by value");
+  bad(op_call(w, "range_view_inclusive", {ref_list, boolean, usize}, slice),
+      "C5", "range_view_inclusive: a non-integer bound");
   bad(op_call(w, "range_view", {ref_list, usize, usize}, slice_mut), "C5",
       "range_view: a `slice_mut` from a shared borrow");
   bad(op_call(w, "range_view", {ref_list, usize, usize}, t.builtin_generic("slice", {boolean})),

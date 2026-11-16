@@ -1257,7 +1257,8 @@ auto body_builder::element_address(const ast::unary_expr &un, type_id type)
                         {checked_.types.entry(type).result}, un.span);
 }
 
-auto body_builder::range_bounds(const ast::binary_expr &range)
+auto body_builder::range_bounds(const ast::binary_expr &range,
+                                bool exclusive_end)
     -> result<std::pair<ptr<expr>, ptr<expr>>> {
   if (range.lhs == nullptr || range.rhs == nullptr) {
     return fail("range value", "a range with an open bound", range.span);
@@ -1269,7 +1270,7 @@ auto body_builder::range_bounds(const ast::binary_expr &range)
   CORE_TRY(end, value_as(*range.rhs, bound));
   // `a..=b` is the exclusive `a..(b + 1)`, as lowering stores it, so the
   // two bounds mean one thing wherever they are read.
-  if (range.op == ast::binary_op::range_inclusive) {
+  if (exclusive_end && range.op == ast::binary_op::range_inclusive) {
     auto sum = make_node<primitive>(range.rhs->span, bound);
     sum->binary = ast::binary_op::add;
     sum->operands.push_back(std::move(end));
@@ -1340,12 +1341,16 @@ auto body_builder::range_index(const ast::index_expr &index,
                              checked_.types.ref_to(container, is_mut),
                              index.span);
   }
-  CORE_TRY(bounds, range_bounds(range));
+  // `a..=b` keeps `b` as written: the view includes it, and `b + 1` could
+  // overflow.
+  const auto inclusive = range.op == ast::binary_op::range_inclusive;
+  CORE_TRY(bounds, range_bounds(range, !inclusive));
   auto args = ptr_vec<expr>{};
   args.push_back(std::move(base));
   args.push_back(std::move(bounds.first));
   args.push_back(std::move(bounds.second));
-  return intrinsic_call("range_view", type, std::move(args), {}, index.span);
+  return intrinsic_call(inclusive ? "range_view_inclusive" : "range_view",
+                        type, std::move(args), {}, index.span);
 }
 
 auto body_builder::tuple_of(const ast::tuple_expr &tuple) -> result<ptr<expr>> {
@@ -1511,6 +1516,15 @@ auto body_builder::where_of(const ast::where_expr &where) -> result<ptr<expr>> {
 }
 
 auto body_builder::value_of(const ast::expr &source) -> result<ptr<expr>> {
+  auto made = value_of_node(source);
+  if (made.has_value() && (*made)->origin == nullptr) {
+    (*made)->origin = &source;
+  }
+  return made;
+}
+
+auto body_builder::value_of_node(const ast::expr &source)
+    -> result<ptr<expr>> {
   if (const auto rewritten = checked_.spliced_fragments.find(&source);
       rewritten != checked_.spliced_fragments.end()) {
     if (const auto *fragment = ast::as<const ast::expr>(rewritten->second)) {
@@ -1767,6 +1781,20 @@ auto body_builder::receiver_argument(place p, type_id param, source_span span)
 
 auto body_builder::argument(const ast::expr &arg, type_id param,
                             std::optional<semantic::param_passing> passing)
+    -> result<ptr<expr>> {
+  // An inserted borrow of the argument's place is the one node made from
+  // it; anything else came from `value_of`, which named it already.
+  auto made = argument_of(arg, param, passing);
+  if (made.has_value() && (*made)->origin == nullptr &&
+      (*made)->kind == node_kind::borrow &&
+      static_cast<const borrow &>(**made).inserted) {
+    (*made)->origin = &arg;
+  }
+  return made;
+}
+
+auto body_builder::argument_of(const ast::expr &arg, type_id param,
+                               std::optional<semantic::param_passing> passing)
     -> result<ptr<expr>> {
   const auto &param_entry = checked_.types.entry(param);
   const auto mode =
@@ -2156,6 +2184,7 @@ auto body_builder::call_of(const ast::call_expr &call) -> result<ptr<expr>> {
     }
     CORE_TRY(p, receiver_place(*receiver_ast));
     args.push_back(receiver_argument(std::move(p), params[0], receiver_ast->span));
+    args.back()->origin = receiver_ast;
     offset = 1;
   }
   if (const auto mapping = checked_.call_argument_mappings.find(&call);

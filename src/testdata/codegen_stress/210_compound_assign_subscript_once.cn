@@ -1,0 +1,24 @@
+module codegen_stress.compound_assign_subscript_once
+
+# expect: 1253
+
+# `xs[pick(&mut calls, i)] op= v` evaluates its place once: the call that
+# computes the subscript runs one time per compound assignment, for an
+# array element and for an element of an array field.
+
+type holder = { items: array[int32, 2] }
+
+def pick(calls: &mut int32, at: usize) -> usize:
+    *calls += 1
+    return at
+
+def main() -> int32:
+    var calls: int32 = 0
+    var xs: array[int32, 3] = [1, 2, 3]
+    xs[pick(&mut calls, 1)] += 10
+    xs[pick(&mut calls, 2)] *= 5
+    # xs = [1, 12, 15], calls = 2
+    var h = holder { items: [4, 5] }
+    h.items[pick(&mut calls, 0)] += 1000
+    # h.items = [1004, 5], calls = 3
+    return xs[0] + xs[1] + xs[2] + h.items[0] + h.items[1] + calls * 72

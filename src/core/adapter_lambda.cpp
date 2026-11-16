@@ -161,6 +161,8 @@ auto body_builder::lambda_of(const ast::lambda_expr &lambda)
   const auto return_type = entry.result;
   auto made = make_node<core::lambda>(lambda.span, type);
   made->return_type = return_type;
+  made->capture_list = lambda.captures.has_value();
+  made->closure_origin = &lambda;
 
   // A written list's entries are captured where the lambda is made, in
   // list order, even when the body never uses one.
@@ -217,7 +219,8 @@ auto body_builder::lambda_of(const ast::lambda_expr &lambda)
     }
     made->params.push_back(param{.symbol = declare(binding->name, params[i], true),
                                  .name = binding->name,
-                                 .type = params[i]});
+                                 .type = params[i],
+                                 .origin = binding});
   }
   auto body = [&]() -> result<ptr<block>> {
     if (lambda.body_expr != nullptr) {
@@ -266,6 +269,9 @@ auto body_builder::generic_lambda_let(const ast::let_stmt &let,
     bound->type = type;
     bound->value = std::move(closure);
     bound->symbol = declare(name, type);
+    // The ownership check declares each copy as a binding of its own,
+    // named by the copy.
+    bound->binding_origin = copy;
     names.push_back(std::move(name));
     out.push_back(std::move(bound));
   }

@@ -80,8 +80,20 @@ struct node {
   std::optional<source_span> expansion;
   /// The AST node this was elaborated from; null for a synthesized node.
   /// Present only while the adapter builds the core from the checker's side
-  /// tables (plan phases 2 to 11).
-  const ast::node *origin = nullptr;
+  /// tables (plan phases 2 to 11). The drop schedule is keyed by AST node, so
+  /// every block, statement, assignment, call and jump elaborated from one
+  /// names it here. When one AST node becomes several core nodes, the one
+  /// that plays its role for drops carries it: the block that is its scope,
+  /// the statement that ends it. A block's key is not a node: it is the
+  /// address of the AST statement vector the block was built from, which is
+  /// what the ownership check names a scope by (`scope_exit_event::key`).
+  const void *origin = nullptr;
+  /// Statements only. Set on every statement after the first that came from
+  /// one source statement (a `for` loop's state `let` and its loop, the
+  /// `let`s that hold the parts of a compound assignment's place). A
+  /// temporary lives to the end of its source statement: the end of the last
+  /// core statement so marked.
+  bool continues_statement = false;
 
   node(node_kind k, source_span s) : kind(k), span(s) {}
   virtual ~node() = default;
@@ -320,6 +332,9 @@ struct param {
   symbol_id symbol = semantic::k_invalid_symbol_id;
   std::string name;
   type_id type = k_unknown_type;
+  /// The AST pattern that binds the parameter: the drop schedule's key for
+  /// it (`pending_drop::node`, drop flags), as `node::origin` is for a node.
+  const void *origin = nullptr;
 };
 
 /// How a closure holds one value from its environment. A `copy` or `move`
@@ -340,7 +355,18 @@ struct lambda : expr {
   std::vector<param> params;
   std::vector<capture> captures;
   type_id return_type = k_unknown_type;
+  /// The body. A lambda written `=> value` has a body with no statements
+  /// and no `origin`, whose result is the value.
   ptr<block> body;
+  /// `captures` are the source's capture list, in its order (a generic
+  /// lambda's name in it stands for one capture per copy). Otherwise they
+  /// are what the body uses, in the order it first uses them.
+  bool capture_list = false;
+  /// The AST lambda the drop schedule names this closure by: what it
+  /// borrows (`borrowed_captures`) and what its drop glue drops
+  /// (`owned_captures`). The same as `origin`, except for a copy of a
+  /// generic lambda, which has no `origin` of its own.
+  const void *closure_origin = nullptr;
   lambda(source_span s, type_id t) : expr(node_kind::lambda, s, t) {}
 };
 
@@ -375,6 +401,11 @@ struct pattern_test {
   std::size_t variant_index = 0;
   std::vector<std::size_t> field_indices;
   std::vector<pattern_test> parts;
+  /// The AST pattern this test was elaborated from; null for a test the
+  /// elaboration made up (`or else`, `?`, a `for` loop's `@some`). The drop
+  /// schedule names a `_` or a `..` that leaves a part to drop by it
+  /// (`leftover_drops`), as `node::origin` names a node.
+  const void *origin = nullptr;
 };
 
 /// One name a pattern binds: a part of the subject's place. `type` is the
@@ -399,6 +430,9 @@ struct pattern_binding {
   /// part reached through `&mut`.
   bool writable = false;
   source_span span;
+  /// The AST pattern that binds the name: the drop schedule's key for the
+  /// binding, as `node::origin` is for a node.
+  const void *origin = nullptr;
 };
 
 /// One way an arm can match. An or-pattern has several; each binds the same
@@ -413,6 +447,37 @@ struct match_arm {
   ptr<expr> guard; ///< Null when there is none.
   ptr<block> body;
   source_span span;
+  /// The AST pattern the arm matches, as written (a whole `|` pattern): of
+  /// a `match` arm, an `if let`, a `while let` or a pattern `let`. The drop
+  /// schedule names by it whether the arm owns the subject
+  /// (`owning_subjects`) and whether a miss still owns it
+  /// (`unmatched_drops`). Null for an arm the elaboration made up: the
+  /// `else` of those forms, and the arms of `or else`, `?` and `for`.
+  const void *origin = nullptr;
+};
+
+/// The source form a `match_expr` was elaborated from. No rule of the core
+/// depends on it; HIR lowering reproduces each form's shape (a `let ...
+/// else`, a `while let`, a `for` loop's element) for the stages after it.
+enum class match_form : std::uint8_t {
+  match,
+  if_let,
+  /// The test of a `while let`: the only statement of an unconditional
+  /// loop's body, whose second arm is a `break`.
+  while_let,
+  /// A destructuring `let` or a `let ... else`. The first arm's body is the
+  /// rest of the enclosing block, the same scope (its `origin` is that
+  /// block's); the second, if any, is the `else`.
+  let_pattern,
+  or_else,
+  try_operator,
+  /// A `for` loop's binding of the element at the current index (a range,
+  /// an array, a slice or a `str`): one arm that always matches.
+  for_element,
+  /// A `for` loop's test of what `next` returned, as `while_let`.
+  for_next,
+  /// A `for` loop over an `option`: the body runs on `@some`.
+  for_option,
 };
 
 /// `match`, `if let`, `while let`'s test, `let ... else`, and a destructuring
@@ -420,6 +485,15 @@ struct match_arm {
 struct match_expr : expr {
   place subject;
   std::vector<match_arm> arms;
+  match_form form = match_form::match;
+  /// The AST expression the subject was elaborated from (`node::origin`):
+  /// the drop schedule's key for a move of the subject and for the end of
+  /// its temporaries. Null for a subject the elaboration made up.
+  const void *subject_origin = nullptr;
+  /// How many `deref` steps at the end of `subject` the elaboration added
+  /// to reach a value that is not a reference: the source subject is the
+  /// place without them.
+  std::size_t subject_derefs = 0;
   match_expr(source_span s, type_id t) : expr(node_kind::match_expr, s, t) {}
 };
 
@@ -440,11 +514,19 @@ struct let : stmt {
   type_id type = k_unknown_type;
   bool is_mut = false;
   ptr<expr> value; ///< Null for a declaration assigned later.
+  /// The drop schedule's key for the local (`pending_drop::node`), while the
+  /// adapter exists: the AST binding pattern of a `let`, the `var`
+  /// statement, or a `for` loop's `iterable` member for the iterator the
+  /// loop holds. Null for a local the schedule does not name.
+  const void *binding_origin = nullptr;
   explicit let(source_span s) : stmt(node_kind::let, s) {}
 };
 
-/// Writes `value` into `target`. A compound assignment and an assignment
-/// through a user `index_set` impl are elaborated before this point.
+/// Writes `value` into `target`. An assignment through a user `index_set`
+/// impl is a call. A compound assignment `p op= v` is elaborated to
+/// `p = p op v` with `p` evaluated once: each part of the place that is not
+/// pure (a subscript that is not a literal or a local, a temporary root) is
+/// first bound by a `let`, and the two uses of the place read those locals.
 struct assign : stmt {
   place target;
   ptr<expr> value;
@@ -458,6 +540,12 @@ struct expr_stmt : stmt {
 
 /// Every loop. A `for` over a range, a collection or an iterator is a `let`
 /// of its state followed by this.
+///
+/// The `while_loop` of a `for` carries the `for` statement (or comprehension
+/// clause) as its `origin`: the drop schedule's key for whether the loop
+/// variables own the elements (`owning_loops`). The block holding the loop
+/// state and the loop has the loop's `iterable` member as its `origin`: the
+/// scope the iterator the loop holds is dropped at the end of.
 struct while_loop : stmt {
   ptr<expr> condition; ///< Null for an unconditional loop.
   ptr<block> body;
@@ -467,13 +555,20 @@ struct while_loop : stmt {
 
 struct jump : stmt {
   ptr<expr> value; ///< `return`'s and `yield`'s value; null otherwise.
+  /// `yield_stmt` only: the AST `yield` expression, the drop schedule's key
+  /// for what a generator dropped while suspended there drops before it
+  /// returns (`exits`). `origin` is the statement, as for any statement.
+  const void *suspension = nullptr;
   jump(node_kind k, source_span s) : stmt(k, s) {}
 };
 
 /// A `pre`, `post` or `invariant` the checker could not prove.
 struct contract_check : stmt {
+  /// Which clause it checks, which the failure reports.
+  enum class clause : std::uint8_t { pre, post, invariant };
   ptr<expr> condition;
   std::string message;
+  clause kind = clause::pre;
   explicit contract_check(source_span s)
       : stmt(node_kind::contract_check, s) {}
 };

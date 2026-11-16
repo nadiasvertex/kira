@@ -46,6 +46,7 @@ cc_library(
       "//src/core:adapter",
       "//src/core:verify",
       "//src/hir:hir",
+      "//src/hir:lower_core",
       "//src/llvm_codegen:aot",
       "//src/llvm_codegen:storage_codegen",
       "//src/runtime:runtime",

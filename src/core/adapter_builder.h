@@ -141,7 +141,12 @@ public:
   [[nodiscard]] auto place_of(const ast::expr &source) -> result<place>;
   /// `place_of(expr)` followed by the `deref_adjustments` recorded on it.
   [[nodiscard]] auto receiver_place(const ast::expr &source) -> result<place>;
+  /// The value of `source`, its `origin` set to `source` unless an inner
+  /// expression it stands for (a parenthesized one, a splice) already set
+  /// it: the ownership check names the innermost.
   [[nodiscard]] auto value_of(const ast::expr &source) -> result<ptr<expr>>;
+  [[nodiscard]] auto value_of_node(const ast::expr &source)
+      -> result<ptr<expr>>;
   /// `value_of(expr)` made to have type `need` (`coerce`).
   [[nodiscard]] auto value_as(const ast::expr &source, type_id need)
       -> result<ptr<expr>>;
@@ -168,6 +173,9 @@ public:
   [[nodiscard]] auto callee_of(const semantic::resolved_callee &resolved,
                                source_span span) -> result<callee>;
   [[nodiscard]] auto argument(const ast::expr &arg, type_id param,
+                              std::optional<semantic::param_passing> passing)
+      -> result<ptr<expr>>;
+  [[nodiscard]] auto argument_of(const ast::expr &arg, type_id param,
                               std::optional<semantic::param_passing> passing)
       -> result<ptr<expr>>;
   /// The receiver argument for a parameter of type `param`, from `p`.
@@ -236,14 +244,17 @@ public:
   /// `&p[i]` / `&mut p[i]` on a raw pointer: the `ptr_offset` intrinsic.
   [[nodiscard]] auto element_address(const ast::unary_expr &un, type_id type)
       -> result<ptr<expr>>;
-  /// A range's start and exclusive end; `a..=b` gives `b + 1` as the end.
-  [[nodiscard]] auto range_bounds(const ast::binary_expr &range)
+  /// A range's start and end. With `exclusive_end`, `a..=b` gives `b + 1`
+  /// as the end; without it, `b` as written.
+  [[nodiscard]] auto range_bounds(const ast::binary_expr &range,
+                                  bool exclusive_end = true)
       -> result<std::pair<ptr<expr>, ptr<expr>>>;
   /// `a..b` as a value: a `range[T]` struct built from its two bounds.
   [[nodiscard]] auto range_value(const ast::binary_expr &range, type_id type)
       -> result<ptr<expr>>;
   /// `xs[a..b]` on an `array`, `slice`, `slice_mut` or `str`: the
-  /// `range_view` intrinsic over the container and the two bounds.
+  /// `range_view` intrinsic over the container and the two bounds, or
+  /// `range_view_inclusive` for `xs[a..=b]`.
   [[nodiscard]] auto range_index(const ast::index_expr &index,
                                  const ast::binary_expr &range, type_id type)
       -> result<ptr<expr>>;
@@ -271,9 +282,15 @@ public:
   // ---- statements (adapter_stmt.cpp) -------------------------------------
   /// `stmts` as a block of type `type`. A non-unit block takes its last
   /// expression statement, or a trailing `if`/`match`, as its result.
-  [[nodiscard]] auto block_of(std::span<const ast::ptr<ast::node>> stmts,
+  /// The block's `origin` is `&stmts`, the key of its scope.
+  [[nodiscard]] auto block_of(const std::vector<ast::ptr<ast::node>> &stmts,
                               source_span span, type_id type)
       -> result<ptr<block>>;
+  /// `block_of` for statements that are not a whole AST block (the rest of
+  /// one after a `let ... else`): the block is no scope of its own.
+  [[nodiscard]] auto block_from(std::span<const ast::ptr<ast::node>> stmts,
+                                source_span span, type_id type,
+                                const void *key) -> result<ptr<block>>;
   /// Appends `node`'s statements to `out`. A destructuring `let` is handled
   /// by `block_of`, which hands it the rest of its block.
   auto stmt_into(const ast::node &node, ptr_vec<stmt> &out) -> result<void>;
@@ -285,6 +302,14 @@ public:
       -> ptr<stmt>;
   auto assign_into(const ast::assign_stmt &assign, ptr_vec<stmt> &out)
       -> result<void>;
+  /// Binds each part of `target` that evaluating it again would repeat (a
+  /// temporary root, a subscript that is not a literal or a local) with a
+  /// `let` appended to `out`, and reads that local in its place.
+  auto bind_impure_parts(place &target, source_span span, ptr_vec<stmt> &out)
+      -> void;
+  /// A copy of `p`, whose root is not a temporary and whose subscripts are
+  /// literals or locals (`bind_impure_parts`).
+  [[nodiscard]] auto pure_copy(const place &p) -> place;
   /// Whether `let` needs a `match` (a destructuring pattern or an `else`).
   [[nodiscard]] static auto is_pattern_let(const ast::node &node) -> bool;
 
@@ -312,6 +337,8 @@ public:
     std::unordered_map<std::string, symbol_id> symbols;
     access_state subject_access;
     type_id subject_type = k_unknown_type;
+    /// The `deref` steps `subject_of` added (`match_expr::subject_derefs`).
+    std::size_t subject_derefs = 0;
   };
   /// One arm alternative for `pattern` against a subject of type `subject`.
   [[nodiscard]] auto alternative_of(const ast::node &pattern, type_id subject,
@@ -333,12 +360,13 @@ public:
   [[nodiscard]] auto subject_of(const ast::expr &subject,
                                 binding_context &context) -> result<place>;
   /// An arm for `alternatives`, with `body` built in a scope holding their
-  /// bindings.
+  /// bindings. `origin` is the AST pattern the arm matches
+  /// (`match_arm::origin`).
   [[nodiscard]] auto
   arm_of(std::vector<pattern_alternative> alternatives,
          const ast::expr *guard,
-         const std::function<result<ptr<block>>()> &body, source_span span)
-      -> result<match_arm>;
+         const std::function<result<ptr<block>>()> &body, source_span span,
+         const void *origin) -> result<match_arm>;
   /// An arm that matches anything and runs `body`.
   [[nodiscard]] auto fallback_arm(type_id subject, ptr<block> body,
                                   source_span span) -> match_arm;
@@ -349,10 +377,12 @@ public:
   [[nodiscard]] auto while_let_of(const ast::while_stmt &loop)
       -> result<ptr<stmt>>;
   /// A destructuring `let` or `let ... else`. `rest` are the statements
-  /// after it in its block; they move into the matching arm.
+  /// after it in its block; they move into the matching arm, a block keyed
+  /// `scope_key` like the block they came from.
   [[nodiscard]] auto let_pattern_of(const ast::let_stmt &let,
                                     std::span<const ast::ptr<ast::node>> rest,
-                                    source_span block_span, type_id block_type)
+                                    source_span block_span, type_id block_type,
+                                    const void *scope_key)
       -> result<ptr<expr>>;
   [[nodiscard]] auto or_else_of(const ast::or_else_expr &or_else)
       -> result<ptr<expr>>;
@@ -398,14 +428,17 @@ public:
       -> ptr<expr>;
   /// One loop over `iterable` binding `patterns`, as a unit block holding
   /// the loop state and the `while_loop`. `dispatch` is the iterator record
-  /// when the checker left one.
+  /// when the checker left one. `handle_key` (the loop's `iterable` member)
+  /// keys the block and the iterator the loop holds; `loop_key` (the `for`
+  /// statement or comprehension clause) is the `while_loop`'s origin.
   [[nodiscard]] auto loop_of(const ast::expr &iterable,
                              std::span<const ast::node *const> patterns,
                              const semantic::iterator_loop_dispatch *dispatch,
-                             const loop_body &body, source_span span)
+                             const loop_body &body, source_span span,
+                             const void *handle_key, const void *loop_key)
       -> result<ptr<expr>>;
   [[nodiscard]] auto guarded_body(const ast::expr *guard,
-                                  std::span<const ast::ptr<ast::node>> stmts,
+                                  const std::vector<ast::ptr<ast::node>> &stmts,
                                   source_span span) -> result<ptr<block>>;
   [[nodiscard]] auto for_of(const ast::for_stmt &loop) -> result<ptr<stmt>>;
   /// A call of a recorded `list[T]::new`/`push`, its arguments made to fit.
@@ -424,13 +457,16 @@ public:
 
   // ---- contracts and invariants (adapter_contract.cpp) --------------------
   [[nodiscard]] auto contract_check_of(const ast::expr &condition,
-                                       std::string message, source_span span)
+                                       std::string message, source_span span,
+                                       contract_check::clause kind)
       -> result<ptr<stmt>>;
   /// The checks of the current function's run-time postconditions.
   auto post_checks_into(ptr_vec<stmt> &out) -> result<void>;
   /// `return value`, through the postconditions when there are any:
   /// `{ let return = value; <checks>; return return }`.
-  [[nodiscard]] auto return_of(ptr<expr> value, source_span span)
+  /// `origin` is the AST node the `return` jump carries.
+  [[nodiscard]] auto return_of(ptr<expr> value, source_span span,
+                               const void *origin = nullptr)
       -> result<ptr<stmt>>;
   /// Puts `decl`'s run-time preconditions first in `body`, and its
   /// postconditions on the exit by the body's end.
@@ -511,7 +547,7 @@ public:
   /// `task_block(fn() -> declared: body)`, the task an `async:` or `on(...)`
   /// block makes; its captures are the `task_capture` records under `key`.
   [[nodiscard]] auto task_block_of(const void *key,
-                                   std::span<const ast::ptr<ast::node>> body,
+                                   const std::vector<ast::ptr<ast::node>> &body,
                                    type_id declared, source_span span)
       -> result<ptr<expr>>;
   /// What a task of `task_type` returns: `T`, or `result[T, E]`.
@@ -525,7 +561,7 @@ public:
       -> std::optional<result<ptr<expr>>>;
   /// `{ let name = crew_new(); body; crew_end(name) }`.
   [[nodiscard]] auto crew_of(const std::string &name,
-                             std::span<const ast::ptr<ast::node>> body,
+                             const std::vector<ast::ptr<ast::node>> &body,
                              source_span span, type_id type)
       -> result<ptr<expr>>;
   [[nodiscard]] auto crew_end_of(const open_crew &crew, source_span span)

@@ -128,6 +128,9 @@ def squares(n: int32) -> list[int32]:
 def middle(xs: slice[int32]) -> slice[int32]:
     return xs[1..3]
 
+def middle_inclusive(xs: slice[int32]) -> slice[int32]:
+    return xs[1..=2]
+
 def span_of(a: usize, b: usize) -> range[usize]:
     return a..=b
 
@@ -227,6 +230,14 @@ def left_of[T](p: pair[T]) -> T:
 
 def use_left() -> int32:
     return left_of(pair { left: 1, right: 2 })
+
+def index_of(at: usize) -> usize:
+    return at
+
+def bump_at() -> int32:
+    var xs: array[int32, 3] = [1, 2, 3]
+    xs[index_of(1)] += 10
+    return xs[1]
 
 intrinsic def rt_panic(msg: str) -> never
 
@@ -600,6 +611,18 @@ auto test_range_index(const session &s) -> void {
   expect(made.target.kind == core::callee::form::intrinsic &&
              made.target.name == "range_view" && made.args.size() == 3,
          "middle: `range_view(xs, 1, 3)`");
+  const auto &inclusive_value =
+      returned(function_named(s, "middle_inclusive"), 0);
+  const auto &inclusive_view = as<core::use>(&inclusive_value, node_kind::use,
+                                             "xs[1..=2]");
+  const auto &inclusive = as<core::call>(
+      inclusive_view.from.root.value.get(), node_kind::call,
+      "middle_inclusive: range_view_inclusive");
+  expect(inclusive.target.name == "range_view_inclusive" &&
+             inclusive.args.size() == 3 &&
+             inclusive.args[2]->kind == node_kind::literal,
+         "middle_inclusive: `range_view_inclusive(xs, 1, 2)` keeps `2` as "
+         "written");
 }
 
 auto test_range_value(const session &s) -> void {
@@ -848,6 +871,29 @@ auto count_of(const tree_facts &facts, std::string_view name) -> std::size_t {
       std::ranges::count(facts.intrinsics, name));
 }
 
+/// `xs[f()] += v` evaluates its place once: the call in the subscript is
+/// bound by a `let` that the assignment's two uses of the place read.
+auto test_compound_assign(const session &s) -> void {
+  const auto &f = function_named(s, "bump_at");
+  const auto facts = facts_of(f);
+  const auto calls = std::ranges::count_if(
+      facts.calls,
+      [](const core::call *c) { return c->target.name == "index_of"; });
+  expect(calls == 1, std::format("bump_at: `index_of` is called once, not {}",
+                                 calls));
+  const auto &stmts = f.body->statements;
+  const auto assign = std::ranges::find_if(stmts, [](const auto &stmt) {
+    return stmt->kind == node_kind::assign;
+  });
+  expect(assign != stmts.end(), "bump_at: an assignment");
+  expect((*assign)->continues_statement,
+         "bump_at: the assignment continues the subscript's `let`");
+  expect((*assign)->origin != nullptr, "bump_at: the assignment has an origin");
+  const auto &held = *assign[-1];
+  expect(held.kind == node_kind::let && !held.continues_statement,
+         "bump_at: a `let` of the subscript starts the statement");
+}
+
 auto test_cell_deref(const session &s) -> void {
   const auto facts = facts_of(function_named(s, "cell_read"));
   expect(count_of(facts, "cell_to_ref") == 1,
@@ -1026,6 +1072,7 @@ auto main() -> int {
   test_async(s);
   test_interpolation(s);
   test_cell_deref(s);
+  test_compound_assign(s);
   test_static_for(s);
   test_static_if(s);
   test_contracts(s);

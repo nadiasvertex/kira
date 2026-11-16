@@ -329,18 +329,12 @@ cc_test(
     deps = ["//src/driver:driver"],
 )
 
-cc_test(
-    name = "codegen_stress_test",
-    size = "medium",
-    # The corpus takes close to five minutes on both tiers; under a full
-    # `bazelisk test //...` it can pass the medium timeout.
-    timeout = "long",
-    srcs = ["codegen_stress_test.cpp"],
-    data = [
-        ":codegen_stress_corpus",
-        ":std_sources",
-    ],
-    tags = ["no-sandbox"],
+# The codegen stress corpus runner, shared by the tests that run the corpus.
+cc_library(
+    name = "codegen_corpus",
+    testonly = True,
+    srcs = ["codegen_corpus.cpp"],
+    hdrs = ["codegen_corpus.h"],
     deps = [
         "//src/comptime_vm",
         "//src/bytecode:bytecode",
@@ -354,5 +348,46 @@ cc_test(
         "//src/semantic:semantic",
         "//src/testing",
         "//src/testing:stdlib_fixtures",
+    ],
+)
+
+cc_test(
+    name = "codegen_stress_test",
+    size = "medium",
+    # The corpus takes close to five minutes on both tiers; under a full
+    # `bazelisk test //...` it can pass the medium timeout.
+    timeout = "long",
+    srcs = ["codegen_stress_test.cpp"],
+    data = [
+        ":codegen_stress_corpus",
+        ":std_sources",
+    ],
+    tags = ["no-sandbox"],
+    deps = [
+        ":codegen_corpus",
+        "//src/testing",
+    ],
+)
+
+# The codegen corpus with each function lowered from the typed core where
+# `hir::lower_core_function` supports it (`src/hir/lower_core.h`).
+cc_test(
+    name = "lower_core_corpus_test",
+    size = "medium",
+    timeout = "long",
+    srcs = ["lower_core_corpus_test.cpp"],
+    data = [
+        ":codegen_stress_corpus",
+        ":std_sources",
+    ],
+    tags = ["no-sandbox"],
+    deps = [
+        ":codegen_corpus",
+        "//src/core:adapter",
+        "//src/core:core",
+        "//src/hir:hir",
+        "//src/hir:lower_core",
+        "//src/semantic:semantic",
+        "//src/testing",
     ],
 )

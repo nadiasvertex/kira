@@ -12,6 +12,7 @@
 #include "module_metadata.h"
 #include "src/core/adapter.h"
 #include "src/core/verify.h"
+#include "src/hir/lower_core.h"
 
 namespace cinder::driver {
 /// Parsed command-line inputs for one `cinder` invocation.
@@ -98,6 +99,14 @@ struct cli_config {
              ///< over it, reporting the result in `compile_report::core`.
              ///< Only when checking found no errors. The environment
              ///< variable `CINDER_CORE_VERIFY` turns it on as well.
+  bool lower_from_core =
+      false; ///< Lower each function to HIR from the typed core
+             ///< (`src/hir/lower_core.h`) where that lowering supports it,
+             ///< and keep the AST lowering's function elsewhere. Builds the
+             ///< core as `core_check` does, only when checking found no
+             ///< errors, and records each function's path in
+             ///< `compile_report::core_lowering`. The environment variable
+             ///< `CINDER_LOWER_FROM_CORE` turns it on as well.
 };
 
 /// What building and verifying the typed core found (`cli_config::core_check`).
@@ -127,6 +136,9 @@ struct compile_report {
       build; ///< Populated only when `cli_config::build` was set.
   std::optional<core_report>
       core; ///< Populated only when the core check ran (`core_check`).
+  std::vector<hir::core_lowering_record>
+      core_lowering; ///< One record per lowered function, populated only
+                     ///< when `lower_from_core` was on.
 };
 
 /// Parse, validate, and emit metadata for each requested source file.

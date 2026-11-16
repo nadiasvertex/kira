@@ -1,6 +1,7 @@
 #pragma once
 
 #include <expected>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -69,11 +70,17 @@ struct core_lowering_input {
 /// Replaces each function of `modules` that has a core counterpart and that
 /// `lower_core_function` supports with the function lowered from the core;
 /// every other function keeps what the old lowerer made. Returns one record
-/// per HIR function.
+/// per HIR function. `on_replace`, when given, sees each function the old
+/// lowerer made beside its replacement, and their module, before the
+/// replacement is made.
+using replace_fn = std::function<void(const hir_module &,
+                                      const hir_function &old_lowered,
+                                      const hir_function &)>;
 auto substitute_core_functions(ptr_vec<hir_module> &modules,
                                const core_lowering_input &input,
                                const semantic::checked_types &checked,
-                               const lowering_options &options = {})
+                               const lowering_options &options = {},
+                               const replace_fn &on_replace = {})
     -> std::vector<core_lowering_record>;
 
 } // namespace cinder::hir
