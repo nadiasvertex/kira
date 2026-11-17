@@ -80,8 +80,9 @@ auto body_builder::iteration_of(
   auto built = [&]() -> result<void> {
     for (const auto &[name, written] : iteration.bindings) {
       if (written == nullptr) {
-        return fail("missing record: static_for_iterations",
-                    std::format("the binding `{}` has no value", name), span);
+        return fail_feature("missing record: static_for_iterations",
+                            "this `static for` was not unrolled during checking",
+                            span);
       }
       CORE_TRY(value, value_of(*written));
       const auto type = value->type;
@@ -123,8 +124,9 @@ auto body_builder::static_for_block_into(const ast::static_decl &decl,
     iterations = &found->second;
   }
   if (iterations == nullptr) {
-    return fail("missing record: static_for_iterations",
-                "a block `static for` that was not unrolled", decl.span);
+    return fail_feature("missing record: static_for_iterations",
+                        "this `static for` was not unrolled during checking",
+                        decl.span);
   }
   for (const auto &iteration : *iterations) {
     CORE_TRY(copy, iteration_of(iteration, decl.span, [&]() -> result<ptr<expr>> {
@@ -150,8 +152,9 @@ auto body_builder::static_for_inline_of(const ast::static_decl &decl)
        iterations == checked_.lowering.static_for_iterations.end()) ||
       dispatch == checked_.lowering.static_for_dispatches.end() ||
       decl.for_yield == nullptr) {
-    return fail("missing record: static_for_iterations",
-                "an inline `static for` that was not unrolled", decl.span);
+    return fail_feature("missing record: static_for_iterations",
+                        "this `static for` was not unrolled during checking",
+                        decl.span);
   }
   const auto span = decl.span;
   CORE_TRY(list_type, settle(dispatch->second.list_type, span));
@@ -165,8 +168,9 @@ auto body_builder::static_for_inline_of(const ast::static_decl &decl)
     if (elements != checked_.lowering.static_for_elements.end()) {
       for (const auto *element : elements->second) {
         if (element == nullptr) {
-          return fail("missing record: static_for_elements",
-                      "an element with no value", span);
+          return fail_feature("missing record: static_for_elements",
+                              "this `static for` was not unrolled during checking",
+                              span);
         }
         CORE_TRY(value, value_of(*element));
         CORE_TRY(push, push_onto(*acc, dispatch->second, std::move(value),
@@ -235,7 +239,10 @@ auto body_builder::static_decl_into(const ast::static_decl &decl,
   case ast::static_decl_kind::binding:
     break;
   }
-  return fail("static_decl", "a local `static` binding", decl.span);
+  return fail_feature("static_decl",
+                      "this `static` declaration is not lowered as a "
+                      "function-body statement (see spec/todo.md)",
+                      decl.span);
 }
 
 auto body_builder::static_tail_of(const ast::static_decl &decl, type_id type)

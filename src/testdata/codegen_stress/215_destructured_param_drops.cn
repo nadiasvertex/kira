@@ -1,0 +1,31 @@
+module codegen_stress.destructured_param_drops
+
+# expect: 28
+# max-live-blocks: 0
+
+# A parameter written as a pattern binds its parts; each binding owns its
+# part and drops it at the end of the function, unless it is moved out. Each
+# part owns a heap block, so a missed drop leaks a block and a second drop
+# frees one twice.
+
+type boxed = { id: int32, data: list[int32] }
+
+type pair = { a: boxed, b: boxed }
+
+def mk(id: int32) -> boxed:
+    return boxed { id: id, data: [id, id] }
+
+def sum_pair({a: x, b: y}: pair) -> int32:
+    return x.id + y.id
+
+def keep_first({a: x, b: y}: pair) -> boxed:
+    return x
+
+def tuple_sum((p, q): (int32, boxed), k: int32) -> int32:
+    return p + q.id + k
+
+def main() -> int32:
+    let s = sum_pair(pair { a: mk(1), b: mk(2) })
+    let kept = keep_first(pair { a: mk(3), b: mk(4) })
+    let t = tuple_sum((5, mk(6)), 7)
+    return s + kept.id + t + 4

@@ -325,10 +325,20 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
   }
 }
 
+/// `CINDER_LOWER_FROM_CORE=old`: run-time and compile-time code are lowered
+/// from the AST, whatever `cli_config` asks for.
+[[nodiscard]] static auto old_lowering_requested() -> bool {
+  const auto *mode = std::getenv("CINDER_LOWER_FROM_CORE");
+  return mode != nullptr && std::string_view(mode) == "old";
+}
+
 /// Whether every module is lowered from the core alone
 /// (`cli_config::lower_from_core_only`, `CINDER_LOWER_FROM_CORE=only`).
 [[nodiscard]] static auto lower_from_core_only_requested(const cli_config &cfg)
     -> bool {
+  if (old_lowering_requested()) {
+    return false;
+  }
   if (cfg.lower_from_core_only) {
     return true;
   }
@@ -379,10 +389,12 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   // Compile-time code runs on the VM.
   auto comptime_backend = comptime_vm::vm_backend{};
   {
-    // `CINDER_LOWER_FROM_CORE=only` covers compile-time code too.
+    // Only mode covers compile-time code too; `CINDER_LOWER_FROM_CORE=old`
+    // turns both off.
     auto lowering = comptime_vm::comptime_lowering::from_environment();
-    lowering.from_core = lowering.from_core ||
-                         lower_from_core_only_requested(effective_cfg);
+    lowering.from_core = (lowering.from_core ||
+                          lower_from_core_only_requested(effective_cfg)) &&
+                         !old_lowering_requested();
     lowering.verify_core = lowering.from_core &&
                            std::getenv("CINDER_CORE_VERIFY") != nullptr;
     comptime_backend.set_lowering(lowering);
@@ -416,10 +428,13 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   // The typed core, built from the checker's side tables and verified, when
   // asked for (`cli_config::core_check`). Its findings go to the report only.
   // `cli_config::lower_from_core` builds it too, and keeps it for lowering.
+  // `CINDER_LOWER_FROM_CORE=old` lowers from the AST alone; any other value
+  // but `only` substitutes the core's functions where it can.
   const auto lower_from_core =
       (effective_cfg.lower_from_core || effective_cfg.lower_from_core_only ||
        std::getenv("CINDER_LOWER_FROM_CORE") != nullptr) &&
-      !effective_cfg.parse_only && session_diagnostics.error_count() == 0;
+      !old_lowering_requested() && !effective_cfg.parse_only &&
+      session_diagnostics.error_count() == 0;
   // `CINDER_LOWER_FROM_CORE=only`: no module is lowered from the AST.
   const auto lower_from_core_only = lower_from_core && lower_from_core_only_requested(effective_cfg);
   auto adapted = std::optional<core::adapted_program>{};

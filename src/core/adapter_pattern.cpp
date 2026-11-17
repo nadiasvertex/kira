@@ -775,8 +775,10 @@ auto body_builder::try_of(const ast::try_expr &try_expr) -> result<ptr<expr>> {
   const auto returned = wrapper_of(checked_.types, body_type_);
   if (!wrapper.has_value() || !returned.has_value() ||
       wrapper->is_result != returned->is_result) {
-    return fail("try_expr",
-                std::format("`?` on `{}` in a function returning `{}`",
+    return fail_feature(
+        "try_expr",
+        std::format("`?` operand did not resolve to a concrete result/option "
+                    "type: `?` on `{}` in a function returning `{}`",
                             checked_.types.display(subject_type),
                             checked_.types.display(body_type_)),
                 try_expr.span);

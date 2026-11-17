@@ -418,6 +418,7 @@ public:
                                .span = why.span,
                                .construct = std::move(construct),
                                .detail = why.detail,
+                               .feature = why.feature,
                                .in_template = in_template,
                                .item = item});
   }
@@ -621,6 +622,7 @@ namespace {
              .span = why.span,
              .construct = why.construct,
              .detail = why.detail,
+             .feature = why.feature,
              .in_template = false,
              .item = kind};
 }

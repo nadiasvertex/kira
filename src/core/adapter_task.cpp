@@ -80,10 +80,11 @@ auto body_builder::task_result_type(type_id task_type, source_span span)
   const auto &task = checked_.types.entry(task_type);
   if (task.kind != type_kind::builtin_generic_kind || task.name != "task" ||
       task.args.size() < 2) {
-    return fail("missing record: types",
-                std::format("a task form typed `{}`, which is not a task",
-                            checked_.types.display(task_type)),
-                span);
+    return fail_feature(
+        "missing record: types",
+        std::format("this did not resolve to a task type (it is typed `{}`)",
+                    checked_.types.display(task_type)),
+        span);
   }
   const auto fallible = checked_.types.entry(task.args[1]).name != "never";
   return fallible ? checked_.types.builtin_generic(
@@ -97,8 +98,10 @@ auto body_builder::on_task_of(const ast::on_expr &on, type_id declared,
   const auto target =
       named != nullptr && named->path.size() == 1 ? named->path.front() : "";
   if (target != "io" && target != "cpu" && target != "pool") {
-    return fail("on_expr", "an `on(...)` context other than cpu, pool or io",
-                on.span);
+    return fail_feature("on_expr",
+                        "`on(...)` only supports the `cpu`, `pool` and `io` "
+                        "contexts",
+                        on.span);
   }
   auto made = ptr<expr>{};
   if (on.sender != nullptr) {

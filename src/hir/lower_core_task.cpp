@@ -259,7 +259,7 @@ auto core_lowerer::cancel_check(const void *key, source_span span,
   // Returning leaves every open crew, which ends first, innermost first.
   if (!open_crews_.empty() &&
       (value_branch_depth_ > 0 || conditional_depth_ > 0)) {
-    return refuse("crew exit where it cannot be a statement", span);
+    return refuse_feature("crew exit where it cannot be a statement", k_crew_exit_message, span);
   }
   for (auto crew = open_crews_.rbegin(); crew != open_crews_.rend(); ++crew) {
     if (auto ended = crew_end_into(*crew, span, exit); !ended) {
@@ -423,7 +423,7 @@ auto core_lowerer::task_read(const void *key, source_span span,
     return ptr<hir_expr>(hir::make<hir_block>(span, type, std::move(stmts)));
   }
   if (cannot_hoist()) {
-    return refuse("await where it cannot go ahead of its statement", span);
+    return refuse_feature("await where it cannot go ahead of its statement", k_conditional_await_message, span);
   }
   // `await e` waits for `e` in statements ahead of the one that uses its
   // result. `t.get()` on a local waits on `t` where it stands.
@@ -465,7 +465,7 @@ auto core_lowerer::task_read(const void *key, source_span span,
 auto core_lowerer::try_in_task(const core::match_expr &source, type_id type)
     -> core_result<ptr<hir_expr>> {
   if (cannot_hoist()) {
-    return refuse("? where it cannot go ahead of its statement", source.span);
+    return refuse_feature("? where it cannot go ahead of its statement", k_crew_exit_message, source.span);
   }
   auto made = match(source, type);
   if (!made.has_value()) {
@@ -516,7 +516,7 @@ auto core_lowerer::await_value(const core::await_expr &source)
                            ? runtime::scheduler::pool::io
                            : runtime::scheduler::pool::cpu;
     if (in_task_body_ && cannot_hoist()) {
-      return refuse("await where it cannot go ahead of its statement",
+      return refuse_feature("await where it cannot go ahead of its statement", k_conditional_await_message,
                     source.span);
     }
     const auto &sender = *on.args.front();
@@ -545,7 +545,7 @@ auto core_lowerer::spawn_and_wait(ptr<hir_expr> made, type_id task_type,
   const auto in_task = in_task_body_;
   auto local_setup = ptr_vec<hir_node>{};
   if (in_task && hoist_ == nullptr) {
-    return refuse("await where it cannot go ahead of its statement", span);
+    return refuse_feature("await where it cannot go ahead of its statement", k_conditional_await_message, span);
   }
   auto &setup = in_task ? *hoist_ : local_setup;
   const auto symbol = mint();
@@ -596,7 +596,7 @@ auto core_lowerer::await_group(const core::call &source)
   }
   const auto in_task = in_task_body_;
   if (in_task && cannot_hoist()) {
-    return refuse("await where it cannot go ahead of its statement", span);
+    return refuse_feature("await where it cannot go ahead of its statement", k_conditional_await_message, span);
   }
   auto local_setup = ptr_vec<hir_node>{};
   auto &setup = in_task ? *hoist_ : local_setup;
@@ -1192,7 +1192,7 @@ auto core_lowerer::crew_end_call_into(const core::call &source,
     return refuse("crew_end of no crew", source.span);
   }
   if (in_task_body_ && (value_branch_depth_ > 0 || conditional_depth_ > 0)) {
-    return refuse("crew exit where it cannot be a statement", source.span);
+    return refuse_feature("crew exit where it cannot be a statement", k_crew_exit_message, source.span);
   }
   return crew_end_into(found->second, source.span, out);
 }
@@ -1220,7 +1220,7 @@ auto core_lowerer::crew_errors(const core::call &source)
   const auto bool_type = checked_.types.bool_type();
   const auto in_task = in_task_body_;
   if (in_task && cannot_hoist()) {
-    return refuse("await where it cannot go ahead of its statement", span);
+    return refuse_feature("await where it cannot go ahead of its statement", k_conditional_await_message, span);
   }
   auto crew_value = receiver_operand(*source.args.front());
   if (!crew_value.has_value()) {

@@ -113,7 +113,8 @@ struct cli_config {
              ///< lowering for run-time code: a function the core cannot
              ///< lower is a lowering failure of its module. Implies
              ///< `lower_from_core`. `CINDER_LOWER_FROM_CORE=only` turns it
-             ///< on as well.
+             ///< on as well, and `CINDER_LOWER_FROM_CORE=old` turns this and
+             ///< `lower_from_core` off, for run-time and compile-time code.
 };
 
 /// What building and verifying the typed core found (`cli_config::core_check`).

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <format>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -328,9 +329,10 @@ auto body_builder::assign_into(const ast::assign_stmt &assign,
     if (const auto found = checked_.lowering.index_set_dispatches.find(&index);
         found != checked_.lowering.index_set_dispatches.end()) {
       if (assign.op != ast::assign_op::assign) {
-        return fail("compound index_set",
-                    "compound assignment through `index_set` (todo 37)",
-                    assign.span);
+        return fail_feature("compound index_set",
+                            "compound assignment through an `index_set` impl "
+                            "is not supported yet — write `v[i] = v[i] + x`",
+                            assign.span);
       }
       if (index.object == nullptr || index.index == nullptr) {
         return fail("index_expr", "no object or key", assign.span);
@@ -481,6 +483,10 @@ auto body_builder::stmt_into(const ast::node &node, ptr_vec<stmt> &out)
       out.push_back(std::move(made));
       return {};
     }
+    if (statement.expr->kind == ast::node_kind::yield_expr) {
+      return fail_feature("yield_expr", "`yield` with no value is not supported",
+                          node.span);
+    }
     CORE_TRY(value, value_of(*statement.expr));
     out.push_back(expr_stmt_of(std::move(value), node.span));
     return {};
@@ -603,7 +609,11 @@ auto body_builder::stmt_into(const ast::node &node, ptr_vec<stmt> &out)
   case ast::node_kind::static_decl:
     return static_decl_into(ast::cast<const ast::static_decl>(node), out);
   default:
-    return fail(kind_name(node.kind), "no core form yet", node.span);
+    return fail_feature(kind_name(node.kind),
+                        std::format("statement kind {} is not lowered yet "
+                                    "(see spec/todo.md)",
+                                    static_cast<int>(node.kind)),
+                        node.span);
   }
 }
 
@@ -628,8 +638,17 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
       continue;
     }
     if (sig.coroutine != coroutine_kind::none) {
-      return fail("contract", "a contract on a generator or task",
-                  contract.span);
+      return fail_feature(
+          "contract",
+          sig.coroutine == coroutine_kind::task
+              ? std::format("`async def {}` needs a declared return type, "
+                            "and cannot be a generator or have a `post` "
+                            "condition yet",
+                            decl.name)
+              : std::format("the generator `{}` cannot have a `pre` or "
+                            "`post` condition yet",
+                            decl.name),
+          contract.span);
     }
     if (!contract.is_pre) {
       post_contracts_.push_back(&contract);
@@ -656,39 +675,97 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
   body_type_ = sig.body;
   yield_type_ = sig.yield_type;
   push_scope();
+  // A destructuring parameter is a parameter of its own, named `<param i>`
+  // as the old lowerer names it, whose pattern binds at the top of the body.
+  auto destructured = std::vector<std::size_t>{};
   for (std::size_t i = 0; i < decl.params.size(); ++i) {
-    const auto *binding =
-        ast::as<const ast::binding_pattern>(decl.params[i].pattern.get());
+    const auto *pattern = decl.params[i].pattern.get();
+    const auto *binding = ast::as<const ast::binding_pattern>(pattern);
+    const auto name =
+        binding != nullptr ? binding->name : std::format("<param {}>", i);
     if (binding == nullptr) {
-      pop_scope();
-      return fail("destructuring parameter", "a parameter with a pattern",
-                  decl.params[i].span);
+      destructured.push_back(i);
     }
-    made->params.push_back(param{.symbol = declare(binding->name, sig.params[i], true),
-                                 .name = binding->name,
+    made->params.push_back(param{.symbol = declare(name, sig.params[i], true),
+                                 .name = name,
                                  .type = sig.params[i],
-                                 .origin = binding});
+                                 .origin = pattern});
   }
-  auto body = [&]() -> result<ptr<block>> {
-    if (decl.body_expr != nullptr) {
-      CORE_TRY(value, value_as(*decl.body_expr, sig.body));
-      auto wrapper = make_node<block>(decl.body_expr->span, sig.body);
-      wrapper->result = std::move(value);
-      return wrapper;
+  const auto plain_body = [&]() -> result<ptr<block>> {
+    auto built = [&]() -> result<ptr<block>> {
+      if (decl.body_expr != nullptr) {
+        CORE_TRY(value, value_as(*decl.body_expr, sig.body));
+        auto wrapper = make_node<block>(decl.body_expr->span, sig.body);
+        wrapper->result = std::move(value);
+        return wrapper;
+      }
+      return block_of(decl.body_stmts, decl.span, sig.body);
+    }();
+    if (built.has_value()) {
+      if (auto checked = contracts_into(decl, **built); !checked.has_value()) {
+        return std::unexpected(checked.error());
+      }
     }
-    return block_of(decl.body_stmts, decl.span, sig.body);
-  }();
-  if (body.has_value()) {
-    if (auto checked = contracts_into(decl, **body); !checked.has_value()) {
-      body = std::unexpected(checked.error());
-    }
+    return built;
+  };
+  auto patterns = std::vector<const ast::node *>{};
+  for (const auto &written : decl.params) {
+    patterns.push_back(written.pattern.get());
   }
+  auto body = destructured_body(made->params, patterns, destructured,
+                                sig.body, plain_body);
   pop_scope();
   if (!body.has_value()) {
     return std::unexpected(body.error());
   }
   made->body = std::move(*body);
   return made;
+}
+
+auto body_builder::destructured_body(
+    const std::vector<param> &params, const std::vector<const ast::node *> &written,
+    std::span<const std::size_t> destructured, type_id body_type,
+    const std::function<result<ptr<block>>()> &body) -> result<ptr<block>> {
+  if (destructured.empty()) {
+    return body();
+  }
+  // The first is a pattern `let` of the parameter whose arm holds the rest
+  // of the body: the next destructuring parameter's, then the body.
+  const auto i = destructured.front();
+  const auto &pattern = *written[i];
+  const auto span = pattern.span;
+  auto subject = place{};
+  subject.root.kind = place_root::origin::local;
+  subject.root.symbol = params[i].symbol;
+  subject.root.name = params[i].name;
+  subject.root.type = params[i].type;
+  auto context = binding_context{};
+  context.subject_access = access_of(subject);
+  context.subject_type = subject.type();
+  CORE_TRY(alternative, alternative_of(pattern, subject.type(), context));
+  auto alternatives = std::vector<pattern_alternative>{};
+  alternatives.push_back(std::move(alternative));
+  CORE_TRY(arm, arm_of(
+                    std::move(alternatives), nullptr,
+                    [&]() {
+                      return destructured_body(params, written,
+                                               destructured.subspan(1),
+                                               body_type, body);
+                    },
+                    span, &pattern));
+  auto matched = make_node<match_expr>(span, body_type);
+  matched->subject = std::move(subject);
+  matched->form = match_form::let_pattern;
+  // The rest of the body is still the body's scope.
+  auto outer = make_node<block>(arm.body->span, body_type);
+  outer->origin = arm.body->origin;
+  matched->arms.push_back(std::move(arm));
+  if (checked_.types.is_unit(body_type)) {
+    outer->statements.push_back(expr_stmt_of(std::move(matched), span));
+  } else {
+    outer->result = std::move(matched);
+  }
+  return outer;
 }
 
 auto body_builder::reified(const semantic::reified_value &value,

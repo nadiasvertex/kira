@@ -1,0 +1,15 @@
+module codegen_stress.list_of_refs_element_deref
+
+# expect: 10
+# max-live-blocks: 0
+
+# An element of a `list[&int32]` is a reference: `*xs[0]` reads the
+# `int32` it refers to, as reading the element into a local and then
+# dereferencing it does.
+
+def main() -> int32:
+    let n: int32 = 5
+    var out: list[&int32] = []
+    out.push(&n)
+    let r = out[0]
+    return *r + *out[0]

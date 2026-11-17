@@ -1,0 +1,16 @@
+# todo: 56
+# tier: both
+# currently-error: still owes its drop at return
+# want: `main` returns 9, and the lambda drops both parts of its destructured parameter.
+module known_gaps.lambda_destructured_droppable
+
+type boxed = { id: int32, data: list[int32] }
+
+type pair = { a: boxed, b: boxed }
+
+def mk(id: int32) -> boxed:
+    return boxed { id: id, data: [id] }
+
+def main() -> int32:
+    let f = ({a: x, b: y}: pair) => x.id + y.id
+    return f(pair { a: mk(4), b: mk(5) })

@@ -117,9 +117,27 @@ auto kind_name(ast::node_kind kind) -> std::string {
 //  Types
 // ==========================================================================
 
+namespace {
+
+/// The refusal of a type the checker left unsettled, as the old lowerer
+/// words it; `holding` says which part is open, when only part is.
+[[nodiscard]] auto unsettled(std::string_view holding, source_span span)
+    -> std::unexpected<failure> {
+  return fail_feature(
+      "unsettled type",
+      std::format("no concrete checked type is available for this node{}; "
+                  "lowering only accepts fully type-checked, fully-annotated "
+                  "code (see spec/todo.md)",
+                  holding.empty() ? std::string{}
+                                  : std::format(" ({})", holding)),
+      span);
+}
+
+} // namespace
+
 auto body_builder::settle(type_id type, source_span span) -> result<type_id> {
   if (type == k_unknown_type || type == k_error_type) {
-    return fail("unsettled type", "the checker recorded an unknown type", span);
+    return unsettled({}, span);
   }
   auto settled = type;
   if (checked_.types.entry(settled).kind == type_kind::existential_kind) {
@@ -153,10 +171,10 @@ auto body_builder::settle(type_id type, source_span span) -> result<type_id> {
       if (open_params_.contains(id)) {
         continue;
       }
-      return fail("unsettled type",
-                  std::format("`{}` holds `{}`", checked_.types.display(settled),
-                              checked_.types.display(id)),
-                  span);
+      return unsettled(std::format("`{}` holds `{}`",
+                                   checked_.types.display(settled),
+                                   checked_.types.display(id)),
+                       span);
     case type_kind::param_app_kind:
       if (open_params_.contains(entry.result)) {
         for (const auto arg : entry.args) {
@@ -272,7 +290,8 @@ auto body_builder::task_of(type_id body) -> type_id {
 auto body_builder::await_of(const ast::await_expr &awaited)
     -> result<ptr<expr>> {
   if (awaited.is_yield || awaited.operand == nullptr) {
-    return fail("await_expr", "`await yield`", awaited.span);
+    return fail_feature("await_expr", "`await yield` is not lowered yet",
+                        awaited.span);
   }
   if (auto form = await_task_form(awaited)) {
     return std::move(*form);
@@ -334,6 +353,14 @@ auto body_builder::signature_of(const ast::func_decl &decl)
       return fail("missing record: inferred_return_types",
                   std::format("`{}` has no return type", decl.name), decl.span);
     }
+    if (found->second == k_unknown_type || found->second == k_error_type) {
+      return fail_feature(
+          "unsettled type",
+          std::format("function `{}` has no declared return type, and none "
+                      "could be inferred from its body",
+                      decl.name),
+          decl.span);
+    }
     CORE_TRY(type, settle(found->second, decl.span));
     sig.result = type;
   }
@@ -342,8 +369,15 @@ auto body_builder::signature_of(const ast::func_decl &decl)
   // keeps the type it declares (the checker's `signature_return_type`).
   const auto is_entry_main =
       decl.name == "main" && decl.params.empty() && decl.type_params.empty();
-  if (decl.modifiers.is_async && decl.modifiers.is_generator) {
-    return fail("async def", "an async generator", decl.span);
+  if (decl.modifiers.is_async &&
+      (decl.modifiers.is_generator ||
+       (decl.return_type == nullptr && !is_entry_main))) {
+    return fail_feature(
+        "async def",
+        std::format("`async def {}` needs a declared return type, and cannot "
+                    "be a generator or have a `post` condition yet",
+                    decl.name),
+        decl.span);
   }
   if (decl.modifiers.is_async && !is_entry_main) {
     sig.coroutine = coroutine_kind::task;
@@ -696,15 +730,26 @@ auto body_builder::place_of(const ast::expr &source) -> result<place> {
     if (value_path == checked_.value_path_types.end()) {
       if (checked_.lowering.unreadable_static_refs.contains(&source) ||
           checked_.lowering.static_fragment_refs.contains(&source)) {
-        return fail("unreadable static", "a static with no run-time value",
-                    source.span);
+        return unreadable_static(source);
       }
       return fail("missing record: value_path_types",
                   "a module path that names no value", source.span);
     }
     const auto root = lookup(path.segments[0]);
-    if (!root.has_value() ||
-        value_path->second.size() != path.segments.size()) {
+    if (!root.has_value()) {
+      auto written = std::string{};
+      for (const auto &segment : path.segments) {
+        written += written.empty() ? segment : "." + segment;
+      }
+      return fail_feature(
+          "module_path_expr",
+          std::format("`{}` reads a non-scalar part of the module-level value "
+                      "`{}`, and a struct-valued `static` has no runtime "
+                      "storage yet (see spec/todo.md)",
+                      written, path.segments[0]),
+          source.span);
+    }
+    if (value_path->second.size() != path.segments.size()) {
       return fail("module_path_expr",
                   std::format("`{}` is not rooted at a local",
                               path.segments[0]),
@@ -783,7 +828,10 @@ auto body_builder::place_of(const ast::expr &source) -> result<place> {
       CORE_TRY(called, dispatch_call(found->second, *index.object,
                                      {index.index.get()}, source.span));
       auto p = temporary(std::move(called));
-      if (is_ref(p.type())) {
+      // An `at` that returns a reference to the element is read through
+      // it; one whose element is itself a reference (`list[&T]`) returns
+      // the element, the expression's own type.
+      if (is_ref(p.type()) && p.type() != type) {
         add_deref(p);
       }
       return p;
@@ -998,10 +1046,37 @@ auto body_builder::static_value(const ast::expr &ref)
     return std::move(*fragment);
   }
   if (checked_.lowering.unreadable_static_refs.contains(&ref)) {
-    return fail("unreadable static", "a static with no run-time value",
-                ref.span);
+    return unreadable_static(ref);
   }
   return std::nullopt;
+}
+
+auto body_builder::unreadable_static(const ast::expr &ref) const
+    -> std::unexpected<failure> {
+  auto name = std::string{};
+  if (const auto found = checked_.lowering.unreadable_static_refs.find(&ref);
+      found != checked_.lowering.unreadable_static_refs.end()) {
+    name = found->second;
+  } else if (const auto fragment =
+                 checked_.lowering.static_fragment_refs.find(&ref);
+             fragment != checked_.lowering.static_fragment_refs.end()) {
+    name = fragment->second->name;
+  }
+  const auto type = checked_.node_types.find(&ref);
+  const auto shown = type != checked_.node_types.end()
+                         ? checked_.types.display(type->second)
+                         : std::string{"unknown"};
+  return fail_feature(
+      "unreadable static",
+      std::format(
+          "`{}` is a `static let` of type `{}`, and run-time code cannot "
+          "read a static of that type yet — only numbers, booleans, "
+          "strings, and arrays, lists, tuples, structs, and variants built "
+          "from those can be; read it from compile-time code (a `static "
+          "def`, `static if`, or another `static let`) instead, or make it "
+          "an ordinary `let` inside the function (see spec/todo.md)",
+          name, shown),
+      ref.span);
 }
 
 auto body_builder::fresh_static_read(const ast::expr &ref) -> bool {
@@ -1027,8 +1102,7 @@ auto body_builder::static_fragment_of(const ast::expr &ref)
     return std::nullopt;
   }
   if (!compile_time_) {
-    return fail("unreadable static", "a static with no run-time value",
-                ref.span);
+    return unreadable_static(ref);
   }
   auto type = type_of(ref);
   if (!type.has_value()) {
@@ -1041,10 +1115,11 @@ auto body_builder::host_call_of(std::string operation, const void *subject,
                                 ptr_vec<expr> args, type_id type,
                                 source_span span) -> result<ptr<expr>> {
   if (!compile_time_) {
-    return fail("quote_expr",
-                "quoted syntax exists only while compiling, so run-time code "
-                "cannot build or read it",
-                span);
+    return fail_feature("quote_expr",
+                        "quoted syntax exists only while compiling, so run-time code "
+                "cannot build or read it; use it from compile-time code (a "
+                "`static def`, a `static let`, or a splice) instead",
+                        span);
   }
   auto made = make_node<host_call>(span, type);
   made->operation = std::move(operation);
@@ -1081,7 +1156,11 @@ auto body_builder::fragment_builder_of(const ast::call_expr &call,
                                        std::string_view name, type_id type)
     -> result<ptr<expr>> {
   if (!compile_time_) {
-    return fail("quote builder", "a builder of quoted syntax", call.span);
+    return fail_feature("quote builder",
+                        "quoted syntax exists only while compiling, so run-time code "
+                "cannot build or read it; use it from compile-time code (a "
+                "`static def`, a `static let`, or a splice) instead",
+                        call.span);
   }
   auto args = ptr_vec<expr>{};
   for (const auto &arg : call.args) {
@@ -1137,6 +1216,25 @@ auto body_builder::ident_value(const ast::ident_expr &ident)
                             "parameter `{}` in a generic body",
                             ident.name),
                 ident.span);
+  }
+  if (default_of_ != nullptr &&
+      std::ranges::any_of(default_of_->params, [&](const auto &param) {
+        const auto *binding =
+            param.pattern == nullptr
+                ? nullptr
+                : ast::as<const ast::binding_pattern>(param.pattern.get());
+        return binding != nullptr && binding->name == ident.name;
+      })) {
+    return fail_feature(
+        "default argument",
+        std::format("this default value refers to the parameter `{}`, but a "
+                    "default is evaluated at the call site, where the call's "
+                    "other arguments do not exist yet; give the parameter a "
+                    "default that stands on its own (a literal, a constant, "
+                    "or a call), or make it a required parameter and compute "
+                    "the value in the body",
+                    ident.name),
+        ident.span);
   }
   return fail("missing record: resolved_fn_values",
               std::format("`{}` names no local and no recorded function",
@@ -1213,7 +1311,8 @@ auto body_builder::ordering_to_bool(ptr<expr> ordering, ast::binary_op op,
 
 auto body_builder::binary_of(const ast::binary_expr &bin) -> result<ptr<expr>> {
   if (bin.lhs == nullptr || bin.rhs == nullptr) {
-    return fail("binary_expr", "an operand is missing", bin.span);
+    return fail_feature("binary_expr", "binary expression is missing an operand",
+                        bin.span);
   }
   CORE_TRY(type, type_of(bin));
   if (ast::is_range(bin.op)) {
@@ -1363,7 +1462,8 @@ auto body_builder::range_bounds(const ast::binary_expr &range,
                                 bool exclusive_end)
     -> result<std::pair<ptr<expr>, ptr<expr>>> {
   if (range.lhs == nullptr || range.rhs == nullptr) {
-    return fail("range value", "a range with an open bound", range.span);
+    return fail_feature("range value", "range is missing a bound",
+                        range.span);
   }
   CORE_TRY(start_type, type_of(*range.lhs));
   CORE_TRY(start, value_as(*range.lhs, strip_refs(start_type)));
@@ -1606,6 +1706,8 @@ auto body_builder::where_of(const ast::where_expr &where) -> result<ptr<expr>> {
     bound->name = binding.name;
     bound->value = std::move(*value);
     bound->symbol = declare(binding.name, bound->type);
+    // The drop schedule names a `where` binding by the binding.
+    bound->binding_origin = &binding;
     made->statements.push_back(std::move(bound));
   }
   auto inner = value_as(*where.inner, type);
@@ -1671,8 +1773,15 @@ auto body_builder::value_of_node(const ast::expr &source)
   }
   case ast::node_kind::on_expr: {
     CORE_TRY(type, type_of(source));
-    CORE_TRY(declared, task_result_type(type, source.span));
-    return on_task_of(ast::cast<const ast::on_expr>(source), declared, type);
+    auto declared = task_result_type(type, source.span);
+    if (!declared.has_value()) {
+      return fail_feature("on_expr",
+                          std::format("an `on(...)` did not resolve to a task "
+                                      "type (it is typed `{}`)",
+                                      checked_.types.display(type)),
+                          source.span);
+    }
+    return on_task_of(ast::cast<const ast::on_expr>(source), *declared, type);
   }
   case ast::node_kind::crew_expr: {
     const auto &crew = ast::cast<const ast::crew_expr>(source);
@@ -1774,7 +1883,11 @@ auto body_builder::value_of_node(const ast::expr &source)
   case ast::node_kind::quote_expr:
     return quote_of(ast::cast<const ast::quote_expr>(source));
   default:
-    return fail(kind_name(source.kind), "no core form yet", source.span);
+    return fail_feature(kind_name(source.kind),
+                        std::format("expression kind {} is not lowered yet "
+                                    "(see spec/todo.md)",
+                                    static_cast<int>(source.kind)),
+                        source.span);
   }
 }
 
@@ -2179,6 +2292,14 @@ auto body_builder::call_of(const ast::call_expr &call) -> result<ptr<expr>> {
   }
   if (const auto query = lowering.layout_queries.find(&call);
       query != lowering.layout_queries.end()) {
+    if (query->second.operand == k_unknown_type ||
+        query->second.operand == k_error_type) {
+      return fail_feature("unsettled type",
+                          "cannot tell which type this asks the size or "
+                          "alignment of — name a concrete type, or a type "
+                          "parameter of the enclosing function",
+                          call.span);
+    }
     CORE_TRY(operand, settle(query->second.operand, call.span));
     const auto *name =
         query->second.kind == semantic::layout_query_kind::size_of ? "size_of"
@@ -2196,7 +2317,11 @@ auto body_builder::call_of(const ast::call_expr &call) -> result<ptr<expr>> {
       if (comptime::fragment_builder::is_builder(field.field_name)) {
         return fragment_builder_of(call, field.field_name, type);
       }
-      return fail("quote builder", "a builder of quoted syntax", call.span);
+      return fail_feature("quote builder",
+                        "quoted syntax exists only while compiling, so run-time code "
+                "cannot build or read it; use it from compile-time code (a "
+                "`static def`, a `static let`, or a splice) instead",
+                        call.span);
     }
     if (auto built = builtin_method(call, field)) {
       return std::move(*built);
@@ -2216,7 +2341,9 @@ auto body_builder::call_of(const ast::call_expr &call) -> result<ptr<expr>> {
       auto args = std::vector<const ast::expr *>{};
       for (const auto &arg : call.args) {
         if (arg.value == nullptr || arg.name.has_value()) {
-          return fail("call_expr", "a variant argument is named or missing",
+          return fail_feature("call_expr",
+                          "named arguments are not supported constructing a "
+                          "sum-type variant",
                       arg.span);
         }
         args.push_back(arg.value.get());
@@ -2318,8 +2445,16 @@ auto body_builder::call_of(const ast::call_expr &call) -> result<ptr<expr>> {
           i < map.passing_by_param.size()
               ? std::optional{map.passing_by_param[i]}
               : std::nullopt;
-      CORE_TRY(value, argument(*arg, params[offset + i], passing));
-      args.push_back(std::move(value));
+      const auto *outer_default = default_of_;
+      if (map.args_by_param[i] == nullptr) {
+        default_of_ = target.decl;
+      }
+      auto value = argument(*arg, params[offset + i], passing);
+      default_of_ = outer_default;
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      args.push_back(std::move(*value));
     }
   } else {
     if (call.args.size() + offset != params.size()) {
@@ -2330,7 +2465,10 @@ auto body_builder::call_of(const ast::call_expr &call) -> result<ptr<expr>> {
     }
     for (std::size_t i = 0; i < call.args.size(); ++i) {
       if (call.args[i].value == nullptr || call.args[i].name.has_value()) {
-        return fail("call_expr", "a named or missing argument with no mapping",
+        return fail_feature("call_expr",
+                            "named arguments are only supported calling a "
+                            "named function or method, not a bare function "
+                            "value",
                     call.args[i].span);
       }
       CORE_TRY(value,

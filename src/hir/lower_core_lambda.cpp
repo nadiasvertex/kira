@@ -78,7 +78,22 @@ auto core_lowerer::lambda(const core::lambda &source)
     }
   }
   auto body = [&]() -> core_result<ptr<hir_block>> {
-    const auto &written = *source.body;
+    // A destructuring parameter's bindings come first, in the parameters'
+    // scope: each is a pattern `let` of the parameter holding the rest.
+    const auto *rest = source.body.get();
+    while (rest->origin == nullptr && rest->statements.empty() &&
+           rest->result != nullptr &&
+           rest->result->kind == core::node_kind::match_expr &&
+           static_cast<const core::match_expr &>(*rest->result).form ==
+               core::match_form::let_pattern) {
+      auto next = let_pattern_into(
+          static_cast<const core::match_expr &>(*rest->result), prelude);
+      if (!next.has_value()) {
+        return std::unexpected(next.error());
+      }
+      rest = *next;
+    }
+    const auto &written = *rest;
     // `=> value`: the body returns the value.
     if (written.origin == nullptr && written.statements.empty() &&
         written.result != nullptr) {

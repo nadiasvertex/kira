@@ -30,6 +30,9 @@ struct failure {
   std::string construct;
   std::string detail;
   source_span span;
+  /// `detail` is the message the user sees: the program uses a feature the
+  /// compiler does not build yet. Otherwise the gap is the compiler's own.
+  bool feature = false;
 };
 
 template <typename T> using result = std::expected<T, failure>;
@@ -123,6 +126,17 @@ public:
 
   [[nodiscard]] auto function_of(const ast::func_decl &decl, std::string name,
                                  std::string module) -> result<ptr<function>>;
+  /// `body`, after the bindings of each destructuring parameter (the
+  /// indices `destructured` of `written`, whose core parameters are
+  /// `params`): a pattern `let` of each parameter, in order, whose arm holds
+  /// the rest.
+  [[nodiscard]] auto
+  destructured_body(const std::vector<param> &params,
+                    const std::vector<const ast::node *> &written,
+                    std::span<const std::size_t> destructured,
+                    type_id body_type,
+                    const std::function<result<ptr<block>>()> &body)
+      -> result<ptr<block>>;
   /// Opens `params` for the body about to be built: `settle` accepts a type
   /// that mentions them, and the function holds them in `generic_params`.
   auto open_generic_params(std::vector<type_id> params,
@@ -252,6 +266,10 @@ public:
   /// A read of a `static` that holds syntax (`static_fragment_refs`).
   [[nodiscard]] auto static_fragment_of(const ast::expr &ref)
       -> std::optional<result<ptr<expr>>>;
+  /// The refusal of a run-time read of the `static` `ref` names, which has
+  /// no run-time value.
+  [[nodiscard]] auto unreadable_static(const ast::expr &ref) const
+      -> std::unexpected<failure>;
   [[nodiscard]] auto binary_of(const ast::binary_expr &bin)
       -> result<ptr<expr>>;
   [[nodiscard]] auto unary_of(const ast::unary_expr &un) -> result<ptr<expr>>;
@@ -673,6 +691,9 @@ public:
   /// Building a compile-time expression's function: every read of a
   /// reified static is a fresh value, as the old lowerer makes it.
   bool fresh_static_reads_ = false;
+  /// While a default argument is built at a call: the callee declaring it,
+  /// whose parameters the default may not name.
+  const ast::func_decl *default_of_ = nullptr;
   /// The reads of a reified static the reader owns
   /// (`function_cfg::owned_static_reads`), loaded with the capture records.
   std::optional<std::unordered_set<const void *>> owned_static_reads_;
@@ -708,6 +729,17 @@ public:
   return std::unexpected(failure{.construct = std::move(construct),
                                  .detail = std::move(detail),
                                  .span = span});
+}
+
+/// A failure the user sees with `message`: the program uses a feature the
+/// compiler does not build yet.
+[[nodiscard]] inline auto fail_feature(std::string construct,
+                                       std::string message, source_span span)
+    -> std::unexpected<failure> {
+  return std::unexpected(failure{.construct = std::move(construct),
+                                 .detail = std::move(message),
+                                 .span = span,
+                                 .feature = true});
 }
 
 /// The AST node kind's name, for a gap named after it.

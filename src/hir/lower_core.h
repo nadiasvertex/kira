@@ -39,6 +39,9 @@ namespace cinder::hir {
 struct unsupported {
   std::string kind;
   source_span span = source_span::dummy();
+  /// The message the user sees when the program uses a feature the
+  /// compiler does not build yet; empty when the gap is the compiler's own.
+  std::string message;
 };
 
 /// Lowers `function` (a non-generic core function of the core module

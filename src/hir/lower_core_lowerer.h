@@ -22,6 +22,22 @@
 /// `lower_core_stmt.cpp` (statements and blocks).
 namespace cinder::hir {
 
+/// The message for an `await` the lowering cannot put ahead of its
+/// statement, as the old lowerer words it.
+inline constexpr const char *k_conditional_await_message =
+    "an `await` that is evaluated conditionally or repeatedly (the right "
+    "side of `&&`/`||`, an `elif` condition, a loop condition, a match guard, "
+    "or inside an `if`/`match` that produces a value) is not lowered yet; "
+    "await into a `let` first";
+
+/// The message for a `?` in a task, or a `crew` exit, the lowering cannot
+/// make a statement, as the old lowerer words it.
+inline constexpr const char *k_crew_exit_message =
+    "a `?` in a task, or leaving a `crew` block, from a place where a task "
+    "cannot suspend (the right side of `&&`/`||`, an `elif` condition, a loop "
+    "condition, a match guard, or inside an `if`/`match` that produces a "
+    "value) is not lowered yet; move it into a statement";
+
 template <typename T> using core_result = std::expected<T, unsupported>;
 
 /// The name of a core node kind, as an `unsupported` reports it.
@@ -218,10 +234,12 @@ public:
   /// The symbol calls name the function `name` by: one per name.
   [[nodiscard]] auto callee_symbol(std::string_view name) -> symbol_id;
   /// `drop_emitter`'s error as this lowering's: the schedule asked for a
-  /// drop it cannot make here.
+  /// drop it cannot make here. Its message is the one the old lowerer
+  /// gives for the same place.
   [[nodiscard]] static auto refuse_drop(const lowering_error &error)
       -> std::unexpected<unsupported> {
-    return refuse(std::format("drop: {}", error.message), error.span);
+    return refuse_feature(std::format("drop: {}", error.message),
+                          error.message, error.span);
   }
 
   // ---- contracts (lower_core_contract.cpp) --------------------------------
@@ -409,6 +427,15 @@ public:
   [[nodiscard]] static auto refuse(const core::node &node)
       -> std::unexpected<unsupported> {
     return refuse(core_kind_name(node.kind), node.span);
+  }
+  /// A construct the user sees refused with `message`: a feature the
+  /// compiler does not build yet.
+  [[nodiscard]] static auto refuse_feature(std::string kind,
+                                           std::string message,
+                                           source_span span)
+      -> std::unexpected<unsupported> {
+    return std::unexpected(unsupported{
+        .kind = std::move(kind), .span = span, .message = std::move(message)});
   }
 
 private:

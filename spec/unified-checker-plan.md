@@ -227,8 +227,9 @@ modules, with their statics and synthesized functions, come from the core and th
 lowerer is not called for run-time code. `//src:lower_core_corpus_test` and
 `//src:lower_core_only_corpus_test` run the codegen corpus in the two modes with the checks
 `codegen_stress_test` makes. Drop emission is shared by both lowerers
-(`src/hir/drop_emission.h`). Still to do: compile-time code from the core, making the core
-path the only path, deleting the old lowerer, and turning adapter gaps into user
+(`src/hir/drop_emission.h`). In the same mode compile-time code is built by the adapter on
+demand and lowered from the core too, with no call into the old lowerer across the test
+suite. Still to do: making the core path the only path, deleting the old lowerer, and turning adapter gaps into user
 diagnostics.
 
 The two lowerers differ in one behaviour. The old lowerer does not check a `post` when a
@@ -253,6 +254,8 @@ Phase 3 added these debts.
 | Core nodes carry the AST node they came from, as the key into the drop schedule. | Phase 7, when the ownership check runs on the core |
 | A trait default method copied for a generic impl is lowered once without substituting the impl's parameters. | Phase 5 |
 | `for` over a borrowed collection is `into_iter(bitwise_copy(xs))`, an intrinsic that duplicates a value without making an owner (item 39). | Phase 7 |
+| A call the checker ran at compile time (a `static if` condition calling a `static def`) has no callee record, so the adapter finds the callee by its bare name (`core::function_lookup`) when it builds compile-time code. | Phase 5 |
+| The adapter interns function and reference types while building compile-time code during checking, so the elaboration snapshot depends on which path lowered compile-time code. | Phase 12 |
 
 ## Work assignment
 

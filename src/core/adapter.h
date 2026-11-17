@@ -32,6 +32,10 @@ struct gap {
   /// "missing record: <table>" when the checker left no decision.
   std::string construct;
   std::string detail;
+  /// `detail` is the message the user sees: the program uses a feature the
+  /// compiler does not build yet. Otherwise the gap is the compiler's own,
+  /// and the user sees `construct` and `detail` as an internal failure.
+  bool feature = false;
   /// The function is a generic template.
   bool in_template = false;
   /// What was left out: a function, a static's value, or an `intrinsic

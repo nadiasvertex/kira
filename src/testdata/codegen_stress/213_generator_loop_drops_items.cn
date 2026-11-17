@@ -1,0 +1,23 @@
+module codegen_stress.generator_loop_drops_items
+
+# expect: 17
+# max-live-blocks: 0
+
+# A `for` over a generator takes each item it yields: the loop variable owns
+# the item and drops it at the end of its iteration. Each item owns a heap
+# block, so a missed drop leaks a block.
+
+type boxed = { id: int32, data: list[int32] }
+
+def mk(id: int32) -> boxed:
+    return boxed { id: id, data: [id, id] }
+
+generator def items() -> some iterator[boxed]:
+    yield mk(8)
+    yield mk(9)
+
+def main() -> int32:
+    var total: int32 = 0
+    for b in items():
+        total = total + b.id
+    return total

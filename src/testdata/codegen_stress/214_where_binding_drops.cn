@@ -1,0 +1,19 @@
+module codegen_stress.where_binding_drops
+
+# expect: 12
+# max-live-blocks: 0
+
+# A `where` binding owns its value and drops it when the expression it
+# serves has been computed. The value owns a heap block, so a missed drop
+# leaks a block.
+
+type boxed = { id: int32, data: list[int32] }
+
+def mk(id: int32) -> boxed:
+    return boxed { id: id, data: [id, id] }
+
+def main() -> int32:
+    let n = b.id + c.id where:
+        b = mk(5)
+        c = mk(7)
+    return n

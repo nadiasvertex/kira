@@ -211,7 +211,7 @@ auto body_builder::loop_of(const ast::expr &iterable,
       const auto &range = ast::cast<const ast::binary_expr>(iterable);
       if (ast::is_range(range.op)) {
         if (range.lhs == nullptr || range.rhs == nullptr) {
-          return fail("for_stmt", "a range with a missing bound", span);
+          return fail_feature("for_stmt", "range is missing a bound", span);
         }
         CORE_TRY(bound_type, type_of(*range.lhs));
         CORE_TRY(start, value_as(*range.lhs, bound_type));
@@ -290,8 +290,20 @@ auto body_builder::loop_of(const ast::expr &iterable,
       auto handle_let =
           let_of("<for iterator>", iterable_type, true, std::move(handle), span);
       handle_let->binding_origin = handle_key;
+      // The checker never names `option[T]` for a loop over a generator,
+      // so it may have no shape yet. The shape of an `option` is fixed by
+      // the language: `some(T)`, then `none`.
+      const auto item_type = entry.args[0];
       const auto option_type =
-          checked_.types.builtin_generic("option", {entry.args[0]});
+          checked_.types.builtin_generic("option", {item_type});
+      if (!checked_.shapes.contains(option_type)) {
+        auto shape = semantic::aggregate_shape{};
+        shape.variants.push_back(
+            semantic::variant_shape{.name = "some", .payload = {item_type}});
+        shape.variants.push_back(
+            semantic::variant_shape{.name = "none", .payload = {}});
+        checked_.shapes.emplace(option_type, std::move(shape));
+      }
       auto args = ptr_vec<expr>{};
       args.push_back(receiver_argument(local_root(*handle_let),
                                        checked_.types.ref_to(iterable_type, true),
@@ -454,10 +466,15 @@ auto body_builder::loop_of(const ast::expr &iterable,
       element_type = stripped_entry.args[0];
       bound = container_len(container_place(), span);
     } else {
-      return fail("for_stmt",
-                  std::format("iterating a `{}` with no iterator record",
-                              checked_.types.display(iterable_type)),
-                  span);
+      return fail_feature(
+          "for_stmt",
+          std::format("only range/array/list/slice/string/option iteration "
+                      "is lowered yet (see "
+                      "spec/specification/stdlib/algorithms/"
+                      "48-iterator-protocol.md) — any user-defined iterable "
+                      "is still unsupported (`{}` has no iterator)",
+                      checked_.types.display(iterable_type)),
+          span);
     }
     auto index_let =
         let_of("<for index>", usize, true, int_literal(0, usize, span), span);
@@ -620,10 +637,18 @@ auto body_builder::comprehension_of(const ast::for_expr &comprehension)
           record != checked_.comprehension_iterator_dispatches.end()
               ? &record->second
               : nullptr;
+      // The clause's body is the scope its variables are dropped at the
+      // end of, which the drop schedule names by the clause.
+      const auto scoped_body = [&]() -> result<ptr<block>> {
+        CORE_TRY(inner, clause_body(index + 1));
+        auto scoped = make_node<block>(span, unit_type());
+        scoped->origin = &clause;
+        scoped->statements = std::move(inner->statements);
+        return scoped;
+      };
       CORE_TRY(loop, loop_of(*clause.iterable, patterns, loop_dispatch,
-                             [&]() { return clause_body(index + 1); },
-                             clause.iterable->span, &clause.iterable,
-                             &clause));
+                             scoped_body, clause.iterable->span,
+                             &clause.iterable, &clause));
       auto wrapper = make_node<block>(span, unit_type());
       wrapper->statements.push_back(expr_stmt_of(std::move(loop), span));
       return wrapper;

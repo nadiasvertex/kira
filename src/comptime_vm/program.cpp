@@ -60,13 +60,20 @@ auto log_core(std::string_view outcome, std::string_view what,
 }
 
 [[nodiscard]] auto describe(const core::gap &gap) -> std::string {
-  return std::format("the core adapter has no form for it: {} — {} (at bytes "
+  if (gap.feature) {
+    return gap.detail;
+  }
+  return std::format("the compiler cannot build this yet: {} — {} (at bytes "
                      "{}..{})",
                      gap.construct, gap.detail, gap.span.start, gap.span.end);
 }
 
 [[nodiscard]] auto describe(const hir::unsupported &why) -> std::string {
-  return std::format("the core lowering does not support {} (at bytes {}..{})",
+  if (!why.message.empty()) {
+    return why.message;
+  }
+  return std::format("the compiler cannot build this yet: {} (at bytes "
+                     "{}..{})",
                      why.kind, why.span.start, why.span.end);
 }
 
@@ -209,6 +216,8 @@ auto add_intrinsic(semantic::comptime_program &program, core_build &build,
 } // namespace
 
 auto comptime_lowering::from_environment() -> comptime_lowering {
+  // `only` lowers compile-time code from the core; `old`, any other value,
+  // or none leaves it to the AST lowering unless the driver asks.
   const auto *mode = std::getenv("CINDER_LOWER_FROM_CORE");
   const auto from_core = mode != nullptr && std::string_view(mode) == "only";
   return comptime_lowering{

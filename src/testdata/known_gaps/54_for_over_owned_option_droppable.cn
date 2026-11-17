@@ -1,0 +1,17 @@
+# todo: 54
+# tier: both
+# currently-error: that needs a drop flag
+# want: `main` returns 7, and the `boxed` taken from the option is dropped at the end of the iteration.
+module known_gaps.for_over_owned_option
+
+type boxed = { id: int32, data: list[int32] }
+
+def mk(id: int32) -> boxed:
+    return boxed { id: id, data: [id] }
+
+def main() -> int32:
+    let o: option[boxed] = @some(mk(7))
+    var total: int32 = 0
+    for b in o:
+        total = total + b.id
+    return total

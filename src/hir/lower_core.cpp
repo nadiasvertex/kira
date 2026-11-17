@@ -166,7 +166,10 @@ auto core_lowerer::function(const core::function &source)
   function_body_ = source.body.get();
   tail_exit_ = nullptr;
   tail_posts_.clear();
-  auto body = block(*source.body, body_type);
+  // The body shares the parameters' scope: a destructuring parameter's
+  // bindings, which the body's first pattern `let` makes, belong to the
+  // function's scope (keyed by the declaration), not the body's.
+  auto body = block_in_scope(*source.body, body_type);
   function_body_ = nullptr;
   if (!body.has_value()) {
     pop_scope();

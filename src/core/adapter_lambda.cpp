@@ -219,20 +219,25 @@ auto body_builder::lambda_of(const ast::lambda_expr &lambda)
     }
   }
   push_scope();
+  // A destructuring parameter is a parameter named `<param i>`, as the old
+  // lowerer names it, whose pattern binds at the top of the body.
+  auto destructured = std::vector<std::size_t>{};
+  auto patterns = std::vector<const ast::node *>{};
   for (std::size_t i = 0; i < lambda.params.size(); ++i) {
-    const auto *binding =
-        ast::as<const ast::binding_pattern>(lambda.params[i].pattern.get());
+    const auto *pattern = lambda.params[i].pattern.get();
+    const auto *binding = ast::as<const ast::binding_pattern>(pattern);
+    const auto name =
+        binding != nullptr ? binding->name : std::format("<param {}>", i);
     if (binding == nullptr) {
-      static_cast<void>(finish());
-      return fail("destructuring parameter", "a lambda parameter with a pattern",
-                  lambda.params[i].span);
+      destructured.push_back(i);
     }
-    made->params.push_back(param{.symbol = declare(binding->name, params[i], true),
-                                 .name = binding->name,
+    patterns.push_back(pattern);
+    made->params.push_back(param{.symbol = declare(name, params[i], true),
+                                 .name = name,
                                  .type = params[i],
-                                 .origin = binding});
+                                 .origin = pattern});
   }
-  auto body = [&]() -> result<ptr<block>> {
+  const auto plain_body = [&]() -> result<ptr<block>> {
     if (lambda.body_expr != nullptr) {
       CORE_TRY(value, value_as(*lambda.body_expr, return_type));
       auto wrapper = make_node<block>(lambda.body_expr->span, return_type);
@@ -240,7 +245,9 @@ auto body_builder::lambda_of(const ast::lambda_expr &lambda)
       return wrapper;
     }
     return block_of(lambda.body_stmts, lambda.span, return_type);
-  }();
+  };
+  auto body = destructured_body(made->params, patterns, destructured,
+                                return_type, plain_body);
   auto frame = finish();
   if (!body.has_value()) {
     return std::unexpected(body.error());

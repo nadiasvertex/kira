@@ -87,7 +87,7 @@ auto core_lowerer::expr(const core::expr &source)
         // waits are suspension points.
         if (in_task_body_) {
           if (cannot_hoist()) {
-            return refuse("crew where it cannot go ahead of its statement",
+            return refuse_feature("crew where it cannot go ahead of its statement", k_conditional_await_message,
                           source.span);
           }
           auto result = crew_into(*crew, type, *hoist_);
@@ -244,8 +244,8 @@ auto core_lowerer::place(const core::place &source, source_span span)
     break;
   }
   case core::place_root::origin::global:
-    // A reified `static`, read in place: an owned read is refused before
-    // the body is lowered (`pending_drops`).
+    // A reified `static`, read in place. An owned read never gets here: the
+    // adapter builds the static's value again as a temporary.
     made = hir::make<hir_global_ref>(span, hir_type(source.root.type),
                                      source.root.name, source.root.module);
     break;

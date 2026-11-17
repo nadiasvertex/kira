@@ -1,0 +1,18 @@
+module codegen_stress.comprehension_drops_elements
+
+# expect: 17
+# max-live-blocks: 0
+
+# A comprehension over an owned list consumes it: the loop variable owns
+# each element and drops it at the end of its iteration, as a `for` loop's
+# does. Each element owns a heap block, so a missed drop leaks a block.
+
+type boxed = { id: int32, data: list[int32] }
+
+def mk(id: int32) -> boxed:
+    return boxed { id: id, data: [id, id] }
+
+def main() -> int32:
+    var xs: list[boxed] = [mk(8), mk(9)]
+    let ids = for n in xs => n.id
+    return ids[0] + ids[1]

@@ -184,8 +184,9 @@ auto lower_core_program(const core_lowering_input &input,
                                   gap.construct),
           .span = gap.span});
       fail(gap.function,
-           std::format("the core has no `{}`: {} ({})", gap.function,
-                       gap.construct, gap.detail),
+           gap.feature ? gap.detail
+                       : std::format("`{}` could not be compiled: {} ({})",
+                                     gap.function, gap.construct, gap.detail),
            gap.span);
     }
     auto functions = ptr_vec<hir_function>{};
@@ -206,8 +207,10 @@ auto lower_core_program(const core_lowering_input &input,
         record.span = lowered.error().span;
         result.records.push_back(std::move(record));
         fail(function->name,
-             std::format("`{}` could not be lowered from the core: {}",
-                         function->name, lowered.error().kind),
+             !lowered.error().message.empty()
+                 ? lowered.error().message
+                 : std::format("`{}` could not be compiled: {}",
+                               function->name, lowered.error().kind),
              lowered.error().span);
         continue;
       }
@@ -227,9 +230,10 @@ auto lower_core_program(const core_lowering_input &input,
       auto lowered = lower_core_static(global);
       if (!lowered.has_value()) {
         fail(global.name,
-             std::format("the static `{}` could not be lowered from the core: "
-                         "{}",
-                         global.name, lowered.error().kind),
+             !lowered.error().message.empty()
+                 ? lowered.error().message
+                 : std::format("the static `{}` could not be compiled: {}",
+                               global.name, lowered.error().kind),
              lowered.error().span);
         continue;
       }

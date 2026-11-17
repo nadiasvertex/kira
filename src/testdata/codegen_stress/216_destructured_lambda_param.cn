@@ -1,0 +1,14 @@
+module codegen_stress.destructured_lambda_param
+
+# expect: 51
+# max-live-blocks: 0
+
+# A lambda parameter written as a pattern binds its parts, in an
+# expression body and in a block body.
+
+def main() -> int32:
+    let f = ((a, b): (int32, int32)) => a * b
+    let h = ((a, b): (int32, int32), c: int32) -> int32 =>:
+        let s = a + b
+        return s * c
+    return f((6, 7)) + h((1, 2), 3)

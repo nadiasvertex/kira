@@ -735,7 +735,7 @@ auto core_lowerer::jump_into(const core::jump &source, ptr_vec<hir_node> &out)
   }
   case core::node_kind::yield_stmt: {
     if (source.value == nullptr) {
-      return refuse("yield with no value", source.span);
+      return refuse_feature("yield with no value", "`yield` with no value is not supported", source.span);
     }
     auto value = expr(*source.value);
     if (!value.has_value()) {
