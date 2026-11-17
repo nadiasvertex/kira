@@ -1,0 +1,10 @@
+# todo: 43
+# tier: both
+# currently-error: statement kind 12 is not lowered yet
+# want: a `def` inside a function body is a local function; main returns 42.
+module known_gaps.nested_def_in_function
+
+def main() -> int32:
+    def inner(x: int32) -> int32:
+        return x + 1
+    return inner(41)

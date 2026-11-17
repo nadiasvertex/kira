@@ -1,0 +1,16 @@
+# todo: 53
+# tier: both
+# currently-error: only range/array/list/slice/string/option iteration is lowered yet
+# want: the checker rejects `for e in v` where `v`'s type has no iteration protocol, as it does for `for e in 5`.
+module known_gaps.for_over_type_without_iteration
+
+type nothing = { x: int32 }
+
+def f(v: nothing) -> int32:
+    var n: int32 = 0
+    for e in v:
+        n = n + 1
+    return n
+
+def main() -> int32:
+    return f(nothing { x: 1 })

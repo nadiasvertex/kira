@@ -1,0 +1,11 @@
+# todo: 48
+# tier: both
+# currently-error: `async def f` needs a declared return type
+# want: an `async def` without a declared return type infers it from the body; main returns 3.
+module known_gaps.async_def_without_return_type
+
+async def f():
+    return 3
+
+async def main() -> int32:
+    return await f()

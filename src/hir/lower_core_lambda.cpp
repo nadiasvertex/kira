@@ -58,6 +58,13 @@ auto core_lowerer::lambda(const core::lambda &source)
     symbols_.insert_or_assign(capture.symbol, outer->second);
   }
   const auto return_type = hir_type(source.return_type);
+  // The body is a function of its own: it neither suspends the enclosing
+  // task nor waits ahead of the enclosing statement.
+  const auto enclosing_task = std::exchange(in_task_body_, false);
+  auto *const enclosing_hoist = std::exchange(hoist_, nullptr);
+  const auto enclosing_conditional = std::exchange(conditional_depth_, 0);
+  const auto enclosing_value_branch = std::exchange(value_branch_depth_, 0);
+  auto enclosing_crews = std::exchange(open_crews_, {});
   push_scope();
   auto params = std::vector<hir_param>{};
   auto prelude = ptr_vec<hir_node>{};
@@ -95,6 +102,11 @@ auto core_lowerer::lambda(const core::lambda &source)
     return made;
   }();
   pop_scope();
+  in_task_body_ = enclosing_task;
+  hoist_ = enclosing_hoist;
+  conditional_depth_ = enclosing_conditional;
+  value_branch_depth_ = enclosing_value_branch;
+  open_crews_ = std::move(enclosing_crews);
   if (!body.has_value()) {
     return std::unexpected(body.error());
   }

@@ -1,6 +1,6 @@
 # Unified type checker plan
 
-Status: accepted, 2026-11-15. Phases 1 and 2 are complete; phase 3 has not started.
+Status: accepted, 2026-11-15. Phases 1 and 2 are complete; phase 3 is in progress.
 
 The type-checking bugs in [todo.md](todo.md) share three structural causes. The checker
 hands later stages about 85 side tables keyed by AST node, and each later stage decides
@@ -167,7 +167,7 @@ Each phase leaves the tree green and removes the code it replaces.
 |---|---|---|---|
 | 1. Baseline (done) | A `known_gaps` corpus and test (`//src:known_gaps_test`): one program per in-scope todo item, with the wrong behavior the compiler shows today recorded beside it. Each program runs in its own process on both tiers. The test passes while the gap is open and fails when it closes, so the program is then moved to the regular corpus. | Done 2026-11-15: 29 programs cover every in-scope item except 24, which corpus 110 and 167 pin. Items 6, 7, 11, and 13 no longer reproduce and have corpus programs 206 to 209. | — |
 | 2. Core and verifier (done) | Define the core. Build it from the AST and the current side tables with an adapter. Write the verifier and run it over the corpus and the standard library. | Done 2026-11-15: every concrete function of the corpus and the standard library builds and verifies, except five (item 39). About a third of the generic templates build; the rest wait for phase 5. See "Phase 2 results". | 38 to 41 found here; cause of 32 located |
-| 3. Lowering reads the core | HIR lowering takes the core as input. Refusals move into the adapter as user diagnostics or become assertions. Compile-time execution lowers from the same core, and the lowering view is deleted. Lower `await yield` and a named `on` block. | Lowering no longer includes the AST or the side tables. | 15, 26 (stale message), 36, 40 |
+| 3. Lowering reads the core | HIR lowering takes the core as input. Refusals move into the adapter as user diagnostics or become assertions. Compile-time execution lowers from the same core. Lower `await yield` and a named `on` block. | Lowering no longer includes the AST or the side tables. | 15, 26 (stale message), 36, 40 |
 | 4. Places and patterns | One place function and one pattern elaboration, emitting core directly. Add the mutable dereference trait. A binding through a `&mut` subject is writable without `mut`. | Compound assignment to a list element, `replace(&mut xs[i], v)`, `*guard += 1`, and or-pattern bindings run on both tiers with `# expect:`. | 12, 21, 22, 33, 37, 38 |
 | 5. Calls and names | One call pipeline emitting core directly. One lookup for a variant name, used by construction and by patterns, in which a user's variant shadows the prelude's. | The 17 entry points are gone; qualified, static, and trait-static calls share tests. | 8, 9, 27, 35, 41 |
 | 6. Equality and predicates | One type equality and one satisfaction query. | The `bool`-index program is rejected; `implements[T, copy]` works. | 14, 32 |
@@ -176,7 +176,7 @@ Each phase leaves the tree green and removes the code it replaces.
 | 9. Drop glue and task results | One drop-glue rule for every owner. `get()` and `errors()` return borrows. | Corpus programs for a droppable zero-sized capture and a second `get()` of a `list` result pass with `# max-live-blocks: 0` on both tiers. | 20, 29 |
 | 10. Compile-time values | One static value representation covering user sum types and partial reads. | `static for` over a list of variants unrolls. | 25, 26 |
 | 11. Owned strings | Add `string`, with `str` as its view. Change interpolation, `show`, and the allocating `std.string` methods to return it. Update chapters 7 and 14 and the standard library. | A loop that formats a value on every pass runs with `# max-live-blocks: 0` on both tiers; corpus 110 and 167 drop their allowances. | 24 |
-| 12. Remove the adapter | The elaborator emits all core directly. Delete the side tables. Update the specification chapters the phases changed, and implementation chapters 62 and 63. | `checked_types` no longer exists. | — |
+| 12. Remove the adapter | The elaborator emits all core directly. Delete the side tables and the lowering view. Update the specification chapters the phases changed, and implementation chapters 62 and 63. | `checked_types` no longer exists. | — |
 
 Phase 2 located the cause of item 32. The checker records `conn[true]` and `conn[false]`
 as the same type, `conn[_]`: a `bool` index is left as an unknown slot instead of a value.
@@ -216,6 +216,43 @@ phase removes.
 | The verifier does not check that a generic call meets the callee's bounds, or that a `match` is exhaustive. | Phase 6 |
 | Closure capture modes and pattern binding modes are read from the ownership check's own graph. | Phase 7 |
 | `for` over a borrowed collection of `copy` elements moves out of a reference (item 39). | Phase 7 |
+
+## Phase 3 progress
+
+Core-based lowering (`src/hir/lower_core*.cpp`) is built beside the old lowerer behind the
+driver switch `lower_from_core` / `CINDER_LOWER_FROM_CORE`. Every concrete function of the
+corpus and the standard library lowers from the core with the same behaviour on both
+tiers, about 1,690 functions with no fallback. In the `only` mode of the switch whole
+modules, with their statics and synthesized functions, come from the core and the old
+lowerer is not called for run-time code. `//src:lower_core_corpus_test` and
+`//src:lower_core_only_corpus_test` run the codegen corpus in the two modes with the checks
+`codegen_stress_test` makes. Drop emission is shared by both lowerers
+(`src/hir/drop_emission.h`). Still to do: compile-time code from the core, making the core
+path the only path, deleting the old lowerer, and turning adapter gaps into user
+diagnostics.
+
+The two lowerers differ in one behaviour. The old lowerer does not check a `post` when a
+function leaves through `?`; the core path does, as chapter 34 requires. The difference
+goes away when the core path becomes the only one.
+
+The old lowerer's 151 refusals were classified before its deletion. About 40 can be
+reached by a program the checker accepts and become "not implemented" diagnostics reported
+when the core is built; the rest are internal invariants and become assertions. The
+reachable ones that had no entry in `spec/todo.md` are now items 42 to 53, each with a
+program under `src/testdata/known_gaps/`.
+
+Phase 3 changed the plan in one place. The lowering view stays until phase 12: compile-time
+code runs during checking, so the adapter reads the view until the checker emits the core
+directly.
+
+Phase 3 added these debts.
+
+| Debt | Removed in |
+|---|---|
+| A core `match` records which source form it came from (`if let`, `while let`, `for`, and so on), because storage lowering depends on the HIR shape each form has today. | When storage lowering accepts one match shape |
+| Core nodes carry the AST node they came from, as the key into the drop schedule. | Phase 7, when the ownership check runs on the core |
+| A trait default method copied for a generic impl is lowered once without substituting the impl's parameters. | Phase 5 |
+| `for` over a borrowed collection is `into_iter(bitwise_copy(xs))`, an intrinsic that duplicates a value without making an owner (item 39). | Phase 7 |
 
 ## Work assignment
 

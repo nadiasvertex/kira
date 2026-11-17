@@ -1,0 +1,11 @@
+# todo: 47
+# tier: both
+# currently-error: `on(...)` only supports the `cpu`, `pool` and `io` contexts
+# want: the checker rejects `on(mine)` (an undefined name, and no user context exists) with an ordinary diagnostic.
+module known_gaps.user_defined_on_context
+
+async def f() -> int32:
+    return 1
+
+async def main() -> int32:
+    return await on(mine, f())

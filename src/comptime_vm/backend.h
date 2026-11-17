@@ -23,7 +23,14 @@ public:
   static constexpr std::uint64_t k_default_step_budget = 50'000'000;
 
   explicit vm_backend(std::uint64_t step_budget = k_default_step_budget)
-      : step_budget_(step_budget) {}
+      : step_budget_(step_budget),
+        lowering_(comptime_lowering::from_environment()) {}
+
+  /// Which lowering compile-time code goes through; by default what the
+  /// environment asks for (`comptime_lowering::from_environment`).
+  auto set_lowering(comptime_lowering lowering) -> void {
+    lowering_ = lowering;
+  }
 
   [[nodiscard]] auto call(semantic::comptime_program &program,
                           const semantic::comptime_function &fn,
@@ -40,7 +47,8 @@ public:
   /// view the checker kept while checking. A difference means the view was
   /// missing a record lowering reads — compile-time code then ran something
   /// other than what the program says. Returns one message per difference.
-  [[nodiscard]] auto verify(const semantic::checked_types &checked) const
+  /// With `comptime_lowering::from_core`, both lowerings are from the core.
+  [[nodiscard]] auto verify(semantic::checked_types &checked) const
       -> std::vector<std::string>;
 
 private:
@@ -50,9 +58,17 @@ private:
       std::string_view name, std::span<const comptime::value> args) const
       -> std::expected<comptime::value, semantic::comptime_failure>;
 
+  /// Keeps what `compiled` lowered, for `verify`.
+  auto remember(const compiled_program &compiled) -> void;
+
   std::uint64_t step_budget_;
+  comptime_lowering lowering_;
   /// Every function any compiled program lowered, with its fingerprint.
   std::unordered_map<const ast::func_decl *, std::string> fingerprints_;
+  /// And where each was named.
+  std::unordered_map<const ast::func_decl *, lowered_name> names_;
+  /// The bare names compile-time code built from the core looked up.
+  lookup_memo memo_;
   /// One compiled program per function called at compile time. A function
   /// is only compiled once every function it reaches is checked and
   /// settled, and none of that changes afterwards.

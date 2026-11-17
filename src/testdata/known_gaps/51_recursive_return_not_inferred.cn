@@ -1,0 +1,11 @@
+# todo: 51
+# tier: both
+# currently-error: has no declared return type, and none could be inferred from its body
+# want: the checker reports that the return type of `f` cannot be inferred and asks for an annotation.
+module known_gaps.recursive_return_not_inferred
+
+def f(n: int32):
+    return f(n - 1)
+
+def main() -> int32:
+    return 0

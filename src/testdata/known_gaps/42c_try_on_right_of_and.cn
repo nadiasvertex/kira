@@ -1,0 +1,21 @@
+# todo: 42
+# tier: both
+# currently-error: from a place where a task cannot suspend
+# want: a `?` on the right side of `and` inside a task compiles, and main returns 7.
+module known_gaps.try_on_right_of_and
+
+def pick(x: int32) -> result[int32, str]:
+    if x > 0:
+        return @ok(x)
+    return @err("neg")
+
+async def g() -> result[int32, str]:
+    var n: int32 = 0
+    while n < 3 and pick(n + 1)? > 0:
+        n = n + 1
+    return @ok(n + 4)
+
+async def main() -> int32:
+    match await g():
+        @ok(v) => return v
+        @err(_) => return 0

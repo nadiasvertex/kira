@@ -46,14 +46,8 @@ auto quote_char(char c) -> std::string {
 
 auto body_builder::fmt_call(std::string_view name, ptr_vec<expr> args,
                             source_span span) -> result<ptr<expr>> {
-  const auto found = fmt_functions_ == nullptr
-                         ? nullptr
-                         : [&]() -> const ast::func_decl * {
-                             const auto it =
-                                 fmt_functions_->find(std::string(name));
-                             return it == fmt_functions_->end() ? nullptr
-                                                                : it->second;
-                           }();
+  const auto *found =
+      functions_ == nullptr ? nullptr : (*functions_)("std.fmt", name);
   if (found == nullptr) {
     return fail("missing record: fmt_types",
                 std::format("`std.fmt` has no `{}`", name), span);

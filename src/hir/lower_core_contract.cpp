@@ -68,11 +68,12 @@ auto core_lowerer::exit_block(const core::node *node) -> const core::block * {
 
 auto core_lowerer::contract_into(const core::contract_check &source,
                                  ptr_vec<hir_node> &out) -> core_result<void> {
-  // Without contract checks the old lowerer leaves out every check and the
-  // binding each one names its value by; lowered here, the bindings would
-  // stay.
+  // Without contract checks the adapter leaves out every check and the
+  // bindings they read (`core::adapt_options`); one left here was built for
+  // the other setting.
   if (!options_.contract_checks) {
-    return refuse("contract_check without contract checks", source.span);
+    return refuse("contract_check in a core built with contract checks",
+                  source.span);
   }
   auto condition = expr(*source.condition);
   if (!condition.has_value()) {
@@ -92,7 +93,11 @@ auto core_lowerer::exit_into(const core::block &exit, ptr_vec<hir_node> &out,
                           ? static_cast<const core::let *>(&first)
                           : nullptr;
   auto value = std::move(tail);
-  if (value == nullptr && bound != nullptr) {
+  // `?` hands back its failure after the crews it leaves end and the drops
+  // run (`try_failure_exit_`).
+  const auto value_last = &exit == try_failure_exit_ && value == nullptr &&
+                          bound != nullptr;
+  if (value == nullptr && bound != nullptr && !value_last) {
     auto lowered = expr(*bound->value);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
@@ -120,7 +125,16 @@ auto core_lowerer::exit_into(const core::block &exit, ptr_vec<hir_node> &out,
     }
     return {};
   };
-  if (value == nullptr) {
+  if (value_last) {
+    if (auto dropped = exit_drops(); !dropped) {
+      return dropped;
+    }
+    auto lowered = expr(*bound->value);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    value = std::move(*lowered);
+  } else if (value == nullptr) {
     if (auto dropped = exit_drops(); !dropped) {
       return dropped;
     }
@@ -136,7 +150,9 @@ auto core_lowerer::exit_into(const core::block &exit, ptr_vec<hir_node> &out,
       exit.statements, [](const auto &statement) -> bool {
         return is_crew_end(*statement);
       });
-  if ((has_drops || has_crews) && value->type != k_unknown_type) {
+  if (value_last) {
+    // Already ended and dropped.
+  } else if ((has_drops || has_crews) && value->type != k_unknown_type) {
     const auto value_type = value->type;
     const auto temp = mint();
     const auto temp_name = std::format("<return value {}>", temp);

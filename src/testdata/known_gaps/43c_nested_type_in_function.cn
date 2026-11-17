@@ -1,0 +1,10 @@
+# todo: 43
+# tier: both
+# currently-error: undefined type `pt`
+# want: a `type` inside a function body is a local type; main returns 4.
+module known_gaps.nested_type_in_function
+
+def main() -> int32:
+    type pt = { x: int32 }
+    let p = pt { x: 4 }
+    return p.x

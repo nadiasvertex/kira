@@ -325,6 +325,17 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
   }
 }
 
+/// Whether every module is lowered from the core alone
+/// (`cli_config::lower_from_core_only`, `CINDER_LOWER_FROM_CORE=only`).
+[[nodiscard]] static auto lower_from_core_only_requested(const cli_config &cfg)
+    -> bool {
+  if (cfg.lower_from_core_only) {
+    return true;
+  }
+  const auto *mode = std::getenv("CINDER_LOWER_FROM_CORE");
+  return mode != nullptr && std::string_view(mode) == "only";
+}
+
 auto compile_sources(const cli_config &cfg, bool use_color)
     -> std::expected<compile_report, std::string> {
   if (cfg.sources.empty()) {
@@ -367,6 +378,15 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 
   // Compile-time code runs on the VM.
   auto comptime_backend = comptime_vm::vm_backend{};
+  {
+    // `CINDER_LOWER_FROM_CORE=only` covers compile-time code too.
+    auto lowering = comptime_vm::comptime_lowering::from_environment();
+    lowering.from_core = lowering.from_core ||
+                         lower_from_core_only_requested(effective_cfg);
+    lowering.verify_core = lowering.from_core &&
+                           std::getenv("CINDER_CORE_VERIFY") != nullptr;
+    comptime_backend.set_lowering(lowering);
+  }
   auto checked = semantic::validate_semantics(
       semantic_inputs, session_diagnostics, file_has_errors,
       semantic::semantic_options{.check_names_and_types =
@@ -397,18 +417,25 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   // asked for (`cli_config::core_check`). Its findings go to the report only.
   // `cli_config::lower_from_core` builds it too, and keeps it for lowering.
   const auto lower_from_core =
-      (effective_cfg.lower_from_core ||
+      (effective_cfg.lower_from_core || effective_cfg.lower_from_core_only ||
        std::getenv("CINDER_LOWER_FROM_CORE") != nullptr) &&
       !effective_cfg.parse_only && session_diagnostics.error_count() == 0;
+  // `CINDER_LOWER_FROM_CORE=only`: no module is lowered from the AST.
+  const auto lower_from_core_only = lower_from_core && lower_from_core_only_requested(effective_cfg);
   auto adapted = std::optional<core::adapted_program>{};
+  // Without contract checks the core leaves them out, as lowering does.
+  const auto adapt_options =
+      core::adapt_options{.contract_checks = effective_cfg.contract_checks};
   if (lower_from_core) {
-    adapted = core::adapt_program(semantic_inputs, file_has_errors, checked);
+    adapted = core::adapt_program(semantic_inputs, file_has_errors, checked,
+                                  adapt_options);
   }
   if ((effective_cfg.core_check ||
        std::getenv("CINDER_CORE_VERIFY") != nullptr) &&
       !effective_cfg.parse_only && session_diagnostics.error_count() == 0) {
     if (!adapted.has_value()) {
-      adapted = core::adapt_program(semantic_inputs, file_has_errors, checked);
+      adapted = core::adapt_program(semantic_inputs, file_has_errors, checked,
+                                    adapt_options);
     }
     auto program = std::vector<const core::module *>{};
     auto core_result = core_report{};
@@ -432,10 +459,27 @@ auto compile_sources(const cli_config &cfg, bool use_color)
       diagnostic_renderer(sources, use_color).render_all(session_diagnostics));
 
   const auto lowering_renderer = diagnostic_renderer(sources, use_color);
-  auto lowered_modules =
-      lower_and_emit_modules(effective_cfg, parsed_inputs, file_has_errors,
-                             checked, metadata_root, lowering_renderer, report);
-  if (adapted.has_value() && lower_from_core) {
+  auto core_only = std::optional<hir::core_program_lowering>{};
+  if (adapted.has_value() && lower_from_core_only) {
+    auto program = std::vector<const core::module *>{};
+    for (const auto &built : adapted->modules) {
+      program.push_back(built.get());
+    }
+    auto input = hir::core_lowering_input{.modules = program,
+                                          .file_module_names = {}};
+    for (const auto &parsed : parsed_inputs) {
+      input.file_module_names.try_emplace(parsed.file_id,
+                                          hir_module_name(parsed));
+    }
+    core_only = hir::lower_core_program(
+        input, adapted->gaps, checked,
+        hir::lowering_options{.contract_checks = effective_cfg.contract_checks});
+    report.core_lowering = core_only->records;
+  }
+  auto lowered_modules = lower_and_emit_modules(
+      effective_cfg, parsed_inputs, file_has_errors, checked, metadata_root,
+      lowering_renderer, report, core_only.has_value() ? &*core_only : nullptr);
+  if (adapted.has_value() && lower_from_core && !lower_from_core_only) {
     auto program = std::vector<const core::module *>{};
     for (const auto &built : adapted->modules) {
       program.push_back(built.get());

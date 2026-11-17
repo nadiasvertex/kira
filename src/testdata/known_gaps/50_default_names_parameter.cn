@@ -1,0 +1,11 @@
+# todo: 50
+# tier: both
+# currently-error: this default value refers to the parameter `a`
+# want: the checker rejects a default value that names another parameter, at the declaration.
+module known_gaps.default_names_parameter
+
+def f(a: int32, b: int32 = a) -> int32:
+    return a + b
+
+def main() -> int32:
+    return f(21)

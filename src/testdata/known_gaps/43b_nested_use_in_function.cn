@@ -1,0 +1,9 @@
+# todo: 43
+# tier: both
+# currently-error: statement kind 3 is not lowered yet
+# want: a `use` inside a function body imports its name for that body; main returns 4.
+module known_gaps.nested_use_in_function
+
+def main() -> int32:
+    use std.mem.size_of
+    return size_of[int32]() as int32

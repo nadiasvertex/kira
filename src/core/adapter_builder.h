@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/core/adapter.h"
 #include "src/core/nodes.h"
 #include "src/parser/ast.h"
 #include "src/semantic/checker_results.h"
@@ -49,7 +50,7 @@ struct signature {
 
 /// The functions a module declares by name: the table `check_ufcs` consults
 /// for a bare call (`program_index` members, plus a functor instance's
-/// clones). Used only by `body_builder::same_module_callee`.
+/// clones). `adapt_program` looks names up in it (`function_lookup`).
 using function_table =
     std::unordered_map<std::string, const ast::func_decl *>;
 
@@ -76,19 +77,29 @@ using template_table =
   return nullptr;
 }
 
-/// Builds the function `decl` as `name` in `module`, whose functions are
-/// `module_functions`. `fmt_functions` are `std.fmt`'s, which string
-/// interpolation calls. `generic_params` are the parameters still open in a
-/// template's body (empty for anything else); `templates` are the program's
-/// templates, so a call to another template from a generic body is known as
-/// a decision deferred to the instances.
+/// Builds the function `decl` as `name` in `module`. `functions` finds a
+/// module's functions by name: this module's for a bare call, and
+/// `std.fmt`'s, which string interpolation calls. `generic_params` are the
+/// parameters still open in a template's body (empty for anything else);
+/// `templates` are the program's templates, so a call to another template
+/// from a generic body is known as a decision deferred to the instances.
 [[nodiscard]] auto build_function(semantic::checked_types &checked,
-                                  const function_table &module_functions,
-                                  const function_table &fmt_functions,
+                                  const function_lookup &functions,
                                   const template_table &templates,
                                   const ast::func_decl &decl, std::string name,
                                   std::string module,
-                                  std::vector<type_id> generic_params)
+                                  std::vector<type_id> generic_params,
+                                  const adapt_options &options)
+    -> result<ptr<function>>;
+
+/// Builds the compile-time expression `expr` as a function of its own
+/// (`adapt_expression`).
+[[nodiscard]] auto
+build_expression_function(semantic::checked_types &checked,
+                          const function_lookup &functions,
+                          const ast::expr &expr,
+                          std::span<const expression_capture> captures,
+                          std::string name, std::string module)
     -> result<ptr<function>>;
 
 /// The declared `fn` type of an `intrinsic def`. `generic_params` are the
@@ -107,10 +118,8 @@ using template_table =
 class body_builder {
 public:
   body_builder(semantic::checked_types &checked,
-               const function_table &module_functions,
-               const function_table *fmt_functions = nullptr)
-      : checked_(checked), module_functions_(module_functions),
-        fmt_functions_(fmt_functions) {}
+               const function_lookup *functions = nullptr)
+      : checked_(checked), functions_(functions) {}
 
   [[nodiscard]] auto function_of(const ast::func_decl &decl, std::string name,
                                  std::string module) -> result<ptr<function>>;
@@ -219,6 +228,29 @@ public:
   [[nodiscard]] auto ident_value(const ast::ident_expr &ident)
       -> result<ptr<expr>>;
   [[nodiscard]] auto static_value(const ast::expr &ref)
+      -> std::optional<result<ptr<expr>>>;
+  /// Whether the read `ref` of a reified static is a fresh value of its
+  /// own: one the reader owns (`owned_static_reads`), or any read in a
+  /// compile-time expression.
+  [[nodiscard]] auto fresh_static_read(const ast::expr &ref) -> bool;
+  [[nodiscard]] auto owned_static_reads()
+      -> const std::unordered_set<const void *> &;
+  /// The fresh value of the reified static `name` (`static_global_defs`).
+  [[nodiscard]] auto static_global_value(const std::string &name,
+                                         source_span span) -> result<ptr<expr>>;
+  // ---- compile-time syntax (adapter_expr.cpp) ----------------------------
+  /// A `host_call` building syntax, in compile-time code; a gap elsewhere.
+  [[nodiscard]] auto host_call_of(std::string operation, const void *subject,
+                                  ptr_vec<expr> args, type_id type,
+                                  source_span span) -> result<ptr<expr>>;
+  [[nodiscard]] auto quote_of(const ast::quote_expr &quote)
+      -> result<ptr<expr>>;
+  /// `expr.<name>(args...)`, a builder of quoted syntax.
+  [[nodiscard]] auto fragment_builder_of(const ast::call_expr &call,
+                                         std::string_view name, type_id type)
+      -> result<ptr<expr>>;
+  /// A read of a `static` that holds syntax (`static_fragment_refs`).
+  [[nodiscard]] auto static_fragment_of(const ast::expr &ref)
       -> std::optional<result<ptr<expr>>>;
   [[nodiscard]] auto binary_of(const ast::binary_expr &bin)
       -> result<ptr<expr>>;
@@ -350,6 +382,13 @@ public:
                              binding_context &context,
                              std::vector<pattern_binding> &bindings)
       -> result<pattern_test>;
+  /// `test` as an array test of `elements`, each the element at its
+  /// position.
+  [[nodiscard]] auto array_test_of(
+      const std::vector<ast::ptr<ast::pattern>> &elements,
+      const std::vector<projection> &path, binding_context &context,
+      std::vector<pattern_binding> &bindings, pattern_test test,
+      source_span span) -> result<pattern_test>;
   /// A binding of the part at `path` under `name`.
   [[nodiscard]] auto binding_of(const std::string &name, const void *key,
                                 bool is_mut, type_id type,
@@ -560,7 +599,8 @@ public:
   [[nodiscard]] auto await_task_form(const ast::await_expr &awaited)
       -> std::optional<result<ptr<expr>>>;
   /// `{ let name = crew_new(); body; crew_end(name) }`.
-  [[nodiscard]] auto crew_of(const std::string &name,
+  /// `key` is the crew statement or expression.
+  [[nodiscard]] auto crew_of(const void *key, const std::string &name,
                              const std::vector<ast::ptr<ast::node>> &body,
                              source_span span, type_id type)
       -> result<ptr<expr>>;
@@ -622,9 +662,20 @@ public:
       -> std::string;
 
 
+  /// Whether contracts and invariants are checked at run time
+  /// (`adapt_options::contract_checks`).
+  bool contract_checks_ = true;
   semantic::checked_types &checked_;
-  const function_table &module_functions_;
-  const function_table *fmt_functions_ = nullptr;
+  /// Finds a module's functions by name; null when nothing is looked up.
+  const function_lookup *functions_ = nullptr;
+  /// The code runs only while compiling (`adapt_options::compile_time`).
+  bool compile_time_ = false;
+  /// Building a compile-time expression's function: every read of a
+  /// reified static is a fresh value, as the old lowerer makes it.
+  bool fresh_static_reads_ = false;
+  /// The reads of a reified static the reader owns
+  /// (`function_cfg::owned_static_reads`), loaded with the capture records.
+  std::optional<std::unordered_set<const void *>> owned_static_reads_;
   std::string module_name_;
   std::vector<std::unordered_map<std::string, local_info>> scopes_;
   std::vector<lambda_frame> lambdas_;

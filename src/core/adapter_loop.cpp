@@ -324,19 +324,34 @@ auto body_builder::loop_of(const ast::expr &iterable,
           return fail("missing record: for_iterator_dispatches",
                       "the adapter does not take one parameter", span);
         }
+        auto args = ptr_vec<expr>{};
         if (!is_ref(params[0]) && is_ref(iterable_type) &&
             !checked_.is_copy(params[0])) {
-          // The checker lets a borrowed collection of `copy` elements be
-          // copied into a consuming `into_iter` (lowering's
-          // `receiver_borrowed`); the core has no bitwise copy of a
-          // non-`copy` value.
-          return fail("for over borrowed collection",
-                      "a consuming `into_iter` on a borrowed collection",
-                      span);
+          // Todo 39: the checker lets a borrowed collection of `copy`
+          // elements be copied into a consuming `into_iter` (the old
+          // lowerer's `receiver_borrowed`), and the iterator is never
+          // dropped. The copy is explicit here: `into_iter(bitwise_copy(
+          // xs))`. Removed with `bitwise_copy` in phase 7 of
+          // spec/unified-checker-plan.md.
+          if (dispatch->adapter_borrows ||
+              checked_.types.entry(iterable_type).result != params[0]) {
+            return fail("for over borrowed collection",
+                        "the collection is not the adapter's receiver", span);
+          }
+          if (!checked_.is_copy(element_type)) {
+            return fail("for over borrowed collection",
+                        "the elements are not `copy`", span);
+          }
+          CORE_TRY(borrowed, value_of(iterable));
+          auto copy_args = ptr_vec<expr>{};
+          copy_args.push_back(std::move(borrowed));
+          args.push_back(intrinsic_call("bitwise_copy", params[0],
+                                        std::move(copy_args), {params[0]},
+                                        span));
+        } else {
+          CORE_TRY(argument, argument(iterable, params[0], std::nullopt));
+          args.push_back(std::move(argument));
         }
-        CORE_TRY(argument, argument(iterable, params[0], std::nullopt));
-        auto args = ptr_vec<expr>{};
-        args.push_back(std::move(argument));
         handle = direct_call(std::move(adapter), std::move(args), span);
       } else {
         CORE_TRY(value, value_of(iterable));

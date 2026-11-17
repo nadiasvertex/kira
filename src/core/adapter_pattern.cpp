@@ -134,6 +134,37 @@ auto body_builder::binding_of(const std::string &name, const void *key,
   return made;
 }
 
+auto body_builder::array_test_of(
+    const std::vector<ast::ptr<ast::pattern>> &elements,
+    const std::vector<projection> &path, binding_context &context,
+    std::vector<pattern_binding> &bindings, pattern_test test,
+    source_span span) -> result<pattern_test> {
+  test.kind = pattern_test::form::array;
+  for (std::size_t i = 0; i < elements.size(); ++i) {
+    if (elements[i] == nullptr) {
+      return fail("array_pattern", "a missing element", span);
+    }
+    const auto &element = *elements[i];
+    const auto found = checked_.node_types.find(&element);
+    if (found == checked_.node_types.end()) {
+      return fail("missing record: node_types",
+                  std::format("no type for a {}", kind_name(element.kind)),
+                  element.span);
+    }
+    CORE_TRY(element_type, settle(found->second, element.span));
+    auto subscript =
+        make_node<literal>(element.span, checked_.types.usize_type());
+    subscript->token = token_kind::int_lit;
+    subscript->spelling = std::to_string(i);
+    auto step = step_of(projection::step::element, element_type);
+    step.subscript = std::move(subscript);
+    CORE_TRY(part, test_of(element, element_type,
+                           extended(path, std::move(step)), context, bindings));
+    test.parts.push_back(std::move(part));
+  }
+  return test;
+}
+
 auto body_builder::test_of(const ast::node &pattern, type_id type,
                            const std::vector<projection> &path,
                            binding_context &context,
@@ -229,6 +260,13 @@ auto body_builder::test_of(const ast::node &pattern, type_id type,
   case ast::node_kind::tuple_pattern: {
     const auto &tuple = ast::cast<const ast::tuple_pattern>(pattern);
     const auto &entry = checked_.types.entry(type);
+    // `(a, b)` against an array of that length tests its elements, as an
+    // array pattern does.
+    if (entry.kind == type_kind::array_kind &&
+        entry.array_size == tuple.elements.size()) {
+      return array_test_of(tuple.elements, path, context, bindings,
+                           std::move(test), pattern.span);
+    }
     if (entry.kind != type_kind::tuple_kind ||
         entry.args.size() != tuple.elements.size()) {
       return fail("tuple_pattern",
@@ -253,24 +291,8 @@ auto body_builder::test_of(const ast::node &pattern, type_id type,
   }
   case ast::node_kind::array_pattern: {
     const auto &array = ast::cast<const ast::array_pattern>(pattern);
-    test.kind = pattern_test::form::array;
-    for (std::size_t i = 0; i < array.elements.size(); ++i) {
-      if (array.elements[i] == nullptr) {
-        return fail("array_pattern", "a missing element", pattern.span);
-      }
-      const auto &element = *array.elements[i];
-      CORE_TRY(element_type, part_type(element));
-      auto subscript =
-          make_node<literal>(element.span, checked_.types.usize_type());
-      subscript->token = token_kind::int_lit;
-      subscript->spelling = std::to_string(i);
-      auto step = step_of(projection::step::element, element_type);
-      step.subscript = std::move(subscript);
-      CORE_TRY(part, test_of(element, element_type,
-                             extended(path, std::move(step)), context, bindings));
-      test.parts.push_back(std::move(part));
-    }
-    return test;
+    return array_test_of(array.elements, path, context, bindings,
+                         std::move(test), pattern.span);
   }
   case ast::node_kind::struct_pattern: {
     const auto &record = ast::cast<const ast::struct_pattern>(pattern);

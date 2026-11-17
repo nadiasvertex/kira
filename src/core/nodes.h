@@ -59,6 +59,7 @@ enum class node_kind : std::uint8_t {
   if_expr,
   match_expr,
   await_expr,
+  host_call, ///< An operation only the compiler performs (compile-time code).
   // statements
   let,
   assign,     ///< Write a value into a place.
@@ -502,6 +503,21 @@ struct await_expr : expr {
   await_expr(source_span s, type_id t) : expr(node_kind::await_expr, s, t) {}
 };
 
+/// An operation the compiler performs for compile-time code, which has no
+/// run-time form: building quoted syntax. Only the compile-time VM runs
+/// one. `operation` is `quote` (a quote, whose `args` are the values of
+/// its eager splices in source order), `static` (the syntax a `static`
+/// holds), or `expr.<builder>` (a fragment builder, whose `args` are the
+/// call's arguments). `subject` is the syntax the operation is about: the
+/// quote, or the static's fragment; null for a builder. It is an opaque
+/// key the host reads, as `origin` is.
+struct host_call : expr {
+  std::string operation;
+  const void *subject = nullptr;
+  ptr_vec<expr> args;
+  host_call(source_span s, type_id t) : expr(node_kind::host_call, s, t) {}
+};
+
 // ==========================================================================
 //  Statements
 // ==========================================================================
@@ -604,6 +620,11 @@ struct function {
   coroutine_kind coroutine = coroutine_kind::none;
   /// Produced by a `deriving` clause or an item splice.
   bool generated = false;
+  /// The function runs only on the compile-time VM: a module-level `static
+  /// def` (not a static method), the function made of a compile-time
+  /// expression, or one adapted on demand for compile-time code. Only such a
+  /// function may hold a `host_call`.
+  bool compile_time = false;
   ptr<block> body;
 };
 

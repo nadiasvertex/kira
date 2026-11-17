@@ -402,7 +402,9 @@ auto core_lowerer::arm_into(const core::match_expr &source,
                             arm.span, std::move(patterns)));
       auto guard = ptr<hir_expr>{};
       if (arm.guard != nullptr) {
+        ++conditional_depth_;
         auto lowered = expr(*arm.guard);
+        --conditional_depth_;
         if (!lowered.has_value()) {
           return std::unexpected(lowered.error());
         }
@@ -451,6 +453,14 @@ auto core_lowerer::arm_into(const core::match_expr &source,
 auto core_lowerer::match(const core::match_expr &source, type_id type)
     -> core_result<ptr<hir_match>> {
   using f = core::match_form;
+  // `?`'s failure arm leaves as the old lowerer's does: the crews it leaves
+  // end and the drops run before the value handed back is made.
+  if (source.form == f::try_operator && source.arms.size() == 2 &&
+      source.arms[1].body != nullptr &&
+      !source.arms[1].body->statements.empty()) {
+    try_failure_exit_ =
+        exit_block(source.arms[1].body->statements.front().get());
+  }
   auto value = subject_value(source);
   if (!value.has_value()) {
     return std::unexpected(value.error());
@@ -557,7 +567,13 @@ auto core_lowerer::match(const core::match_expr &source, type_id type)
             return refuse_drop(dropped.error());
           }
         }
-        stmts.push_back(hir::make<hir_return>(leave.span, subject()));
+        // A task hands the failure back with a `yield`, then finishes.
+        if (in_task_body_) {
+          stmts.push_back(hir::make<hir_yield>(leave.span, subject()));
+          stmts.push_back(hir::make<hir_return>(leave.span, nullptr));
+        } else {
+          stmts.push_back(hir::make<hir_return>(leave.span, subject()));
+        }
         arms.push_back(hir_match_arm{
             .pattern = std::move(*made),
             .guard = nullptr,
@@ -785,7 +801,18 @@ auto core_lowerer::while_let_into(const core::match_expr &source,
   if (source.arms.size() != 2 || !is_fallback(source.arms[1])) {
     return refuse("while let shape", source.span);
   }
-  auto value = subject_value(source);
+  // In a task, what the subject waits for runs at the top of every
+  // iteration.
+  auto hoisted = ptr_vec<hir_node>{};
+  auto value = [&] {
+    if (source.form == f::while_let && in_task_body_ && hoist_ != nullptr) {
+      auto *const enclosing = std::exchange(hoist_, &hoisted);
+      auto made = subject_value(source);
+      hoist_ = enclosing;
+      return made;
+    }
+    return subject_value(source);
+  }();
   if (!value.has_value()) {
     return std::unexpected(value.error());
   }
@@ -835,25 +862,30 @@ auto core_lowerer::while_let_into(const core::match_expr &source,
   if (arms.size() != 1) {
     return refuse("while let with binding alternatives", span);
   }
-  if (!drops_.schedule().unmatched_drops.contains(arm.origin)) {
+  const auto drops_unmatched =
+      drops_.schedule().unmatched_drops.contains(arm.origin);
+  if (!drops_unmatched && hoisted.empty()) {
     out.push_back(hir::make<hir_while_let>(span, std::move(*value), symbol,
                                            std::move(arms[0].pattern),
                                            std::move(arms[0].body)));
     return {};
   }
   // A miss still owns the subject: `while true: match subject: pattern =>
-  // body, _ => drop it and break`.
+  // body, _ => drop it and break`. A subject that waits for a task takes
+  // the same form, with the wait at the top of the loop.
   auto exit = ptr_vec<hir_node>{};
-  auto dropped = drops_.build_drop_calls(subject, stype, span, exit);
-  if (!dropped.has_value()) {
-    return refuse_drop(dropped.error());
+  if (drops_unmatched) {
+    auto dropped = drops_.build_drop_calls(subject, stype, span, exit);
+    if (!dropped.has_value()) {
+      return refuse_drop(dropped.error());
+    }
   }
   exit.push_back(hir::make<hir_break>(span));
   arms.push_back(hir_match_arm{
       .pattern = hir::make<hir_wildcard_pattern>(span),
       .guard = nullptr,
       .body = hir::make<hir_block>(span, k_unknown_type, std::move(exit))});
-  auto body = ptr_vec<hir_node>{};
+  auto body = std::move(hoisted);
   body.push_back(hir::make<hir_expr_stmt>(
       span, hir::make<hir_match>(span, k_unknown_type, std::move(*value),
                                  symbol, std::move(arms))));

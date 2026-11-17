@@ -37,7 +37,7 @@ using cinder::testing::expect;
 
 /// The functions lowered from the core, counted once per corpus program for
 /// the program's own modules and once in all for the standard library's.
-constexpr auto k_from_core_floor = std::size_t{1550};
+constexpr auto k_from_core_floor = std::size_t{1681};
 
 /// A structural rendering of a HIR function, with symbols numbered in the
 /// order they appear, so two lowerings of one function can be compared.
@@ -207,8 +207,128 @@ auto print_tally(const char *what, const tally &t) -> void {
 
 } // namespace
 
+/// A file's `module` path, as the corpus runner names a library module.
+auto module_name_of(const cinder::ast::file &file) -> std::string {
+  auto name = std::string{};
+  if (file.module_decl != nullptr) {
+    for (const auto &segment : file.module_decl->path) {
+      name += name.empty() ? segment : "." + segment;
+    }
+  }
+  return name;
+}
+
+/// `CINDER_LOWER_FROM_CORE=only`: replaces every module the old lowerer
+/// made with the one `hir::lower_core_program` makes, in the same order, and
+/// fails when a module differs in which functions or statics it holds, in
+/// their order, or could not be made.
+auto replace_with_core_program(corpus::post_lower_context &context,
+                               const cinder::core::adapted_program &adapted,
+                               coverage &seen, bool list) -> void {
+  auto program = std::vector<const cinder::core::module *>{};
+  for (const auto &module : adapted.modules) {
+    program.push_back(module.get());
+  }
+  auto input = hir::core_lowering_input{.modules = program,
+                                        .file_module_names = {}};
+  for (const auto &parsed : context.parsed) {
+    input.file_module_names.emplace(
+        parsed.file_id, parsed.file_id == context.file_id
+                            ? context.module_name
+                            : module_name_of(*parsed.ast_file));
+  }
+  auto lowered =
+      hir::lower_core_program(input, adapted.gaps, context.checked, {});
+  for (const auto &failure : lowered.failures) {
+    std::cout << std::format("only: module `{}` not lowered: {}\n",
+                             failure.module, failure.message);
+  }
+  expect(lowered.failures.empty(),
+         std::format("expected every module to lower from the core alone ({} "
+                     "failure(s))",
+                     lowered.failures.size()));
+  // Several files may hold one module: each is lowered on its own, in order.
+  auto by_name = std::multimap<std::string, hir::ptr<hir::hir_module>>{};
+  for (auto &module : lowered.modules) {
+    auto name = module->module_name;
+    by_name.emplace(std::move(name), std::move(module));
+  }
+  const auto names_of = [](const hir::hir_module &module) {
+    auto out = std::vector<std::string>{};
+    for (const auto &function : module.functions) {
+      out.push_back(function->name);
+    }
+    for (const auto &global : module.statics) {
+      out.push_back("static " + global.name);
+    }
+    return out;
+  };
+  if (std::getenv("CINDER_LOWER_CORE_MODULES") != nullptr) {
+    for (const auto &module : context.modules) {
+      std::cout << std::format("old {} {}\n", module->module_name,
+                               names_of(*module).size() > 0 ? names_of(*module).front() : "");
+    }
+    for (const auto &[name, module] : by_name) {
+      std::cout << std::format("core {} {}\n", name,
+                               names_of(*module).size() > 0 ? names_of(*module).front() : "");
+    }
+  }
+  for (auto &module : context.modules) {
+    const auto found = by_name.lower_bound(module->module_name);
+    expect(found != by_name.end() && found->first == module->module_name,
+           std::format("expected the core to make the module `{}`",
+                       module->module_name));
+    const auto before = names_of(*module);
+    const auto after = names_of(*found->second);
+    if (before != after) {
+      auto text = std::string{};
+      for (const auto &name : before) {
+        text += " " + name;
+      }
+      text += "\n  core:";
+      for (const auto &name : after) {
+        text += " " + name;
+      }
+      cinder::testing::fail(std::format(
+          "module `{}` holds other functions from the core\n  old:{}",
+          module->module_name, text));
+    }
+    found->second->file_id = module->file_id;
+    module = std::move(found->second);
+    by_name.erase(found);
+  }
+  // Modules the old path does not lower here (functor instantiations).
+  for (auto &[name, module] : by_name) {
+    context.modules.push_back(std::move(module));
+  }
+  if (context.inline_calls) {
+    return;
+  }
+  for (const auto &record : lowered.records) {
+    const auto own = record.module == context.module_name ||
+                     record.module.starts_with(context.module_name + ".");
+    if (!own && !seen.stdlib_seen.insert(record.module + "::" + record.function)
+                     .second) {
+      continue;
+    }
+    auto &t = own ? seen.program : seen.stdlib;
+    ++t.total;
+    if (record.from_core) {
+      ++t.from_core;
+    } else {
+      ++t.fallbacks[record.fallback];
+      if (list) {
+        std::cout << std::format("fallback {}::{}: {}\n", record.module,
+                                 record.function, record.fallback);
+      }
+    }
+  }
+}
+
 auto main() -> int {
   const auto *prefix = std::getenv("CINDER_LOWER_CORE_FILTER");
+  const auto *mode = std::getenv("CINDER_LOWER_FROM_CORE");
+  const auto only = mode != nullptr && std::string_view(mode) == "only";
   const auto diff = std::getenv("CINDER_LOWER_CORE_DIFF") != nullptr;
   const auto list = std::getenv("CINDER_LOWER_CORE_LIST") != nullptr;
   const auto own_only =
@@ -224,6 +344,10 @@ auto main() -> int {
   options.hook = [&](corpus::post_lower_context &context) -> void {
     auto adapted = cinder::core::adapt_program(
         context.parsed, context.file_has_errors, context.checked);
+    if (only) {
+      replace_with_core_program(context, adapted, seen, list);
+      return;
+    }
     auto program = std::vector<const cinder::core::module *>{};
     for (const auto &module : adapted.modules) {
       program.push_back(module.get());
@@ -278,7 +402,8 @@ auto main() -> int {
     }
   };
   corpus::run_corpus(options);
-  std::cout << "lower_core_corpus_test coverage:\n";
+  std::cout << std::format("lower_core_corpus_test coverage{}:\n",
+                           only ? " (modules from the core alone)" : "");
   print_tally("corpus programs", seen.program);
   print_tally("standard library", seen.stdlib);
   if (diff) {

@@ -173,6 +173,8 @@ template <typename T> [[nodiscard]] auto as(const node &n) -> const T * {
   }
   case node_kind::await_expr:
     return has_break(static_cast<const await_expr *>(n)->task.get(), in_loop);
+  case node_kind::host_call:
+    return any(static_cast<const host_call *>(n)->args);
   case node_kind::let:
     return has_break(static_cast<const let *>(n)->value.get(), in_loop);
   case node_kind::assign: {
@@ -309,6 +311,8 @@ private:
   std::vector<violation> violations_;
   std::string module_;
   std::string function_;
+  /// The function being checked runs only while compiling (E12).
+  bool compile_time_ = false;
   std::unordered_set<type_id> generic_params_;
   std::unordered_set<symbol_id> introduced_; ///< F1, per function.
   std::vector<local> env_;
@@ -1064,7 +1068,7 @@ private:
   }
 
   // ------------------------------------------------------------------------
-  //  Expressions: E1–E11
+  //  Expressions: E1–E12
   // ------------------------------------------------------------------------
 
   /// Runs `check` on `n` as a `T`; reports F0 when the node's class does
@@ -1099,6 +1103,7 @@ private:
     case k::if_expr: return dispatch(e, &verifier::check_if);
     case k::match_expr: return dispatch(e, &verifier::check_match);
     case k::await_expr: return dispatch(e, &verifier::check_await);
+    case k::host_call: return dispatch(e, &verifier::check_host_call);
     default: return report("F0", e.span, "an expression node has a statement kind");
     }
   }
@@ -1896,8 +1901,38 @@ private:
     }
   }
 
+  /// E12. Only compile-time code builds syntax; what the host makes of the
+  /// arguments is checked when it runs.
+  auto check_host_call(const host_call &h) -> void {
+    if (!compile_time_) {
+      report("E12", h.span,
+             std::format("a host call `{}` in a function that is not compile-time code",
+                         h.operation));
+    }
+    const auto &op = h.operation;
+    if (op == "quote" || op == "static") {
+      if (h.subject == nullptr) {
+        report("E12", h.span, std::format("a host call `{}` has no subject", op));
+      }
+    } else if (op.starts_with("expr.") && op.size() > 5) {
+      if (h.subject != nullptr) {
+        report("E12", h.span, std::format("the builder `{}` has a subject", op));
+      }
+    } else {
+      report("E12", h.span, std::format("`{}` is not a host operation", op));
+    }
+    for (const auto &arg : h.args) {
+      if (arg == nullptr) {
+        report("E12", h.span, std::format("a host call `{}` has a null argument", op));
+        continue;
+      }
+      check_expr(*arg);
+    }
+  }
+
   auto check_function(const function &f) -> void {
     function_ = f.name;
+    compile_time_ = f.compile_time;
     generic_params_ = {f.generic_params.begin(), f.generic_params.end()};
     introduced_.clear();
     env_.clear();
@@ -1975,6 +2010,7 @@ private:
 
   auto check_static(const static_global &s) -> void {
     function_.clear();
+    compile_time_ = false;
     generic_params_.clear();
     introduced_.clear();
     env_.clear();

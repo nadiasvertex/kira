@@ -107,6 +107,13 @@ struct cli_config {
              ///< errors, and records each function's path in
              ///< `compile_report::core_lowering`. The environment variable
              ///< `CINDER_LOWER_FROM_CORE` turns it on as well.
+  bool lower_from_core_only =
+      false; ///< Lower every module from the typed core alone
+             ///< (`hir::lower_core_program`), with no call into the AST
+             ///< lowering for run-time code: a function the core cannot
+             ///< lower is a lowering failure of its module. Implies
+             ///< `lower_from_core`. `CINDER_LOWER_FROM_CORE=only` turns it
+             ///< on as well.
 };
 
 /// What building and verifying the typed core found (`cli_config::core_check`).

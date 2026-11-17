@@ -1,0 +1,16 @@
+# todo: 42
+# tier: both
+# currently-error: an `await` that is evaluated conditionally or repeatedly
+# want: an `await` on the right side of `or` inside a task compiles, and main returns 7.
+module known_gaps.await_on_right_of_or
+
+async def one() -> int32:
+    return 1
+
+async def helper(b: bool) -> int32:
+    if b or (await one()) == 1:
+        return 7
+    return 0
+
+async def main() -> int32:
+    return await helper(false)

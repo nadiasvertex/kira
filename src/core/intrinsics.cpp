@@ -641,12 +641,23 @@ auto op_crew_spawn(const call_shape &c) -> verdict {
   return c.operand_task(1);
 }
 
+/// `crew_errors[task](&crew, new, push) -> list[E]`: the errors of the
+/// crew's tasks, each of type `task`, collected into a list made by `new`
+/// (`fn() -> list[E]`) and filled by `push` (`fn(&mut list[E], E)`), where
+/// `E` is the task's error type.
 auto op_crew_errors(const call_shape &c) -> verdict {
-  if (auto e = c.arity(1)) {
+  if (auto e = c.arity(3)) {
     return e;
   }
   if (auto e = ref_to_crew(c, 0)) {
     return e;
+  }
+  if (auto e = c.generic_count(1)) {
+    return e;
+  }
+  if (!c.is_task(c.generics[0]) || c.entry(c.generics[0]).args.size() < 2) {
+    return c.message(std::format("the generic argument is `{}`, expected a fallible task",
+                                 c.show(c.generics[0])));
   }
   // The standard library's `list[E]` is a struct of module `std.list`; the
   // builtin generic form is accepted too.
@@ -656,7 +667,43 @@ auto op_crew_errors(const call_shape &c) -> verdict {
   if (!c.is_generic(c.result, "list", 1) && !std_list) {
     return c.message(std::format("the result is `{}`, expected a `list[E]`", c.show(c.result)));
   }
+  const auto &made = c.entry(c.params[1]);
+  if (made.kind != type_kind::fn_kind || !made.args.empty() || made.result != c.result) {
+    return c.message(std::format("operand 1 is `{}`, expected `fn() -> {}`", c.show(c.params[1]),
+                                 c.show(c.result)));
+  }
+  const auto error = c.entry(c.generics[0]).args[1];
+  const auto &push = c.entry(c.params[2]);
+  if (push.kind != type_kind::fn_kind || push.args.size() != 2 ||
+      !c.is_ref(push.args[0], true) ||
+      c.entry(push.args[0]).result != c.result || push.args[1] != error) {
+    return c.message(std::format("operand 2 is `{}`, expected `fn(&mut {}, {})`",
+                                 c.show(c.params[2]), c.show(c.result), c.show(error)));
+  }
   return std::nullopt;
+}
+
+/// `bitwise_copy[T](&T) -> T`: the bytes of the referent as a value of its
+/// own, without making it an owner of what they point to. It exists for
+/// todo 39 only: a `for` over a borrowed collection hands the consuming
+/// `into_iter` such a copy, which the checker allows when the elements are
+/// `copy`, and the iterator it makes is never dropped. Phase 7 of
+/// spec/unified-checker-plan.md removes it, when that loop calls the
+/// borrowing `iter` instead.
+auto op_bitwise_copy(const call_shape &c) -> verdict {
+  if (auto e = c.arity(1)) {
+    return e;
+  }
+  if (c.entry(c.params[0]).kind != type_kind::ref_kind) {
+    return c.message(std::format("operand 0 is `{}`, expected `&T`", c.show(c.params[0])));
+  }
+  if (auto e = c.generic_count(1)) {
+    return e;
+  }
+  if (auto e = c.generic_is(c.entry(c.params[0]).result)) {
+    return e;
+  }
+  return c.result_is(c.generics[0]);
 }
 
 // ---------------------------------------------------------------------------
@@ -706,6 +753,7 @@ constexpr auto k_operations = std::to_array<operation>({
     {"crew_spawn", op_crew_spawn},
     {"task_get", op_task_get},
     {"crew_errors", op_crew_errors},
+    {"bitwise_copy", op_bitwise_copy},
 });
 
 [[nodiscard]] auto find_operation(std::string_view name) -> const operation * {

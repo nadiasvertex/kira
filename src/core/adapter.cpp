@@ -295,8 +295,20 @@ private:
 class program_adapter {
 public:
   program_adapter(semantic::checked_types &checked,
-                  semantic::program_index index)
-      : checked_(checked), planner_(checked), index_(std::move(index)) {}
+                  semantic::program_index index, bool contract_checks)
+      : checked_(checked), planner_(checked), index_(std::move(index)),
+        contract_checks_(contract_checks),
+        lookup_([this](std::string_view module,
+                       std::string_view name) -> const ast::func_decl * {
+          const auto &table = functions_of(std::string(module));
+          const auto found = table.find(std::string(name));
+          return found == table.end() ? nullptr : found->second;
+        }) {}
+  program_adapter(const program_adapter &) = delete;
+  auto operator=(const program_adapter &) -> program_adapter & = delete;
+  program_adapter(program_adapter &&) = delete;
+  auto operator=(program_adapter &&) -> program_adapter & = delete;
+  ~program_adapter() = default;
 
   /// The functions `module_name` declares, as the checker's module table
   /// holds them: the program index's members, and for a functor instance
@@ -391,7 +403,8 @@ public:
   }
 
   auto report(const std::string &module, const std::string &function,
-              const failure &why, bool in_template) -> void {
+              const failure &why, bool in_template,
+              gap::item_kind item = gap::item_kind::function) -> void {
     auto construct = why.construct;
     // A template records only the decisions that hold for every instance;
     // the rest it leaves to them (`defer_to_instances`), so a record a
@@ -405,7 +418,8 @@ public:
                                .span = why.span,
                                .construct = std::move(construct),
                                .detail = why.detail,
-                               .in_template = in_template});
+                               .in_template = in_template,
+                               .item = item});
   }
 
   auto build_module(const module_plan &plan) -> void {
@@ -416,7 +430,8 @@ public:
       const auto &def = checked_.lowering.static_global_defs.at(decl);
       auto value = build_static_value(checked_, def.value, decl->span);
       if (!value.has_value()) {
-        report(built->name, def.name, value.error(), false);
+        report(built->name, def.name, value.error(), false,
+               gap::item_kind::static_global);
         continue;
       }
       built->statics.push_back(static_global{.name = def.name,
@@ -430,7 +445,8 @@ public:
       auto signature =
           build_intrinsic_signature(checked_, *planned.decl, std::move(params));
       if (!signature.has_value()) {
-        report(built->name, planned.name, signature.error(), false);
+        report(built->name, planned.name, signature.error(), false,
+               gap::item_kind::intrinsic);
         continue;
       }
       built->intrinsics.push_back(intrinsic_decl{
@@ -446,15 +462,17 @@ public:
             .construct = "implicit generic template",
             .detail = "its unannotated parameters are inference variables "
                       "(rule T1), and no type parameter stands for them",
-            .in_template = true});
+            .in_template = true,
+            .item = gap::item_kind::function});
         continue;
       }
       auto params = in_template ? templates_.at(planned.decl)
                                 : std::vector<type_id>{};
-      const auto &fmt_functions = functions_of("std.fmt");
       auto function = build_function(
-          checked_, functions_of(built->name), fmt_functions, templates_,
-          *planned.decl, planned.name, built->name, std::move(params));
+          checked_, lookup_, templates_, *planned.decl, planned.name,
+          built->name, std::move(params),
+          adapt_options{.contract_checks = contract_checks_,
+                        .compile_time = false});
       if (!function.has_value()) {
         report(built->name, planned.name, function.error(), in_template);
         continue;
@@ -562,7 +580,9 @@ private:
   semantic::checked_types &checked_;
   module_planner planner_;
   semantic::program_index index_;
+  bool contract_checks_ = true;
   std::unordered_map<std::string, function_table> function_tables_;
+  function_lookup lookup_;
   std::vector<module_plan> plans_;
   template_table templates_;
   adapted_program result_;
@@ -572,10 +592,13 @@ private:
 
 auto adapt_program(std::span<const semantic::parsed_module> inputs,
                    const std::vector<bool> &file_has_errors,
-                   semantic::checked_types &checked) -> adapted_program {
+                   semantic::checked_types &checked,
+                   const adapt_options &options) -> adapted_program {
   auto adapter = program_adapter(
-      checked, semantic::build_program_index(std::vector<semantic::parsed_module>(
-                   inputs.begin(), inputs.end())));
+      checked,
+      semantic::build_program_index(std::vector<semantic::parsed_module>(
+          inputs.begin(), inputs.end())),
+      options.contract_checks);
   for (const auto &input : inputs) {
     if (input.ast_file == nullptr ||
         (static_cast<size_t>(input.file_id) < file_has_errors.size() &&
@@ -587,6 +610,91 @@ auto adapt_program(std::span<const semantic::parsed_module> inputs,
   adapter.plan_functors();
   adapter.build_all();
   return adapter.take();
+}
+
+namespace {
+
+[[nodiscard]] auto gap_of(const failure &why, const std::string &module,
+                          const std::string &item, gap::item_kind kind) -> gap {
+  return gap{.module = module,
+             .function = item,
+             .span = why.span,
+             .construct = why.construct,
+             .detail = why.detail,
+             .in_template = false,
+             .item = kind};
+}
+
+} // namespace
+
+auto adapt_function(const ast::func_decl &decl, std::string name,
+                    std::string module, semantic::checked_types &checked,
+                    const function_lookup &functions,
+                    const adapt_options &options)
+    -> std::expected<ptr<function>, gap> {
+  // The same per-construct code as `adapt_program`: a body that is not
+  // generic, so no template table is needed.
+  const auto no_templates = template_table{};
+  auto built = build_function(checked, functions, no_templates, decl, name,
+                              module, {}, options);
+  if (!built.has_value()) {
+    return std::unexpected(
+        gap_of(built.error(), module, name, gap::item_kind::function));
+  }
+  return std::move(*built);
+}
+
+auto adapt_expression(const ast::expr &expr,
+                      std::span<const expression_capture> captures,
+                      std::string name, std::string module,
+                      semantic::checked_types &checked,
+                      const function_lookup &functions)
+    -> std::expected<ptr<function>, gap> {
+  auto built = build_expression_function(checked, functions, expr, captures,
+                                         name, module);
+  if (!built.has_value()) {
+    return std::unexpected(
+        gap_of(built.error(), module, name, gap::item_kind::function));
+  }
+  return std::move(*built);
+}
+
+auto adapt_static(const semantic::lowering_results::static_global_def &def,
+                  std::string module, semantic::checked_types &checked,
+                  source_span span) -> std::expected<static_global, gap> {
+  auto value = build_static_value(checked, def.value, span);
+  if (!value.has_value()) {
+    return std::unexpected(
+        gap_of(value.error(), module, def.name, gap::item_kind::static_global));
+  }
+  const auto type = (*value)->type;
+  return static_global{.name = def.name,
+                       .module = std::move(module),
+                       .type = type,
+                       .value = std::move(*value)};
+}
+
+auto adapt_intrinsic(const ast::func_decl &decl, std::string name,
+                     semantic::checked_types &checked)
+    -> std::expected<intrinsic_decl, gap> {
+  // Its own parameters only: an `intrinsic def` in a generic block is
+  // declared with the block's too, which the declaration alone does not
+  // name.
+  auto params = std::vector<type_id>{};
+  for (const auto &param : decl.type_params) {
+    if (!param.name.empty()) {
+      params.push_back(checked.types.type_param(
+          param.name, param.higher_kinded_arity, &param));
+    }
+  }
+  const auto generic = !params.empty();
+  auto signature = build_intrinsic_signature(checked, decl, std::move(params));
+  if (!signature.has_value()) {
+    return std::unexpected(
+        gap_of(signature.error(), "", name, gap::item_kind::intrinsic));
+  }
+  return intrinsic_decl{
+      .name = std::move(name), .signature = *signature, .generic = generic};
 }
 
 } // namespace cinder::core

@@ -1,9 +1,11 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "driver.h"
 #include "parse_stage.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/nodes.h"
 #include "src/semantic/checker_results.h"
 
@@ -34,6 +36,13 @@ namespace cinder::driver {
 /// @param renderer Renders lowering-failure diagnostics against the sources.
 /// @param report Aggregate compile report; `modules`, `hir_modules`,
 /// `diagnostics`, and `error_count` are appended to.
+/// The HIR name of `input`'s module: its `module` path, or the file's stem.
+[[nodiscard]] auto hir_module_name(const parsed_input &input) -> std::string;
+
+/// With `core_only`, the modules come from the core
+/// (`hir::lower_core_program`, `cli_config::lower_from_core_only`) and the
+/// AST lowering is not called: each module the core lowering made is
+/// returned, and each it could not make is reported as a lowering failure.
 [[nodiscard]] auto
 lower_and_emit_modules(const cli_config &cfg,
                        const std::vector<parsed_input> &parsed_inputs,
@@ -41,6 +50,8 @@ lower_and_emit_modules(const cli_config &cfg,
                        const semantic::checked_types &checked,
                        const std::filesystem::path &metadata_root,
                        const diagnostic_renderer &renderer,
-                       compile_report &report) -> hir::ptr_vec<hir::hir_module>;
+                       compile_report &report,
+                       hir::core_program_lowering *core_only = nullptr)
+    -> hir::ptr_vec<hir::hir_module>;
 
 } // namespace cinder::driver

@@ -1,0 +1,15 @@
+# todo: 49
+# tier: both
+# currently-error: named arguments are not supported constructing a sum-type variant
+# want: the checker rejects a named argument on a variant constructor, whose payload has no names (`@circle(r: 4)`), with a diagnostic.
+module known_gaps.named_arg_variant
+
+type shape =
+    | @circle(int32)
+    | @point
+
+def main() -> int32:
+    let s = @circle(r: 4)
+    match s:
+        @circle(r) => return r
+        @point => return 0

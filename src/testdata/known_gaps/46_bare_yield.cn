@@ -1,0 +1,12 @@
+# todo: 46
+# tier: both
+# currently-error: `yield` with no value is not supported
+# want: a bare `yield` in a `some iterator[unit]` generator yields the unit value; main returns 0.
+module known_gaps.bare_yield
+
+generator def ticks() -> some iterator[unit]:
+    yield
+    yield
+
+def main() -> int32:
+    return 0

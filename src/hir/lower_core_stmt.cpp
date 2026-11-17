@@ -130,10 +130,12 @@ auto core_lowerer::statements_into(const core::block &source, type_id type,
   const auto carry_on = [&](const core::match_expr &let,
                             const core::node &statement) -> core_result<void> {
     const auto first = stmts.size();
-    auto rest = let_pattern_into(let, stmts);
+    auto hoisted = ptr_vec<hir_node>{};
+    auto rest = hoisting(hoisted, [&] { return let_pattern_into(let, stmts); });
     if (!rest.has_value()) {
       return std::unexpected(rest.error());
     }
+    place_hoisted(hoisted, stmts, first);
     for (auto i = first; i < stmts.size(); ++i) {
       stmts[i]->continues_statement = i > first;
     }
@@ -176,26 +178,36 @@ auto core_lowerer::statements_into(const core::block &source, type_id type,
       stmts[group]->origin = statement.origin;
     }
   }
-  if (count < source.statements.size() && tail_exit_ != nullptr) {
-    const auto &bound = static_cast<const core::let &>(
-        *tail_exit_->statements.front());
-    auto value = expr(*bound.value);
+  // A value as the block's last statement, after what it waits for.
+  const auto tail_value = [&](const core::expr &result) -> core_result<void> {
+    auto hoisted = ptr_vec<hir_node>{};
+    auto value = hoisting(hoisted, [&] { return expr(result); });
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
+    const auto first = stmts.size();
+    for (auto &node : hoisted) {
+      stmts.push_back(std::move(node));
+    }
     const auto span = (*value)->span;
     stmts.push_back(hir::make<hir_expr_stmt>(span, std::move(*value)));
+    for (auto i = first + 1; i < stmts.size(); ++i) {
+      stmts[i]->continues_statement = true;
+    }
+    return {};
+  };
+  if (count < source.statements.size() && tail_exit_ != nullptr) {
+    const auto &bound = static_cast<const core::let &>(
+        *tail_exit_->statements.front());
+    if (auto done = tail_value(*bound.value); !done) {
+      return done;
+    }
   }
   if (source.result != nullptr) {
     if (const auto *let = pattern_let(source.result.get())) {
       return carry_on(*let, *source.result);
     }
-    auto value = expr(*source.result);
-    if (!value.has_value()) {
-      return std::unexpected(value.error());
-    }
-    const auto span = (*value)->span;
-    stmts.push_back(hir::make<hir_expr_stmt>(span, std::move(*value)));
+    return tail_value(*source.result);
   }
   return {};
 }
@@ -231,7 +243,11 @@ auto core_lowerer::if_expr(const core::if_expr &source, type_id type)
   // An `elif` chain arrives as an `else` block holding the next `if`; the
   // old lowerer keeps the chain as the branches of one `hir_if`.
   for (const auto *current = &source; current != nullptr;) {
+    // A later condition runs only when the earlier ones fail.
+    const auto later = current != &source;
+    conditional_depth_ += later ? 1 : 0;
     auto condition = expr(*current->condition);
+    conditional_depth_ -= later ? 1 : 0;
     if (!condition.has_value()) {
       return std::unexpected(condition.error());
     }
@@ -307,7 +323,9 @@ auto core_lowerer::stmt_into(const core::stmt &source, ptr_vec<hir_node> &out,
                              std::optional<type_id> tail_type)
     -> core_result<void> {
   const auto first = out.size();
-  auto done = [&]() -> core_result<void> {
+  // In a task, what the statement waits for goes ahead of it.
+  auto hoisted = ptr_vec<hir_node>{};
+  auto done = hoisting(hoisted, [&]() -> core_result<void> {
     using k = core::node_kind;
     switch (source.kind) {
     case k::let:
@@ -348,9 +366,26 @@ auto core_lowerer::stmt_into(const core::stmt &source, ptr_vec<hir_node> &out,
     default:
       return refuse(source);
     }
-  }();
+  });
   if (!done.has_value()) {
     return done;
+  }
+  place_hoisted(hoisted, out, first);
+  // A `for` loop's element binding and the body spliced after it are
+  // statements of their own.
+  const auto spliced_body =
+      source.kind == core::node_kind::expr_stmt &&
+      static_cast<const core::expr_stmt &>(source).value != nullptr &&
+      static_cast<const core::expr_stmt &>(source).value->kind ==
+          core::node_kind::match_expr &&
+      static_cast<const core::match_expr &>(
+          *static_cast<const core::expr_stmt &>(source).value)
+              .form == core::match_form::for_element;
+  if (spliced_body) {
+    if (first < out.size()) {
+      out[first]->continues_statement = false;
+    }
+    return {};
   }
   for (auto i = first; i < out.size(); ++i) {
     out[i]->continues_statement = i > first;
@@ -435,6 +470,24 @@ auto core_lowerer::expr_stmt_into(const core::expr_stmt &source,
                                   std::optional<type_id> tail_type)
     -> core_result<void> {
   const auto &value = *source.value;
+  // A crew ends before a jump that leaves it.
+  if (value.kind == core::node_kind::call &&
+      static_cast<const core::call &>(value).target.kind ==
+          core::callee::form::intrinsic &&
+      static_cast<const core::call &>(value).target.name == "crew_end") {
+    return crew_end_call_into(static_cast<const core::call &>(value), out);
+  }
+  // A `crew` statement: its statements stand among the enclosing ones.
+  if (const auto *crew = crew_block(value)) {
+    auto result = crew_into(*crew, hir_type(value.type), out);
+    if (!result.has_value()) {
+      return std::unexpected(result.error());
+    }
+    if (*result != nullptr) {
+      out.push_back(hir::make<hir_expr_stmt>(source.span, std::move(*result)));
+    }
+    return {};
+  }
   // An `if` statement: in a block's tail it is the block's value, typed as
   // the block; elsewhere it stands alone, untyped.
   if (value.kind == core::node_kind::if_expr &&
@@ -524,8 +577,22 @@ auto core_lowerer::while_into(const core::while_loop &source,
     return while_let_into(*matched, out);
   }
   auto condition = ptr<hir_expr>{};
+  // In a task, what the condition waits for runs at the top of every
+  // iteration; elsewhere the condition is evaluated repeatedly.
+  auto hoisted = ptr_vec<hir_node>{};
   if (source.condition != nullptr) {
-    auto lowered = expr(*source.condition);
+    auto lowered = [&] {
+      if (in_task_body_ && hoist_ != nullptr) {
+        auto *const enclosing = std::exchange(hoist_, &hoisted);
+        auto made = expr(*source.condition);
+        hoist_ = enclosing;
+        return made;
+      }
+      ++conditional_depth_;
+      auto made = expr(*source.condition);
+      --conditional_depth_;
+      return made;
+    }();
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
@@ -577,6 +644,30 @@ auto core_lowerer::while_into(const core::while_loop &source,
       return std::unexpected(lowered.error());
     }
     step = std::move(*lowered);
+  }
+  if (!hoisted.empty()) {
+    // The condition waits for a task, and a wait is a statement, so the
+    // test moves into the loop: `while true: <wait>; if not cond: break;
+    // body`.
+    auto exit = ptr_vec<hir_node>{};
+    exit.push_back(hir::make<hir_break>(source.span));
+    auto branches = std::vector<hir_if_branch>{};
+    branches.push_back(hir_if_branch{
+        .condition = hir::make<hir_unary>(source.span,
+                                          checked_.types.bool_type(),
+                                          ast::unary_op::logical_not,
+                                          std::move(condition)),
+        .body = hir::make<hir_block>(source.span, k_unknown_type,
+                                     std::move(exit))});
+    hoisted.push_back(hir::make<hir_expr_stmt>(
+        source.span, hir::make<hir_if>(source.span, k_unknown_type,
+                                       std::move(branches), nullptr)));
+    for (auto &stmt : (*body)->stmts) {
+      hoisted.push_back(std::move(stmt));
+    }
+    (*body)->stmts = std::move(hoisted);
+    condition = hir::make<hir_literal>(source.span, checked_.types.bool_type(),
+                                       token_kind::kw_true, "true");
   }
   out.push_back(hir::make<hir_while>(source.span, std::move(condition),
                                 std::move(*body), std::move(step)));

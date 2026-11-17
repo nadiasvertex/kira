@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/comptime/fragments.h"
 #include "src/core/adapter_builder.h"
 #include "src/parser/ast_traversal.h"
 #include "src/parser/operators.h"
@@ -603,12 +604,22 @@ auto body_builder::place_of(const ast::expr &source) -> result<place> {
                   std::format("no owner for `{}`", global->second), source.span);
     }
     CORE_TRY(type, type_of(source));
+    // A read that takes a value of its own is the static's value built
+    // again, held as a temporary; any other reads the global in place.
+    if (fresh_static_read(source)) {
+      CORE_TRY(value, static_global_value(global->second, source.span));
+      return temporary(std::move(value));
+    }
     auto p = place{};
     p.root.kind = place_root::origin::global;
     p.root.name = global->second;
     p.root.module = owner->second;
     p.root.type = type;
     return p;
+  }
+  if (auto fragment = static_fragment_of(source)) {
+    CORE_TRY(value, std::move(*fragment));
+    return temporary(std::move(value));
   }
   switch (source.kind) {
   case ast::node_kind::group_expr: {
@@ -968,6 +979,10 @@ auto body_builder::static_value(const ast::expr &ref)
   }
   if (const auto global = checked_.static_global_refs.find(&ref);
       global != checked_.static_global_refs.end()) {
+    // A read the reader owns is the static's value built again.
+    if (fresh_static_read(ref)) {
+      return static_global_value(global->second, ref.span);
+    }
     auto p = place_of(ref);
     if (!p.has_value()) {
       return std::unexpected(p.error());
@@ -977,20 +992,107 @@ auto body_builder::static_value(const ast::expr &ref)
     }
     // A static owns its value; a read that takes one gets a fresh copy of
     // the recorded value, as lowering builds it.
-    for (const auto &[decl, def] : checked_.lowering.static_global_defs) {
-      if (def.name == global->second) {
-        return reified(def.value, ref.span);
-      }
-    }
-    return fail("missing record: static_global_defs",
-                std::format("no value for `{}`", global->second), ref.span);
+    return static_global_value(global->second, ref.span);
   }
-  if (checked_.lowering.static_fragment_refs.contains(&ref) ||
-      checked_.lowering.unreadable_static_refs.contains(&ref)) {
+  if (auto fragment = static_fragment_of(ref)) {
+    return std::move(*fragment);
+  }
+  if (checked_.lowering.unreadable_static_refs.contains(&ref)) {
     return fail("unreadable static", "a static with no run-time value",
                 ref.span);
   }
   return std::nullopt;
+}
+
+auto body_builder::fresh_static_read(const ast::expr &ref) -> bool {
+  return fresh_static_reads_ || owned_static_reads().contains(&ref);
+}
+
+auto body_builder::static_global_value(const std::string &name,
+                                       source_span span) -> result<ptr<expr>> {
+  // The record `static_global::value` is built from.
+  for (const auto &[decl, def] : checked_.lowering.static_global_defs) {
+    if (def.name == name) {
+      return reified(def.value, span);
+    }
+  }
+  return fail("missing record: static_global_defs",
+              std::format("no value for `{}`", name), span);
+}
+
+auto body_builder::static_fragment_of(const ast::expr &ref)
+    -> std::optional<result<ptr<expr>>> {
+  const auto found = checked_.lowering.static_fragment_refs.find(&ref);
+  if (found == checked_.lowering.static_fragment_refs.end()) {
+    return std::nullopt;
+  }
+  if (!compile_time_) {
+    return fail("unreadable static", "a static with no run-time value",
+                ref.span);
+  }
+  auto type = type_of(ref);
+  if (!type.has_value()) {
+    return std::unexpected(type.error());
+  }
+  return host_call_of("static", found->second, {}, *type, ref.span);
+}
+
+auto body_builder::host_call_of(std::string operation, const void *subject,
+                                ptr_vec<expr> args, type_id type,
+                                source_span span) -> result<ptr<expr>> {
+  if (!compile_time_) {
+    return fail("quote_expr",
+                "quoted syntax exists only while compiling, so run-time code "
+                "cannot build or read it",
+                span);
+  }
+  auto made = make_node<host_call>(span, type);
+  made->operation = std::move(operation);
+  made->subject = subject;
+  made->args = std::move(args);
+  return ptr<expr>(std::move(made));
+}
+
+auto body_builder::quote_of(const ast::quote_expr &quote) -> result<ptr<expr>> {
+  if (!compile_time_) {
+    return fail("quote_expr", "quoted syntax exists only while compiling",
+                quote.span);
+  }
+  CORE_TRY(type, type_of(quote));
+  // The splices the quote resolves as it is evaluated are computed first,
+  // as ordinary code; the compiler then builds the syntax from them.
+  auto splices = ptr_vec<expr>{};
+  for (const auto *splice : comptime::fragment_builder::eager_splices(quote)) {
+    const auto *operand =
+        splice->kind == ast::node_kind::splice_expr
+            ? ast::cast<const ast::splice_expr>(*splice).operand.get()
+            : ast::cast<const ast::splice_type>(*splice).operand.get();
+    if (operand == nullptr) {
+      return fail("quote_expr", "a splice with nothing to splice",
+                  splice->span);
+    }
+    CORE_TRY(value, value_of(*operand));
+    splices.push_back(std::move(value));
+  }
+  return host_call_of("quote", &quote, std::move(splices), type, quote.span);
+}
+
+auto body_builder::fragment_builder_of(const ast::call_expr &call,
+                                       std::string_view name, type_id type)
+    -> result<ptr<expr>> {
+  if (!compile_time_) {
+    return fail("quote builder", "a builder of quoted syntax", call.span);
+  }
+  auto args = ptr_vec<expr>{};
+  for (const auto &arg : call.args) {
+    if (arg.value == nullptr) {
+      return fail("quote builder", "an argument is missing", call.span);
+    }
+    CORE_TRY(value, value_of(*arg.value));
+    args.push_back(std::move(value));
+  }
+  return host_call_of(std::format("expr.{}", name), nullptr, std::move(args),
+                      type, call.span);
 }
 
 auto body_builder::function_ref_of(const semantic::resolved_callee &resolved,
@@ -1575,7 +1677,7 @@ auto body_builder::value_of_node(const ast::expr &source)
   case ast::node_kind::crew_expr: {
     const auto &crew = ast::cast<const ast::crew_expr>(source);
     CORE_TRY(type, type_of(source));
-    return crew_of(crew.name, crew.body, source.span, type);
+    return crew_of(&source, crew.name, crew.body, source.span, type);
   }
   case ast::node_kind::call_expr:
     return call_of(ast::cast<const ast::call_expr>(source));
@@ -1669,6 +1771,8 @@ auto body_builder::value_of_node(const ast::expr &source)
     return try_of(ast::cast<const ast::try_expr>(source));
   case ast::node_kind::or_else_expr:
     return or_else_of(ast::cast<const ast::or_else_expr>(source));
+  case ast::node_kind::quote_expr:
+    return quote_of(ast::cast<const ast::quote_expr>(source));
   default:
     return fail(kind_name(source.kind), "no core form yet", source.span);
   }
@@ -1959,11 +2063,12 @@ auto body_builder::same_module_callee(const ast::call_expr &call)
       checked_.ownership.generic_lambda_refs.contains(ident)) {
     return std::nullopt;
   }
-  const auto found = module_functions_.find(ident->name);
-  if (found == module_functions_.end() || found->second == nullptr) {
+  const auto *found =
+      functions_ == nullptr ? nullptr : (*functions_)(module_name_, ident->name);
+  if (found == nullptr) {
     return std::nullopt;
   }
-  return callee_of(semantic::resolved_callee{.decl = found->second,
+  return callee_of(semantic::resolved_callee{.decl = found,
                                              .owner_module = module_name_,
                                              .impl_target_type = {},
                                              .receiver = nullptr,
@@ -2088,6 +2193,9 @@ auto body_builder::call_of(const ast::call_expr &call) -> result<ptr<expr>> {
     const auto &field = ast::cast<const ast::field_expr>(*call.callee);
     if (const auto *object = ast::as<const ast::ident_expr>(field.object.get());
         object != nullptr && object->name == "expr") {
+      if (comptime::fragment_builder::is_builder(field.field_name)) {
+        return fragment_builder_of(call, field.field_name, type);
+      }
       return fail("quote builder", "a builder of quoted syntax", call.span);
     }
     if (auto built = builtin_method(call, field)) {

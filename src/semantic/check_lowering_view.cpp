@@ -513,7 +513,9 @@ auto checker::prepare_for_lowering(const ast::func_decl &decl)
     return std::unexpected(std::string("its declaration has an error"));
   }
   if (decl.modifiers.is_intrinsic) {
-    // Nothing to lower: the backends implement an intrinsic by name.
+    // Nothing to lower: the backends implement an intrinsic by name. Its
+    // signature is still read where a call names it by name alone.
+    project_signature(decl);
     lowering_view_state_.prepared.insert(&decl);
     return {};
   }

@@ -18,6 +18,25 @@
 
 namespace cinder::core {
 
+namespace {
+
+/// A `return`, or the exit block `return_of` makes for one (`let return =
+/// value; <post checks>; return return`), which has checked already.
+auto ends_in_return(const stmt &last) -> bool {
+  if (last.kind == node_kind::return_stmt) {
+    return true;
+  }
+  if (last.kind != node_kind::expr_stmt) {
+    return false;
+  }
+  const auto *exit =
+      dynamic_cast<const block *>(static_cast<const expr_stmt &>(last).value.get());
+  return exit != nullptr && !exit->statements.empty() &&
+         exit->statements.back()->kind == node_kind::return_stmt;
+}
+
+} // namespace
+
 auto body_builder::contract_check_of(const ast::expr &condition,
                                      std::string message, source_span span,
                                      contract_check::clause kind)
@@ -80,6 +99,9 @@ auto body_builder::return_of(ptr<expr> value, source_span span,
 
 auto body_builder::contracts_into(const ast::func_decl &decl, block &body)
     -> result<void> {
+  if (!contract_checks_) {
+    return {};
+  }
   auto pre = ptr_vec<stmt>{};
   for (const auto &contract : decl.contracts) {
     if (contract.condition == nullptr ||
@@ -116,14 +138,16 @@ auto body_builder::contracts_into(const ast::func_decl &decl, block &body)
     body.statements.push_back(std::move(exit));
     return {};
   }
-  if (!body.statements.empty() &&
-      body.statements.back()->kind == node_kind::return_stmt) {
+  if (!body.statements.empty() && ends_in_return(*body.statements.back())) {
     return {};
   }
   return post_checks_into(body.statements);
 }
 
 auto body_builder::invariant_of(type_id type) const -> const ast::expr * {
+  if (!contract_checks_) {
+    return nullptr;
+  }
   const auto &entry = checked_.types.entry(type);
   if (entry.decl == nullptr || entry.decl->invariant == nullptr ||
       entry.decl->invariant->has_error) {

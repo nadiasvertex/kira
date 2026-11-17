@@ -1,0 +1,9 @@
+# todo: 44
+# tier: both
+# currently-error: this `static` declaration is not lowered as a function-body statement
+# want: a `static let` inside a function body compiles; main returns 1.
+module known_gaps.local_static_let
+
+def main() -> int32:
+    static let k: int32 = 5
+    return 1

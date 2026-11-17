@@ -1,6 +1,8 @@
 #include "lowering_stage.h"
 
 #include <format>
+#include <string>
+#include <unordered_set>
 #include <utility>
 
 #include "src/hir/frame_budget.h"
@@ -116,13 +118,75 @@ static auto check_frame_budgets(hir::hir_module &module,
   return violations.empty();
 }
 
+auto hir_module_name(const parsed_input &input) -> std::string {
+  const auto module_path = input.ast_file != nullptr &&
+                                   input.ast_file->module_decl != nullptr
+                               ? input.ast_file->module_decl->path
+                               : std::vector<std::string>{};
+  auto name = join_strings(module_path, ".");
+  if (name.empty()) {
+    name = source_stem_or_default(input.source_path);
+  }
+  return name;
+}
+
+/// Takes the modules the core lowering made (`cli_config::lower_from_core_
+/// only`) and reports each one it could not make, as a failure of the AST
+/// lowering is reported.
+static auto take_core_modules(const cli_config &cfg,
+                              const std::vector<parsed_input> &parsed_inputs,
+                              hir::core_program_lowering &core_only,
+                              runtime::value_layouts &layouts,
+                              const diagnostic_renderer &renderer,
+                              compile_report &report)
+    -> hir::ptr_vec<hir::hir_module> {
+  auto lowered_modules = hir::ptr_vec<hir::hir_module>{};
+  const auto fallback_file = parsed_inputs.empty()
+                                 ? file_id_type{0}
+                                 : parsed_inputs.front().file_id;
+  // One report per module: its first failure.
+  auto reported = std::unordered_set<std::string>{};
+  for (const auto &failure : core_only.failures) {
+    if (!reported.insert(failure.module).second) {
+      continue;
+    }
+    const auto error = hir::lowering_error{
+        .kind = hir::lowering_error_kind::unsupported_construct,
+        .span = failure.span,
+        .message = failure.message};
+    report.hir_modules.push_back(hir_lowering_result{
+        .module_path = failure.module,
+        .lowered = false,
+        .error = std::format("{} (byte offset {})", failure.message,
+                             failure.span.start)});
+    report_lowering_failure(cfg, error, failure.module,
+                            failure.file_id.value_or(fallback_file), renderer,
+                            report);
+  }
+  // A submodule's spans are in its parent's file.
+  auto file = fallback_file;
+  for (auto &module : core_only.modules) {
+    if (module->file_id.has_value()) {
+      file = *module->file_id;
+    }
+    report.hir_modules.push_back(hir_lowering_result{
+        .module_path = module->module_name, .lowered = true, .error = {}});
+    if (check_frame_budgets(*module, layouts, file, renderer, report)) {
+      lowered_modules.push_back(std::move(module));
+    }
+  }
+  core_only.modules.clear();
+  return lowered_modules;
+}
+
 auto lower_and_emit_modules(const cli_config &cfg,
                             const std::vector<parsed_input> &parsed_inputs,
                             const std::vector<bool> &file_has_errors,
                             const semantic::checked_types &checked,
                             const std::filesystem::path &metadata_root,
                             const diagnostic_renderer &renderer,
-                            compile_report &report)
+                            compile_report &report,
+                            hir::core_program_lowering *core_only)
     -> hir::ptr_vec<hir::hir_module> {
   auto lowered_modules = hir::ptr_vec<hir::hir_module>{};
   // Checking is over, so every instance's shape is settled.
@@ -154,14 +218,11 @@ auto lower_and_emit_modules(const cli_config &cfg,
         .metadata_path = std::move(*metadata_path),
     });
 
-    if (cfg.parse_only) {
+    if (cfg.parse_only || core_only != nullptr) {
       continue;
     }
 
-    auto module_name = join_strings(module_path, ".");
-    if (module_name.empty()) {
-      module_name = source_stem_or_default(input.source_path);
-    }
+    const auto module_name = hir_module_name(input);
     auto lowered_result = hir::lower_module(
         *input.ast_file, module_name, checked,
         hir::lowering_options{.contract_checks = cfg.contract_checks});
@@ -219,6 +280,10 @@ auto lower_and_emit_modules(const cli_config &cfg,
   // here and append them, so a `use m[args] as db` program's `db.f(...)`
   // calls resolve to a real compiled module. Skipped under `--parse-only`,
   // which produces no HIR at all.
+  if (core_only != nullptr && !cfg.parse_only) {
+    return take_core_modules(cfg, parsed_inputs, *core_only, layouts, renderer,
+                             report);
+  }
   if (!cfg.parse_only) {
     auto functor_modules = hir::lower_functor_modules(
         checked, hir::lowering_options{.contract_checks = cfg.contract_checks});

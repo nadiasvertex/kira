@@ -1,0 +1,13 @@
+# todo: 45
+# tier: both
+# currently-error: range is missing a bound
+# want: `for i in 3..:` runs until `break`; main returns 18 (3+4+5+6).
+module known_gaps.open_range_in_for
+
+def main() -> int32:
+    var s: int32 = 0
+    for i in 3..:
+        if i > 6:
+            break
+        s = s + i
+    return s

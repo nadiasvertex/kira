@@ -1,0 +1,15 @@
+# todo: 52
+# tier: both
+# currently-error: `?` operand did not resolve to a concrete result/option type
+# want: the checker accepts or rejects `?` on a `&option[int32]` with its own diagnostic; it is never left to code generation.
+module known_gaps.try_on_reference
+
+def g(o: &option[int32]) -> option[int32]:
+    let v = o?
+    return @some(v)
+
+def main() -> int32:
+    let o: option[int32] = @some(3)
+    match g(&o):
+        @some(v) => return v
+        @none => return 0

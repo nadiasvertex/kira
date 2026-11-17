@@ -62,13 +62,11 @@ auto vm_backend::call(semantic::comptime_program &program,
     -> std::expected<comptime::value, semantic::comptime_failure> {
   auto found = programs_.find(fn.decl);
   if (found == programs_.end()) {
-    auto compiled = compile_program(program, fn);
+    auto compiled = compile_program(program, fn, lowering_, &memo_);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
     }
-    for (const auto &[decl, fingerprint] : compiled->fingerprints) {
-      fingerprints_.emplace(decl, fingerprint);
-    }
+    remember(*compiled);
     found =
         programs_
             .emplace(fn.decl,
@@ -90,13 +88,11 @@ auto vm_backend::evaluate(semantic::comptime_program &program,
   }
   auto found = expression_programs_.find(key);
   if (found == expression_programs_.end()) {
-    auto compiled = compile_expression(program, expr);
+    auto compiled = compile_expression(program, expr, lowering_, &memo_);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
     }
-    for (const auto &[decl, fingerprint] : compiled->fingerprints) {
-      fingerprints_.emplace(decl, fingerprint);
-    }
+    remember(*compiled);
     found =
         expression_programs_
             .emplace(std::move(key),
@@ -258,18 +254,43 @@ auto vm_backend::run(semantic::comptime_program &program,
   return std::move(*value);
 }
 
-auto vm_backend::verify(const semantic::checked_types &checked) const
+auto vm_backend::remember(const compiled_program &compiled) -> void {
+  for (const auto &[decl, fingerprint] : compiled.fingerprints) {
+    fingerprints_.emplace(decl, fingerprint);
+  }
+  for (const auto &[decl, name] : compiled.names) {
+    names_.emplace(decl, name);
+  }
+}
+
+auto vm_backend::verify(semantic::checked_types &checked) const
     -> std::vector<std::string> {
   auto differences = std::vector<std::string>{};
   for (const auto &[decl, fingerprint] : fingerprints_) {
-    auto lowered = hir::lower_function(
-        *decl, checked,
-        hir::lowering_options{.contract_checks = true, .compile_time = true});
+    auto lowered = std::expected<hir::ptr<hir::hir_function>, std::string>{};
+    if (const auto name = names_.find(decl);
+        lowering_.from_core && name != names_.end()) {
+      lowered = lower_from_core_again(*decl, name->second, checked, memo_);
+      if (lowered.has_value()) {
+        (*lowered)->name = name->second.name;
+      }
+    } else if (auto old = hir::lower_function(
+                   *decl, checked,
+                   hir::lowering_options{.contract_checks = true,
+                                         .compile_time = true});
+               old.has_value()) {
+      lowered = std::move(*old);
+      if (name != names_.end()) {
+        (*lowered)->name = name->second.name;
+      }
+    } else {
+      lowered = std::unexpected(old.error().message);
+    }
     if (!lowered.has_value()) {
       differences.push_back(std::format(
           "`{}` lowered for compile-time code but not from the final results: "
           "{}",
-          decl->name, lowered.error().message));
+          decl->name, lowered.error()));
       continue;
     }
     if (hir_fingerprint(**lowered) != fingerprint) {

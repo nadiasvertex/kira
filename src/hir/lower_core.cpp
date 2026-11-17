@@ -1,5 +1,6 @@
 #include "src/hir/lower_core.h"
 
+#include <algorithm>
 #include <format>
 #include <string>
 #include <unordered_map>
@@ -16,16 +17,55 @@ namespace cinder::hir {
 
 namespace {
 
-/// What of `schedule` this lowering cannot emit yet.
-[[nodiscard]] auto pending_drops(const drop_schedule &schedule)
-    -> std::optional<std::string> {
-  if (!schedule.owned_static_reads.empty()) {
-    return "owned static reads";
-  }
-  return std::nullopt;
+} // namespace
+
+/// Whether `function` is a trait default the checker copied for a generic
+/// impl (`synthesized_trait_defaults`) whose signature names the impl's
+/// parameters. The core keeps such a copy as a template, but the old lowerer
+/// lowers it once with those parameters left abstract, and every call names
+/// that one function; lowered here, it replaces it. Phase 5 of
+/// spec/unified-checker-plan.md instantiates generic impls, which replaces
+/// this.
+auto is_type_erased_default_copy(const core::function &function,
+                                 const core::module &module,
+                                 const semantic::checked_types &checked)
+    -> bool {
+  return std::ranges::any_of(
+      checked.lowering.synthesized_trait_defaults,
+      [&](const semantic::synthesized_method &copy) -> bool {
+        return copy.decl != nullptr && copy.owner_module == module.name &&
+               std::format("{}::{}", copy.target_type_name, copy.decl->name) ==
+                   function.name;
+      });
 }
 
-} // namespace
+auto hir_module_names(const core_lowering_input &input)
+    -> std::unordered_map<const core::module *, std::string> {
+  // The core name of each file's own module: the first core module built
+  // from that file.
+  auto file_core_names = std::unordered_map<file_id_type, std::string>{};
+  for (const auto *module : input.modules) {
+    if (module->file_id.has_value()) {
+      file_core_names.try_emplace(*module->file_id, module->name);
+    }
+  }
+  auto names = std::unordered_map<const core::module *, std::string>{};
+  for (const auto *module : input.modules) {
+    auto name = module->name;
+    if (module->file_id.has_value()) {
+      const auto hir = input.file_module_names.find(*module->file_id);
+      const auto core = file_core_names.find(*module->file_id);
+      if (hir != input.file_module_names.end() &&
+          core != file_core_names.end() && core->second.empty()) {
+        name = module->name.empty()
+                   ? hir->second
+                   : std::format("{}.{}", hir->second, module->name);
+      }
+    }
+    names.emplace(module, std::move(name));
+  }
+  return names;
+}
 
 auto core_kind_name(core::node_kind kind) -> std::string {
   using k = core::node_kind;
@@ -46,6 +86,7 @@ auto core_kind_name(core::node_kind kind) -> std::string {
   case k::if_expr: return "if_expr";
   case k::match_expr: return "match_expr";
   case k::await_expr: return "await_expr";
+  case k::host_call: return "host_call";
   case k::let: return "let";
   case k::assign: return "assign";
   case k::expr_stmt: return "expr_stmt";
@@ -68,15 +109,15 @@ auto core_lowerer::function(const core::function &source)
       source.coroutine == core::coroutine_kind::generator;
   const auto is_task = source.coroutine == core::coroutine_kind::task;
   in_task_body_ = is_task;
+  hoist_ = nullptr;
+  compile_time_ = source.compile_time;
+  function_name_ = source.decl->name;
   // HIR passes a consumed receiver by reference to a callee that owns it
   // (`hir_function::owns_receiver`); the core's `self` is the value.
   const auto consuming = source.receiver == core::receiver_mode::consuming;
   // The drop schedule is keyed by AST node; the old lowerer computes it the
   // same way, from the declaration.
   drops_.start(compute_drop_schedule(*source.decl, checked_));
-  if (const auto pending = pending_drops(drops_.schedule())) {
-    return refuse(*pending, source.span);
-  }
   if (source.params.size() != source.decl->params.size()) {
     return refuse("parameters the declaration does not have", source.span);
   }
@@ -216,26 +257,64 @@ auto core_lowerer::function(const core::function &source)
       item_type);
   made->owns_receiver =
       !made->params.empty() && owns_receiver(checked_, source.decl);
-  auto temporary_drop = std::optional<unsupported>{};
-  make_references_explicit(
-      *made, checked_, [this]() -> symbol_id { return mint(); },
-      [&](const temporary &temp, ptr_vec<hir_node> &out) -> void {
-        if (temporary_drop.has_value()) {
-          return;
-        }
-        if (auto dropped = drops_.drop_temporary(temp, out); !dropped) {
-          temporary_drop = refuse_drop(dropped.error()).error();
-        }
-      },
-      [this](const void *origin) -> std::optional<const void *> {
-        return drops_.temporary_end(origin);
-      });
-  if (temporary_drop.has_value()) {
-    return std::unexpected(*temporary_drop);
+  if (auto finished = explicit_references(*made); !finished) {
+    return std::unexpected(finished.error());
   }
   mark_tail_calls(*made);
+  // The task blocks' functions, which the module holds beside this one.
+  made->nested = take_nested();
   static_cast<void>(options_);
   return made;
+}
+
+auto core_lowerer::expression_function(const core::function &source)
+    -> core_result<ptr<hir_function>> {
+  // Nothing it owns is dropped: it runs once, while compiling.
+  drops_.start({});
+  compile_time_ = true;
+  function_name_ = source.name;
+  if (source.body == nullptr || source.body->result == nullptr ||
+      !source.body->statements.empty()) {
+    return refuse("compile-time expression with no value", source.span);
+  }
+  push_scope();
+  auto params = std::vector<hir_param>{};
+  for (const auto &param : source.params) {
+    const auto symbol = declare(param.symbol, param.name);
+    params.push_back(hir_param{
+        .symbol = symbol, .name = param.name, .type = hir_type(param.type)});
+  }
+  auto value = expr(*source.body->result);
+  pop_scope();
+  if (!value.has_value()) {
+    return std::unexpected(value.error());
+  }
+  const auto return_type = hir_type(source.return_type);
+  auto stmts = ptr_vec<hir_node>{};
+  stmts.push_back(hir::make<hir_return>(source.span, std::move(*value)));
+  auto made = hir::make<hir_function>(
+      source.span, source.name, std::move(params), return_type,
+      hir::make<hir_block>(source.span, return_type, std::move(stmts)),
+      coroutine_kind::none, k_unknown_type);
+  if (auto finished = explicit_references(*made); !finished) {
+    return std::unexpected(finished.error());
+  }
+  mark_tail_calls(*made);
+  made->nested = take_nested();
+  return made;
+}
+
+auto lower_core_comptime_function(const core::function &function,
+                                  std::string_view module,
+                                  const semantic::checked_types &checked)
+    -> std::expected<ptr<hir_function>, unsupported> {
+  static const auto options =
+      lowering_options{.contract_checks = true, .compile_time = true};
+  auto lowerer = core_lowerer(checked, options, module, module);
+  if (function.decl == nullptr) {
+    return lowerer.expression_function(function);
+  }
+  return lowerer.function(function);
 }
 
 auto lower_core_function(const core::function &function,
@@ -254,26 +333,9 @@ auto substitute_core_functions(ptr_vec<hir_module> &modules,
                                const lowering_options &options,
                                const replace_fn &on_replace)
     -> std::vector<core_lowering_record> {
-  // The core name of each file's own module: the first core module built
-  // from that file.
-  auto file_core_names = std::unordered_map<file_id_type, std::string>{};
-  for (const auto *module : input.modules) {
-    if (module->file_id.has_value()) {
-      file_core_names.try_emplace(*module->file_id, module->name);
-    }
-  }
+  const auto names = hir_module_names(input);
   const auto hir_name_of = [&](const core::module &module) -> std::string {
-    if (!module.file_id.has_value()) {
-      return module.name;
-    }
-    const auto hir = input.file_module_names.find(*module.file_id);
-    const auto core = file_core_names.find(*module.file_id);
-    if (hir == input.file_module_names.end() ||
-        core == file_core_names.end() || !core->second.empty()) {
-      return module.name;
-    }
-    return module.name.empty() ? hir->second
-                               : std::format("{}.{}", hir->second, module.name);
+    return names.at(&module);
   };
   // (HIR module, function name) to the core function and its module.
   struct source_function {
@@ -284,7 +346,8 @@ auto substitute_core_functions(ptr_vec<hir_module> &modules,
   for (const auto *module : input.modules) {
     const auto hir_module = hir_name_of(*module);
     for (const auto &function : module->functions) {
-      if (!function->generic_params.empty()) {
+      if (!function->generic_params.empty() &&
+          !is_type_erased_default_copy(*function, *module, checked)) {
         continue;
       }
       sources.try_emplace(std::format("{}\n{}", hir_module, function->name),
@@ -294,16 +357,36 @@ auto substitute_core_functions(ptr_vec<hir_module> &modules,
   }
   auto records = std::vector<core_lowering_record>{};
   for (auto &module : modules) {
+    // The functions the task blocks of a function lowered from the core
+    // made, by name. The old lowerer put its own copies after the
+    // function that made them; these replace them.
+    auto nested = std::unordered_map<std::string, ptr<hir_function>>{};
+    // Those of a function that fell back, which keeps the old ones.
+    auto kept = std::unordered_map<std::string, std::string>{};
     for (auto &function : module->functions) {
       auto record = core_lowering_record{.module = module->module_name,
                                          .function = function->name,
                                          .from_core = false,
                                          .fallback = {},
                                          .span = function->span};
+      if (auto made = nested.find(function->name); made != nested.end()) {
+        record.from_core = true;
+        if (on_replace) {
+          on_replace(*module, *function, *made->second);
+        }
+        function = std::move(made->second);
+        nested.erase(made);
+        records.push_back(std::move(record));
+        continue;
+      }
       const auto found = sources.find(
           std::format("{}\n{}", module->module_name, function->name));
       if (found == sources.end()) {
-        record.fallback = "not built by the adapter";
+        const auto enclosing = kept.find(function->name);
+        record.fallback =
+            enclosing != kept.end()
+                ? std::format("made by `{}`, which fell back", enclosing->second)
+                : "not built by the adapter";
         records.push_back(std::move(record));
         continue;
       }
@@ -315,14 +398,37 @@ auto substitute_core_functions(ptr_vec<hir_module> &modules,
         record.fallback = lowered.error().kind;
         record.span = lowered.error().span;
         records.push_back(std::move(record));
+        // Its task blocks are named after it and its position.
+        for (const auto &other : module->functions) {
+          const auto &name = other->name;
+          for (const auto *prefix : {"<task block ", "<on "}) {
+            if (name.starts_with(std::format("{}{}@", prefix, function->name))) {
+              kept.try_emplace(name, function->name);
+            }
+          }
+        }
         continue;
       }
+      for (auto &made : (*lowered)->nested) {
+        auto name = made->name;
+        nested.try_emplace(std::move(name), std::move(made));
+      }
+      (*lowered)->nested.clear();
       record.from_core = true;
       if (on_replace) {
         on_replace(*module, *function, **lowered);
       }
       function = std::move(*lowered);
       records.push_back(std::move(record));
+    }
+    // A task function the old lowerer did not make goes after the others.
+    for (auto &[name, made] : nested) {
+      records.push_back(core_lowering_record{.module = module->module_name,
+                                             .function = name,
+                                             .from_core = true,
+                                             .fallback = {},
+                                             .span = made->span});
+      module->functions.push_back(std::move(made));
     }
   }
   return records;

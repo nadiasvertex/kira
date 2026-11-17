@@ -1,0 +1,36 @@
+module codegen_stress.post_at_explicit_return
+
+# expect: 47
+
+# A postcondition the checker cannot prove is checked at each `return`
+# statement and at a `?` exit, with the returned value bound to `return`.
+# Every check holds here. A body that ends in a `return` statement must not
+# check the postcondition a second time outside the scope of `return`.
+
+def opaque(x: int32) -> int32:
+    return x
+
+def double(x: int32) -> int32
+post return >= 0, "non-negative"
+:
+    if x < 0:
+        return 0
+    return x * 2
+
+def parse(x: int32) -> result[int32, int32]:
+    if x > 100:
+        return @err(x)
+    return @ok(x)
+
+def checked(x: int32) -> result[int32, int32]
+post (return or else 0) >= 0, "non-negative"
+:
+    let v = parse(x)?
+    return @ok(v + 1)
+
+def main() -> int32:
+    let a = double(opaque(20))
+    let b = double(opaque(-5))
+    let c = checked(opaque(6)) or else 0
+    let d = checked(opaque(500)) or else 0
+    return a + b + c + d

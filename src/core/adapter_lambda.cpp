@@ -26,6 +26,7 @@ auto body_builder::load_capture_records() -> void {
   }
   auto records = borrowed_records{};
   auto tasks = task_records{};
+  auto owned_reads = std::unordered_set<const void *>{};
   if (decl_ != nullptr) {
     for (auto &cfg :
          semantic::ownership::build_function_cfgs(*decl_, checked_)) {
@@ -35,10 +36,19 @@ auto body_builder::load_capture_records() -> void {
       for (auto &[block, list] : cfg.task_captures) {
         tasks.insert_or_assign(block, std::move(list));
       }
+      owned_reads.insert(cfg.owned_static_reads.begin(),
+                         cfg.owned_static_reads.end());
     }
   }
   borrowed_captures_ = std::move(records);
   task_captures_ = std::move(tasks);
+  owned_static_reads_ = std::move(owned_reads);
+}
+
+auto body_builder::owned_static_reads()
+    -> const std::unordered_set<const void *> & {
+  load_capture_records();
+  return *owned_static_reads_;
 }
 
 auto body_builder::borrowed_captures() -> const borrowed_records & {

@@ -1794,6 +1794,13 @@ auto test_c5_compiler_operations() -> void {
   bad(op_call(w, "needs_drop", {}, usize, {list}), "C5", "needs_drop: a result that is not `bool`");
   bad(op_call(w, "needs_drop", {}, boolean, {list, i32}), "C5", "needs_drop: two generic arguments");
 
+  // bitwise_copy (todo 39)
+  ok(op_call(w, "bitwise_copy", {ref_list}, list, {list}), "bitwise_copy: `&list` to `list`");
+  bad(op_call(w, "bitwise_copy", {list}, list, {list}), "C5", "bitwise_copy: a value operand");
+  bad(op_call(w, "bitwise_copy", {ref_list}, i32, {list}), "C5",
+      "bitwise_copy: a result that is not the referent");
+  bad(op_call(w, "bitwise_copy", {ref_list}, list), "C5", "bitwise_copy: no generic argument");
+
   // Strings.
   ok(op_call(w, "rt_str_concat", {str, str}, str), "rt_str_concat");
   bad(op_call(w, "rt_str_concat", {str, i32}, str), "C5", "rt_str_concat: a non-`str` operand");
@@ -1846,8 +1853,28 @@ auto test_c5_compiler_operations() -> void {
   ok(op_call(w, "task_get", {ref_task_err}, w.result_i32_str), "task_get: a fallible task");
   bad(op_call(w, "task_get", {ref_task}, boolean), "C5", "task_get: a result the task does not await");
   bad(op_call(w, "task_get", {ref_task_err}, i32), "C5", "task_get: a fallible task's bare value");
-  ok(op_call(w, "crew_errors", {ref_crew}, list_str), "crew_errors");
-  bad(op_call(w, "crew_errors", {ref_crew}, i32), "C5", "crew_errors: a non-list result");
+  // `crew_errors[task](&crew, new, push)`.
+  const auto errors = [&](tid crew_operand, tid result, tid task, tid made, tid push) {
+    return op_call(w, "crew_errors", {crew_operand, made, push}, result, {task});
+  };
+  const auto new_of = [&](tid result) { return t.fn_of({}, result); };
+  const auto push_of = [&](tid result, tid element) {
+    return t.fn_of({t.ref_to(result, true), element}, unit);
+  };
+  ok(errors(ref_crew, list_str, w.task_err, new_of(list_str), push_of(list_str, str)),
+     "crew_errors");
+  bad(errors(ref_crew, i32, w.task_err, new_of(i32), push_of(i32, str)), "C5",
+      "crew_errors: a non-list result");
+  bad(op_call(w, "crew_errors", {ref_crew}, list_str, {w.task_err}), "C5",
+      "crew_errors: no `new` and `push`");
+  bad(errors(ref_crew, list_str, w.task_i32, new_of(list_str), push_of(list_str, str)), "C5",
+      "crew_errors: an infallible task");
+  bad(op_call(w, "crew_errors", {ref_crew, new_of(list_str), push_of(list_str, str)}, list_str),
+      "C5", "crew_errors: no task type");
+  bad(errors(ref_crew, list_str, w.task_err, new_of(list), push_of(list_str, str)), "C5",
+      "crew_errors: a `new` making another list");
+  bad(errors(ref_crew, list_str, w.task_err, new_of(list_str), push_of(list_str, i32)), "C5",
+      "crew_errors: a `push` of another element");
   {
     auto list_decl = ast::type_decl{};
     list_decl.name = "list";
@@ -1855,19 +1882,24 @@ auto test_c5_compiler_operations() -> void {
     auto other_decl = ast::type_decl{};
     other_decl.name = "other";
     other_decl.definition = ast::make<ast::struct_type_def>();
-    ok(op_call(w, "crew_errors", {ref_crew}, t.user_type(list_decl, "std.list", {str})),
+    const auto std_list = t.user_type(list_decl, "std.list", {str});
+    ok(errors(ref_crew, std_list, w.task_err, new_of(std_list), push_of(std_list, str)),
        "crew_errors: the standard library's `list[E]` struct");
     auto user_list_decl = ast::type_decl{};
     user_list_decl.name = "list";
     user_list_decl.definition = ast::make<ast::struct_type_def>();
-    bad(op_call(w, "crew_errors", {ref_crew}, t.user_type(user_list_decl, "m", {str})), "C5",
-        "crew_errors: a `list` struct of another module");
-    bad(op_call(w, "crew_errors", {ref_crew}, t.user_type(other_decl, "std.list", {str})), "C5",
+    const auto user_list = t.user_type(user_list_decl, "m", {str});
+    bad(errors(ref_crew, user_list, w.task_err, new_of(user_list), push_of(user_list, str)),
+        "C5", "crew_errors: a `list` struct of another module");
+    const auto other = t.user_type(other_decl, "std.list", {str});
+    bad(errors(ref_crew, other, w.task_err, new_of(other), push_of(other, str)), "C5",
         "crew_errors: a struct of `std.list` that is not `list`");
-    bad(op_call(w, "crew_errors", {ref_crew}, t.user_type(list_decl, "std.list", {})), "C5",
+    const auto bare = t.user_type(list_decl, "std.list", {});
+    bad(errors(ref_crew, bare, w.task_err, new_of(bare), push_of(bare, str)), "C5",
         "crew_errors: a `list` struct with no element type");
   }
-  bad(op_call(w, "crew_errors", {crew}, list_str), "C5", "crew_errors: a crew by value");
+  bad(errors(crew, list_str, w.task_err, new_of(list_str), push_of(list_str, str)), "C5",
+      "crew_errors: a crew by value");
   (void)gen_unit;
 }
 
@@ -2594,6 +2626,46 @@ auto test_e11_await() -> void {
   bad(run(w.pair, sym::p), "E11", "`await` of a struct");
 }
 
+auto host_of(tid t, std::string operation, const void *subject, ptr_vec<expr> args)
+    -> ptr<expr> {
+  auto h = std::make_unique<host_call>(k_span, t);
+  h->operation = std::move(operation);
+  h->subject = subject;
+  h->args = std::move(args);
+  return h;
+}
+
+auto test_e12_host_call() -> void {
+  begin("E12");
+  auto w = world{};
+  // Any address stands for the syntax a host call is about.
+  static const int quoted = 0;
+  const auto run = [&](ptr<expr> call, bool compile_time = true) {
+    auto f = std_fn(w, w.unit, S(ex(std::move(call))));
+    f->compile_time = compile_time;
+    return verify_one(w, std::move(f));
+  };
+  ok(run(host_of(w.i32, "quote", &quoted, E(num(w), use_of(w, loc(w, sym::n))))),
+     "a quote with its splices' values, in compile-time code");
+  ok(run(host_of(w.i32, "static", &quoted, {})), "the syntax a `static` holds");
+  ok(run(host_of(w.i32, "expr.lit", nullptr, E(num(w)))), "a fragment builder");
+  bad(run(host_of(w.i32, "quote", &quoted, {}), false), "E12",
+      "a quote in a function that runs after compiling");
+  bad(run(host_of(w.i32, "quote", nullptr, {})), "E12", "a quote with no subject");
+  bad(run(host_of(w.i32, "static", nullptr, {})), "E12", "a static's syntax with no subject");
+  bad(run(host_of(w.i32, "expr.lit", &quoted, E(num(w)))), "E12", "a builder with a subject");
+  bad(run(host_of(w.i32, "print", nullptr, {})), "E12", "an operation the host does not have");
+  bad(run(host_of(w.i32, "expr.", nullptr, {})), "E12", "a builder with no name");
+  {
+    auto args = ptr_vec<expr>{};
+    args.push_back(nullptr);
+    bad(run(host_of(w.i32, "expr.lit", nullptr, std::move(args))), "E12",
+        "a builder with a null argument");
+  }
+  bad(run(host_of(w.i32, "expr.lit", nullptr, E(use_of(w, pl(888, w.i32))))), "P1",
+      "an argument that is not well formed");
+}
+
 // ===========================================================================
 //  S: statements
 // ===========================================================================
@@ -3012,6 +3084,7 @@ auto main() -> int {
   test_e9_guards_and_bodies();
   test_e10_lambda();
   test_e11_await();
+  test_e12_host_call();
   test_s1_let();
   test_s2_assign();
   test_s3_loops();

@@ -50,6 +50,8 @@ cc_library(
     hdrs = ["adapter.h"],
     deps = [
         ":core",
+        # `fragment_builder`: which splices a quote resolves, and the builders.
+        "//src/comptime",
         "//src/parser:parser",
         "//src/semantic:semantic",
         "//src/util",

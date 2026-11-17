@@ -21,7 +21,12 @@ cc_library(
         "//src/bytecode:vm",
         "//src/bytecode_compiler",
         "//src/comptime",
+        # The core path (`comptime_lowering::from_core`).
+        "//src/core",
+        "//src/core:adapter",
+        "//src/core:verify",
         "//src/hir",
+        "//src/hir:lower_core",
         "//src/runtime",
         "//src/semantic",
     ],

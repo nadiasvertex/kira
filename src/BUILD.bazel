@@ -391,3 +391,27 @@ cc_test(
         "//src/testing",
     ],
 )
+
+# The same, with every module lowered from the core alone
+# (`hir::lower_core_program`, `CINDER_LOWER_FROM_CORE=only`).
+cc_test(
+    name = "lower_core_only_corpus_test",
+    env = {"CINDER_LOWER_FROM_CORE": "only"},
+    size = "medium",
+    timeout = "long",
+    srcs = ["lower_core_corpus_test.cpp"],
+    data = [
+        ":codegen_stress_corpus",
+        ":std_sources",
+    ],
+    tags = ["no-sandbox"],
+    deps = [
+        ":codegen_corpus",
+        "//src/core:adapter",
+        "//src/core:core",
+        "//src/hir:hir",
+        "//src/hir:lower_core",
+        "//src/semantic:semantic",
+        "//src/testing",
+    ],
+)

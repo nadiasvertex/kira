@@ -1,0 +1,9 @@
+# todo: 45
+# tier: both
+# currently-error: binary expression is missing an operand
+# want: `3..` is a value (an open range); main returns 1.
+module known_gaps.open_range_value
+
+def main() -> int32:
+    let r = 3..
+    return 1

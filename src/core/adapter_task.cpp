@@ -14,7 +14,7 @@
 //   t.spawn()               task_spawn(&t)
 //   k.spawn(t)              crew_spawn(&k, t)
 //   t.get()                 task_get(&t)
-//   k.errors()              crew_errors(&k)                   -> list[E]
+//   k.errors()              crew_errors[task](&k, new, push)  -> list[E]
 //
 // A task body's captures come from the ownership checker's `task_capture`
 // records: one it consumes is moved in, any other is lent (a copy for a copy
@@ -40,6 +40,8 @@ auto body_builder::task_block_of(const void *key,
   const auto fn_type = types.fn_of({}, declared);
   auto made = make_node<core::lambda>(span, fn_type);
   made->return_type = declared;
+  // The drop schedule names the task's captures and its drops by the block.
+  made->origin = key;
 
   push_scope();
   lambdas_.push_back(lambda_frame{.source = nullptr,
@@ -152,7 +154,7 @@ auto body_builder::await_task_form(const ast::await_expr &awaited)
   }();
 }
 
-auto body_builder::crew_of(const std::string &name,
+auto body_builder::crew_of(const void *key, const std::string &name,
                            const std::vector<ast::ptr<ast::node>> &body,
                            source_span span, type_id type)
     -> result<ptr<expr>> {
@@ -161,6 +163,9 @@ auto body_builder::crew_of(const std::string &name,
   const auto has_value = type != unit;
   push_scope();
   auto made = make_node<block>(span, type);
+  // The crew statement or expression: the drop schedule's key for what a
+  // task cancelled while it waits for the crew drops.
+  made->origin = key;
   auto built = [&]() -> result<void> {
     auto bound = let_of(name, crew_type, false,
                         intrinsic_call("crew_new", crew_type, {}, {}, span),
@@ -262,13 +267,26 @@ auto body_builder::task_method(const ast::call_expr &call,
       return intrinsic_call("crew_spawn", type, std::move(args), {}, call.span);
     }
     if (!is_task && name == "errors" && call.args.empty()) {
-      if (!checked_.lowering.crew_error_dispatches.contains(&call) ||
-          !checked_.lowering.crew_error_task_types.contains(&call)) {
+      const auto dispatch =
+          checked_.lowering.crew_error_dispatches.find(&call);
+      const auto task_type =
+          checked_.lowering.crew_error_task_types.find(&call);
+      if (dispatch == checked_.lowering.crew_error_dispatches.end() ||
+          task_type == checked_.lowering.crew_error_task_types.end()) {
         return fail("missing record: crew_error_dispatches",
                     "`errors()` on a crew", call.span);
       }
-      return intrinsic_call("crew_errors", type, std::move(args), {},
-                            call.span);
+      // The list it builds is made and filled by the functions the checker
+      // chose, and every task in the crew has the one type it recorded.
+      for (const auto *resolved :
+           {&dispatch->second.new_callee, &dispatch->second.push_callee}) {
+        CORE_TRY(target, callee_of(*resolved, call.span));
+        auto named = make_node<function_ref>(call.span, target.signature);
+        named->target = std::move(target);
+        args.push_back(std::move(named));
+      }
+      return intrinsic_call("crew_errors", type, std::move(args),
+                            {task_type->second}, call.span);
     }
     return fail("task operation", std::format("`.{}()` on a {}", name,
                                               entry.name),

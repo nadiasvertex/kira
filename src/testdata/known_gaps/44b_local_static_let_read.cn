@@ -1,0 +1,9 @@
+# todo: 44
+# tier: both
+# currently-error: undefined name `k`
+# want: a `static let` inside a function body can be read in that body; main returns 5.
+module known_gaps.local_static_let_read
+
+def main() -> int32:
+    static let k: int32 = 5
+    return k

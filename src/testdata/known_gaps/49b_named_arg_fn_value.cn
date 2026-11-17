@@ -1,0 +1,9 @@
+# todo: 49
+# tier: both
+# currently-error: named arguments are only supported calling a named function or method
+# want: the checker rejects a named argument on a call of a function-typed value, whose type carries no parameter names, with a diagnostic.
+module known_gaps.named_arg_fn_value
+
+def main() -> int32:
+    let f: fn(int32, int32) -> int32 = (a, b) => a - b
+    return f(b: 1, a: 43)

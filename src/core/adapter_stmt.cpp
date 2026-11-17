@@ -508,7 +508,7 @@ auto body_builder::stmt_into(const ast::node &node, ptr_vec<stmt> &out)
     return {};
   case ast::node_kind::crew_stmt: {
     const auto &crew = ast::cast<const ast::crew_stmt>(node);
-    CORE_TRY(made, crew_of(crew.name, crew.body, node.span, unit_type()));
+    CORE_TRY(made, crew_of(&node, crew.name, crew.body, node.span, unit_type()));
     out.push_back(expr_stmt_of(std::move(made), node.span));
     return {};
   }
@@ -620,6 +620,9 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
   CORE_TRY(sig, signature_of(decl));
   post_contracts_.clear();
   for (const auto &contract : decl.contracts) {
+    if (!contract_checks_) {
+      break;
+    }
     if (contract.condition == nullptr ||
         checked_.lowering.elided_contracts.contains(&contract)) {
       continue;
@@ -645,6 +648,11 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
   made->coroutine = sig.coroutine;
   made->receiver = sig.receiver;
   made->generic_params = generic_params_;
+  // A module-level `static def` (or an instance of one); `is_static` alone
+  // also marks a static method, which runs like any other function.
+  made->compile_time =
+      compile_time_ ||
+      checked_.lowering.comptime_only_functions.contains(&decl);
   body_type_ = sig.body;
   yield_type_ = sig.yield_type;
   push_scope();
@@ -793,23 +801,67 @@ auto body_builder::reified(const semantic::reified_value &value,
 }
 
 auto build_function(semantic::checked_types &checked,
-                    const function_table &module_functions,
-                    const function_table &fmt_functions,
+                    const function_lookup &functions,
                     const template_table &templates,
                     const ast::func_decl &decl, std::string name,
-                    std::string module, std::vector<type_id> generic_params)
-    -> result<ptr<function>> {
-  auto builder = body_builder(checked, module_functions, &fmt_functions);
+                    std::string module, std::vector<type_id> generic_params,
+                    const adapt_options &options) -> result<ptr<function>> {
+  auto builder = body_builder(checked, &functions);
+  builder.contract_checks_ = options.contract_checks;
+  builder.compile_time_ = options.compile_time;
   builder.open_generic_params(std::move(generic_params), &templates);
   return builder.function_of(decl, std::move(name), std::move(module));
+}
+
+auto build_expression_function(semantic::checked_types &checked,
+                               const function_lookup &functions,
+                               const ast::expr &expr,
+                               std::span<const expression_capture> captures,
+                               std::string name, std::string module)
+    -> result<ptr<function>> {
+  auto builder = body_builder(checked, &functions);
+  builder.compile_time_ = true;
+  builder.fresh_static_reads_ = true;
+  // Nothing it owns is dropped and nothing it reads is borrowed by a
+  // closure the ownership check knows of: it has no declaration.
+  builder.owned_static_reads_.emplace();
+  builder.borrowed_captures_.emplace();
+  builder.task_captures_.emplace();
+  CORE_TRY(type, builder.type_of(expr));
+  auto made = make_node<function>();
+  made->name = std::move(name);
+  made->module = std::move(module);
+  builder.module_name_ = made->module;
+  made->span = expr.span;
+  made->return_type = type;
+  made->body_type = type;
+  made->compile_time = true;
+  builder.body_type_ = type;
+  builder.push_scope();
+  for (const auto &capture : captures) {
+    CORE_TRY(param_type, builder.settle(capture.type, expr.span));
+    made->params.push_back(
+        param{.symbol = builder.declare(capture.name, param_type, true),
+              .name = capture.name,
+              .type = param_type,
+              .origin = nullptr});
+  }
+  auto value = builder.value_as(expr, type);
+  builder.pop_scope();
+  if (!value.has_value()) {
+    return std::unexpected(value.error());
+  }
+  auto body = make_node<block>(expr.span, type);
+  body->result = std::move(*value);
+  made->body = std::move(body);
+  return made;
 }
 
 auto build_intrinsic_signature(semantic::checked_types &checked,
                                const ast::func_decl &decl,
                                std::vector<type_id> generic_params)
     -> result<type_id> {
-  const auto no_functions = function_table{};
-  auto builder = body_builder(checked, no_functions);
+  auto builder = body_builder(checked);
   builder.open_generic_params(std::move(generic_params), nullptr);
   CORE_TRY(sig, builder.signature_of(decl));
   return sig.fn_type;
@@ -818,8 +870,7 @@ auto build_intrinsic_signature(semantic::checked_types &checked,
 auto build_static_value(semantic::checked_types &checked,
                         const semantic::reified_value &value, source_span span)
     -> result<ptr<expr>> {
-  const auto no_functions = function_table{};
-  auto builder = body_builder(checked, no_functions);
+  auto builder = body_builder(checked);
   return builder.reified(value, span);
 }
 

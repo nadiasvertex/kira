@@ -16,40 +16,15 @@ using semantic::type_kind;
 
 namespace {
 
-/// Whether the branching expression `origin` (its AST node) can suspend a
-/// task from inside a branch, by the test the old lowerer applies
-/// (`lowerer::branch_value_can_suspend`). The old lowerer then moves the
-/// branches into statements ahead of the enclosing one, which this
-/// lowering does not do yet.
-[[nodiscard]] auto branch_can_suspend(const void *origin) -> bool {
+/// Whether `origin` is an `if` or `match` statement: a block's tail
+/// statement is its value, but not an expression the source wrote, so its
+/// branches are statement lists like any statement's.
+[[nodiscard]] auto is_statement_origin(const void *origin) -> bool {
   if (origin == nullptr) {
     return false;
   }
-  auto found = false;
-  ast::walk(*static_cast<const ast::node *>(origin),
-            [&found](const ast::node &n) -> bool {
-              switch (n.kind) {
-              case ast::node_kind::await_expr:
-              case ast::node_kind::try_expr:
-              case ast::node_kind::return_stmt:
-              case ast::node_kind::break_stmt:
-              case ast::node_kind::continue_stmt:
-              case ast::node_kind::crew_stmt:
-              case ast::node_kind::crew_expr:
-              case ast::node_kind::par_expr:
-              case ast::node_kind::race_expr:
-                found = true;
-                return false;
-              case ast::node_kind::lambda_expr:
-              case ast::node_kind::async_expr:
-              case ast::node_kind::on_expr:
-              case ast::node_kind::func_decl:
-                return false;
-              default:
-                return !found;
-              }
-            });
-  return found;
+  const auto kind = static_cast<const ast::node *>(origin)->kind;
+  return kind == ast::node_kind::if_stmt || kind == ast::node_kind::match_stmt;
 }
 
 /// A verified core tree broke a rule the lowering relies on.
@@ -106,6 +81,34 @@ auto core_lowerer::expr(const core::expr &source)
       return variant(static_cast<const core::variant_init &>(source));
     case k::block: {
       const auto &inner = static_cast<const core::block &>(source);
+      if (const auto *crew = crew_block(inner)) {
+        const auto type = hir_type(inner.type);
+        // In a task the crew's statements go ahead of this one, where its
+        // waits are suspension points.
+        if (in_task_body_) {
+          if (cannot_hoist()) {
+            return refuse("crew where it cannot go ahead of its statement",
+                          source.span);
+          }
+          auto result = crew_into(*crew, type, *hoist_);
+          if (!result.has_value() || *result != nullptr) {
+            return result;
+          }
+          return ptr<hir_expr>(
+              hir::make<hir_block>(source.span, type, ptr_vec<hir_node>{}));
+        }
+        auto nodes = ptr_vec<hir_node>{};
+        auto result = crew_into(*crew, type, nodes);
+        if (!result.has_value()) {
+          return result;
+        }
+        if (*result != nullptr) {
+          nodes.push_back(
+              hir::make<hir_expr_stmt>(source.span, std::move(*result)));
+        }
+        return ptr<hir_expr>(
+            hir::make<hir_block>(source.span, type, std::move(nodes)));
+      }
       auto made = block(inner, hir_type(inner.type));
       if (!made.has_value()) {
         return std::unexpected(made.error());
@@ -119,17 +122,36 @@ auto core_lowerer::expr(const core::expr &source)
           matched.form != f::or_else && matched.form != f::try_operator) {
         return refuse("match_expr in this position", source.span);
       }
-      if (in_task_body_ && matched.form != f::try_operator &&
-          matched.form != f::if_let && !checked_.types.is_unit(hir_type(source.type)) &&
-          branch_can_suspend(source.origin)) {
-        return refuse("suspending value branch", source.span);
+      const auto type = hir_type(source.type);
+      const auto lower = [&]() -> core_result<ptr<hir_expr>> {
+        auto made = match(matched, type);
+        if (!made.has_value()) {
+          return std::unexpected(made.error());
+        }
+        return ptr<hir_expr>(std::move(*made));
+      };
+      // A block's tail `match` statement, and the `?` operator, are not
+      // value branches. In a task, handing the failure back suspends, so
+      // `?` is a statement of its own.
+      if (matched.form == f::try_operator && in_task_body_) {
+        return try_in_task(matched, type);
       }
-      auto made = match(matched, hir_type(source.type));
-      if (!made.has_value()) {
-        return std::unexpected(made.error());
+      if (matched.form == f::try_operator ||
+          is_statement_origin(source.origin)) {
+        return lower();
       }
-      return ptr<hir_expr>(std::move(*made));
+      if (source.origin != nullptr && branch_value_suspends(source, type)) {
+        return suspending_branch_value(source.span, type, lower);
+      }
+      ++value_branch_depth_;
+      auto made = lower();
+      --value_branch_depth_;
+      return made;
     }
+    case k::await_expr:
+      return await_value(static_cast<const core::await_expr &>(source));
+    case k::host_call:
+      return host_call(static_cast<const core::host_call &>(source));
     case k::lambda:
       return lambda(static_cast<const core::lambda &>(source));
     case k::function_ref: {
@@ -140,16 +162,24 @@ auto core_lowerer::expr(const core::expr &source)
       return made;
     }
     case k::if_expr: {
-      if (in_task_body_ && !checked_.types.is_unit(hir_type(source.type)) &&
-          branch_can_suspend(source.origin)) {
-        return refuse("suspending value branch", source.span);
+      const auto type = hir_type(source.type);
+      const auto lower = [&]() -> core_result<ptr<hir_expr>> {
+        auto made = if_expr(static_cast<const core::if_expr &>(source), type);
+        if (!made.has_value()) {
+          return std::unexpected(made.error());
+        }
+        return ptr<hir_expr>(std::move(*made));
+      };
+      if (is_statement_origin(source.origin)) {
+        return lower();
       }
-      auto made = if_expr(static_cast<const core::if_expr &>(source),
-                          hir_type(source.type));
-      if (!made.has_value()) {
-        return std::unexpected(made.error());
+      if (source.origin != nullptr && branch_value_suspends(source, type)) {
+        return suspending_branch_value(source.span, type, lower);
       }
-      return ptr<hir_expr>(std::move(*made));
+      ++value_branch_depth_;
+      auto made = lower();
+      --value_branch_depth_;
+      return made;
     }
     default:
       return refuse(source);
@@ -167,6 +197,26 @@ auto core_lowerer::expr(const core::expr &source)
     return refuse_drop(cleared.error());
   }
   return std::move(*cleared);
+}
+
+auto core_lowerer::host_call(const core::host_call &source)
+    -> core_result<ptr<hir_expr>> {
+  // Only the compile-time VM runs one (`hir_host_call`); the core verifier
+  // keeps it out of run-time code (E12).
+  if (!compile_time_) {
+    return refuse("host_call outside compile-time code", source.span);
+  }
+  auto args = ptr_vec<hir_expr>{};
+  for (const auto &arg : source.args) {
+    auto lowered = expr(*arg);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    args.push_back(std::move(*lowered));
+  }
+  return ptr<hir_expr>(hir::make<hir_host_call>(
+      source.span, hir_type(source.type), source.operation, source.subject,
+      std::move(args)));
 }
 
 auto core_lowerer::literal(const core::literal &source)
@@ -389,6 +439,16 @@ auto core_lowerer::intrinsic_call(const core::call &source)
     }
     return source.target.generic_args.front();
   };
+  // Todo 39: `into_iter(bitwise_copy(xs))` is the old lowerer's adapter
+  // call on the reference itself, marked `receiver_borrowed` (`let_into`):
+  // the backends copy what it refers to. HIR has no other form of it.
+  if (name == "bitwise_copy") {
+    operands(1);
+    if (for_adapter_ == nullptr) {
+      return refuse("bitwise_copy outside a for loop's adapter", source.span);
+    }
+    return expr(*source.args.front());
+  }
   if (name == "stack_buffer") {
     operands(0);
     return ptr<hir_expr>(hir::make<hir_stack_buffer>(source.span, type));
@@ -585,6 +645,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
     return ptr<hir_expr>(hir::make<hir_cell_set>(
         source.span, type, std::move(*cell), std::move(*value)));
   }
+  if (auto task = task_intrinsic(source)) {
+    return std::move(*task);
+  }
   return refuse(std::format("intrinsic {}", name), source.span);
 }
 
@@ -613,7 +676,12 @@ auto core_lowerer::primitive(const core::primitive &source)
     if (!lhs.has_value()) {
       return std::unexpected(lhs.error());
     }
+    // The right side of `&&` and `||` runs only sometimes.
+    const auto short_circuit = *source.binary == ast::binary_op::logical_and ||
+                               *source.binary == ast::binary_op::logical_or;
+    conditional_depth_ += short_circuit ? 1 : 0;
     auto rhs = expr(*source.operands[1]);
+    conditional_depth_ -= short_circuit ? 1 : 0;
     if (!rhs.has_value()) {
       return std::unexpected(rhs.error());
     }

@@ -141,6 +141,12 @@
 ///       body a local root names only the lambda's parameters, captures and
 ///       own bindings.
 ///   E11 `await` takes a task and has its result type.
+///   E12 A `host_call` appears only in a function with `compile_time` set. Its
+///       operation is `quote`, `static` or `expr.<name>`; `quote` and `static`
+///       have a subject and a builder has none. Each argument is a well-formed
+///       expression. The arguments' types are not checked against the operation
+///       (the host checks them when it runs); phase 10 of the plan gives
+///       compile-time values a typed form.
 ///
 /// Statements
 ///   S1  A `let`'s value, when present, has the `let`'s type.

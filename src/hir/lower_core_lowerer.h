@@ -27,6 +27,17 @@ template <typename T> using core_result = std::expected<T, unsupported>;
 /// The name of a core node kind, as an `unsupported` reports it.
 [[nodiscard]] auto core_kind_name(core::node_kind kind) -> std::string;
 
+/// The HIR name of each module of `input` (see `core_lowering_input`).
+[[nodiscard]] auto hir_module_names(const core_lowering_input &input)
+    -> std::unordered_map<const core::module *, std::string>;
+
+/// Whether `function`, a template of `module`, is a trait default the
+/// checker copied for a generic impl, which the old lowerer lowers once with
+/// the impl's parameters abstract.
+[[nodiscard]] auto is_type_erased_default_copy(
+    const core::function &function, const core::module &module,
+    const semantic::checked_types &checked) -> bool;
+
 class core_lowerer {
 public:
   core_lowerer(const semantic::checked_types &checked,
@@ -46,11 +57,19 @@ public:
 
   [[nodiscard]] auto function(const core::function &source)
       -> core_result<ptr<hir_function>>;
+  /// A compile-time expression's function (`core::adapt_expression`): no
+  /// declaration, its captures as parameters, and the body's result
+  /// returned, with nothing dropped.
+  [[nodiscard]] auto expression_function(const core::function &source)
+      -> core_result<ptr<hir_function>>;
 
   // ---- expressions (lower_core_expr.cpp) ---------------------------------
   [[nodiscard]] auto expr(const core::expr &source)
       -> core_result<ptr<hir_expr>>;
   [[nodiscard]] auto literal(const core::literal &source)
+      -> core_result<ptr<hir_expr>>;
+  /// An operation of the compiler's own, for compile-time code.
+  [[nodiscard]] auto host_call(const core::host_call &source)
       -> core_result<ptr<hir_expr>>;
   [[nodiscard]] auto use(const core::use &source)
       -> core_result<ptr<hir_expr>>;
@@ -250,6 +269,124 @@ public:
                                   ptr_vec<hir_expr> awaited = {},
                                   ptr_vec<hir_node> drops = {})
       -> core_result<ptr<hir_node>>;
+  /// A suspension is a statement in HIR: in a task body, what waits for a
+  /// task inside the statement being lowered goes ahead of it, into the
+  /// list `hoist_` names. `lowered` runs with a fresh list, which is
+  /// returned for the caller to place.
+  template <typename F>
+  [[nodiscard]] auto hoisting(ptr_vec<hir_node> &hoisted, F &&lowered)
+      -> decltype(lowered()) {
+    auto *saved = std::exchange(hoist_, in_task_body_ ? &hoisted : nullptr);
+    const auto depth = std::exchange(conditional_depth_, 0);
+    auto result = lowered();
+    hoist_ = saved;
+    conditional_depth_ = depth;
+    return result;
+  }
+  /// Whether a suspension at the point being lowered cannot go ahead of
+  /// its statement.
+  [[nodiscard]] auto cannot_hoist() const -> bool {
+    return hoist_ == nullptr || conditional_depth_ > 0 ||
+           value_branch_depth_ > 0;
+  }
+  /// Inserts `hoisted` into `out` at `at`.
+  static auto place_hoisted(ptr_vec<hir_node> &hoisted, ptr_vec<hir_node> &out,
+                            std::size_t at) -> void;
+  /// Whether the value-producing `if` or `match` `source` must be lowered
+  /// as statements ahead of the enclosing one: in a task, a branch that
+  /// awaits, leaves (`return`, `break`, `continue`, `?`) or runs a crew,
+  /// `par` or `race` cannot be compiled as part of an expression.
+  [[nodiscard]] auto branch_value_suspends(const core::expr &source,
+                                           type_id type) const -> bool;
+  /// The value of `branching` (an `if` or `match` lowered by `lower`) as a
+  /// `<branch value>` local each branch assigns, ahead of the statement.
+  [[nodiscard]] auto suspending_branch_value(
+      source_span span, type_id type,
+      const std::function<core_result<ptr<hir_expr>>()> &lower)
+      -> core_result<ptr<hir_expr>>;
+  /// `e?` in a task: `let <try subject> = e; match <try subject>:
+  /// <failure> => hand it back, _ => {}` ahead of the statement, which
+  /// reads the payload.
+  [[nodiscard]] auto try_in_task(const core::match_expr &source, type_id type)
+      -> core_result<ptr<hir_expr>>;
+  [[nodiscard]] auto await_value(const core::await_expr &source)
+      -> core_result<ptr<hir_expr>>;
+  /// The statements that wait for `task` in a task body: the suspension,
+  /// then a cancel check releasing `awaited`.
+  auto task_wait_into(ptr_vec<hir_node> &stmts, ptr<hir_expr> task,
+                      const void *key, source_span span, bool all,
+                      ptr_vec<hir_expr> awaited) -> core_result<void>;
+  /// Waits for `task` and reads its result: `await` (which `consumes` the
+  /// task) and `get()`.
+  [[nodiscard]] auto task_read(const void *key, source_span span,
+                               source_span task_span, type_id type,
+                               type_id task_type, ptr<hir_expr> task,
+                               bool consumes) -> core_result<ptr<hir_expr>>;
+  /// `let <await result> = read`, then the cancel of each of `tasks`.
+  [[nodiscard]] auto read_then_drop_tasks(ptr_vec<hir_node> &stmts,
+                                          ptr<hir_expr> read,
+                                          ptr_vec<hir_expr> tasks,
+                                          type_id type, source_span span)
+      -> ptr<hir_expr>;
+  /// `await par` / `await race`.
+  [[nodiscard]] auto await_group(const core::call &source)
+      -> core_result<ptr<hir_expr>>;
+  /// `await on(...)`: spawns the task `on` holds on its pool and waits.
+  [[nodiscard]] auto spawn_and_wait(ptr<hir_expr> made, type_id task_type,
+                                    std::size_t pool, type_id type,
+                                    const void *wait_key, source_span span)
+      -> core_result<ptr<hir_expr>>;
+  /// `on(ctx, ...)` not awaited: a task that awaits the one it holds.
+  [[nodiscard]] auto on_task(const core::call &source)
+      -> core_result<ptr<hir_expr>>;
+  /// The task a `task_block` lambda makes: a function of its own, named
+  /// `name`, and the call that makes the task. Its parameters are the
+  /// locals of `outer` (the enclosing function's locals it may read) that
+  /// the body reads, in the order it first reads them. `key` names its
+  /// captures and drops in the drop schedule, `start_key` the drops of a
+  /// task dropped before it runs; `carried` are tasks it owns that the
+  /// schedule does not know of.
+  [[nodiscard]] auto task_function(
+      const void *key, const void *start_key, std::string name,
+      const std::function<core_result<ptr<hir_block>>()> &lower_body,
+      type_id declared, type_id task_type, source_span span,
+      const std::vector<hir_param> &outer, ptr_vec<hir_expr> carried = {})
+      -> core_result<ptr<hir_expr>>;
+  /// Makes every borrow and deref of `made` explicit, dropping the
+  /// temporaries that leaves.
+  [[nodiscard]] auto explicit_references(hir_function &made)
+      -> core_result<void>;
+  [[nodiscard]] auto task_block(const core::call &source)
+      -> core_result<ptr<hir_expr>>;
+  /// A call to the runtime function `name`, typed `result`.
+  [[nodiscard]] auto runtime_call(source_span span, std::string_view name,
+                                  type_id result, ptr_vec<hir_expr> args)
+      -> ptr<hir_expr>;
+  /// The crew block `{ let k = crew_new(); body; crew_end(k) }`, if
+  /// `source` is one.
+  [[nodiscard]] static auto crew_block(const core::expr &source)
+      -> const core::block *;
+  /// Lowers the crew block `source`: its statements are appended to `out`
+  /// and its value (null for `unit`) is returned.
+  [[nodiscard]] auto crew_into(const core::block &source, type_id type,
+                               ptr_vec<hir_node> &out)
+      -> core_result<ptr<hir_expr>>;
+  /// Waits for the tasks of the crew `crew` (a suspension in a task, a
+  /// blocking join elsewhere), then frees it.
+  auto crew_end_into(symbol_id crew, source_span span, ptr_vec<hir_node> &out)
+      -> core_result<void>;
+  /// `crew_end(k)` before a jump that leaves the crew.
+  auto crew_end_call_into(const core::call &source, ptr_vec<hir_node> &out)
+      -> core_result<void>;
+  [[nodiscard]] auto crew_errors(const core::call &source)
+      -> core_result<ptr<hir_expr>>;
+  /// The task and crew intrinsics, or nullopt for another.
+  [[nodiscard]] auto task_intrinsic(const core::call &source)
+      -> std::optional<core_result<ptr<hir_expr>>>;
+  /// The functions made while lowering this one (task blocks).
+  [[nodiscard]] auto take_nested() -> ptr_vec<hir_function> {
+    return std::move(nested_);
+  }
 
   // ---- helpers -----------------------------------------------------------
   /// The type table, for the few types lowering interns that checking had
@@ -300,9 +437,33 @@ private:
   /// scope's drops.
   const core::block *tail_exit_ = nullptr;
   std::vector<const core::contract_check *> tail_posts_;
+  /// The exit block of the `?` being lowered: its value is made after the
+  /// crew ends and the drops, as the old lowerer makes it.
+  const core::block *try_failure_exit_ = nullptr;
+  /// The function runs only while compiling (`core::function::
+  /// compile_time`): it may build syntax (`host_call`).
+  bool compile_time_ = false;
   /// Lowering an `async def`'s body: a `return` hands over its value with a
   /// `yield` and an `await` suspends.
   bool in_task_body_ = false;
+  /// Where a suspension inside the statement being lowered goes
+  /// (`hoisting`); null outside a task body.
+  ptr_vec<hir_node> *hoist_ = nullptr;
+  /// How many value-producing `if`/`match` expressions enclose the point
+  /// being lowered (`branch_value_suspends`).
+  int value_branch_depth_ = 0;
+  /// The function's own name, without its type: task functions are named
+  /// after it.
+  std::string function_name_;
+  /// The functions task blocks made.
+  ptr_vec<hir_function> nested_;
+  /// The crews open at the point being lowered, outermost first: a cancel
+  /// check ends each before it returns.
+  std::vector<symbol_id> open_crews_;
+  /// How many enclosing constructs evaluate the point being lowered
+  /// conditionally (the right side of `&&` or `||`, an `elif` condition, a
+  /// guard): a suspension there cannot move ahead of the statement.
+  int conditional_depth_ = 0;
   /// One symbol per function a call names, as the old lowerer mints them.
   std::unordered_map<std::string, symbol_id> callee_symbols_;
   symbol_id next_symbol_ = 1;

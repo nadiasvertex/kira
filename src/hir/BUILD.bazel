@@ -68,6 +68,7 @@ cc_library(
         "lower_core_expr.cpp",
         "lower_core_lambda.cpp",
         "lower_core_match.cpp",
+        "lower_core_module.cpp",
         "lower_core_stmt.cpp",
         "lower_core_task.cpp",
     ],
@@ -78,6 +79,8 @@ cc_library(
     deps = [
         ":hir",
         "//src/core",
+        # `core::gap`.
+        "//src/core:adapter",
         # `is_compiler_operation`.
         "//src/core:verify",
         "//src/parser:parser",
