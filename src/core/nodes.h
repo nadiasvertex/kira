@@ -276,6 +276,9 @@ struct callee {
 struct call : expr {
   callee target;
   ptr_vec<expr> args;
+  /// `on_cpu`/`on_io` only: the drop schedule's key for the wrapper task
+  /// that runs the sender on the pool (the `on` expression's context).
+  const void *context_origin = nullptr;
   call(source_span s, type_id t) : expr(node_kind::call, s, t) {}
 };
 
@@ -336,6 +339,8 @@ struct param {
   /// The AST pattern that binds the parameter: the drop schedule's key for
   /// it (`pending_drop::node`, drop flags), as `node::origin` is for a node.
   const void *origin = nullptr;
+  /// Where the parameter is written; the function's span when synthesized.
+  source_span span;
 };
 
 /// How a closure holds one value from its environment. A `copy` or `move`
@@ -368,6 +373,9 @@ struct lambda : expr {
   /// (`owned_captures`). The same as `origin`, except for a copy of a
   /// generic lambda, which has no `origin` of its own.
   const void *closure_origin = nullptr;
+  /// A task block's body only: the drop schedule's key for the check that a
+  /// task dropped before its body first runs returns at once.
+  const void *task_start = nullptr;
   lambda(source_span s, type_id t) : expr(node_kind::lambda, s, t) {}
 };
 
@@ -375,6 +383,9 @@ struct if_expr : expr {
   ptr<expr> condition;
   ptr<block> then_branch;
   ptr<block> else_branch; ///< Null when there is no `else`.
+  /// A block's tail `if` statement: its value is the block's, but its
+  /// branches are statement lists like any statement's, not value branches.
+  bool tail_statement = false;
   if_expr(source_span s, type_id t) : expr(node_kind::if_expr, s, t) {}
 };
 
@@ -495,6 +506,8 @@ struct match_expr : expr {
   /// to reach a value that is not a reference: the source subject is the
   /// place without them.
   std::size_t subject_derefs = 0;
+  /// A block's tail `match` statement, as for `if_expr::tail_statement`.
+  bool tail_statement = false;
   match_expr(source_span s, type_id t) : expr(node_kind::match_expr, s, t) {}
 };
 
@@ -546,6 +559,9 @@ struct let : stmt {
 struct assign : stmt {
   place target;
   ptr<expr> value;
+  /// Written `a op= b` and spelled `a = a op b`. The target is a scalar or a
+  /// pointer, so the write neither drops the old value nor sets drop flags.
+  bool compound = false;
   explicit assign(source_span s) : stmt(node_kind::assign, s) {}
 };
 
@@ -600,6 +616,8 @@ struct function {
   std::string name;
   std::string module;
   source_span span;
+  /// The name the declaration is written with: `from` for `wrapper::from`.
+  std::string declared_name;
   const ast::func_decl *decl = nullptr;
   /// The template this is an instance of; null for a template or an ordinary
   /// function.
@@ -617,6 +635,10 @@ struct function {
   /// `generator` only: what `yield` takes.
   type_id yield_type = k_unknown_type;
   receiver_mode receiver = receiver_mode::none;
+  /// A consuming receiver only: the type the checker gave the receiver's
+  /// pattern, which is how the caller passes it (a reference, when the
+  /// receiver is lent).
+  type_id receiver_type = k_unknown_type;
   coroutine_kind coroutine = coroutine_kind::none;
   /// Produced by a `deriving` clause or an item splice.
   bool generated = false;
@@ -625,6 +647,12 @@ struct function {
   /// expression, or one adapted on demand for compile-time code. Only such a
   /// function may hold a `host_call`.
   bool compile_time = false;
+  /// The body is written as an expression (`def f() -> T: value`): the
+  /// function returns it with no drops of its parameters.
+  bool expression_body = false;
+  /// A coroutine only: the drop schedule's key for the check that a
+  /// coroutine dropped before its body first runs returns at once.
+  const void *start = nullptr;
   ptr<block> body;
 };
 

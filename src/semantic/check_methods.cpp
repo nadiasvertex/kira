@@ -611,6 +611,10 @@ auto checker::register_impl_methods(
         .trait_module = trait_module,
         .trait_file_id = trait_file_id,
         .methods = &methods,
+        .impl_type_params = &impl.decl->type_params,
+        .impl_where = &impl.decl->where_constraints,
+        .impl_module = &members,
+        .impl_file_id = impl.file_id,
     });
   }
 }
@@ -618,10 +622,7 @@ auto checker::register_impl_methods(
 auto checker::monomorphize_trait_defaults(
     const std::vector<deferred_trait_default> &deferred_defaults) -> void {
   for (const auto &deferred : deferred_defaults) {
-    monomorphize_trait_default(*deferred.decl, deferred.target,
-                               deferred.target_type_name, deferred.trait_decl,
-                               deferred.trait_module, deferred.trait_file_id,
-                               *deferred.methods);
+    monomorphize_trait_default(deferred);
   }
 }
 
@@ -653,11 +654,13 @@ auto checker::add_synthesized_impl(impl_ref impl) -> void {
 /// a real `hir_function`. On failure (a construct `ast::clone_func_decl`
 /// doesn't support — see its doc comment), reports a diagnostic rather
 /// than silently leaving the method uncallable through this impl.
-auto checker::monomorphize_trait_default(
-    const ast::func_decl &decl, type_id target,
-    std::string_view target_type_name, const ast::trait_decl *trait_decl,
-    const module_members *trait_module, file_id_type trait_file_id,
-    std::deque<method_entry> &methods) -> void {
+auto checker::monomorphize_trait_default(const deferred_trait_default &deferred)
+    -> void {
+  const auto &decl = *deferred.decl;
+  const auto target = deferred.target;
+  const auto *trait_decl = deferred.trait_decl;
+  const auto *trait_module = deferred.trait_module;
+  const auto trait_file_id = deferred.trait_file_id;
   auto cloned = ast::clone_func_decl(decl);
   if (!cloned.has_value()) {
     auto diag = diagnostic(
@@ -665,7 +668,8 @@ auto checker::monomorphize_trait_default(
         std::format("cannot make `{}` callable on `{}`: its default body "
                     "in `{}` uses a construct trait-default monomorphization "
                     "doesn't support yet",
-                    decl.name, target_type_name, trait_module->module_name),
+                    decl.name, deferred.target_type_name,
+                    trait_module->module_name),
         trait_file_id);
     diag.with_label(cloned.error().span, cloned.error().message);
     emit_diag(diag);
@@ -675,9 +679,38 @@ auto checker::monomorphize_trait_default(
   const auto *raw = cloned->get();
   session_.synthesized_decls_.push_back(std::move(*cloned));
 
+  // The copy for a generic impl (`impl[I, T] iterator[T] for
+  // filter_iter[I, T]`) is a template over the impl's parameters, checked
+  // as a written method of that impl is: under the impl's parameters and
+  // facts, with nothing outside it in scope. Each concrete receiver then
+  // gets its own instance, named and made by the machinery every generic
+  // impl method uses (`check_impl_generic_method_call`). Todo 57.
+  const auto *block_params =
+      deferred.impl_type_params != nullptr && !deferred.impl_type_params->empty()
+          ? deferred.impl_type_params
+          : nullptr;
   const auto saved_module = file_.module_;
   const auto saved_file_id = file_.file_id_;
   const auto saved_self = function_.self_type_;
+  auto saved_type_params = std::vector<type_scope>{};
+  auto saved_type_slots = decltype(session_.type_param_slots_){};
+  auto saved_const_slots = decltype(session_.const_param_slots_){};
+  auto saved_values = decltype(session_.const_param_values_){};
+  const auto *saved_block_params = session_.enclosing_block_type_params_;
+  const auto *saved_template = function_.current_template_;
+  if (block_params != nullptr) {
+    saved_type_params = std::exchange(function_.type_params_, {});
+    saved_type_slots = std::exchange(session_.type_param_slots_, {});
+    saved_const_slots = std::exchange(session_.const_param_slots_, {});
+    saved_values = std::exchange(session_.const_param_values_, {});
+    function_.current_template_ = nullptr;
+    session_.enclosing_block_type_params_ = block_params;
+    // The impl's `where` names resolve where the impl was written.
+    file_.module_ = deferred.impl_module;
+    file_.file_id_ = deferred.impl_file_id;
+    push_type_params(*block_params);
+    record_declared_facts(*block_params, deferred.impl_where);
+  }
   file_.module_ = trait_module;
   file_.file_id_ = trait_file_id;
   function_.self_type_ = target;
@@ -691,22 +724,34 @@ auto checker::monomorphize_trait_default(
   if (pushed_trait_params) {
     pop_type_params();
   }
+  if (block_params != nullptr) {
+    pop_type_params();
+    function_.type_params_ = std::move(saved_type_params);
+    session_.type_param_slots_ = std::move(saved_type_slots);
+    session_.const_param_slots_ = std::move(saved_const_slots);
+    session_.const_param_values_ = std::move(saved_values);
+    function_.current_template_ = saved_template;
+    session_.enclosing_block_type_params_ = saved_block_params;
+  }
   file_.module_ = saved_module;
   file_.file_id_ = saved_file_id;
   function_.self_type_ = saved_self;
 
-  methods.push_back(method_entry{
+  deferred.methods->push_back(method_entry{
       .decl = raw,
       .owner = trait_module,
       .from_trait = nullptr,
       .trait_name = trait_decl != nullptr ? trait_decl->name : std::string{},
       .file_id = trait_file_id,
       .fixed_type_params = std::move(bound_trait_params),
+      .block_type_params = block_params,
+      .impl_target_pattern = block_params != nullptr ? target : k_unknown_type,
   });
-  session_.synthesized_trait_defaults_.push_back(
-      synthesized_method{.decl = raw,
-                         .target_type_name = std::string(target_type_name),
-                         .owner_module = trait_module->module_name});
+  session_.synthesized_trait_defaults_.push_back(synthesized_method{
+      .decl = raw,
+      .target_type_name = deferred.target_type_name,
+      .owner_module = trait_module->module_name,
+      .block_type_params = block_params});
 }
 
 auto checker::method_lookup() -> method_resolver {

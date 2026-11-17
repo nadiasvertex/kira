@@ -109,7 +109,7 @@ inline constexpr auto f64 = intrinsic_wire_kind::f64;
 /// Every runtime-called intrinsic, in the order `op_call_intrinsic` encodes
 /// as its `intrinsic_id` and the VM's native table (`src/bytecode/vm.cpp`)
 /// follows. Adding one means adding a row here and a function there.
-inline constexpr std::array<intrinsic_signature, 69> known_intrinsics = {{
+inline constexpr std::array<intrinsic_signature, 70> known_intrinsics = {{
     into_intrinsic("rt_stdin", {}),
     into_intrinsic("rt_stdout", {}),
     into_intrinsic("rt_stderr", {}),
@@ -267,6 +267,9 @@ inline constexpr std::array<intrinsic_signature, 69> known_intrinsics = {{
     intrinsic("rt_str_scalar_width", wire::i64,
               {wire::ptr, wire::i64,
                wire::i64}), // rt_str_scalar_width (data, len, offset),
+    // `await yield` in a task (`src/runtime/scheduler.h`, `yield_poll`).
+    intrinsic("rt_task_yield_poll", wire::i32,
+              {wire::ptr}), // rt_task_yield_poll (self),
 }};
 
 static_assert(std::ranges::none_of(known_intrinsics,

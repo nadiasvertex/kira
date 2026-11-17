@@ -11,15 +11,15 @@
 
 namespace cinder::driver {
 
-/// Emits module metadata and (unless `cfg.parse_only`) lowers to HIR for
-/// every file in `parsed_inputs` that parsed and checked cleanly.
+/// Emits module metadata for every file in `parsed_inputs` that parsed and
+/// checked cleanly, and takes the HIR modules lowering made.
 ///
 /// Files already flagged in `file_has_errors`, or with a null AST, are
-/// skipped entirely. For the rest: metadata is written under `metadata_root`
-/// and recorded in `report.modules`; when lowering is enabled, the outcome
-/// (success or failure message) is recorded in `report.hir_modules`
-/// regardless of whether it succeeded, but only successfully lowered
-/// modules are returned for `--run`/`--compile` to target.
+/// skipped entirely. For the rest, metadata is written under `metadata_root`
+/// and recorded in `report.modules`. Each module's lowering outcome
+/// (success or failure message) is recorded in `report.hir_modules`, but
+/// only successfully lowered modules are returned for `--run`/`--compile`
+/// to target.
 ///
 /// A lowering failure is also reported as a real error diagnostic and counted
 /// in `report.error_count`. It used to be recorded *only* in
@@ -39,10 +39,9 @@ namespace cinder::driver {
 /// The HIR name of `input`'s module: its `module` path, or the file's stem.
 [[nodiscard]] auto hir_module_name(const parsed_input &input) -> std::string;
 
-/// With `core_only`, the modules come from the core
-/// (`hir::lower_core_program`, `cli_config::lower_from_core_only`) and the
-/// AST lowering is not called: each module the core lowering made is
-/// returned, and each it could not make is reported as a lowering failure.
+/// `lowering` holds the modules `hir::lower_program` made, or is null when
+/// the program was not lowered (it has errors, or `cfg.parse_only`). Each
+/// module it made is returned, and each it could not make is reported.
 [[nodiscard]] auto
 lower_and_emit_modules(const cli_config &cfg,
                        const std::vector<parsed_input> &parsed_inputs,
@@ -51,7 +50,7 @@ lower_and_emit_modules(const cli_config &cfg,
                        const std::filesystem::path &metadata_root,
                        const diagnostic_renderer &renderer,
                        compile_report &report,
-                       hir::core_program_lowering *core_only = nullptr)
+                       hir::core_program_lowering *lowering)
     -> hir::ptr_vec<hir::hir_module>;
 
 } // namespace cinder::driver

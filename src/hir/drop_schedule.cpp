@@ -247,6 +247,19 @@ auto compute_drop_schedule(const ast::func_decl &decl,
                                        cfg.owned_static_reads.end());
     schedule.owned_captures.insert(cfg.owned_captures.begin(),
                                    cfg.owned_captures.end());
+    for (const auto &[lambda, captures] : cfg.owned_captures) {
+      for (const auto &capture : captures) {
+        if (capture.node == nullptr) {
+          continue;
+        }
+        if (const auto copy =
+                checked.ownership.generic_lambda_refs.find(capture.node);
+            copy != checked.ownership.generic_lambda_refs.end()) {
+          schedule.generic_lambda_copies.insert_or_assign(capture.node,
+                                                          copy->second);
+        }
+      }
+    }
     schedule.borrowed_captures.insert(cfg.borrowed_captures.begin(),
                                       cfg.borrowed_captures.end());
     schedule.task_captures.insert(cfg.task_captures.begin(),

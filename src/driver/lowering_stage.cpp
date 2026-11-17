@@ -6,7 +6,7 @@
 #include <utility>
 
 #include "src/hir/frame_budget.h"
-#include "src/hir/lower.h"
+#include "src/hir/lower_core.h"
 #include "src/runtime/value_layout.h"
 #include "src/util/path.h"
 #include "src/util/str.h"
@@ -28,42 +28,54 @@ source_stem_or_default(const std::filesystem::path &source_path)
   return "module";
 }
 
-/// Reports a lowering failure as a real error against the user's source.
+/// Reports a module lowering could not make as an error against the user's
+/// source.
 ///
-/// Lowering is the last phase that can reject a program, and the only one
-/// whose failure the user cannot see coming: the code type-checked, so as far
-/// as they know it is correct. Saying which declaration could not be emitted —
-/// and that the gap is the compiler's, not theirs — is the difference between
-/// a bug report and a workaround.
+/// A program that checked can still fail here in two ways. It can use a
+/// feature the compiler does not build yet (`core_module_failure::feature`):
+/// the message says which, and the user can avoid it. Or lowering refused a
+/// construct it should handle: an internal compiler error, which names the
+/// construct and says it is a bug in the compiler, not in the program.
 ///
 /// Reported only when code was actually asked for (`--run`/`--compile`).
 /// That is the case where the failure is load-bearing: the user wanted
 /// something to execute, this module produced none, and the next thing they
 /// would otherwise see is `no compiled module defines a function named
 /// `main``, which names neither the real cause nor the real location. A
-/// metadata-or-analysis run has no such gap to explain — plenty of modules
-/// legitimately lower to nothing there — so it stays quiet, with the detail
-/// still available in `report.hir_modules` under `--show-compile-details`.
+/// metadata-or-analysis run has no such gap to explain, so it stays quiet,
+/// with the detail still available in `report.hir_modules` under
+/// `--show-compile-details`.
 static auto report_lowering_failure(const cli_config &cfg,
-                                    const hir::lowering_error &error,
-                                    std::string_view module_name,
+                                    const hir::core_module_failure &failure,
                                     file_id_type file_id,
                                     const diagnostic_renderer &renderer,
                                     compile_report &report) -> void {
   if (!cfg.run && !cfg.build) {
     return;
   }
-  auto diag =
-      diagnostic(diagnostic_level::error,
-                 std::format("could not lower module `{}` to executable form",
-                             module_name),
-                 file_id);
-  diag.with_label(error.span, error.message);
-  diag.with_note("this module type-checked; the failure is in the compiler's "
-                 "code-generation phase, not in your program");
-  diag.with_help("this is a gap in the compiler, not a mistake in your code. "
-                 "Rewriting the highlighted construct in a simpler form is "
-                 "the available workaround, and the gap is worth reporting.");
+  if (failure.feature) {
+    auto diag = diagnostic(diagnostic_level::error,
+                           std::format("`{}` uses a feature the compiler "
+                                       "does not build yet",
+                                       failure.item),
+                           file_id);
+    diag.with_label(failure.span, failure.message);
+    diag.with_note("the program is valid; the compiler cannot generate code "
+                   "for this construct yet");
+    append_text(report.diagnostics, renderer.render(diag));
+    ++report.error_count;
+    return;
+  }
+  auto diag = diagnostic(
+      diagnostic_level::error,
+      std::format("internal compiler error: could not lower `{}` in module "
+                  "`{}`",
+                  failure.item, failure.module),
+      file_id);
+  diag.with_label(failure.span,
+                  std::format("lowering refused this: {}", failure.message));
+  diag.with_note("this is a bug in the compiler, not in your program; "
+                 "please report it with this program");
   append_text(report.diagnostics, renderer.render(diag));
   ++report.error_count;
 }
@@ -130,15 +142,13 @@ auto hir_module_name(const parsed_input &input) -> std::string {
   return name;
 }
 
-/// Takes the modules the core lowering made (`cli_config::lower_from_core_
-/// only`) and reports each one it could not make, as a failure of the AST
-/// lowering is reported.
-static auto take_core_modules(const cli_config &cfg,
-                              const std::vector<parsed_input> &parsed_inputs,
-                              hir::core_program_lowering &core_only,
-                              runtime::value_layouts &layouts,
-                              const diagnostic_renderer &renderer,
-                              compile_report &report)
+/// Takes the modules lowering made and reports each one it could not make.
+static auto take_modules(const cli_config &cfg,
+                         const std::vector<parsed_input> &parsed_inputs,
+                         hir::core_program_lowering &lowering,
+                         runtime::value_layouts &layouts,
+                         const diagnostic_renderer &renderer,
+                         compile_report &report)
     -> hir::ptr_vec<hir::hir_module> {
   auto lowered_modules = hir::ptr_vec<hir::hir_module>{};
   const auto fallback_file = parsed_inputs.empty()
@@ -146,26 +156,22 @@ static auto take_core_modules(const cli_config &cfg,
                                  : parsed_inputs.front().file_id;
   // One report per module: its first failure.
   auto reported = std::unordered_set<std::string>{};
-  for (const auto &failure : core_only.failures) {
+  for (const auto &failure : lowering.failures) {
     if (!reported.insert(failure.module).second) {
       continue;
     }
-    const auto error = hir::lowering_error{
-        .kind = hir::lowering_error_kind::unsupported_construct,
-        .span = failure.span,
-        .message = failure.message};
     report.hir_modules.push_back(hir_lowering_result{
         .module_path = failure.module,
         .lowered = false,
         .error = std::format("{} (byte offset {})", failure.message,
                              failure.span.start)});
-    report_lowering_failure(cfg, error, failure.module,
+    report_lowering_failure(cfg, failure,
                             failure.file_id.value_or(fallback_file), renderer,
                             report);
   }
   // A submodule's spans are in its parent's file.
   auto file = fallback_file;
-  for (auto &module : core_only.modules) {
+  for (auto &module : lowering.modules) {
     if (module->file_id.has_value()) {
       file = *module->file_id;
     }
@@ -175,7 +181,7 @@ static auto take_core_modules(const cli_config &cfg,
       lowered_modules.push_back(std::move(module));
     }
   }
-  core_only.modules.clear();
+  lowering.modules.clear();
   return lowered_modules;
 }
 
@@ -186,12 +192,8 @@ auto lower_and_emit_modules(const cli_config &cfg,
                             const std::filesystem::path &metadata_root,
                             const diagnostic_renderer &renderer,
                             compile_report &report,
-                            hir::core_program_lowering *core_only)
+                            hir::core_program_lowering *lowering)
     -> hir::ptr_vec<hir::hir_module> {
-  auto lowered_modules = hir::ptr_vec<hir::hir_module>{};
-  // Checking is over, so every instance's shape is settled.
-  auto layouts = runtime::value_layouts(checked.types, checked.shapes);
-
   for (const auto &input : parsed_inputs) {
     if (static_cast<size_t>(input.file_id) < file_has_errors.size() &&
         file_has_errors[input.file_id]) {
@@ -217,109 +219,15 @@ auto lower_and_emit_modules(const cli_config &cfg,
         .module_path = module_path,
         .metadata_path = std::move(*metadata_path),
     });
-
-    if (cfg.parse_only || core_only != nullptr) {
-      continue;
-    }
-
-    const auto module_name = hir_module_name(input);
-    auto lowered_result = hir::lower_module(
-        *input.ast_file, module_name, checked,
-        hir::lowering_options{.contract_checks = cfg.contract_checks});
-    report.hir_modules.push_back(
-        lowered_result.has_value()
-            ? hir_lowering_result{.module_path = module_name, .lowered = true}
-            : hir_lowering_result{
-                  .module_path = module_name,
-                  .lowered = false,
-                  .error = std::format("{} (byte offset {})",
-                                       lowered_result.error().message,
-                                       lowered_result.error().span.start)});
-    if (lowered_result.has_value()) {
-      (*lowered_result)->file_id = input.file_id;
-      if (check_frame_budgets(**lowered_result, layouts, input.file_id,
-                              renderer, report)) {
-        lowered_modules.push_back(std::move(*lowered_result));
-      }
-    } else {
-      report_lowering_failure(cfg, lowered_result.error(), module_name,
-                              input.file_id, renderer, report);
-      continue;
-    }
-
-    // An inline `module inner:` has no source file of its own for the loop
-    // above to visit, so its functions are lowered here into modules named
-    // `main.inner` — the same dotted path a `main.inner.val()` call site
-    // records as its callee's owner, which is what makes the two link up.
-    auto submodules = hir::lower_inline_submodules(
-        *input.ast_file, module_name, checked,
-        hir::lowering_options{.contract_checks = cfg.contract_checks});
-    if (submodules.has_value()) {
-      for (auto &submodule : *submodules) {
-        report.hir_modules.push_back(hir_lowering_result{
-            .module_path = submodule->module_name, .lowered = true});
-        if (check_frame_budgets(*submodule, layouts, input.file_id, renderer,
-                                report)) {
-          lowered_modules.push_back(std::move(submodule));
-        }
-      }
-    } else {
-      report.hir_modules.push_back(hir_lowering_result{
-          .module_path = module_name,
-          .lowered = false,
-          .error =
-              std::format("{} (byte offset {})", submodules.error().message,
-                          submodules.error().span.start)});
-      report_lowering_failure(cfg, submodules.error(), module_name,
-                              input.file_id, renderer, report);
-    }
   }
 
-  // Materialized functor instantiations have no source file the loop above
-  // visits — they live only in `checked`. Lower them into standalone modules
-  // here and append them, so a `use m[args] as db` program's `db.f(...)`
-  // calls resolve to a real compiled module. Skipped under `--parse-only`,
-  // which produces no HIR at all.
-  if (core_only != nullptr && !cfg.parse_only) {
-    return take_core_modules(cfg, parsed_inputs, *core_only, layouts, renderer,
-                             report);
+  if (lowering == nullptr || cfg.parse_only) {
+    return {};
   }
-  if (!cfg.parse_only) {
-    auto functor_modules = hir::lower_functor_modules(
-        checked, hir::lowering_options{.contract_checks = cfg.contract_checks});
-    if (functor_modules.has_value()) {
-      for (auto &functor_module : *functor_modules) {
-        report.hir_modules.push_back(hir_lowering_result{
-            .module_path = functor_module->module_name, .lowered = true});
-        // Same file choice as `report_lowering_failure` below: a functor's
-        // cloned `def`s keep spans into the file that declared them.
-        if (check_frame_budgets(*functor_module, layouts,
-                                parsed_inputs.empty()
-                                    ? file_id_type{0}
-                                    : parsed_inputs.front().file_id,
-                                renderer, report)) {
-          lowered_modules.push_back(std::move(functor_module));
-        }
-      }
-    } else {
-      report.hir_modules.push_back(hir_lowering_result{
-          .module_path = "<functor-instantiation>",
-          .lowered = false,
-          .error = std::format("{} (byte offset {})",
-                               functor_modules.error().message,
-                               functor_modules.error().span.start)});
-      // The instantiated `def`s were cloned from some real source file, so the
-      // error's span still points into one — take the first input's file for
-      // rendering, which is where a single-file program's functor lives.
-      report_lowering_failure(
-          cfg, functor_modules.error(), "<functor-instantiation>",
-          parsed_inputs.empty() ? file_id_type{0}
-                                : parsed_inputs.front().file_id,
-          renderer, report);
-    }
-  }
-
-  return lowered_modules;
+  // Checking is over, so every instance's shape is settled.
+  auto layouts = runtime::value_layouts(checked.types, checked.shapes);
+  return take_modules(cfg, parsed_inputs, *lowering, layouts, renderer,
+                      report);
 }
 
 } // namespace cinder::driver

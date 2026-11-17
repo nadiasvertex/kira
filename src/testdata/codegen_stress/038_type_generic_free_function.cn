@@ -3,7 +3,7 @@ module codegen_stress.type_generic_free_function
 # A free function generic over *types* (`def identity[T]`) is monomorphized once
 # per concrete type its call sites solve for — `identity$int32`, `identity$bool`
 # — by `semantic::checker::instantiate_type_generic`. The template itself is
-# never lowered (`hir::lower_module` skips it, just as it skips a const-generic
+# never lowered (lowering skips it, just as it skips a const-generic
 # template); each instance is an ordinary function to both backends, so a call
 # to `identity(7)` and a call to `identity(false)` compile to two distinct
 # concrete functions. `choose[T]` proves a generic body with control flow and

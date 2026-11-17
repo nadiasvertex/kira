@@ -80,6 +80,9 @@ struct task_record {
   std::vector<uint64_t *> waiting_on;
   /// The memory word whose waiter list names this task (`word_waiter`).
   const uint64_t *word = nullptr;
+  /// The body is at an `await yield` and has been queued again
+  /// (`yield_poll`); its next poll there goes on past it.
+  bool rescheduled = false;
 };
 
 struct pool_state {
@@ -712,6 +715,25 @@ auto await_poll(uint64_t *self, uint64_t *awaited) -> bool {
   return false;
 }
 
+auto yield_poll(uint64_t *self) -> bool {
+  auto &s = state();
+  const auto lock = std::scoped_lock(s.mutex);
+  auto *rec = record_of(self);
+  if (rec == nullptr) {
+    // Nothing schedules the task, so there is no queue to go back to.
+    return true;
+  }
+  if (rec->rescheduled) {
+    rec->rescheduled = false;
+    return true;
+  }
+  // The task is running, so this is the wake `worker_loop` acts on when the
+  // step returns `pending`: it queues the task again at the back.
+  rec->rescheduled = true;
+  rec->notified = true;
+  return false;
+}
+
 auto await_all_poll(uint64_t *self, uint64_t *const *tasks, size_t count)
     -> bool {
   auto &s = state();
@@ -961,6 +983,10 @@ auto cinder_rt_task_block_on(uint64_t *task, uint64_t pool) -> uint64_t * {
 
 auto cinder_rt_task_await_poll(uint64_t *self, uint64_t *awaited) -> uint32_t {
   return cinder::runtime::scheduler::await_poll(self, awaited) ? 1U : 0U;
+}
+
+auto cinder_rt_task_yield_poll(uint64_t *self) -> uint32_t {
+  return cinder::runtime::scheduler::yield_poll(self) ? 1U : 0U;
 }
 
 auto cinder_rt_task_spawn(uint64_t *task, uint64_t pool) -> uint64_t * {

@@ -4,7 +4,6 @@
 #include <utility>
 
 #include "src/hir/lower_core_lowerer.h"
-#include "src/parser/ast_traversal.h"
 
 /// Statements and blocks.
 namespace cinder::hir {
@@ -416,7 +415,8 @@ auto core_lowerer::let_into(const core::let &source, ptr_vec<hir_node> &out)
     auto &adapter = dynamic_cast<hir_call &>(**value);
     const auto &target = static_cast<const core::call &>(*source.value).target;
     adapter.consumes_receiver = true;
-    adapter.receiver_by_value = owns_receiver(checked_, target.decl);
+    adapter.receiver_by_value =
+        target.receiver == core::receiver_mode::consuming;
     adapter.receiver_borrowed =
         adapter.receiver_by_value && !adapter.args.empty() &&
         checked_.types.entry(adapter.args.front()->type).kind ==
@@ -444,15 +444,10 @@ auto core_lowerer::assign_into(const core::assign &source,
   }
   // `a op= b`, which the core spells `a = a op b`, neither drops the old
   // value nor sets flags, as in the old lowerer.
-  if (source.origin != nullptr) {
-    const auto &node = *static_cast<const ast::node *>(source.origin);
-    if (node.kind == ast::node_kind::assign_stmt &&
-        ast::cast<const ast::assign_stmt>(node).op != ast::assign_op::assign) {
-      out.push_back(hir::make<hir_assign>(source.span, ast::assign_op::assign,
-                                          std::move(*target),
-                                          std::move(*value)));
-      return {};
-    }
+  if (source.compound) {
+    out.push_back(hir::make<hir_assign>(source.span, ast::assign_op::assign,
+                                        std::move(*target), std::move(*value)));
+    return {};
   }
   // The old value drops after the new one is computed, and the target's
   // drop flags are set again after the write.

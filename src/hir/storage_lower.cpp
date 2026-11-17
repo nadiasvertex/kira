@@ -2431,6 +2431,15 @@ private:
   /// not finished, returns `pending`. Woken, it resumes here and polls again.
   /// Past it the awaited task has finished and `lower_task_result` reads it.
   [[nodiscard]] auto lower_await_point(const hir_yield &yield) -> result {
+    if (yield.value == nullptr) {
+      // `await yield`: the task is queued again and resumes here.
+      auto wait = storage_op{.kind = op_kind::coroutine_await};
+      wait.waits = wait_mode::reschedule;
+      wait.dest = whole(object_slot_);
+      wait.depth = ++suspensions_;
+      emit(std::move(wait), yield.span);
+      return flush_pending(yield.span);
+    }
     const auto group = is_task_group_type(yield.value->type);
     const auto crew = is_crew_type(yield.value->type);
     if (!group && !crew &&

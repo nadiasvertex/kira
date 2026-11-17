@@ -1,13 +1,14 @@
 #include <algorithm>
 #include <cstdlib>
 #include <exception>
+#include <expected>
 #include <iostream>
 #include <string>
 #include <vector>
 
 #include "src/comptime_vm/backend.h"
 #include "src/hir/live_across_yield.h"
-#include "src/hir/lower.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/nodes.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
@@ -16,6 +17,7 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
 #include "src/semantic/checker_results.h"
+#include "src/testing/stdlib_fixtures.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
 
@@ -41,6 +43,7 @@ struct checked_fixture {
   cinder::source_manager sources;
   cinder::diagnostic_bag diag{};
   cinder::ast::ptr<cinder::ast::file> ast_file;
+  cinder::file_id_type file_id = 0;
   cinder::semantic::checked_types checked;
 };
 
@@ -64,6 +67,7 @@ auto check_fixture(const std::string &text) -> checked_fixture {
       cinder::semantic::parsed_module{.file_id = *file_id,
                                       .ast_file = fixture.ast_file.get()},
   };
+  fixture.file_id = *file_id;
   auto comptime = cinder::comptime_vm::vm_backend{};
   fixture.checked = cinder::semantic::check_program(
       parsed_modules, fixture.diag, file_has_errors, &comptime);
@@ -71,23 +75,21 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   return fixture;
 }
 
-auto find_func(const cinder::ast::file &file, std::string_view name)
-    -> const cinder::ast::func_decl & {
-  for (const auto &item : file.items) {
-    if (item != nullptr && item->kind == cinder::ast::node_kind::func_decl) {
-      const auto &decl = dynamic_cast<const cinder::ast::func_decl &>(*item);
-      if (decl.name == name) {
-        return decl;
-      }
-    }
-  }
-  fail("expected to find a function declaration by name");
+/// Lowers the fixture as the driver does and takes the function `name` out
+/// of it.
+auto lower_named(checked_fixture &fixture, std::string_view name)
+    -> std::expected<hir::ptr<hir::hir_function>, std::string> {
+  const auto parsed = std::vector<cinder::semantic::parsed_module>{
+      cinder::semantic::parsed_module{.file_id = fixture.file_id,
+                                      .ast_file = fixture.ast_file.get()}};
+  auto modules = cinder::testing::lower_test_program(
+      parsed, fixture.checked, fixture.file_id, {{fixture.file_id, "sample"}});
+  return cinder::testing::take_lowered_function(modules, "sample", name);
 }
 
-auto lower_generator(const checked_fixture &fixture, std::string_view fn_name)
+auto lower_generator(checked_fixture &fixture, std::string_view fn_name)
     -> hir::ptr<hir::hir_function> {
-  const auto &decl = find_func(*fixture.ast_file, fn_name);
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, fn_name);
   expect(result.has_value(), "expected the fixture generator to lower");
   expect((*result)->is_generator(), "expected the lowered function to be "
                                     "marked as a generator");

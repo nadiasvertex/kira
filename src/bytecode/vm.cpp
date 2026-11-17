@@ -1241,6 +1241,11 @@ auto intrinsic_rt_task_await_poll(std::span<const slot_value> args)
                                                            task_of(args[1])));
 }
 
+auto intrinsic_rt_task_yield_poll(std::span<const slot_value> args)
+    -> slot_value {
+  return store_bool(cinder::runtime::scheduler::yield_poll(task_of(args[0])));
+}
+
 auto intrinsic_rt_task_spawn(std::span<const slot_value> args) -> slot_value {
   cinder::runtime::scheduler::spawn(
       task_of(args[0]),
@@ -1490,7 +1495,7 @@ namespace platform_query = cinder::runtime::platform_query;
          name == "rt_word_wake" || name == "rt_fd_readable" ||
          name == "rt_fd_writable" || name == "rt_sleep_until" ||
          name == "rt_monotonic_now" || name == "rt_pipe" ||
-         name == "rt_set_nonblocking";
+         name == "rt_set_nonblocking" || name == "rt_task_yield_poll";
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
@@ -1570,6 +1575,7 @@ constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
         intrinsic_rt_errno_would_block,
         intrinsic_rt_str_scalar_at,
         intrinsic_rt_str_scalar_width,
+        intrinsic_rt_task_yield_poll,
     }};
 
 static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),

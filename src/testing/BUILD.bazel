@@ -21,6 +21,7 @@ cc_library(
     deps = [
         ":testing",
         "//src/hir",
+        "//src/hir:lower_core",
         "//src/parser",
         "//src/semantic",
     ],
@@ -51,6 +52,7 @@ cc_library(
         "//src/bytecode",
         "//src/comptime_vm",
         "//src/hir",
+        "//src/hir:lower_core",
         "//src/parser",
         "//src/runtime",
         "//src/semantic",

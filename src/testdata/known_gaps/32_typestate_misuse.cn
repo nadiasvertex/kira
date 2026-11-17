@@ -1,7 +1,6 @@
 # todo: 32
 # tier: both
-# currently-accepted
-# currently-result: 2
+# currently-error: no concrete checked type is available for this node (`conn[_]` holds `_`)
 # want: rejected, because `send` takes `conn[true]` and `d` has type `conn[false]`, so the bool index does not match.
 module known_gaps.typestate_misuse
 

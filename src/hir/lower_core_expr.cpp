@@ -1,12 +1,9 @@
-#include <cstdio>
-#include <cstdlib>
 #include <format>
 #include <string>
 #include <utility>
 
 #include "src/core/intrinsics.h"
 #include "src/hir/lower_core_lowerer.h"
-#include "src/parser/ast_traversal.h"
 #include "src/runtime/value_layout.h"
 
 /// Expressions, places and calls.
@@ -15,28 +12,6 @@ namespace cinder::hir {
 using semantic::type_kind;
 
 namespace {
-
-/// Whether `origin` is an `if` or `match` statement: a block's tail
-/// statement is its value, but not an expression the source wrote, so its
-/// branches are statement lists like any statement's.
-[[nodiscard]] auto is_statement_origin(const void *origin) -> bool {
-  if (origin == nullptr) {
-    return false;
-  }
-  const auto kind = static_cast<const ast::node *>(origin)->kind;
-  return kind == ast::node_kind::if_stmt || kind == ast::node_kind::match_stmt;
-}
-
-/// A verified core tree broke a rule the lowering relies on.
-[[noreturn]] auto internal_error(std::string_view what, const core::node &node)
-    -> void {
-  std::fprintf(stderr,
-               "internal compiler error: lowering a verified core `%s` at "
-               "%u..%u: %.*s\n",
-               core_kind_name(node.kind).c_str(), node.span.start,
-               node.span.end, static_cast<int>(what.size()), what.data());
-  std::abort();
-}
 
 /// The four conversions between a cell and a reference: the same address in
 /// HIR, so the operand is the result.
@@ -136,8 +111,9 @@ auto core_lowerer::expr(const core::expr &source)
       if (matched.form == f::try_operator && in_task_body_) {
         return try_in_task(matched, type);
       }
-      if (matched.form == f::try_operator ||
-          is_statement_origin(source.origin)) {
+      // A block's tail `match` statement is its value, but its branches are
+      // statement lists like any statement's.
+      if (matched.form == f::try_operator || matched.tail_statement) {
         return lower();
       }
       if (source.origin != nullptr && branch_value_suspends(source, type)) {
@@ -170,7 +146,7 @@ auto core_lowerer::expr(const core::expr &source)
         }
         return ptr<hir_expr>(std::move(*made));
       };
-      if (is_statement_origin(source.origin)) {
+      if (static_cast<const core::if_expr &>(source).tail_statement) {
         return lower();
       }
       if (source.origin != nullptr && branch_value_suspends(source, type)) {
@@ -362,7 +338,8 @@ auto core_lowerer::call(const core::call &source)
     // The function value is the callee, as written: an inserted borrow of
     // the place holding it is that place.
     if (target.value == nullptr) {
-      internal_error("a call through a function value has no value", source);
+      return refuse("a call through a function value with no value",
+                    source.span);
     }
     auto callee = receiver_operand(*target.value);
     if (!callee.has_value()) {
@@ -405,8 +382,9 @@ auto core_lowerer::call(const core::call &source)
                              std::move(args));
   made->target = target.decl;
   if (consumes && source.origin != nullptr) {
+    // The callee owns its receiver, so the storage form moves it in.
     made->consumes_receiver = true;
-    made->receiver_by_value = owns_receiver(checked_, target.decl);
+    made->receiver_by_value = true;
   }
   return ptr<hir_expr>(std::move(made));
 }
@@ -416,7 +394,7 @@ auto core_lowerer::intrinsic_call(const core::call &source)
   const auto &name = source.target.name;
   if (is_cell_conversion(name)) {
     if (source.args.size() != 1) {
-      internal_error("a cell conversion takes one operand", source);
+      return refuse("a cell conversion with the wrong operands", source.span);
     }
     // Retyped as the conversion's result, which is what the old lowerer
     // gives the value (a `cell[T]` call result, say).
@@ -427,36 +405,44 @@ auto core_lowerer::intrinsic_call(const core::call &source)
     return operand;
   }
   const auto type = hir_type(source.type);
-  const auto operands = [&](std::size_t count) {
-    if (source.args.size() != count) {
-      internal_error(std::format("`{}` takes {} operand(s)", name, count),
-                     source);
-    }
+  // A verified core gives each operation its operands; a call with others
+  // is a compiler bug, reported as one.
+  const auto wrong_operands = [&](std::size_t count,
+                                  std::size_t type_count = 0) -> bool {
+    return source.args.size() != count ||
+           source.target.generic_args.size() < type_count;
+  };
+  const auto refuse_operands = [&]() {
+    return refuse(std::format("`{}` with the wrong operands", name),
+                  source.span);
   };
   const auto type_operand = [&]() -> type_id {
-    if (source.target.generic_args.size() != 1) {
-      internal_error(std::format("`{}` takes one type operand", name), source);
-    }
     return source.target.generic_args.front();
   };
   // Todo 39: `into_iter(bitwise_copy(xs))` is the old lowerer's adapter
   // call on the reference itself, marked `receiver_borrowed` (`let_into`):
   // the backends copy what it refers to. HIR has no other form of it.
   if (name == "bitwise_copy") {
-    operands(1);
+    if (wrong_operands(1)) {
+      return refuse_operands();
+    }
     if (for_adapter_ == nullptr) {
       return refuse("bitwise_copy outside a for loop's adapter", source.span);
     }
     return expr(*source.args.front());
   }
   if (name == "stack_buffer") {
-    operands(0);
+    if (wrong_operands(0)) {
+      return refuse_operands();
+    }
     return ptr<hir_expr>(hir::make<hir_stack_buffer>(source.span, type));
   }
   // A raw pointer is an address whatever it points at: the operand is the
   // result, retyped so the next `p[i]` reads the new element stride.
   if (name == "ptr_cast") {
-    operands(1);
+    if (wrong_operands(1)) {
+      return refuse_operands();
+    }
     auto operand = expr(*source.args.front());
     if (operand.has_value()) {
       (*operand)->type = type;
@@ -464,7 +450,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
     return operand;
   }
   if (name == "slice_from_raw_parts") {
-    operands(2);
+    if (wrong_operands(2)) {
+      return refuse_operands();
+    }
     auto pointer = expr(*source.args[0]);
     if (!pointer.has_value()) {
       return std::unexpected(pointer.error());
@@ -479,7 +467,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
   // The storage form answers a layout question from `value_layouts`, and
   // `needs_drop` from the drop plans every drop decision reads.
   if (name == "size_of" || name == "align_of") {
-    operands(0);
+    if (wrong_operands(0, 1)) {
+      return refuse_operands();
+    }
     auto size = ptr<hir_literal>(
         hir::make<hir_literal>(source.span, type, token_kind::int_lit, ""));
     size->question = layout_question{.wants_alignment = name == "align_of",
@@ -487,18 +477,22 @@ auto core_lowerer::intrinsic_call(const core::call &source)
     return ptr<hir_expr>(std::move(size));
   }
   if (name == "needs_drop") {
-    operands(0);
+    if (wrong_operands(0, 1)) {
+      return refuse_operands();
+    }
     const auto drops = checked_.drop.drop_plans.contains(type_operand());
     return ptr<hir_expr>(hir::make<hir_literal>(
         source.span, type, drops ? token_kind::kw_true : token_kind::kw_false,
         drops ? "true" : "false"));
   }
   if (name == "uninit_len") {
-    operands(0);
+    if (wrong_operands(0, 1)) {
+      return refuse_operands();
+    }
     const auto count = runtime::uninit_slot_count(
         checked_.types, checked_.types.entry(type_operand()));
     if (!count.has_value()) {
-      internal_error("an `uninit` buffer with no slot count", source);
+      return refuse("an `uninit` buffer with no slot count", source.span);
     }
     return ptr<hir_expr>(hir::make<hir_literal>(
         source.span, type, token_kind::int_lit, std::to_string(*count)));
@@ -506,7 +500,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
   // The container operations read the receiver as written: a value, or the
   // reference it is reached through. The storage form follows references.
   if (name == "len" || name == "container_data" || name == "as_bytes") {
-    operands(1);
+    if (wrong_operands(1)) {
+      return refuse_operands();
+    }
     auto object = receiver_operand(*source.args.front());
     if (!object.has_value() || name == "as_bytes") {
       // `str` and `slice[byte]` are both `{len, data}`: no conversion.
@@ -521,7 +517,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
   }
   // A generator resumes through its handle, as the old lowerer names it.
   if (name == "generator_next") {
-    operands(1);
+    if (wrong_operands(1)) {
+      return refuse_operands();
+    }
     auto object = receiver_operand(*source.args.front());
     if (!object.has_value()) {
       return object;
@@ -530,7 +528,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
         hir::make<hir_generator_next>(source.span, type, std::move(*object)));
   }
   if (name == "str_decode_scalar" || name == "str_scalar_width") {
-    operands(2);
+    if (wrong_operands(2)) {
+      return refuse_operands();
+    }
     auto object = receiver_operand(*source.args[0]);
     if (!object.has_value()) {
       return object;
@@ -549,7 +549,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
   // `&p[i]` on a raw pointer: the old lowerer takes the address of the
   // element, which the backends compute as an offset.
   if (name == "ptr_offset") {
-    operands(2);
+    if (wrong_operands(2, 1)) {
+      return refuse_operands();
+    }
     auto pointer = expr(*source.args[0]);
     if (!pointer.has_value()) {
       return pointer;
@@ -571,7 +573,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
   // Range-indexing a builtin sequence is an index by the range, `a..b` or
   // `a..=b`, which the storage form reads.
   if (name == "range_view" || name == "range_view_inclusive") {
-    operands(3);
+    if (wrong_operands(3)) {
+      return refuse_operands();
+    }
     auto object = receiver_operand(*source.args[0]);
     if (!object.has_value()) {
       return object;
@@ -595,7 +599,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
   // Joining interpolated pieces calls the runtime helper by name, as the
   // old lowerer's interpolation does.
   if (name == "rt_str_concat") {
-    operands(2);
+    if (wrong_operands(2)) {
+      return refuse_operands();
+    }
     auto args = ptr_vec<hir_expr>{};
     for (const auto &arg : source.args) {
       auto made = expr(*arg);
@@ -624,7 +630,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
   }
   // A cell is the element's address: `get` reads through it.
   if (name == "cell_get") {
-    operands(1);
+    if (wrong_operands(1)) {
+      return refuse_operands();
+    }
     auto cell = expr(*source.args.front());
     if (!cell.has_value()) {
       return cell;
@@ -633,7 +641,9 @@ auto core_lowerer::intrinsic_call(const core::call &source)
         source.span, type, ast::unary_op::deref, std::move(*cell)));
   }
   if (name == "cell_set") {
-    operands(2);
+    if (wrong_operands(2)) {
+      return refuse_operands();
+    }
     auto cell = expr(*source.args[0]);
     if (!cell.has_value()) {
       return cell;
@@ -670,7 +680,7 @@ auto core_lowerer::primitive(const core::primitive &source)
   const auto type = hir_type(source.type);
   if (source.binary.has_value()) {
     if (source.operands.size() != 2) {
-      internal_error("a binary operator takes two operands", source);
+      return refuse("a binary operator with the wrong operands", source.span);
     }
     auto lhs = expr(*source.operands[0]);
     if (!lhs.has_value()) {
@@ -689,7 +699,7 @@ auto core_lowerer::primitive(const core::primitive &source)
                                           std::move(*lhs), std::move(*rhs)));
   }
   if (!source.unary.has_value() || source.operands.size() != 1) {
-    internal_error("a unary operator takes one operand", source);
+    return refuse("a unary operator with the wrong operands", source.span);
   }
   auto operand = expr(*source.operands[0]);
   if (!operand.has_value()) {
@@ -739,7 +749,8 @@ auto core_lowerer::aggregate(const core::aggregate_init &source)
           source.span, type, std::move(elements), nullptr, nullptr));
     }
     if (elements.size() != 1) {
-      internal_error("a repeated array has one element", source);
+      return refuse("a repeated array with other than one element",
+                    source.span);
     }
     // The fill form `[v; n]`: the backends repeat the value.
     auto count = hir::make<hir_literal>(source.span,
@@ -767,7 +778,7 @@ auto core_lowerer::aggregate(const core::aggregate_init &source)
         hir::make<hir_struct_init>(source.span, type, std::move(fields)));
   }
   default:
-    internal_error("not an aggregate", source);
+    return refuse("an aggregate of an unknown form", source.span);
   }
 }
 

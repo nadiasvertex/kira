@@ -1114,8 +1114,7 @@ struct hir_continue : hir_stmt {
 
 /// `yield value` — a generator's suspension point. Unlike `hir_return`,
 /// this does not terminate the enclosing block; lowering/codegen must keep
-/// walking `stmts` after it. `value` is never null — the surface grammar
-/// has no bare `yield` form.
+/// walking `stmts` after it. `value` is null only for `await yield`.
 ///
 /// With `awaits` set this is a task's `await` point instead: `value` is the
 /// `task[T, E, C]` being awaited (a local, so it survives the suspension),
@@ -1124,6 +1123,10 @@ struct hir_continue : hir_stmt {
 /// `pending` and, when woken, resumes at this same statement to poll again.
 /// Past it the awaited task has finished, and an `awaiting`
 /// `hir_generator_next` reads its result.
+///
+/// With `awaits` set and no `value` this is `await yield`: the task waits on
+/// nothing. It suspends with status `pending`, the scheduler queues it again
+/// at the back of its pool's queue, and it resumes past this statement.
 struct hir_yield : hir_stmt {
   ptr<hir_expr> value;
   bool awaits = false;

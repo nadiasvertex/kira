@@ -1,9 +1,0 @@
-# todo: 15
-# tier: both
-# currently-error: `await yield` is not lowered yet
-# want: `await yield` yields to the scheduler and resumes, and `main` returns 15.
-module known_gaps.await_yield
-
-async def main() -> int32:
-    await yield
-    return 15

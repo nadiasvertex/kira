@@ -254,9 +254,27 @@ auto body_builder::test_of(const ast::node &pattern, type_id type,
     // itself, so the pattern's test moves past the `deref`.
     return fail("ref_pattern", "a `&` pattern on a reference", pattern.span);
   }
-  case ast::node_kind::or_pattern:
-    return fail("nested or pattern", "a `|` below the top of a pattern",
-                pattern.span);
+  case ast::node_kind::or_pattern: {
+    // A nested `|`: the alternative `alternatives_of` chose for this
+    // build. A destructuring parameter or a `for` pattern is not expanded.
+    const auto &alternatives =
+        ast::cast<const ast::or_pattern>(pattern).alternatives;
+    if (or_choices_ == nullptr) {
+      return fail("nested or pattern", "a `|` below the top of a pattern",
+                  pattern.span);
+    }
+    if (alternatives.empty()) {
+      return fail("or_pattern", "no alternatives", pattern.span);
+    }
+    const auto taken = or_choices_->taken.find(&pattern);
+    const auto index =
+        taken == or_choices_->taken.end() ? std::size_t{0} : taken->second;
+    or_choices_->met.emplace_back(&pattern, alternatives.size());
+    if (alternatives[index] == nullptr) {
+      return fail("or_pattern", "a missing alternative", pattern.span);
+    }
+    return test_of(*alternatives[index], type, path, context, bindings);
+  }
   case ast::node_kind::tuple_pattern: {
     const auto &tuple = ast::cast<const ast::tuple_pattern>(pattern);
     const auto &entry = checked_.types.entry(type);
@@ -501,7 +519,62 @@ namespace {
   return out;
 }
 
+/// The most arm alternatives one arm's nested `|`s may expand to.
+constexpr auto k_max_or_alternatives = std::size_t{64};
+
 } // namespace
+
+auto body_builder::alternatives_of(const ast::node &pattern, type_id subject,
+                                   binding_context &context, source_span span)
+    -> result<std::vector<pattern_alternative>> {
+  auto out = std::vector<pattern_alternative>{};
+  for (const auto *top : top_alternatives(pattern)) {
+    if (top == nullptr) {
+      return fail("or_pattern", "a missing alternative", span);
+    }
+    // An odometer over the nested `|`s, the leftmost slowest: each build
+    // records the `|`s it met; the next advances the last one that has an
+    // alternative left and forgets the choices after it, which belonged
+    // to the alternative it moved away from.
+    auto choices = or_choices{};
+    while (true) {
+      choices.met.clear();
+      or_choices_ = &choices;
+      auto made = alternative_of(*top, subject, context);
+      or_choices_ = nullptr;
+      if (!made.has_value()) {
+        return std::unexpected(made.error());
+      }
+      out.push_back(std::move(*made));
+      if (out.size() > k_max_or_alternatives) {
+        return fail_feature(
+            "nested or pattern",
+            std::format(
+                "this pattern's `|`s combine into more than {} alternatives, "
+                "more than the compiler can expand; split it into several "
+                "arms, or match the inner value in a nested `match`",
+                k_max_or_alternatives),
+            pattern.span);
+      }
+      auto advanced = false;
+      for (auto i = choices.met.size(); i > 0 && !advanced; --i) {
+        const auto [node, count] = choices.met[i - 1];
+        auto &index = choices.taken[node];
+        if (index + 1 < count) {
+          ++index;
+          for (auto j = i; j < choices.met.size(); ++j) {
+            choices.taken.erase(choices.met[j].first);
+          }
+          advanced = true;
+        }
+      }
+      if (!advanced) {
+        break;
+      }
+    }
+  }
+  return out;
+}
 
 auto body_builder::match_of(const ast::expr &subject,
                             const std::vector<ast::match_arm> &arms,
@@ -522,15 +595,8 @@ auto body_builder::match_of(const ast::expr &subject,
         .symbols = {},
         .subject_access = context.subject_access,
         .subject_type = context.subject_type};
-    auto alternatives = std::vector<pattern_alternative>{};
-    for (const auto *alternative : top_alternatives(*arm_ast.pattern)) {
-      if (alternative == nullptr) {
-        return fail("or_pattern", "a missing alternative", arm_ast.span);
-      }
-      CORE_TRY(made_alternative,
-               alternative_of(*alternative, subject_type, arm_context));
-      alternatives.push_back(std::move(made_alternative));
-    }
+    CORE_TRY(alternatives, alternatives_of(*arm_ast.pattern, subject_type,
+                                           arm_context, arm_ast.span));
     CORE_TRY(arm, arm_of(
                       std::move(alternatives), arm_ast.guard.get(),
                       [&]() -> result<ptr<block>> {
@@ -575,12 +641,8 @@ auto body_builder::if_let_of(const std::vector<ast::if_branch> &branches,
   made->form = match_form::if_let;
   made->subject_origin = branch.let_expr.get();
   made->subject_derefs = context.subject_derefs;
-  auto alternatives = std::vector<pattern_alternative>{};
-  for (const auto *alternative : top_alternatives(*branch.let_pattern)) {
-    CORE_TRY(made_alternative,
-             alternative_of(*alternative, subject_type, context));
-    alternatives.push_back(std::move(made_alternative));
-  }
+  CORE_TRY(alternatives,
+           alternatives_of(*branch.let_pattern, subject_type, context, branch.span));
   CORE_TRY(arm, arm_of(
                     std::move(alternatives), nullptr,
                     [&]() { return block_of(branch.body, branch.span, type); },
@@ -617,12 +679,8 @@ auto body_builder::while_let_of(const ast::while_stmt &loop)
   matched->form = match_form::while_let;
   matched->subject_origin = loop.let_expr.get();
   matched->subject_derefs = context.subject_derefs;
-  auto alternatives = std::vector<pattern_alternative>{};
-  for (const auto *alternative : top_alternatives(*loop.let_pattern)) {
-    CORE_TRY(made_alternative,
-             alternative_of(*alternative, subject_type, context));
-    alternatives.push_back(std::move(made_alternative));
-  }
+  CORE_TRY(alternatives,
+           alternatives_of(*loop.let_pattern, subject_type, context, loop.span));
   CORE_TRY(arm, arm_of(
                     std::move(alternatives), nullptr,
                     [&]() { return block_of(loop.body, loop.span, unit); },
@@ -653,12 +711,8 @@ auto body_builder::let_pattern_of(const ast::let_stmt &let_ast,
   made->form = match_form::let_pattern;
   made->subject_origin = let_ast.initializer.get();
   made->subject_derefs = context.subject_derefs;
-  auto alternatives = std::vector<pattern_alternative>{};
-  for (const auto *alternative : top_alternatives(*let_ast.pattern)) {
-    CORE_TRY(made_alternative,
-             alternative_of(*alternative, subject_type, context));
-    alternatives.push_back(std::move(made_alternative));
-  }
+  CORE_TRY(alternatives,
+           alternatives_of(*let_ast.pattern, subject_type, context, let_ast.span));
   CORE_TRY(arm, arm_of(
                     std::move(alternatives), nullptr,
                     [&]() {

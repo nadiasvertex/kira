@@ -1,5 +1,5 @@
 # inference snapshot
-# 2878 interned types
+# 3003 interned types
 
 ## node_types (34414)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -3926,13 +3926,13 @@ std/algo.cn:309:16 [ident] option[U]
 std/algo.cn:320:20 [binding_pat] I
 std/algo.cn:320:27 [binding_pat] usize
 std/algo.cn:320:40 [named_type] take_iter[I, T]
-std/algo.cn:321:12 [struct_literal] take_iter[I, _]
+std/algo.cn:321:12 [struct_literal] take_iter[I, T]
 std/algo.cn:321:31 [ident] I
 std/algo.cn:321:41 [ident] usize
 std/algo.cn:332:20 [binding_pat] I
 std/algo.cn:332:27 [binding_pat] usize
 std/algo.cn:332:40 [named_type] skip_iter[I, T]
-std/algo.cn:333:12 [struct_literal] skip_iter[I, _]
+std/algo.cn:333:12 [struct_literal] skip_iter[I, T]
 std/algo.cn:333:31 [ident] I
 std/algo.cn:333:41 [ident] usize
 std/algo.cn:344:26 [binding_pat] I
@@ -3952,7 +3952,7 @@ std/algo.cn:357:63 [literal] bool
 std/algo.cn:368:23 [binding_pat] I
 std/algo.cn:368:30 [binding_pat] usize
 std/algo.cn:368:43 [named_type] step_by_iter[I, T]
-std/algo.cn:369:12 [struct_literal] step_by_iter[I, _]
+std/algo.cn:369:12 [struct_literal] step_by_iter[I, T]
 std/algo.cn:369:34 [ident] I
 std/algo.cn:369:44 [ident] usize
 std/algo.cn:369:54 [literal] bool
@@ -4053,19 +4053,19 @@ std/algo.cn:541:16 [call] usize
 std/algo.cn:556:24 [binding_pat] I
 std/algo.cn:556:31 [binding_pat] J
 std/algo.cn:556:43 [named_type] chain_iter[I, J, T]
-std/algo.cn:557:12 [struct_literal] chain_iter[I, J, _]
+std/algo.cn:557:12 [struct_literal] chain_iter[I, J, T]
 std/algo.cn:557:32 [ident] I
 std/algo.cn:557:44 [ident] J
 std/algo.cn:557:60 [literal] bool
 std/algo.cn:570:19 [binding_pat] I
 std/algo.cn:570:29 [named_type] rev_iter[I, T]
-std/algo.cn:571:12 [struct_literal] rev_iter[I, _]
+std/algo.cn:571:12 [struct_literal] rev_iter[I, T]
 std/algo.cn:571:30 [ident] I
 std/algo.cn:582:24 [binding_pat] I
 std/algo.cn:582:34 [named_type] peekable_iter[I, T]
-std/algo.cn:583:12 [struct_literal] peekable_iter[I, _]
+std/algo.cn:583:12 [struct_literal] peekable_iter[I, T]
 std/algo.cn:583:35 [ident] I
-std/algo.cn:583:45 [ident] option[_]
+std/algo.cn:583:45 [ident] option[T]
 std/algo.cn:583:60 [literal] bool
 std/algo.cn:598:20 [binding_pat] &mut peekable_iter[I, T]
 std/algo.cn:598:53 [named_type] option[T]
@@ -4158,12 +4158,12 @@ std/algo.cn:710:16 [call] usize
 std/algo.cn:732:25 [binding_pat] I
 std/algo.cn:732:32 [binding_pat] J
 std/algo.cn:732:45 [named_type] zip_iter[I, J, T, U]
-std/algo.cn:733:12 [struct_literal] zip_iter[I, J, _, _]
+std/algo.cn:733:12 [struct_literal] zip_iter[I, J, T, U]
 std/algo.cn:733:30 [ident] I
 std/algo.cn:733:42 [ident] J
 std/algo.cn:747:25 [binding_pat] I
 std/algo.cn:747:35 [named_type] enumerate_iter[I, T]
-std/algo.cn:748:12 [struct_literal] enumerate_iter[I, _]
+std/algo.cn:748:12 [struct_literal] enumerate_iter[I, T]
 std/algo.cn:748:36 [ident] I
 std/algo.cn:748:44 [literal] usize
 std/algo.cn:787:14 [binding_pat] &mut flatten_iter[I, J, T]
@@ -4229,16 +4229,16 @@ std/algo.cn:832:24 [ident] option[U]
 std/algo.cn:833:16 [ident] option[U]
 std/algo.cn:849:26 [binding_pat] I
 std/algo.cn:849:36 [named_type] flatten_iter[I, J, T]
-std/algo.cn:850:12 [struct_literal] flatten_iter[I, _, _]
+std/algo.cn:850:12 [struct_literal] flatten_iter[I, J, T]
 std/algo.cn:850:34 [ident] I
-std/algo.cn:850:43 [ident] option[_]
+std/algo.cn:850:43 [ident] option[J]
 std/algo.cn:868:30 [binding_pat] I
 std/algo.cn:868:37 [binding_pat] fn(T) -> J
 std/algo.cn:868:55 [named_type] flat_map_iter[I, T, J, U]
-std/algo.cn:869:12 [struct_literal] flat_map_iter[I, T, J, _]
+std/algo.cn:869:12 [struct_literal] flat_map_iter[I, T, J, U]
 std/algo.cn:869:35 [ident] I
 std/algo.cn:869:42 [ident] fn(T) -> J
-std/algo.cn:869:50 [ident] option[_]
+std/algo.cn:869:50 [ident] option[J]
 std/algo.cn:901:21 [binding_pat] I
 std/algo.cn:901:31 [named_type] usize
 std/algo.cn:902:5 [var_stmt] I
@@ -34664,7 +34664,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:22593 on_first bool
 ?:23140 inner I
 ?:23569 inner I
-?:23580 held option[_]
+?:23580 held option[T]
 ?:23593 filled bool
 ?:25236 inner I
 ?:25247 state S
@@ -34676,10 +34676,10 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:30225 inner I
 ?:30236 at usize
 ?:34700 outer I
-?:34711 cur option[_]
+?:34711 cur option[J]
 ?:35694 outer I
 ?:35705 f fn(T) -> J
-?:35711 cur option[_]
+?:35711 cur option[J]
 ?:56596 inner I
 ?:56607 f fn(&T) -> T
 
@@ -37121,7 +37121,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (849)
+## drop_plans (858)
 (list[T], list[T]) own=- fields=[0: list[T], 1: list[T]]
 (sender[T], receiver[T]) own=- fields=[0: sender[T], 1: receiver[T]]
 (watch_writer[T], watch_reader[T]) own=- fields=[0: watch_writer[T], 1: watch_reader[T]]
@@ -37152,7 +37152,6 @@ filter_map_iter[I, T, U] own=- fields=[f: fn(T) -> option[U]]
 flat_map_iter own=- fields=[f: fn(_) -> _]
 flat_map_iter[I, T, J, U] own=- fields=[f: fn(T) -> J]
 flat_map_iter[I, T, J, U] own=- fields=[f: fn(T) -> J]
-flat_map_iter[I, T, J, _] own=- fields=[f: fn(T) -> J]
 fn(&K, &K) -> ordering own=- fields=[] glue=fn() -> unit
 fn(&T) -> K own=- fields=[] glue=fn() -> unit
 fn(&T) -> K own=- fields=[] glue=fn() -> unit
@@ -37197,6 +37196,7 @@ fn(&_) -> bool own=- fields=[] glue=fn() -> unit
 fn(&_) -> unit own=- fields=[] glue=fn() -> unit
 fn(&_, &_) -> ordering own=- fields=[] glue=fn() -> unit
 fn(&array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
+fn(&array[field_info, 1]) -> *field_info own=- fields=[] glue=fn() -> unit
 fn(&array[int32, 3], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
 fn(&array[int32, 3], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(&array[int32, 4], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
@@ -37218,6 +37218,8 @@ fn(&mut T, T) -> T own=- fields=[] glue=fn() -> unit
 fn(&mut acc, int32) -> int32 own=- fields=[] glue=fn() -> unit
 fn(&mut int32) -> int32 own=- fields=[] glue=fn() -> unit
 fn(&mut int32) -> option[int32] own=- fields=[] glue=fn() -> unit
+fn(&mut list[field_info], field_info) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut list[field_info], usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut list[int32]) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut list[int32], int32) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut list[int32], usize) -> bool own=- fields=[] glue=fn() -> unit
@@ -37255,6 +37257,7 @@ fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=
 fn(&mut slice_mut[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
 fn(&mut slice_mut[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() -> unit
 fn(&mut slice_mut[int32]) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut uninit[array[field_info, 1], 1]) -> *mut array[field_info, 1] own=- fields=[] glue=fn() -> unit
 fn(&ordering) -> bool own=- fields=[] glue=fn() -> unit
 fn(&slice[T], T) -> option[usize] own=- fields=[] glue=fn() -> unit
 fn(&slice[T], fn(&T) -> bool) -> usize own=- fields=[] glue=fn() -> unit
@@ -37267,6 +37270,7 @@ fn(&slice[uint32], &slice[uint8], &slice[uint32], &slice[uint32], &slice[uint32]
 fn(&slice[uint32], fn(&uint32) -> bool) -> usize own=- fields=[] glue=fn() -> unit
 fn(&slice[uint32], uint32) -> option[usize] own=- fields=[] glue=fn() -> unit
 fn(&slice[uint32], usize) -> bool own=- fields=[] glue=fn() -> unit
+fn(&str, str) -> bool own=- fields=[] glue=fn() -> unit
 fn(&uint32) -> bool own=- fields=[] glue=fn() -> unit
 fn((int64, int32)) -> unit own=- fields=[] glue=fn() -> unit
 fn((usize, usize)) -> unit own=- fields=[] glue=fn() -> unit
@@ -37287,6 +37291,7 @@ fn() -> int64 own=- fields=[] glue=fn() -> unit
 fn() -> int8 own=- fields=[] glue=fn() -> unit
 fn() -> isize own=- fields=[] glue=fn() -> unit
 fn() -> list[_] own=- fields=[] glue=fn() -> unit
+fn() -> list[field_info] own=- fields=[] glue=fn() -> unit
 fn() -> option[J] own=- fields=[] glue=fn() -> unit
 fn() -> option[T] own=- fields=[] glue=fn() -> unit
 fn() -> option[T] own=- fields=[] glue=fn() -> unit
@@ -37350,6 +37355,7 @@ fn() -> uint16 own=- fields=[] glue=fn() -> unit
 fn() -> uint32 own=- fields=[] glue=fn() -> unit
 fn() -> uint64 own=- fields=[] glue=fn() -> unit
 fn() -> uint8 own=- fields=[] glue=fn() -> unit
+fn() -> uninit[array[field_info, 1], 1] own=- fields=[] glue=fn() -> unit
 fn() -> unit own=- fields=[] glue=fn() -> unit
 fn() -> usize own=- fields=[] glue=fn() -> unit
 fn(*mut (int64, int32)) -> unit own=- fields=[] glue=fn() -> unit
@@ -37379,6 +37385,7 @@ fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut T, usize, usize) -> *mut T own=- fields=[] glue=fn() -> unit
 fn(*mut T, usize, usize) -> *mut T own=- fields=[] glue=fn() -> unit
+fn(*mut byte) -> *mut field_info own=- fields=[] glue=fn() -> unit
 fn(*mut byte) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut byte, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut byte, usize, usize) -> *mut byte own=- fields=[] glue=fn() -> unit
@@ -37388,6 +37395,7 @@ fn(*mut channel_block[T]) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut channel_block[T]) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut channel_block[T]) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut channel_block[T], usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut field_info) -> *mut byte own=- fields=[] glue=fn() -> unit
 fn(*mut field_info) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut field_info, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut field_info, usize, usize) -> *mut field_info own=- fields=[] glue=fn() -> unit
@@ -37660,6 +37668,7 @@ fn(array[T, n]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
 fn(array[_, n]) -> list[_] own=- fields=[] glue=fn() -> unit
 fn(array[_, n]) -> self own=- fields=[] glue=fn() -> unit
+fn(array[field_info, 1]) -> list[field_info] own=- fields=[] glue=fn() -> unit
 fn(array[field_info, 1]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[int32, 0]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[int32, 3]) -> unit own=- fields=[] glue=fn() -> unit
@@ -37972,7 +37981,7 @@ write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (2192)
+## borrow_bearing_types (2225)
 &(T0, T1)
 &(T0, T1, T2)
 &(T0, T1, T2, T3)
@@ -38050,12 +38059,17 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &U
 &_
 &_
+&_
+&_
+&_
+&_
 &array[T, n]
 &array[T, n]
 &array[T, n]
 &array[_, _]
 &array[_, n]
 &array[_, n]
+&array[field_info, 1]
 &array[int32, 2]
 &array[int32, 3]
 &array[int32, 4]
@@ -38127,6 +38141,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &list[T]
 &list[_]
 &list[_]
+&list[_]
 &list[int32]
 &list[int64]
 &list[money]
@@ -38182,6 +38197,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &mut list[T]
 &mut list[T]
 &mut list[T]
+&mut list[_]
 &mut list[_]
 &mut list[_]
 &mut list[_]
@@ -38256,6 +38272,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &mut step_by_iter[I, T]
 &mut take_iter[I, T]
 &mut take_while_iter[I, T]
+&mut uninit[array[field_info, 1], 1]
 &mut upto
 &mut usize
 &mut watch_reader[T]
@@ -39014,7 +39031,6 @@ array[T, 0]
 array[T, 0]
 array[T, 2]
 array[T, _]
-array[T, _]
 array[T, k + 1]
 array[T, k + 3]
 array[T, m + n]
@@ -39072,7 +39088,6 @@ cell_mut[int32]
 cell_mut[int64]
 chain_iter[I, J, T]
 chain_iter[I, J, T]
-chain_iter[I, J, _]
 channel_block[T]
 channel_block[T]
 channel_block[T]
@@ -39088,7 +39103,6 @@ doubler[I]
 doubler[map_iter[counter, int32, int32]]
 enumerate_iter[I, T]
 enumerate_iter[I, T]
-enumerate_iter[I, _]
 example_type[T]
 filter_iter
 filter_iter
@@ -39096,17 +39110,19 @@ filter_iter[I, T]
 filter_iter[I, T]
 filter_iter[I, T]
 filter_iter[I, T]
+filter_iter[_, _]
+filter_iter[_, _]
 filter_iter[counter, int32]
 filter_map_iter
 filter_map_iter[I, T, U]
 filter_map_iter[I, T, U]
+filter_map_iter[_, _, _]
 flat_map_iter
 flat_map_iter[I, T, J, U]
 flat_map_iter[I, T, J, U]
-flat_map_iter[I, T, J, _]
+flat_map_iter[_, _, _, _]
 flatten_iter[I, J, T]
 flatten_iter[I, J, T]
-flatten_iter[I, _, _]
 fn(&K, &K) -> ordering
 fn(&T) -> K
 fn(&T) -> K
@@ -39148,9 +39164,14 @@ fn(&T, &T) -> ordering
 fn(&T, &U) -> bool
 fn(&T, &U) -> ordering
 fn(&_) -> bool
+fn(&_) -> bool
+fn(&_) -> bool
+fn(&_) -> bool
+fn(&_) -> unit
 fn(&_) -> unit
 fn(&_, &_) -> ordering
 fn(&array[T, n], index[n]) -> T
+fn(&array[field_info, 1]) -> *field_info
 fn(&array[int32, 3], index[n]) -> int32
 fn(&array[int32, 3], usize) -> int32
 fn(&array[int32, 4], index[n]) -> int32
@@ -39172,6 +39193,8 @@ fn(&mut T, T) -> T
 fn(&mut acc, int32) -> int32
 fn(&mut int32) -> int32
 fn(&mut int32) -> option[int32]
+fn(&mut list[field_info], field_info) -> unit
+fn(&mut list[field_info], usize) -> unit
 fn(&mut list[int32]) -> unit
 fn(&mut list[int32], int32) -> unit
 fn(&mut list[int32], usize) -> bool
@@ -39209,6 +39232,7 @@ fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit
 fn(&mut slice_mut[byte]) -> result[usize, io_error]
 fn(&mut slice_mut[byte]) -> task[usize, io_error, io]
 fn(&mut slice_mut[int32]) -> unit
+fn(&mut uninit[array[field_info, 1], 1]) -> *mut array[field_info, 1]
 fn(&ordering) -> bool
 fn(&slice[T], T) -> option[usize]
 fn(&slice[T], fn(&T) -> bool) -> usize
@@ -39221,6 +39245,7 @@ fn(&slice[uint32], &slice[uint8], &slice[uint32], &slice[uint32], &slice[uint32]
 fn(&slice[uint32], fn(&uint32) -> bool) -> usize
 fn(&slice[uint32], uint32) -> option[usize]
 fn(&slice[uint32], usize) -> bool
+fn(&str, str) -> bool
 fn(&uint32) -> bool
 fn((int64, int32)) -> unit
 fn((usize, usize)) -> unit
@@ -39241,6 +39266,7 @@ fn() -> int64
 fn() -> int8
 fn() -> isize
 fn() -> list[_]
+fn() -> list[field_info]
 fn() -> option[J]
 fn() -> option[T]
 fn() -> option[T]
@@ -39304,6 +39330,7 @@ fn() -> uint16
 fn() -> uint32
 fn() -> uint64
 fn() -> uint8
+fn() -> uninit[array[field_info, 1], 1]
 fn() -> unit
 fn() -> usize
 fn(*mut (int64, int32)) -> unit
@@ -39333,6 +39360,7 @@ fn(*mut T, usize) -> unit
 fn(*mut T, usize) -> unit
 fn(*mut T, usize, usize) -> *mut T
 fn(*mut T, usize, usize) -> *mut T
+fn(*mut byte) -> *mut field_info
 fn(*mut byte) -> unit
 fn(*mut byte, usize) -> unit
 fn(*mut byte, usize, usize) -> *mut byte
@@ -39342,6 +39370,7 @@ fn(*mut channel_block[T]) -> unit
 fn(*mut channel_block[T]) -> unit
 fn(*mut channel_block[T]) -> unit
 fn(*mut channel_block[T], usize) -> unit
+fn(*mut field_info) -> *mut byte
 fn(*mut field_info) -> unit
 fn(*mut field_info, usize) -> unit
 fn(*mut field_info, usize, usize) -> *mut field_info
@@ -39463,7 +39492,13 @@ fn(_) -> _
 fn(_) -> _
 fn(_) -> _
 fn(_) -> _
+fn(_) -> _
+fn(_) -> _
+fn(_) -> _
+fn(_) -> _
+fn(_) -> _
 fn(_) -> atomic[_]
+fn(_) -> bool
 fn(_) -> bool
 fn(_) -> bool
 fn(_) -> duration
@@ -39486,6 +39521,7 @@ fn(_) -> option[(_, _)]
 fn(_) -> option[(usize, _)]
 fn(_) -> option[B]
 fn(_) -> option[U]
+fn(_) -> option[_]
 fn(_) -> option[_]
 fn(_) -> option[_]
 fn(_) -> option[_]
@@ -39587,6 +39623,7 @@ fn(_, &weight) -> bool
 fn(_, &weight) -> ordering
 fn(_, T) -> T
 fn(_, _) -> _
+fn(_, _) -> _
 fn(_, _) -> cell[_]
 fn(_, _) -> task[unit, _, io]
 fn(_, _) -> unit
@@ -39636,6 +39673,7 @@ fn(array[T, n]) -> unit
 fn(array[T, n], index[n]) -> T
 fn(array[_, n]) -> list[_]
 fn(array[_, n]) -> self
+fn(array[field_info, 1]) -> list[field_info]
 fn(array[field_info, 1]) -> unit
 fn(array[int32, 0]) -> unit
 fn(array[int32, 3]) -> unit
@@ -39800,6 +39838,7 @@ holder[T]
 inspect_iter
 inspect_iter[I, T]
 inspect_iter[I, T]
+inspect_iter[_, _]
 k
 list[T]
 list[T]
@@ -39855,10 +39894,12 @@ list_iter[T]
 list_iter[T]
 list_iter[T]
 list_iter[T]
+list_iter[_]
 list_iter[test_case]
 list_iter_mut
 list_iter_mut[T]
 list_iter_mut[T]
+list_iter_mut[_]
 m
 m
 m
@@ -39872,6 +39913,10 @@ map_iter[I, T, U]
 map_iter[I, T, U]
 map_iter[I, T, U]
 map_iter[I, T, U]
+map_iter[_, _, _]
+map_iter[_, _, _]
+map_iter[_, _, _]
+map_iter[_, _, _]
 map_iter[counter, int32, int32]
 map_iter[filter_iter[counter, int32], int32, int32]
 mutex[T]
@@ -40018,7 +40063,6 @@ option[test_suite]
 peekable_iter[I, T]
 peekable_iter[I, T]
 peekable_iter[I, T]
-peekable_iter[I, _]
 read_guard[T]
 read_guard[T]
 read_guard[T]
@@ -40032,7 +40076,6 @@ result[T, T]
 result[unit, T]
 rev_iter[I, T]
 rev_iter[I, T]
-rev_iter[I, _]
 rows
 rwlock[T]
 rwlock[T]
@@ -40050,6 +40093,7 @@ rwlock_block[T]
 scan_iter
 scan_iter[I, T, S]
 scan_iter[I, T, S]
+scan_iter[_, _, _]
 self
 sender[T]
 sender[T]
@@ -40068,10 +40112,10 @@ shared_block[T]
 shared_block[T]
 skip_iter[I, T]
 skip_iter[I, T]
-skip_iter[I, _]
 skip_while_iter
 skip_while_iter[I, T]
 skip_while_iter[I, T]
+skip_while_iter[_, _]
 slice[T]
 slice[T]
 slice[T]
@@ -40113,13 +40157,12 @@ slice_mut[byte]
 slice_mut[int32]
 step_by_iter[I, T]
 step_by_iter[I, T]
-step_by_iter[I, _]
 take_iter[I, T]
 take_iter[I, T]
-take_iter[I, _]
 take_while_iter
 take_while_iter[I, T]
 take_while_iter[I, T]
+take_while_iter[_, _]
 task[int32, never, io]
 task[option[_], never, io]
 task[option[int32], never, io]
@@ -40164,7 +40207,6 @@ write_guard[T]
 write_guard[T]
 zip_iter[I, J, T, U]
 zip_iter[I, J, T, U]
-zip_iter[I, J, _, _]
 
 ## static_global_owners (26)
 static$CASED_HI$1 -> std.unicode_tables

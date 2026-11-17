@@ -12,11 +12,18 @@ namespace {
 using semantic::k_unknown_type;
 using semantic::type_kind;
 
-[[nodiscard]] auto fail(lowering_error_kind kind, source_span span,
-                        std::string message)
+/// A drop the schedule asked for that cannot be made: a compiler bug.
+[[nodiscard]] auto fail(source_span span, std::string message)
+    -> std::unexpected<lowering_error> {
+  return std::unexpected(
+      lowering_error{.span = span, .message = std::move(message)});
+}
+
+/// A drop the compiler does not build yet.
+[[nodiscard]] auto fail_feature(source_span span, std::string message)
     -> std::unexpected<lowering_error> {
   return std::unexpected(lowering_error{
-      .kind = kind, .span = span, .message = std::move(message)});
+      .span = span, .message = std::move(message), .feature = true});
 }
 
 /// A direct call to `decl`, recording it as the call's `target`.
@@ -124,7 +131,7 @@ auto clone_place(const hir_expr &place)
   case hir_node_kind::hir_unary: {
     const auto &unary = dynamic_cast<const hir_unary &>(place);
     if (unary.op != ast::unary_op::deref || unary.operand == nullptr) {
-      return fail(lowering_error_kind::unsupported_construct, place.span,
+      return fail_feature(place.span,
                   "this place cannot be read again: only a local, a field "
                   "or tuple projection of one, or a `*` through a "
                   "reference can");
@@ -137,7 +144,7 @@ auto clone_place(const hir_expr &place)
                                               unary.op, std::move(*operand)));
   }
   default:
-    return fail(lowering_error_kind::unsupported_construct, place.span,
+    return fail_feature(place.span,
                 "this value's type declares an `invariant`, but the "
                 "expression being assigned through is not a simple place "
                 "(a local, or a field/tuple projection of one), so the "
@@ -145,38 +152,9 @@ auto clone_place(const hir_expr &place)
   }
 }
 
-
-auto owns_receiver(const semantic::checked_types &checked,
-                   const ast::func_decl *decl) -> bool {
-  if (decl == nullptr) {
-    return false;
-  }
-  const auto &owners = checked.ownership.consuming_receivers;
-  if (owners.contains(decl)) {
-    return true;
-  }
-  const auto tmpl = checked.ownership.instance_templates.find(decl);
-  return tmpl != checked.ownership.instance_templates.end() &&
-         owners.contains(tmpl->second);
-}
-
 auto drop_emitter::start(drop_schedule schedule) -> void {
   schedule_ = std::move(schedule);
   flag_symbols_.assign(schedule_.flag_count, k_invalid_symbol_id);
-}
-
-auto drop_emitter::declared_result_type(const ast::func_decl &decl) const
-    -> type_id {
-  if (decl.return_type == nullptr) {
-    const auto inferred = checked_.inferred_return_types.find(&decl);
-    return inferred != checked_.inferred_return_types.end() &&
-                   inferred->second != k_unknown_type
-               ? inferred->second
-               : const_cast<semantic::type_table &>(checked_.types)
-                     .builtin("unit");
-  }
-  const auto found = checked_.node_types.find(decl.return_type.get());
-  return found != checked_.node_types.end() ? found->second : k_unknown_type;
 }
 
 auto drop_emitter::clear_moved(const void *key, ptr<hir_expr> lowered)
@@ -291,8 +269,8 @@ auto drop_emitter::build_array_drop(const place_fn &make_receiver,
                                const field_paths &moved_paths)
     -> outcome<void> {
   if (!moved_paths.empty()) {
-    return fail(lowering_error_kind::unsupported_construct, span,
-                "internal error: an array drop was scheduled for an array "
+    return fail(span,
+                "an array drop was scheduled for an array "
                 "that was moved out of in part");
   }
   const auto element = *plan.element;
@@ -351,8 +329,8 @@ auto drop_emitter::build_drop_calls(const place_fn &make_receiver, type_id type,
     -> outcome<void> {
   const auto found = checked_.drop.drop_plans.find(type);
   if (found == checked_.drop.drop_plans.end()) {
-    return fail(lowering_error_kind::unsupported_construct, span,
-                "internal error: scope-exit drop was scheduled for a type "
+    return fail(span,
+                "scope-exit drop was scheduled for a type "
                 "with no resolved drop plan — the drop-schedule pass and "
                 "checker::resolve_drop_plans have gotten out of sync");
   }
@@ -374,20 +352,16 @@ auto drop_emitter::build_drop_calls(const place_fn &make_receiver, type_id type,
   }
   if (plan.own_drop.has_value()) {
     const auto &resolved = *plan.own_drop;
-    // Same convention as `lower_index_dispatch` just above: an empty
-    // `impl_target_type` means `decl` is already a monomorphized instance
-    // carrying its own mangled name.
-    const auto local_name =
-        resolved.impl_target_type.empty()
-            ? resolved.decl->name
-            : std::format("{}::{}", resolved.impl_target_type,
-                          resolved.decl->name);
+    const auto &local_name = plan.own_drop_name;
     const auto symbol = env_.function_symbol(local_name);
     auto callee = ptr<hir_expr>(make<hir_local_ref>(
         span, k_unknown_type, symbol, local_name, resolved.owner_module));
     auto args = ptr_vec<hir_expr>{};
     args.push_back(make_receiver());
-    const auto result_type = declared_result_type(*resolved.decl);
+    // The checker holds an impl's `drop` to the trait's signature, which
+    // returns `unit`.
+    const auto result_type =
+        const_cast<semantic::type_table &>(checked_.types).builtin("unit");
     auto own_drop = direct_call(span, result_type, std::move(callee),
                                 std::move(args), resolved.decl);
     own_drop->is_drop = true;
@@ -512,9 +486,8 @@ auto drop_emitter::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &st
   {
     const auto symbol = env_.whole_local(drop.node);
     if (!symbol.has_value()) {
-      return fail(lowering_error_kind::unsupported_construct,
-                  source_span::dummy(),
-                  std::format("internal error: drop schedule named `{}`, "
+      return fail(source_span::dummy(),
+                  std::format("drop schedule named `{}`, "
                               "which is not a local in scope at this point",
                               drop.name));
     }
@@ -601,8 +574,8 @@ auto drop_emitter::flag_ref(std::size_t flag, source_span span)
     -> outcome<ptr<hir_expr>> {
   if (flag >= flag_symbols_.size() ||
       flag_symbols_[flag] == k_invalid_symbol_id) {
-    return fail(lowering_error_kind::unsupported_construct, span,
-                "internal error: a drop flag is used before the binding "
+    return fail(span,
+                "a drop flag is used before the binding "
                 "that declares it was lowered");
   }
   return ptr<hir_expr>(make<hir_local_ref>(span, checked_.types.bool_type(),

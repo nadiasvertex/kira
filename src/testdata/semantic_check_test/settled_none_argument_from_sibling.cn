@@ -1,0 +1,11 @@
+module main
+
+# Todo 41: `@none` passed to a generic parameter takes its payload type
+# from what the call's other argument solves `T` to.
+def pick[T](a: option[T], b: T) -> T:
+    if let @some(x) = a:
+        return x
+    return b
+
+def main() -> int32:
+    return pick(@none, 4)

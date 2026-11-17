@@ -42,6 +42,8 @@ auto body_builder::task_block_of(const void *key,
   made->return_type = declared;
   // The drop schedule names the task's captures and its drops by the block.
   made->origin = key;
+  made->task_start = semantic::ownership::task_block_start(
+      *static_cast<const ast::expr *>(key));
 
   push_scope();
   lambdas_.push_back(lambda_frame{.source = nullptr,
@@ -113,8 +115,12 @@ auto body_builder::on_task_of(const ast::on_expr &on, type_id declared,
   }
   auto args = ptr_vec<expr>{};
   args.push_back(std::move(made));
-  return intrinsic_call(target == "io" ? "on_io" : "on_cpu", task_type,
-                        std::move(args), {}, on.span);
+  auto called = intrinsic_call(target == "io" ? "on_io" : "on_cpu", task_type,
+                               std::move(args), {}, on.span);
+  if (called->kind == node_kind::call) {
+    static_cast<call &>(*called).context_origin = &on.context_type;
+  }
+  return called;
 }
 
 auto body_builder::await_task_form(const ast::await_expr &awaited)

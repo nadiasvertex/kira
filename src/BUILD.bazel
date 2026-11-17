@@ -341,6 +341,7 @@ cc_library(
         "//src/bytecode:vm",
         "//src/bytecode_compiler:bytecode_compiler",
         "//src/hir:hir",
+        "//src/hir:lower_core",
         "//src/llvm_codegen:jit_support",
         "//src/llvm_codegen:storage_codegen",
         "//src/parser:parser",
@@ -365,53 +366,6 @@ cc_test(
     tags = ["no-sandbox"],
     deps = [
         ":codegen_corpus",
-        "//src/testing",
-    ],
-)
-
-# The codegen corpus with each function lowered from the typed core where
-# `hir::lower_core_function` supports it (`src/hir/lower_core.h`).
-cc_test(
-    name = "lower_core_corpus_test",
-    size = "medium",
-    timeout = "long",
-    srcs = ["lower_core_corpus_test.cpp"],
-    data = [
-        ":codegen_stress_corpus",
-        ":std_sources",
-    ],
-    tags = ["no-sandbox"],
-    deps = [
-        ":codegen_corpus",
-        "//src/core:adapter",
-        "//src/core:core",
-        "//src/hir:hir",
-        "//src/hir:lower_core",
-        "//src/semantic:semantic",
-        "//src/testing",
-    ],
-)
-
-# The same, with every module lowered from the core alone
-# (`hir::lower_core_program`, `CINDER_LOWER_FROM_CORE=only`).
-cc_test(
-    name = "lower_core_only_corpus_test",
-    env = {"CINDER_LOWER_FROM_CORE": "only"},
-    size = "medium",
-    timeout = "long",
-    srcs = ["lower_core_corpus_test.cpp"],
-    data = [
-        ":codegen_stress_corpus",
-        ":std_sources",
-    ],
-    tags = ["no-sandbox"],
-    deps = [
-        ":codegen_corpus",
-        "//src/core:adapter",
-        "//src/core:core",
-        "//src/hir:hir",
-        "//src/hir:lower_core",
-        "//src/semantic:semantic",
         "//src/testing",
     ],
 )

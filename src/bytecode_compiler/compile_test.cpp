@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <string_view>
 #include <vector>
 
@@ -17,7 +18,7 @@
 #include "src/bytecode_compiler/storage_compile.h"
 #include "src/comptime_vm/backend.h"
 #include "src/hir/link.h"
-#include "src/hir/lower.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/nodes.h"
 #include "src/hir/storage_program.h"
 #include "src/parser/diagnostic.h"
@@ -73,6 +74,9 @@ struct checked_fixture {
   cinder::diagnostic_bag diag{};
   cinder::testing::parsed_stdlib stdlib;
   cinder::ast::ptr<cinder::ast::file> ast_file;
+  /// What was checked: the stdlib's files and the fixture's, `file_id`.
+  std::vector<cinder::semantic::parsed_module> parsed;
+  cinder::file_id_type file_id = 0;
   cinder::semantic::checked_types checked;
 };
 
@@ -112,6 +116,8 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   auto parsed_modules = fixture.stdlib.modules;
   parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
+  fixture.parsed = parsed_modules;
+  fixture.file_id = *file_id;
   auto comptime = cinder::comptime_vm::vm_backend{};
   fixture.checked = cinder::semantic::check_program(
       parsed_modules, fixture.diag, file_has_errors, &comptime);
@@ -154,14 +160,12 @@ auto compile_fixture(const std::string &text) -> bc::bytecode_module {
   static auto keep = std::vector<std::unique_ptr<checked_fixture>>{};
   keep.push_back(std::make_unique<checked_fixture>(check_fixture(text)));
   auto &fixture = *keep.back();
-  auto entry = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(entry.has_value(), "expected fixture to lower to HIR");
+  auto lowered = cinder::testing::lower_test_program(
+      fixture.parsed, fixture.checked, fixture.file_id,
+      {{fixture.file_id, "sample"}});
 
-  auto modules = hir::ptr_vec<hir::hir_module>{};
-  modules.push_back(std::move(*entry));
+  auto modules = std::move(lowered);
   const auto *entry_module = modules.front().get();
-  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
-                                        modules);
 
   const auto reachable = hir::find_reachable_modules(*entry_module, modules);
   static auto keep_modules = std::vector<hir::ptr_vec<hir::hir_module>>{};
@@ -225,24 +229,17 @@ auto compile_fixture_multi(
   auto &checked = kept.checked;
   expect_checked_cleanly(sources, diag);
 
+  // The whole program, as the driver lowers it: a file with no `module`
+  // declaration is named by its path, and functor instantiations are
+  // modules of their own, so a `use m[args] as db` fixture's `db.f(...)`
+  // calls resolve.
+  auto names = std::unordered_map<cinder::file_id_type, std::string>{};
+  for (size_t i = 0; i < files.size(); ++i) {
+    names.emplace(file_ids[i], files[i].first);
+  }
   auto &modules = kept.modules;
-  for (size_t i = 0; i < ast_files.size(); ++i) {
-    auto lowered = hir::lower_module(*ast_files[i], files[i].first, checked);
-    expect(lowered.has_value(), "expected every fixture module to lower");
-    modules.push_back(std::move(*lowered));
-  }
-  // Materialized functor instantiations have no source file of their own;
-  // lower them into standalone modules just as `driver::lower_and_emit_
-  // modules` does, so a `use m[args] as db` fixture's `db.f(...)` calls
-  // resolve.
-  cinder::testing::lower_stdlib_modules(stdlib, checked, modules);
-
-  auto functor_modules = hir::lower_functor_modules(checked);
-  expect(functor_modules.has_value(),
-         "expected functor instantiations to lower");
-  for (auto &functor_module : *functor_modules) {
-    modules.push_back(std::move(functor_module));
-  }
+  modules = cinder::testing::lower_test_program(
+      parsed_modules, checked, file_ids.front(), std::move(names));
 
   const hir::hir_module *entry = nullptr;
   for (const auto &module : modules) {
@@ -418,7 +415,7 @@ auto test_loop_carried_value_keeps_its_register() -> void {
 }
 
 auto test_intrinsic_call_compiles_to_op_call_intrinsic() -> void {
-  // `intrinsic def rt_stdout() -> raw_fd` has no body — hir::lower_module
+  // `intrinsic def rt_stdout() -> raw_fd` has no body — lowering
   // skips it, and this compiler recognizes the call by name (src/
   // intrinsics.h) and emits `op_call_intrinsic` instead of `op_call`. This
   // fixture proves that end to end: real Cinder source, through name
@@ -473,8 +470,7 @@ auto test_field_access_on_a_local_lowers_for_plain_lets_and_payload_bindings()
   // path" without symbol info) — `hir::lower_expr` previously had no case
   // for that node kind at all, so it always failed with "expression kind
   // ... is not lowered by the first milestone", for *any* local, not just
-  // a variant-payload binding. Fixed by `lowerer::lower_module_path`
-  // (src/hir/lower.cpp), which resolves the ambiguity the same way
+  // a variant-payload binding. Fixed in lowering, which resolves the ambiguity the same way
   // `semantic::check.cpp`'s `infer_module_path` already does for typing.
   auto module = compile_fixture(load_fixture("field_access_on_local.cn"));
 
@@ -598,7 +594,7 @@ auto test_calls_a_function_in_another_module() -> void {
 auto test_calls_into_a_materialized_functor_instantiation() -> void {
   // The bytecode/VM counterpart of codegen_test.cpp's identically-named
   // test: `use audited[postgres] as db` materializes the functor, and
-  // `hir::lower_functor_modules` (via `compile_fixture_multi`) turns its
+  // lowering (via `compile_fixture_multi`) turns its
   // cloned `def`s into a standalone module the VM's cross-module dispatch
   // finds — so an instantiated functor runs, not just type-checks.
   auto module = compile_fixture_multi(
@@ -678,7 +674,7 @@ auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
 
 // Exercises trait-default-method monomorphization (`semantic::check.cpp`'s
 // `monomorphize_trait_default`) and its cross-module lowering
-// (`hir::lower_module`'s `synthesized_trait_defaults` pass, `hir/lower.cpp`)
+// (the adapter's `synthesized_trait_defaults` functions)
 // end to end through the bytecode compiler and VM — `bump`'s body is never
 // written in `impl bumpable for counter`, only inherited from the trait's
 // default, and `bump` itself dispatches a further `self`-receiver call

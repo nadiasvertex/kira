@@ -1630,6 +1630,8 @@ private:
     }
     const auto name = op.waits == hir::wait_mode::one    ? "rt_task_await_poll"
                       : op.waits == hir::wait_mode::crew ? "rt_crew_join_poll"
+                      : op.waits == hir::wait_mode::reschedule
+                          ? "rt_task_yield_poll"
                       : op.waits == hir::wait_mode::all
                           ? "rt_task_await_all_poll"
                           : "rt_task_await_any_poll";
@@ -1670,6 +1672,9 @@ private:
   /// a group's handles in place).
   [[nodiscard]] auto group_arguments(const hir::storage_op &op)
       -> checked<std::vector<llvm::Value *>> {
+    if (op.waits == hir::wait_mode::reschedule) {
+      return std::vector<llvm::Value *>{};
+    }
     if (op.waits == hir::wait_mode::one || op.waits == hir::wait_mode::crew) {
       const auto awaited = read_place(op.source);
       if (!awaited.has_value()) {

@@ -8,7 +8,6 @@
 
 #include "src/bytecode/vm.h"
 #include "src/comptime_vm/values.h"
-#include "src/hir/lower.h"
 #include "src/runtime/aligned_buffer.h"
 
 namespace cinder::comptime_vm {
@@ -267,24 +266,13 @@ auto vm_backend::verify(semantic::checked_types &checked) const
     -> std::vector<std::string> {
   auto differences = std::vector<std::string>{};
   for (const auto &[decl, fingerprint] : fingerprints_) {
-    auto lowered = std::expected<hir::ptr<hir::hir_function>, std::string>{};
-    if (const auto name = names_.find(decl);
-        lowering_.from_core && name != names_.end()) {
-      lowered = lower_from_core_again(*decl, name->second, checked, memo_);
-      if (lowered.has_value()) {
-        (*lowered)->name = name->second.name;
-      }
-    } else if (auto old = hir::lower_function(
-                   *decl, checked,
-                   hir::lowering_options{.contract_checks = true,
-                                         .compile_time = true});
-               old.has_value()) {
-      lowered = std::move(*old);
-      if (name != names_.end()) {
-        (*lowered)->name = name->second.name;
-      }
-    } else {
-      lowered = std::unexpected(old.error().message);
+    const auto name = names_.find(decl);
+    if (name == names_.end()) {
+      continue;
+    }
+    auto lowered = lower_again(*decl, name->second, checked, memo_);
+    if (lowered.has_value()) {
+      (*lowered)->name = name->second.name;
     }
     if (!lowered.has_value()) {
       differences.push_back(std::format(

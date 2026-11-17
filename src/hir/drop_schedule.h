@@ -108,6 +108,10 @@ struct drop_schedule {
   std::unordered_map<const void *,
                      std::vector<semantic::ownership::owned_capture>>
       owned_captures;
+  /// For each owned capture whose `node` is a use of a generic lambda, the
+  /// one copy of it that use was checked against
+  /// (`checked_types::generic_lambda_refs`).
+  std::unordered_map<const void *, const void *> generic_lambda_copies;
   /// `function_cfg::borrowed_captures`: what each lambda without a capture
   /// list borrows instead of copying.
   std::unordered_map<const void *,

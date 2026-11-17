@@ -61,7 +61,10 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_yield: {
-    collect_bound_symbols(*dynamic_cast<const hir_yield &>(node).value, bound);
+    if (const auto &value = dynamic_cast<const hir_yield &>(node).value;
+        value != nullptr) {
+      collect_bound_symbols(*value, bound);
+    }
     return;
   }
   case hir_node_kind::hir_while: {

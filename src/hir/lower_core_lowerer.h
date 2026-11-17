@@ -17,9 +17,10 @@
 #include "src/hir/nodes.h"
 
 /// Internal to `lower_core.h`: the lowerer of one core function, one method
-/// per core node kind. Split across `lower_core.cpp` (functions and the
-/// substitution), `lower_core_expr.cpp` (expressions, places, calls) and
-/// `lower_core_stmt.cpp` (statements and blocks).
+/// per core node kind. Split across `lower_core.cpp` (functions),
+/// `lower_core_module.cpp` (modules and programs), `lower_core_expr.cpp`
+/// (expressions, places, calls), `lower_core_stmt.cpp` (statements and
+/// blocks), and one file each for matches, lambdas, contracts and tasks.
 namespace cinder::hir {
 
 /// The message for an `await` the lowering cannot put ahead of its
@@ -43,16 +44,18 @@ template <typename T> using core_result = std::expected<T, unsupported>;
 /// The name of a core node kind, as an `unsupported` reports it.
 [[nodiscard]] auto core_kind_name(core::node_kind kind) -> std::string;
 
+/// Lowers `function` (a non-generic core function of the core module
+/// `core_module`) as a function of the HIR module `hir_module`.
+[[nodiscard]] auto lower_core_function(const core::function &function,
+                                       std::string_view core_module,
+                                       std::string_view hir_module,
+                                       const semantic::checked_types &checked,
+                                       const lowering_options &options = {})
+    -> std::expected<ptr<hir_function>, unsupported>;
+
 /// The HIR name of each module of `input` (see `core_lowering_input`).
 [[nodiscard]] auto hir_module_names(const core_lowering_input &input)
     -> std::unordered_map<const core::module *, std::string>;
-
-/// Whether `function`, a template of `module`, is a trait default the
-/// checker copied for a generic impl, which the old lowerer lowers once with
-/// the impl's parameters abstract.
-[[nodiscard]] auto is_type_erased_default_copy(
-    const core::function &function, const core::module &module,
-    const semantic::checked_types &checked) -> bool;
 
 class core_lowerer {
 public:
@@ -238,8 +241,10 @@ public:
   /// gives for the same place.
   [[nodiscard]] static auto refuse_drop(const lowering_error &error)
       -> std::unexpected<unsupported> {
-    return refuse_feature(std::format("drop: {}", error.message),
-                          error.message, error.span);
+    if (error.feature) {
+      return refuse_feature("drop", error.message, error.span);
+    }
+    return refuse(std::format("drop: {}", error.message), error.span);
   }
 
   // ---- contracts (lower_core_contract.cpp) --------------------------------
@@ -399,6 +404,10 @@ public:
   [[nodiscard]] auto crew_errors(const core::call &source)
       -> core_result<ptr<hir_expr>>;
   /// The task and crew intrinsics, or nullopt for another.
+  /// `await yield`: in a task, a suspension that waits on nothing and then
+  /// checks cancellation.
+  [[nodiscard]] auto task_yield(const core::call &source)
+      -> core_result<ptr<hir_expr>>;
   [[nodiscard]] auto task_intrinsic(const core::call &source)
       -> std::optional<core_result<ptr<hir_expr>>>;
   /// The functions made while lowering this one (task blocks).
@@ -422,7 +431,8 @@ public:
   auto declare(symbol_id symbol, const std::string &name) -> symbol_id;
   [[nodiscard]] static auto refuse(std::string kind, source_span span)
       -> std::unexpected<unsupported> {
-    return std::unexpected(unsupported{.kind = std::move(kind), .span = span});
+    return std::unexpected(
+        unsupported{.kind = std::move(kind), .span = span, .message = {}});
   }
   [[nodiscard]] static auto refuse(const core::node &node)
       -> std::unexpected<unsupported> {

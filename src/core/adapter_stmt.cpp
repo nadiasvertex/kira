@@ -17,6 +17,15 @@ using semantic::type_kind;
 
 namespace {
 
+/// Marks a block's tail `if` or `match` statement (`if_expr::tail_statement`).
+auto mark_tail_statement(expr &value) -> void {
+  if (value.kind == node_kind::if_expr) {
+    static_cast<if_expr &>(value).tail_statement = true;
+  } else if (value.kind == node_kind::match_expr) {
+    static_cast<match_expr &>(value).tail_statement = true;
+  }
+}
+
 [[nodiscard]] auto compound_operator(ast::assign_op op)
     -> std::optional<ast::binary_op> {
   using a = ast::assign_op;
@@ -166,6 +175,7 @@ auto body_builder::block_from(std::span<const ast::ptr<ast::node>> stmts,
           CORE_TRY(value,
                    if_of(tail.branches, tail.else_body, 0, node.span, type));
           value->origin = &node;
+          mark_tail_statement(*value);
           made->result = std::move(value);
           return {};
         }
@@ -184,6 +194,7 @@ auto body_builder::block_from(std::span<const ast::ptr<ast::node>> stmts,
           }
           CORE_TRY(value, match_of(*tail.subject, tail.arms, node.span, type));
           value->origin = &node;
+          mark_tail_statement(*value);
           made->result = std::move(value);
           return {};
         }
@@ -387,6 +398,7 @@ auto body_builder::assign_into(const ast::assign_stmt &assign,
   combined->operands.push_back(std::move(rhs));
   made->target = std::move(target);
   made->value = std::move(combined);
+  made->compound = true;
   finish();
   for (auto i = first + 1; i < out.size(); ++i) {
     out[i]->continues_statement = true;
@@ -637,7 +649,10 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
         checked_.lowering.elided_contracts.contains(&contract)) {
       continue;
     }
-    if (sig.coroutine != coroutine_kind::none) {
+    // A generator's `pre` is checked once, at the top of its body, before
+    // the check that it was dropped before it first ran.
+    if (sig.coroutine == coroutine_kind::task ||
+        (sig.coroutine == coroutine_kind::generator && !contract.is_pre)) {
       return fail_feature(
           "contract",
           sig.coroutine == coroutine_kind::task
@@ -645,8 +660,8 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
                             "and cannot be a generator or have a `post` "
                             "condition yet",
                             decl.name)
-              : std::format("the generator `{}` cannot have a `pre` or "
-                            "`post` condition yet",
+              : std::format("the generator `{}` cannot have a `post` "
+                            "condition yet",
                             decl.name),
           contract.span);
     }
@@ -660,12 +675,23 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
   module_name_ = made->module;
   decl_ = &decl;
   made->span = decl.span;
+  made->declared_name = decl.name;
   made->decl = &decl;
+  made->expression_body = decl.body_expr != nullptr;
+  if (sig.coroutine != coroutine_kind::none) {
+    made->start = semantic::ownership::generator_start(decl);
+  }
   made->return_type = sig.result;
   made->body_type = sig.body;
   made->yield_type = sig.yield_type;
   made->coroutine = sig.coroutine;
   made->receiver = sig.receiver;
+  if (sig.receiver == receiver_mode::consuming && !decl.params.empty()) {
+    const auto found = checked_.node_types.find(decl.params[0].pattern.get());
+    if (found != checked_.node_types.end()) {
+      made->receiver_type = found->second;
+    }
+  }
   made->generic_params = generic_params_;
   // A module-level `static def` (or an instance of one); `is_static` alone
   // also marks a static method, which runs like any other function.
@@ -689,7 +715,8 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
     made->params.push_back(param{.symbol = declare(name, sig.params[i], true),
                                  .name = name,
                                  .type = sig.params[i],
-                                 .origin = pattern});
+                                 .origin = pattern,
+                                 .span = decl.params[i].span});
   }
   const auto plain_body = [&]() -> result<ptr<block>> {
     auto built = [&]() -> result<ptr<block>> {
@@ -910,6 +937,7 @@ auto build_expression_function(semantic::checked_types &checked,
   made->module = std::move(module);
   builder.module_name_ = made->module;
   made->span = expr.span;
+  made->declared_name = made->name;
   made->return_type = type;
   made->body_type = type;
   made->compile_time = true;
@@ -921,7 +949,8 @@ auto build_expression_function(semantic::checked_types &checked,
         param{.symbol = builder.declare(capture.name, param_type, true),
               .name = capture.name,
               .type = param_type,
-              .origin = nullptr});
+              .origin = nullptr,
+              .span = expr.span});
   }
   auto value = builder.value_as(expr, type);
   builder.pop_scope();

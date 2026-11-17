@@ -105,8 +105,8 @@ struct expression_capture {
 
 /// Builds a compile-time expression (a `static assert` condition, a `static
 /// let` initializer, a splice operand) as the whole body of a function of
-/// its own, named `name` in `module`, as `hir::lower_comptime_expression`
-/// lowers it: each of `captures` is a by-value parameter in order, and the
+/// its own, named `name` in `module`: each of `captures` is a by-value
+/// parameter in order, and the
 /// body's result is the expression. The function has no declaration, is
 /// `compile_time`, and drops nothing; every read of a reified static in it
 /// is a fresh value.
@@ -118,7 +118,7 @@ struct expression_capture {
     -> std::expected<ptr<function>, gap>;
 
 /// Builds one reified `static let`'s value, as `adapt_program` builds each
-/// static of a module (and `hir::lower_static_global` lowers it), owned by
+/// static of a module (and `hir::lower_core_static` lowers it), owned by
 /// `module`.
 [[nodiscard]] auto
 adapt_static(const semantic::lowering_results::static_global_def &def,

@@ -41,11 +41,6 @@ namespace cinder::hir {
 [[nodiscard]] auto clone_place(const hir_expr &place)
     -> std::expected<ptr<hir_expr>, lowering_error>;
 
-/// Whether `decl`, or the template it is an instance of, owns the value its
-/// `self` refers to (`ownership_results::consuming_receivers`).
-[[nodiscard]] auto owns_receiver(const semantic::checked_types &checked,
-                                 const ast::func_decl *decl) -> bool;
-
 class drop_emitter {
 public:
   template <typename T> using outcome = std::expected<T, lowering_error>;
@@ -133,11 +128,6 @@ public:
   /// Where the temporary holding the value of the expression `origin` ends.
   [[nodiscard]] auto temporary_end(const void *origin) const
       -> std::optional<const void *>;
-
-  /// The result type of a call to `decl`, as the calls the drops make need
-  /// it: an undeclared return type is the one the checker inferred.
-  [[nodiscard]] auto declared_result_type(const ast::func_decl &decl) const
-      -> type_id;
 
 private:
   [[nodiscard]] auto build_array_drop(const place_fn &make_receiver,

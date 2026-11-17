@@ -263,6 +263,9 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
              type_kind::struct_kind) {
     target = strip_refs(expected);
   }
+  // A type parameter the head leaves open is a leaf the fields and the
+  // context solve (todo 41).
+  target = open_constructor_params(target, expected, expr.span);
 
   const auto &entry = session_.types_.entry(target);
   const auto *fields = struct_fields_of(entry);

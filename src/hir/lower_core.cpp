@@ -9,35 +9,9 @@
 #include "src/hir/lower_core_lowerer.h"
 #include "src/hir/reference_check.h"
 #include "src/hir/tail_calls.h"
-#include "src/semantic/ownership_cfg.h"
 
-/// Functions, and the substitution of core-lowered functions into the
-/// modules the old lowerer made.
+/// Functions.
 namespace cinder::hir {
-
-namespace {
-
-} // namespace
-
-/// Whether `function` is a trait default the checker copied for a generic
-/// impl (`synthesized_trait_defaults`) whose signature names the impl's
-/// parameters. The core keeps such a copy as a template, but the old lowerer
-/// lowers it once with those parameters left abstract, and every call names
-/// that one function; lowered here, it replaces it. Phase 5 of
-/// spec/unified-checker-plan.md instantiates generic impls, which replaces
-/// this.
-auto is_type_erased_default_copy(const core::function &function,
-                                 const core::module &module,
-                                 const semantic::checked_types &checked)
-    -> bool {
-  return std::ranges::any_of(
-      checked.lowering.synthesized_trait_defaults,
-      [&](const semantic::synthesized_method &copy) -> bool {
-        return copy.decl != nullptr && copy.owner_module == module.name &&
-               std::format("{}::{}", copy.target_type_name, copy.decl->name) ==
-                   function.name;
-      });
-}
 
 auto hir_module_names(const core_lowering_input &input)
     -> std::unordered_map<const core::module *, std::string> {
@@ -111,16 +85,13 @@ auto core_lowerer::function(const core::function &source)
   in_task_body_ = is_task;
   hoist_ = nullptr;
   compile_time_ = source.compile_time;
-  function_name_ = source.decl->name;
+  function_name_ = source.declared_name;
   // HIR passes a consumed receiver by reference to a callee that owns it
   // (`hir_function::owns_receiver`); the core's `self` is the value.
   const auto consuming = source.receiver == core::receiver_mode::consuming;
-  // The drop schedule is keyed by AST node; the old lowerer computes it the
-  // same way, from the declaration.
+  // The drop schedule is keyed by AST node, and computed from the
+  // declaration's ownership CFG.
   drops_.start(compute_drop_schedule(*source.decl, checked_));
-  if (source.params.size() != source.decl->params.size()) {
-    return refuse("parameters the declaration does not have", source.span);
-  }
   // The parameters' scope is the function's own (keyed by the declaration);
   // their drop flags are declared before anything else runs.
   push_scope();
@@ -132,13 +103,11 @@ auto core_lowerer::function(const core::function &source)
     auto type = hir_type(param.type);
     // A consumed `self` is the value in the core and its reference in HIR.
     if (consuming && i == 0) {
-      const auto found =
-          checked_.node_types.find(source.decl->params[0].pattern.get());
-      if (found == checked_.node_types.end()) {
+      if (source.receiver_type == k_unknown_type) {
         pop_scope();
         return refuse("consuming receiver with no checked type", source.span);
       }
-      type = found->second;
+      type = source.receiver_type;
       // Each use of the value reads through the reference HIR passes.
       if (type != hir_type(param.type) &&
           checked_.types.entry(type).kind == semantic::type_kind::ref_kind) {
@@ -153,9 +122,8 @@ auto core_lowerer::function(const core::function &source)
     }
     params.push_back(
         hir_param{.symbol = symbol, .name = param.name, .type = type});
-    const auto *key = source.decl->params[i].pattern.get();
-    own(key, symbol);
-    drops_.declare_flags(key, source.decl->params[i].span, prelude);
+    own(param.origin, symbol);
+    drops_.declare_flags(param.origin, param.span, prelude);
   }
   // What the caller sees (the generator or the task), and what the body
   // returns. A generator's body has no value: a trailing `if` or `match`
@@ -179,8 +147,11 @@ auto core_lowerer::function(const core::function &source)
   // A coroutine dropped before its body first runs returns at once: the
   // check follows the parameters' flags and the preconditions.
   if ((is_generator || is_task) && source.body->origin != nullptr) {
-    auto cancel = cancel_check(semantic::ownership::generator_start(*source.decl),
-                               source.span);
+    if (source.start == nullptr) {
+      pop_scope();
+      return refuse("coroutine with no start key", source.span);
+    }
+    auto cancel = cancel_check(source.start, source.span);
     if (!cancel.has_value()) {
       pop_scope();
       return std::unexpected(cancel.error());
@@ -209,9 +180,9 @@ auto core_lowerer::function(const core::function &source)
     pop_scope();
     return std::unexpected(finished.error());
   }
-  // A function whose body is an expression returns it, as the old lowerer
-  // makes it, with no drops of its parameters.
-  if (source.decl->body_expr == nullptr &&
+  // A function whose body is an expression returns it, with no drops of its
+  // parameters.
+  if (!source.expression_body &&
       (stmts.empty() || !always_exits(*stmts.back()))) {
     const auto value_typed = body_type != k_unknown_type &&
                              !checked_.types.is_unit(body_type);
@@ -259,7 +230,8 @@ auto core_lowerer::function(const core::function &source)
                      : coroutine_kind::none,
       item_type);
   made->owns_receiver =
-      !made->params.empty() && owns_receiver(checked_, source.decl);
+      !made->params.empty() &&
+      source.receiver == core::receiver_mode::consuming;
   if (auto finished = explicit_references(*made); !finished) {
     return std::unexpected(finished.error());
   }
@@ -328,113 +300,6 @@ auto lower_core_function(const core::function &function,
     -> std::expected<ptr<hir_function>, unsupported> {
   auto lowerer = core_lowerer(checked, options, core_module, hir_module);
   return lowerer.function(function);
-}
-
-auto substitute_core_functions(ptr_vec<hir_module> &modules,
-                               const core_lowering_input &input,
-                               const semantic::checked_types &checked,
-                               const lowering_options &options,
-                               const replace_fn &on_replace)
-    -> std::vector<core_lowering_record> {
-  const auto names = hir_module_names(input);
-  const auto hir_name_of = [&](const core::module &module) -> std::string {
-    return names.at(&module);
-  };
-  // (HIR module, function name) to the core function and its module.
-  struct source_function {
-    const core::function *function = nullptr;
-    const core::module *module = nullptr;
-  };
-  auto sources = std::unordered_map<std::string, source_function>{};
-  for (const auto *module : input.modules) {
-    const auto hir_module = hir_name_of(*module);
-    for (const auto &function : module->functions) {
-      if (!function->generic_params.empty() &&
-          !is_type_erased_default_copy(*function, *module, checked)) {
-        continue;
-      }
-      sources.try_emplace(std::format("{}\n{}", hir_module, function->name),
-                          source_function{.function = function.get(),
-                                          .module = module});
-    }
-  }
-  auto records = std::vector<core_lowering_record>{};
-  for (auto &module : modules) {
-    // The functions the task blocks of a function lowered from the core
-    // made, by name. The old lowerer put its own copies after the
-    // function that made them; these replace them.
-    auto nested = std::unordered_map<std::string, ptr<hir_function>>{};
-    // Those of a function that fell back, which keeps the old ones.
-    auto kept = std::unordered_map<std::string, std::string>{};
-    for (auto &function : module->functions) {
-      auto record = core_lowering_record{.module = module->module_name,
-                                         .function = function->name,
-                                         .from_core = false,
-                                         .fallback = {},
-                                         .span = function->span};
-      if (auto made = nested.find(function->name); made != nested.end()) {
-        record.from_core = true;
-        if (on_replace) {
-          on_replace(*module, *function, *made->second);
-        }
-        function = std::move(made->second);
-        nested.erase(made);
-        records.push_back(std::move(record));
-        continue;
-      }
-      const auto found = sources.find(
-          std::format("{}\n{}", module->module_name, function->name));
-      if (found == sources.end()) {
-        const auto enclosing = kept.find(function->name);
-        record.fallback =
-            enclosing != kept.end()
-                ? std::format("made by `{}`, which fell back", enclosing->second)
-                : "not built by the adapter";
-        records.push_back(std::move(record));
-        continue;
-      }
-      auto lowered =
-          lower_core_function(*found->second.function,
-                              found->second.module->name, module->module_name,
-                              checked, options);
-      if (!lowered.has_value()) {
-        record.fallback = lowered.error().kind;
-        record.span = lowered.error().span;
-        records.push_back(std::move(record));
-        // Its task blocks are named after it and its position.
-        for (const auto &other : module->functions) {
-          const auto &name = other->name;
-          for (const auto *prefix : {"<task block ", "<on "}) {
-            if (name.starts_with(std::format("{}{}@", prefix, function->name))) {
-              kept.try_emplace(name, function->name);
-            }
-          }
-        }
-        continue;
-      }
-      for (auto &made : (*lowered)->nested) {
-        auto name = made->name;
-        nested.try_emplace(std::move(name), std::move(made));
-      }
-      (*lowered)->nested.clear();
-      record.from_core = true;
-      if (on_replace) {
-        on_replace(*module, *function, **lowered);
-      }
-      function = std::move(*lowered);
-      records.push_back(std::move(record));
-    }
-    // A task function the old lowerer did not make goes after the others.
-    for (auto &[name, made] : nested) {
-      records.push_back(core_lowering_record{.module = module->module_name,
-                                             .function = name,
-                                             .from_core = true,
-                                             .fallback = {},
-                                             .span = made->span});
-      module->functions.push_back(std::move(made));
-    }
-  }
-  return records;
 }
 
 } // namespace cinder::hir

@@ -325,7 +325,10 @@ struct walker {
       // bytecode compiler rejects this case explicitly), but walk its
       // value defensively rather than falling into the `hir_expr`
       // downcast below, which `hir_yield` (an `hir_stmt`) would fail.
-      walk_expr(*dynamic_cast<const hir_yield &>(node).value);
+      if (const auto &value = dynamic_cast<const hir_yield &>(node).value;
+          value != nullptr) {
+        walk_expr(*value);
+      }
       return;
     case hir_node_kind::hir_while: {
       const auto &node2 = dynamic_cast<const hir_while &>(node);

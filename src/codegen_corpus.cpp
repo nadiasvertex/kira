@@ -1,5 +1,4 @@
-// The codegen stress corpus runner shared by `codegen_stress_test` and
-// `lower_core_corpus_test` (`codegen_corpus.h`).
+// The codegen stress corpus runner (`codegen_corpus.h`).
 
 #include <algorithm>
 #include <array>
@@ -20,6 +19,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "src/codegen_corpus.h"
@@ -32,7 +32,7 @@
 #include "src/comptime_vm/backend.h"
 #include "src/hir/inline.h"
 #include "src/hir/link.h"
-#include "src/hir/lower.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/storage.h"
 #include "src/hir/storage_lower.h"
 #include "src/hir/storage_verify.h"
@@ -254,11 +254,48 @@ struct program {
 /// the plain one.
 auto inlined_call_sites = size_t{0};
 
+/// Every module, as the driver lowers it (`hir::lower_program`): the
+/// program's own module first, then the rest in the core's order. Empty,
+/// with the reason in `why`, when a module cannot be lowered.
+auto lower(std::span<const semantic::parsed_module> parsed,
+           const std::vector<bool> &file_has_errors,
+           semantic::checked_types &checked, file_id_type file_id,
+           const std::string &name, std::string &why)
+    -> hir::ptr_vec<hir::hir_module> {
+  auto names = std::unordered_map<file_id_type, std::string>{};
+  for (const auto &file : parsed) {
+    names.emplace(file.file_id,
+                  file.file_id == file_id
+                      ? name
+                      : cinder::testing::module_name_of(*file.ast_file));
+  }
+  auto lowered =
+      hir::lower_program(parsed, file_has_errors, checked, std::move(names));
+  if (!lowered.hir.failures.empty()) {
+    const auto &first = lowered.hir.failures.front();
+    why = std::format("HIR: `{}` in `{}`: {}", first.item, first.module,
+                      first.message);
+    return {};
+  }
+  auto out = hir::ptr_vec<hir::hir_module>{};
+  for (auto &module : lowered.hir.modules) {
+    if (module->module_name == name) {
+      out.push_back(std::move(module));
+    }
+  }
+  for (auto &module : lowered.hir.modules) {
+    if (module != nullptr) {
+      out.push_back(std::move(module));
+    }
+  }
+  return out;
+}
+
 /// Unset when the file does not get as far as HIR; the reason is in `why`.
 /// With `inline_calls`, small calls are inlined first, as the driver does.
+///
 auto load(const fs::path &path, const std::string &text, std::string &why,
-          bool inline_calls, const post_lower_hook &hook)
-    -> std::unique_ptr<program> {
+          bool inline_calls) -> std::unique_ptr<program> {
   auto out = std::make_unique<program>();
   out->stdlib = cinder::testing::parse_stdlib(out->sources, out->diag);
   const auto file_id = out->sources.add_file(path.string(), text);
@@ -292,32 +329,10 @@ auto load(const fs::path &path, const std::string &text, std::string &why,
   if (name.empty()) {
     name = "sample";
   }
-  auto lowered = hir::lower_module(*out->ast_file, name, out->checked);
-  if (!lowered.has_value()) {
-    why = "HIR: " + lowered.error().message;
+  out->modules =
+      lower(parsed, file_has_errors, out->checked, *file_id, name, why);
+  if (out->modules.empty()) {
     return nullptr;
-  }
-  auto submodules =
-      hir::lower_inline_submodules(*out->ast_file, name, out->checked);
-  if (!submodules.has_value()) {
-    why = "HIR submodules: " + submodules.error().message;
-    return nullptr;
-  }
-  out->modules.push_back(std::move(*lowered));
-  for (auto &submodule : *submodules) {
-    out->modules.push_back(std::move(submodule));
-  }
-  cinder::testing::lower_stdlib_modules(out->stdlib, out->checked,
-                                        out->modules);
-  if (hook) {
-    auto context = post_lower_context{.modules = out->modules,
-                            .checked = out->checked,
-                            .parsed = parsed,
-                            .file_has_errors = file_has_errors,
-                            .file_id = *file_id,
-                            .module_name = name,
-                            .inline_calls = inline_calls};
-    hook(context);
   }
   if (inline_calls) {
     inlined_call_sites +=
@@ -486,11 +501,10 @@ auto llvm_tier(program &p, std::span<const hir::storage_module *const> modules,
 
 } // namespace
 
-auto survey(const fs::path &path, bool inline_calls,
-            const post_lower_hook &hook) -> verdict {
+auto survey(const fs::path &path, bool inline_calls) -> verdict {
   const auto text = read_file(path);
   auto why = std::string{};
-  auto p = load(path, text, why, inline_calls, hook);
+  auto p = load(path, text, why, inline_calls);
   if (p == nullptr) {
     return {.status = why};
   }
@@ -709,9 +723,9 @@ auto run_corpus(const corpus_options &options) -> std::size_t {
     ++ran;
     // Each program runs as lowered and again with small calls inlined, as
     // the driver runs it: both must pass on both tiers.
-    auto result = survey(file, false, options.hook);
+    auto result = survey(file, false);
     if (result.passed) {
-      const auto inlined = survey(file, true, options.hook);
+      const auto inlined = survey(file, true);
       if (!inlined.passed) {
         result.passed = false;
         result.status = "inlined: " + inlined.status;

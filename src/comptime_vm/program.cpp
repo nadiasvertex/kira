@@ -15,7 +15,6 @@
 #include "src/bytecode_compiler/storage_compile.h"
 #include "src/core/adapter.h"
 #include "src/core/verify.h"
-#include "src/hir/lower.h"
 #include "src/hir/lower_core.h"
 #include "src/hir/traversal.h"
 #include "src/intrinsics.h"
@@ -31,10 +30,6 @@ namespace {
       .message = std::move(message),
       .frames = {}});
 }
-
-/// How compile-time code is lowered: able to work on quoted syntax.
-const auto k_compile_time =
-    hir::lowering_options{.contract_checks = true, .compile_time = true};
 
 [[nodiscard]] auto key_of(std::string_view module, std::string_view name)
     -> std::string {
@@ -63,8 +58,9 @@ auto log_core(std::string_view outcome, std::string_view what,
   if (gap.feature) {
     return gap.detail;
   }
-  return std::format("the compiler cannot build this yet: {} — {} (at bytes "
-                     "{}..{})",
+  return std::format("internal compiler error: the core could not be built "
+                     "for {} ({}) at bytes {}..{}; this is a bug in the "
+                     "compiler, not in your program",
                      gap.construct, gap.detail, gap.span.start, gap.span.end);
 }
 
@@ -72,8 +68,9 @@ auto log_core(std::string_view outcome, std::string_view what,
   if (!why.message.empty()) {
     return why.message;
   }
-  return std::format("the compiler cannot build this yet: {} (at bytes "
-                     "{}..{})",
+  return std::format("internal compiler error: lowering refused {} at bytes "
+                     "{}..{}; this is a bug in the compiler, not in your "
+                     "program",
                      why.kind, why.span.start, why.span.end);
 }
 
@@ -216,13 +213,8 @@ auto add_intrinsic(semantic::comptime_program &program, core_build &build,
 } // namespace
 
 auto comptime_lowering::from_environment() -> comptime_lowering {
-  // `only` lowers compile-time code from the core; `old`, any other value,
-  // or none leaves it to the AST lowering unless the driver asks.
-  const auto *mode = std::getenv("CINDER_LOWER_FROM_CORE");
-  const auto from_core = mode != nullptr && std::string_view(mode) == "only";
-  return comptime_lowering{
-      .from_core = from_core,
-      .verify_core = from_core && std::getenv("CINDER_CORE_VERIFY") != nullptr};
+  return comptime_lowering{.verify_core =
+                               std::getenv("CINDER_CORE_VERIFY") != nullptr};
 }
 
 auto hir_fingerprint(hir::hir_function &fn) -> std::string {
@@ -287,7 +279,7 @@ namespace {
 [[nodiscard]] auto
 assemble(semantic::comptime_program &program, const std::string &entry_module,
          const std::string &entry_name, const ast::func_decl *entry_decl,
-         hir::ptr<hir::hir_function> entry, core_build *build)
+         hir::ptr<hir::hir_function> entry, core_build &build)
     -> std::expected<compiled_program, semantic::comptime_failure> {
   auto result = compiled_program{};
   for (const auto &param : entry->params) {
@@ -337,9 +329,7 @@ assemble(semantic::comptime_program &program, const std::string &entry_module,
         return;
       }
       const auto &module = ref.owner_module.value_or(module_name);
-      if (build != nullptr) {
-        add_intrinsic(program, *build, module, ref.name);
-      }
+      add_intrinsic(program, build, module, ref.name);
       if (is_known_intrinsic(ref.name)) {
         return;
       }
@@ -360,20 +350,11 @@ assemble(semantic::comptime_program &program, const std::string &entry_module,
       global_failure = std::format("the static `{}` has no value", name);
       return;
     }
-    auto lowered = std::expected<hir::hir_static_global, std::string>{};
-    if (build != nullptr) {
-      const auto &owners = program.view().lowering.static_global_owners;
-      const auto owner = owners.find(name);
-      lowered = static_through_core(
-          program, *build, *def,
-          owner != owners.end() ? owner->second : entry_module);
-    } else if (auto old =
-                   hir::lower_static_global(*def, program.view(), source_span{});
-               old.has_value()) {
-      lowered = std::move(*old);
-    } else {
-      lowered = std::unexpected(old.error().message);
-    }
+    const auto &owners = program.view().lowering.static_global_owners;
+    const auto owner = owners.find(name);
+    auto lowered = static_through_core(
+        program, build, *def,
+        owner != owners.end() ? owner->second : entry_module);
     if (!lowered.has_value()) {
       global_failure = lowered.error();
       return;
@@ -396,20 +377,8 @@ assemble(semantic::comptime_program &program, const std::string &entry_module,
       skipped.emplace(key, ready.error());
       continue;
     }
-    auto lowered = std::expected<hir::ptr<hir::hir_function>, std::string>{};
-    if (build != nullptr) {
-      lowered = lower_through_core(program, *build, *fn.decl, fn.owner_module,
-                                   fn.hir_name);
-    } else if (auto old =
-                   hir::lower_function(*fn.decl, program.view(), k_compile_time);
-               old.has_value()) {
-      lowered = std::move(*old);
-    } else {
-      lowered = std::unexpected(std::format("{} (at bytes {}..{})",
-                                            old.error().message,
-                                            old.error().span.start,
-                                            old.error().span.end));
-    }
+    auto lowered = lower_through_core(program, build, *fn.decl,
+                                      fn.owner_module, fn.hir_name);
     if (!lowered.has_value()) {
       skipped.emplace(key, lowered.error());
       continue;
@@ -430,8 +399,8 @@ assemble(semantic::comptime_program &program, const std::string &entry_module,
   if (global_failure.has_value()) {
     return unsupported(*global_failure);
   }
-  if (build != nullptr && build->mode.verify_core) {
-    if (auto broken = verify_core(*build, program.view())) {
+  if (build.mode.verify_core) {
+    if (auto broken = verify_core(build, program.view())) {
       return unsupported(std::move(*broken));
     }
   }
@@ -504,31 +473,18 @@ auto compile_program(semantic::comptime_program &program,
     return unsupported(std::format("`{}` cannot run on the VM: {}",
                                    entry.hir_name, ready.error()));
   }
-  if (mode.from_core) {
-    auto build = core_build{.mode = mode,
-                            .lookup = make_lookup(program, memo),
-                            .modules = {},
-                            .intrinsics = {}};
-    auto lowered = lower_through_core(program, build, *entry.decl,
-                                      entry.owner_module, entry.hir_name);
-    if (!lowered.has_value()) {
-      return unsupported(std::format("`{}` cannot be lowered: {}",
-                                     entry.hir_name, lowered.error()));
-    }
-    return assemble(program, entry.owner_module, entry.hir_name, entry.decl,
-                    std::move(*lowered), &build);
-  }
-  auto lowered =
-      hir::lower_function(*entry.decl, program.view(), k_compile_time);
+  auto build = core_build{.mode = mode,
+                          .lookup = make_lookup(program, memo),
+                          .modules = {},
+                          .intrinsics = {}};
+  auto lowered = lower_through_core(program, build, *entry.decl,
+                                    entry.owner_module, entry.hir_name);
   if (!lowered.has_value()) {
-    return unsupported(
-        std::format("`{}` cannot be lowered: {} (at bytes {}..{})",
-                    entry.hir_name, lowered.error().message,
-                    lowered.error().span.start, lowered.error().span.end));
+    return unsupported(std::format("`{}` cannot be lowered: {}",
+                                   entry.hir_name, lowered.error()));
   }
-  (*lowered)->name = entry.hir_name;
   return assemble(program, entry.owner_module, entry.hir_name, entry.decl,
-                  std::move(*lowered), nullptr);
+                  std::move(*lowered), build);
 }
 
 auto compile_expression(semantic::comptime_program &program,
@@ -542,62 +498,44 @@ auto compile_expression(semantic::comptime_program &program,
     return unsupported(
         std::format("the expression cannot run on the VM: {}", ready.error()));
   }
-  if (mode.from_core) {
-    auto build = core_build{.mode = mode,
-                            .lookup = make_lookup(program, memo),
-                            .modules = {},
-                            .intrinsics = {}};
-    auto captures = std::vector<core::expression_capture>{};
-    captures.reserve(expr.captures.size());
-    for (const auto &[name, type] : expr.captures) {
-      captures.push_back(core::expression_capture{.name = name, .type = type});
-    }
-    const auto name = std::string(k_expression_function);
-    const auto key = key_of(expr.owner_module, name);
-    auto built = core::adapt_expression(*expr.expr, captures, name,
-                                        expr.owner_module, program.records(),
-                                        build.lookup);
-    if (!built.has_value()) {
-      log_core("fail", "expression", key,
-               std::format("{}\t{}\t{}", built.error().construct,
-                           built.error().detail, built.error().span.start));
-      return unsupported(std::format("the expression cannot be lowered: {}",
-                                     describe(built.error())));
-    }
-    auto lowered = hir::lower_core_comptime_function(
-        **built, expr.owner_module, program.view());
-    if (!lowered.has_value()) {
-      log_core("fail", "expression", key, "lowering: " + lowered.error().kind);
-      return unsupported(std::format("the expression cannot be lowered: {}",
-                                     describe(lowered.error())));
-    }
-    log_core("ok", "expression", key);
-    if (mode.verify_core) {
-      build.module_named(expr.owner_module).functions.push_back(
-          std::move(*built));
-    }
-    return assemble(program, expr.owner_module, name, nullptr,
-                    std::move(*lowered), &build);
-  }
-  auto captures = std::vector<hir::comptime_capture>{};
+  auto build = core_build{.mode = mode,
+                          .lookup = make_lookup(program, memo),
+                          .modules = {},
+                          .intrinsics = {}};
+  auto captures = std::vector<core::expression_capture>{};
   captures.reserve(expr.captures.size());
   for (const auto &[name, type] : expr.captures) {
-    captures.push_back(hir::comptime_capture{.name = name, .type = type});
+    captures.push_back(core::expression_capture{.name = name, .type = type});
   }
-  auto lowered = hir::lower_comptime_expression(
-      *expr.expr, captures, std::string(k_expression_function), program.view());
+  const auto name = std::string(k_expression_function);
+  const auto key = key_of(expr.owner_module, name);
+  auto built = core::adapt_expression(*expr.expr, captures, name,
+                                      expr.owner_module, program.records(),
+                                      build.lookup);
+  if (!built.has_value()) {
+    log_core("fail", "expression", key,
+             std::format("{}\t{}\t{}", built.error().construct,
+                         built.error().detail, built.error().span.start));
+    return unsupported(std::format("the expression cannot be lowered: {}",
+                                   describe(built.error())));
+  }
+  auto lowered = hir::lower_core_comptime_function(
+      **built, expr.owner_module, program.view());
   if (!lowered.has_value()) {
-    return unsupported(
-        std::format("the expression cannot be lowered: {} (at bytes {}..{})",
-                    lowered.error().message, lowered.error().span.start,
-                    lowered.error().span.end));
+    log_core("fail", "expression", key, "lowering: " + lowered.error().kind);
+    return unsupported(std::format("the expression cannot be lowered: {}",
+                                   describe(lowered.error())));
   }
-  return assemble(program, expr.owner_module,
-                  std::string(k_expression_function), nullptr,
-                  std::move(*lowered), nullptr);
+  log_core("ok", "expression", key);
+  if (mode.verify_core) {
+    build.module_named(expr.owner_module).functions.push_back(
+        std::move(*built));
+  }
+  return assemble(program, expr.owner_module, name, nullptr,
+                  std::move(*lowered), build);
 }
 
-auto lower_from_core_again(const ast::func_decl &decl, const lowered_name &name,
+auto lower_again(const ast::func_decl &decl, const lowered_name &name,
                            semantic::checked_types &checked,
                            const lookup_memo &memo)
     -> std::expected<hir::ptr<hir::hir_function>, std::string> {

@@ -1,0 +1,16 @@
+module codegen_stress.or_pattern_shared_binding
+
+# expect: 22
+
+# A name bound in each alternative of an `|` is one binding at one type
+# (chapter 13): `@a(n) | @b(n) => n` binds `n` from whichever alternative
+# matched. Todo 22.
+
+type t = @a(int32) | @b(int32)
+
+def f(x: t) -> int32:
+    return match x:
+        @a(n) | @b(n) => n
+
+def main() -> int32:
+    return f(@b(22))

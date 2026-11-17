@@ -15,18 +15,12 @@
 
 namespace cinder::comptime_vm {
 
-/// Which lowering compile-time code goes through. Temporary: the next stage
-/// of spec/unified-checker-plan.md phase 3 makes the core the only path and
-/// removes it with the old lowerer.
+/// How compile-time code is lowered. It is built by the core adapter
+/// (`core::adapt_function`, `adapt_expression`, `adapt_static`) and lowered
+/// from the core (`hir::lower_core_comptime_function`, `lower_core_static`).
 struct comptime_lowering {
-  /// Built by the core adapter (`core::adapt_function`, `adapt_expression`,
-  /// `adapt_static`) and lowered from the core
-  /// (`hir::lower_core_comptime_function`, `lower_core_static`), with no call
-  /// into the AST-reading lowerer. On with `CINDER_LOWER_FROM_CORE=only`.
-  bool from_core = false;
-  /// With `from_core`: run `core::verify` over the core of every program
-  /// built, and refuse a program that breaks a rule. On with
-  /// `CINDER_CORE_VERIFY`.
+  /// Run `core::verify` over the core of every program built, and refuse a
+  /// program that breaks a rule. On with `CINDER_CORE_VERIFY`.
   bool verify_core = false;
 
   /// The mode the environment asks for.
@@ -89,8 +83,8 @@ using lookup_memo =
 /// expression. Not a name a declaration can have.
 inline constexpr std::string_view k_expression_function = "<compile-time>";
 
-/// Lowers `expr` as a function of its own (`hir::lower_comptime_expression`)
-/// and, like `compile_program`, everything it reaches, then compiles them
+/// Lowers `expr` as a function of its own (`core::adapt_expression`) and,
+/// like `compile_program`, everything it reaches, then compiles them
 /// together.
 [[nodiscard]] auto compile_expression(semantic::comptime_program &program,
                                       const semantic::comptime_expression &expr,
@@ -101,7 +95,7 @@ inline constexpr std::string_view k_expression_function = "<compile-time>";
 /// `decl` lowered for compile-time code from the core, built from `checked`
 /// as `compile_program` builds it, with the bare names `memo` recorded:
 /// what `vm_backend::verify` compares against. The error says why not.
-[[nodiscard]] auto lower_from_core_again(const ast::func_decl &decl,
+[[nodiscard]] auto lower_again(const ast::func_decl &decl,
                                          const lowered_name &name,
                                          semantic::checked_types &checked,
                                          const lookup_memo &memo)

@@ -70,6 +70,14 @@ void block_on(uint64_t *task, pool where, runner how);
 /// stopped; `true` then leads the body to its cancellation check.
 [[nodiscard]] auto await_poll(uint64_t *self, uint64_t *awaited) -> bool;
 
+/// Called by the step function of `self` at an `await yield`. The first call
+/// returns false: `self` is queued again at the back of its pool's queue once
+/// the step function returns `status::pending`, so the tasks queued ahead of
+/// it run first. The call made when it resumes there returns true, and the
+/// body goes on to its cancellation check. True at once for a task the
+/// scheduler does not own.
+[[nodiscard]] auto yield_poll(uint64_t *self) -> bool;
+
 /// `await_poll` for a set of tasks (`race`): true as soon as any of the
 /// `count` tasks in `tasks` has finished. Otherwise `self` is registered as a
 /// waiter on every unfinished task, unstarted ones are queued, and the step
@@ -217,6 +225,7 @@ extern "C" {
 /// the C++ functions above with its own.
 auto cinder_rt_task_block_on(uint64_t *task, uint64_t pool) -> uint64_t *;
 auto cinder_rt_task_await_poll(uint64_t *self, uint64_t *awaited) -> uint32_t;
+auto cinder_rt_task_yield_poll(uint64_t *self) -> uint32_t;
 auto cinder_rt_task_spawn(uint64_t *task, uint64_t pool) -> uint64_t *;
 auto cinder_rt_task_cancel(uint64_t *task) -> uint32_t;
 auto cinder_rt_task_drop(uint64_t *task) -> uint32_t;

@@ -2793,9 +2793,14 @@ private:
   auto infer_call_args_loosely(const ast::call_expr &call) -> void;
 
   auto check_variant_construction(const ast::call_expr &call,
-                                  const type_entry &instance,
                                   const ast::sum_variant &variant,
-                                  type_id instance_id) -> type_id;
+                                  type_id given) -> type_id;
+
+  /// A constructor's type: `ctor` (a struct or sum type, applied or not)
+  /// with each type parameter nothing has fixed yet made a fresh leaf, then
+  /// tied to `expected` when that is the same type. See the definition.
+  auto open_constructor_params(type_id ctor, type_id expected,
+                               source_span span) -> type_id;
 
   auto check_prelude_variant(std::string_view name, const ast::call_expr *call,
                              source_span span, type_id expected) -> type_id;
@@ -3142,6 +3147,12 @@ private:
     const module_members *trait_module;
     file_id_type trait_file_id;
     std::deque<method_entry> *methods;
+    /// The impl's own type parameters and `where` clause, and where it was
+    /// written: a generic impl's copy is a template over them (todo 57).
+    const std::vector<ast::type_param> *impl_type_params = nullptr;
+    const std::vector<ast::where_constraint> *impl_where = nullptr;
+    const module_members *impl_module = nullptr;
+    file_id_type impl_file_id = 0;
   };
 
   auto
@@ -3154,12 +3165,8 @@ private:
 
   auto add_synthesized_impl(impl_ref impl) -> void;
 
-  auto monomorphize_trait_default(const ast::func_decl &decl, type_id target,
-                                  std::string_view target_type_name,
-                                  const ast::trait_decl *trait_decl,
-                                  const module_members *trait_module,
-                                  file_id_type trait_file_id,
-                                  std::deque<method_entry> &methods) -> void;
+  auto monomorphize_trait_default(const deferred_trait_default &deferred)
+      -> void;
 
   /// A view of the method tables for a lookup that needs none of the
   /// checker's own work (no table build, no derivation).

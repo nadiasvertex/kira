@@ -110,6 +110,8 @@ cc_test(
     ],
     tags = ["no-sandbox"],
     deps = [
+        "//src/hir:lower_core",
+        "//src/testing:stdlib_fixtures",
         "//src/comptime_vm",
         ":aot",
         ":codegen",
@@ -131,6 +133,7 @@ cc_test(
     ],
     tags = ["no-sandbox"],
     deps = [
+        "//src/hir:lower_core",
         "//src/comptime_vm",
         ":codegen",
         ":jit_support",
@@ -146,6 +149,9 @@ cc_test(
 
 cc_test(
     name = "storage_codegen_test",
+    # About three and a half minutes on its own; under a full
+    # `bazelisk test //...` it can pass the default five-minute timeout.
+    timeout = "long",
     srcs = ["storage_codegen_test.cpp"],
     data = [
         "//src:bytecode_storage_test_files",

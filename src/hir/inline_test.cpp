@@ -10,7 +10,7 @@
 
 #include "src/comptime_vm/backend.h"
 #include "src/hir/inline.h"
-#include "src/hir/lower.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/nodes.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
@@ -19,6 +19,7 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
 #include "src/semantic/checker_results.h"
+#include "src/testing/stdlib_fixtures.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
 
@@ -73,10 +74,8 @@ auto inline_program(const std::string &text) -> inlined_program {
       parsed_modules, program.diag, file_has_errors, &comptime);
   expect(program.diag.error_count() == 0, "expected fixture to check cleanly");
 
-  auto lowered =
-      hir::lower_module(*program.ast_file, "sample", program.checked);
-  expect(lowered.has_value(), "expected fixture to lower to HIR");
-  program.modules.push_back(std::move(*lowered));
+  program.modules = cinder::testing::lower_test_program(
+      parsed_modules, program.checked, *file_id, {{*file_id, "sample"}});
   program.stats =
       hir::inline_small_calls(program.modules, program.checked.types);
   return program;

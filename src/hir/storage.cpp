@@ -52,6 +52,8 @@ auto wait_mode_name(wait_mode mode) -> const char * {
     return "any";
   case wait_mode::crew:
     return "crew";
+  case wait_mode::reschedule:
+    return "reschedule";
   }
   return "?";
 }
@@ -451,6 +453,10 @@ namespace {
     return "suspend #" + std::to_string(op.depth) + " " +
            render_place(op.dest) + " <- " + render_place(op.source);
   case op_kind::coroutine_await:
+    if (op.waits == wait_mode::reschedule) {
+      return "await reschedule #" + std::to_string(op.depth) + " " +
+             render_place(op.dest);
+    }
     return std::string{"await"} +
            (op.waits == wait_mode::one
                 ? std::string{}

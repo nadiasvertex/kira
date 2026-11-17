@@ -206,41 +206,44 @@ phase removes.
 | Debt | Removed in |
 |---|---|
 | The verifier runs only in the core tests, not in every test build. | Phase 3 |
-| A type invariant is checked in the core after a write through a reference, but not by lowering (item 40). | Phase 3 |
 | `cell[T]` and `&T` convert through intrinsic calls the adapter inserts (item 38). | Phase 4 |
 | A bare call to a function of the same module has no callee record; the adapter looks the name up. Recording it in the checker changes ownership checking and lowering, which both branch on whether the record exists. | Phase 5 |
 | No record holds the generic arguments an instance was made with, so verifier rule C8 is allow-listed for every call to an instance. | Phase 5 |
 | About 250 templates do not build. Most defer a call, an operator, or a cast to their instances and have no record of their own. Implicit generics and reads of a value parameter have no core form yet. | Phase 5 |
 | The task type of an `async def` and the `std.fmt` helpers interpolation calls are derived by the adapter. | Phase 5 |
-| A struct literal with an `@none` field has an unsettled recorded type (item 41). | Phase 5 |
 | The verifier does not check that a generic call meets the callee's bounds, or that a `match` is exhaustive. | Phase 6 |
 | Closure capture modes and pattern binding modes are read from the ownership check's own graph. | Phase 7 |
 | `for` over a borrowed collection of `copy` elements moves out of a reference (item 39). | Phase 7 |
 
-## Phase 3 progress
+## Phase 3 results
 
-Core-based lowering (`src/hir/lower_core*.cpp`) is built beside the old lowerer behind the
-driver switch `lower_from_core` / `CINDER_LOWER_FROM_CORE`. Every concrete function of the
-corpus and the standard library lowers from the core with the same behaviour on both
-tiers, about 1,690 functions with no fallback. In the `only` mode of the switch whole
-modules, with their statics and synthesized functions, come from the core and the old
-lowerer is not called for run-time code. `//src:lower_core_corpus_test` and
-`//src:lower_core_only_corpus_test` run the codegen corpus in the two modes with the checks
-`codegen_stress_test` makes. Drop emission is shared by both lowerers
-(`src/hir/drop_emission.h`). In the same mode compile-time code is built by the adapter on
-demand and lowered from the core too, with no call into the old lowerer across the test
-suite. Still to do: making the core path the only path, deleting the old lowerer, and turning adapter gaps into user
-diagnostics.
+Phase 3 made the typed core the only input of HIR lowering. The old lowerer
+(`src/hir/lower.cpp`, about 9,300 lines) and the switch that selected it are deleted.
+Run-time and compile-time code are lowered through `src/hir/lower_core*.cpp`, and a whole
+program goes through one entry point, `hir::lower_program`, which runs the adapter and then
+`lower_core_program`. The driver, the codegen corpus and the test fixtures all use it. The
+two corpus tests that compared the lowerers are gone; `codegen_stress_test` covers what
+they checked. Implementation chapter 70 describes the result.
 
-The two lowerers differ in one behaviour. The old lowerer does not check a `post` when a
-function leaves through `?`; the core path does, as chapter 34 requires. The difference
-goes away when the core path becomes the only one.
+Lowering no longer includes `parser/ast.h` or reads an AST node. It uses `origin` and a
+function's declaration only as keys into the drop schedule and the ownership facts. The
+facts it used to read from the AST are fields of the core that the adapter fills. From
+`checked_types` it reads the type table, shapes, drop plans, the drop schedule and the
+ownership facts keyed by `origin`. One AST read remains: a type's own `drop` is named
+through its drop plan's declaration.
 
-The old lowerer's 151 refusals were classified before its deletion. About 40 can be
-reached by a program the checker accepts and become "not implemented" diagnostics reported
-when the core is built; the rest are internal invariants and become assertions. The
-reachable ones that had no entry in `spec/todo.md` are now items 42 to 53, each with a
-program under `src/testdata/known_gaps/`.
+Every refusal is classified. A construct the compiler does not build yet is a feature
+refusal with a message for the user: 32 sites in the adapter, 10 in core lowering, and 2 in
+drop emission. Every other refusal is an internal compiler error that names the item and
+the construct: 182 sites in the adapter, 67 in core lowering (one of them covers the
+operand checks of 15 intrinsics), and 4 in drop emission. Core lowering no longer aborts
+on a malformed tree. Across the test suite and the `known_gaps` programs one internal
+error is reached, by a program the checker should reject (item 60).
+
+Items 15 and 36 stay open. `await yield` needs a suspension form that HIR and the
+runtime do not have. A named `on` block needs the checker to decide its type. The core
+path also gained one feature during the phase: a `pre` on a generator, which the old
+lowerer built and the adapter had refused.
 
 Phase 3 changed the plan in one place. The lowering view stays until phase 12: compile-time
 code runs during checking, so the adapter reads the view until the checker emits the core
@@ -252,7 +255,6 @@ Phase 3 added these debts.
 |---|---|
 | A core `match` records which source form it came from (`if let`, `while let`, `for`, and so on), because storage lowering depends on the HIR shape each form has today. | When storage lowering accepts one match shape |
 | Core nodes carry the AST node they came from, as the key into the drop schedule. | Phase 7, when the ownership check runs on the core |
-| A trait default method copied for a generic impl is lowered once without substituting the impl's parameters. | Phase 5 |
 | `for` over a borrowed collection is `into_iter(bitwise_copy(xs))`, an intrinsic that duplicates a value without making an owner (item 39). | Phase 7 |
 | A call the checker ran at compile time (a `static if` condition calling a `static def`) has no callee record, so the adapter finds the callee by its bare name (`core::function_lookup`) when it builds compile-time code. | Phase 5 |
 | The adapter interns function and reference types while building compile-time code during checking, so the elaboration snapshot depends on which path lowered compile-time code. | Phase 12 |

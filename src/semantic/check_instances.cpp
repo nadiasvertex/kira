@@ -1532,14 +1532,69 @@ auto checker::infer_call_args_loosely(const ast::call_expr &call) -> void {
   }
 }
 
+/// A constructor's type parameters are inferred like a generic call's.
+///
+/// A struct literal or a variant fixes only the parameters its parts
+/// mention: `wrap { inner: it, last: @none }` says nothing about `wrap`'s
+/// `T`, and `@none` says nothing about its payload. Such a parameter is a
+/// fresh leaf, never `unknown`: an `unknown` is compatible with everything
+/// and solved by nothing, so the type the context gives (a return type, a
+/// solved generic parameter, a `let` annotation) could never reach it, and
+/// the recorded type kept a `_` that no later stage can lay out (todo 41).
+/// A leaf is solved where the constructor's value meets that context
+/// (`type_mismatch`), and settled with every other leaf.
+///
+/// `ctor` is the constructor's type as written or as expected: unapplied
+/// (`wrap`), or applied with holes for what the context left open (a
+/// generic callee's `option[_]`). When `expected` is the same type, the
+/// leaves are tied to it before the parts are checked, so the parts are
+/// checked against what the context already knows. Value parameters keep
+/// their own path (`match_value_params`).
+auto checker::open_constructor_params(type_id ctor, type_id expected,
+                                      source_span span) -> type_id {
+  const auto entry = session_.types_.entry(ctor); // copy: minting interns
+  if (entry.decl == nullptr || entry.decl->type_params.empty() ||
+      (entry.kind != type_kind::struct_kind &&
+       entry.kind != type_kind::sum_kind)) {
+    return ctor;
+  }
+  const auto &params = entry.decl->type_params;
+  auto args = entry.args;
+  args.resize(params.size(), k_unknown_type);
+  auto opened = false;
+  for (size_t i = 0; i < params.size(); ++i) {
+    if (params[i].is_value_param || params[i].name.empty() ||
+        session_.types_.entry(args[i]).kind != type_kind::unknown_kind) {
+      continue;
+    }
+    args[i] = leaf_ctxt_.fresh_type(
+        std::format("the `{}` of this `{}`", params[i].name, entry.decl->name),
+        source_location{.file_id = file_.file_id_, .span = span});
+    opened = true;
+  }
+  if (!opened) {
+    return ctor;
+  }
+  const auto result =
+      make_user_type(*entry.decl, entry.module_name, std::move(args));
+  const auto wanted = strip_refs(expected);
+  if (session_.types_.entry(wanted).decl == entry.decl) {
+    solve_leaves(wanted, result);
+  }
+  return result;
+}
+
 /// Checks a sum-type variant constructor call's arguments against the
 /// variant's declared payload types, and — if the sum type is generic and
-/// wasn't already instantiated — infers its type arguments from payload
-/// slots that name a bare type parameter directly.
+/// wasn't already instantiated — infers its type arguments from the
+/// payload, with the parameters the payload does not fix opened as leaves
+/// (`open_constructor_params`).
 auto checker::check_variant_construction(const ast::call_expr &call,
-                                         const type_entry &instance,
                                          const ast::sum_variant &variant,
-                                         type_id instance_id) -> type_id {
+                                         type_id given) -> type_id {
+  const auto instance_id =
+      open_constructor_params(given, k_unknown_type, call.span);
+  const auto instance = session_.types_.entry(instance_id);
   const auto payload = variant_payload_types(instance, variant);
   if (call.args.size() != payload.size()) {
     error(call.span,
@@ -1652,33 +1707,50 @@ auto checker::check_prelude_variant(std::string_view name,
     }
     return leaf_ctxt_.is_meta(payload_found) && !leaf_ctxt_.is_meta(slot);
   };
-  if (expected_is("option") && (name == "some" || name == "none")) {
-    if (name == "some" && !expected_entry.args.empty() &&
-        answers_slot(expected_entry.args[0])) {
-      return session_.types_.builtin_generic("option", {payload_found});
-    }
-    return expected;
-  }
-  if (expected_is("result") && (name == "ok" || name == "err")) {
-    if (expected_entry.args.size() == 2) {
-      const auto slot = name == "ok" ? size_t{0} : size_t{1};
-      if (answers_slot(expected_entry.args[slot])) {
-        auto args = std::vector<type_id>{expected_entry.args[0],
-                                         expected_entry.args[1]};
-        args[slot] = payload_found;
-        return session_.types_.builtin_generic("result", std::move(args));
-      }
-    }
-    return expected;
-  }
   // A slot nothing here says anything about is a fresh leaf, not `unknown`:
   // `pick(@none, &mut o)` learns it from a sibling argument, and an unknown
-  // slot could never be solved.
+  // slot could never be solved. That holds for a slot the expected type
+  // leaves as a hole too (`option[_]`, a generic callee's parameter opened
+  // for the argument check), which is otherwise echoed back and recorded
+  // as the variant's type (todo 41; `open_constructor_params` is the same
+  // rule for user types).
   const auto open_slot = [&](std::string_view what) -> type_id {
     return leaf_ctxt_.fresh_type(
         std::format("the {} type of this `@{}`", what, name),
         source_location{.file_id = file_.file_id_, .span = span});
   };
+  const auto is_hole = [&](type_id slot) -> bool {
+    return session_.types_.entry(slot).kind == type_kind::unknown_kind;
+  };
+  if (expected_is("option") && (name == "some" || name == "none")) {
+    auto slot =
+        expected_entry.args.empty() ? k_unknown_type : expected_entry.args[0];
+    if (name == "some" && answers_slot(slot)) {
+      slot = payload_found;
+    }
+    if (is_hole(slot)) {
+      slot = open_slot("payload");
+    }
+    return session_.types_.builtin_generic("option", {slot});
+  }
+  if (expected_is("result") && (name == "ok" || name == "err")) {
+    if (expected_entry.args.size() == 2) {
+      auto args = std::vector<type_id>{expected_entry.args[0],
+                                       expected_entry.args[1]};
+      const auto slot = name == "ok" ? size_t{0} : size_t{1};
+      if (answers_slot(args[slot])) {
+        args[slot] = payload_found;
+      }
+      if (is_hole(args[0])) {
+        args[0] = open_slot("value");
+      }
+      if (is_hole(args[1])) {
+        args[1] = open_slot("error");
+      }
+      return session_.types_.builtin_generic("result", std::move(args));
+    }
+    return expected;
+  }
   if (name == "some" || name == "none") {
     return session_.types_.builtin_generic(
         "option", {name == "none" ? open_slot("payload") : payload_found});
@@ -1752,7 +1824,7 @@ auto checker::resolve_variant_value(std::string_view name,
   if (expected_entry.kind == type_kind::sum_kind) {
     if (const auto *variant = find_variant(expected_entry, name)) {
       if (call != nullptr) {
-        return check_variant_construction(*call, expected_entry, *variant,
+        return check_variant_construction(*call, *variant,
                                           strip_refs(expected));
       }
       if (!variant->payload_types.empty()) {
@@ -1764,17 +1836,16 @@ auto checker::resolve_variant_value(std::string_view name,
                           variant->payload_types.size() == 1 ? "" : "s", name),
               "missing constructor values");
       }
-      return strip_refs(expected);
+      return open_constructor_params(strip_refs(expected), k_unknown_type,
+                                     span);
     }
   }
 
   if (const auto found = find_module_variant(name)) {
     const auto *decl = found->first;
     const auto instance_id = make_user_type(*decl, file_.module_name_, {});
-    const auto &instance = session_.types_.entry(instance_id);
     if (call != nullptr) {
-      return check_variant_construction(*call, instance, *found->second,
-                                        instance_id);
+      return check_variant_construction(*call, *found->second, instance_id);
     }
     if (!found->second->payload_types.empty()) {
       error(span,
@@ -1785,7 +1856,7 @@ auto checker::resolve_variant_value(std::string_view name,
                         name),
             "missing constructor values");
     }
-    return instance_id;
+    return open_constructor_params(instance_id, expected, span);
   }
 
   // A variant of a prelude-re-exported sum type (`@less` of `ordering`),
@@ -1793,9 +1864,8 @@ auto checker::resolve_variant_value(std::string_view name,
   if (const auto found = find_prelude_variant(name)) {
     const auto instance_id =
         make_user_type(*found->sum_decl, found->module_name, {});
-    const auto &instance = session_.types_.entry(instance_id);
     if (call != nullptr) {
-      return check_variant_construction(*call, instance, *found->variant,
+      return check_variant_construction(*call, *found->variant,
                                         instance_id);
     }
     if (!found->variant->payload_types.empty()) {
@@ -1808,7 +1878,7 @@ auto checker::resolve_variant_value(std::string_view name,
                         name),
             "missing constructor values");
     }
-    return instance_id;
+    return open_constructor_params(instance_id, expected, span);
   }
 
   return std::nullopt;

@@ -99,22 +99,6 @@ struct cli_config {
              ///< over it, reporting the result in `compile_report::core`.
              ///< Only when checking found no errors. The environment
              ///< variable `CINDER_CORE_VERIFY` turns it on as well.
-  bool lower_from_core =
-      false; ///< Lower each function to HIR from the typed core
-             ///< (`src/hir/lower_core.h`) where that lowering supports it,
-             ///< and keep the AST lowering's function elsewhere. Builds the
-             ///< core as `core_check` does, only when checking found no
-             ///< errors, and records each function's path in
-             ///< `compile_report::core_lowering`. The environment variable
-             ///< `CINDER_LOWER_FROM_CORE` turns it on as well.
-  bool lower_from_core_only =
-      false; ///< Lower every module from the typed core alone
-             ///< (`hir::lower_core_program`), with no call into the AST
-             ///< lowering for run-time code: a function the core cannot
-             ///< lower is a lowering failure of its module. Implies
-             ///< `lower_from_core`. `CINDER_LOWER_FROM_CORE=only` turns it
-             ///< on as well, and `CINDER_LOWER_FROM_CORE=old` turns this and
-             ///< `lower_from_core` off, for run-time and compile-time code.
 };
 
 /// What building and verifying the typed core found (`cli_config::core_check`).
@@ -144,9 +128,6 @@ struct compile_report {
       build; ///< Populated only when `cli_config::build` was set.
   std::optional<core_report>
       core; ///< Populated only when the core check ran (`core_check`).
-  std::vector<hir::core_lowering_record>
-      core_lowering; ///< One record per lowered function, populated only
-                     ///< when `lower_from_core` was on.
 };
 
 /// Parse, validate, and emit metadata for each requested source file.

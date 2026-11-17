@@ -1,0 +1,18 @@
+module codegen_stress.try_on_reference
+
+# expect: 3
+
+# `?` on a `&option[int32]` reads through the reference and yields the `copy`
+# payload. The specification does not yet say what `?` does on a reference;
+# todo 52 is open on that question, and this file records what the compiler
+# does now.
+
+def g(o: &option[int32]) -> option[int32]:
+    let v = o?
+    return @some(v)
+
+def main() -> int32:
+    let o: option[int32] = @some(3)
+    match g(&o):
+        @some(v) => return v
+        @none => return 0

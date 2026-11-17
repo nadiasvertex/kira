@@ -26,7 +26,7 @@
 auto main() -> int {
   const auto *filter = std::getenv("CINDER_CORPUS_FILTER");
   auto options = cinder::testing::codegen_corpus::corpus_options{
-      .name = "codegen_stress_test", .include = {}, .hook = {}};
+      .name = "codegen_stress_test", .include = {}};
   if (filter != nullptr && *filter != '\0') {
     options.include = [filter](const std::string &name) -> bool {
       return name.contains(filter);

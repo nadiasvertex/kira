@@ -1,0 +1,54 @@
+module codegen_stress.nested_or_patterns
+
+# expect: 1234567
+# max-live-blocks: 0
+
+# A `|` below the top of a pattern stands for one arm alternative per
+# choice: `(@a | @b, 1 | 2)` is the four alternatives `(@a, 1)`, `(@a, 2)`,
+# `(@b, 1)` and `(@b, 2)`. Each alternative tests its own parts and binds
+# its own names. The lists are payloads that own a heap block, so a binding
+# that skips its drop leaks one and a second drop frees one twice.
+
+type tag = @a | @b | @c
+type shape = @small(int32) | @pair(int32, int32) | @none_of
+type holder = @one(list[int32]) | @two(list[int32]) | @empty
+
+def no_bindings(t: tag, n: int32) -> int32:
+    return match (t, n):
+        (@a | @b, 1 | 2) => 1
+        (@c, 1 | 2) => 2
+        _ => 3
+
+def with_bindings(s: shape) -> int32:
+    return match s:
+        @small(n) | @pair(n, 0) => n
+        @pair(1 | 2, n) | @pair(n, 7 | 8) => n * 10
+        _ => 0
+
+# A `|` binds only copies, so the list is bound through a borrow.
+def borrowed_payload(o: &option[holder]) -> int32:
+    return match o:
+        @some(@one(xs) | @two(xs)) => xs[0] + xs[1]
+        @some(@empty) | @none => 7
+
+# The subject owns its list; no arm binds it, and it is dropped once.
+def owned_payload(o: option[holder]) -> int32:
+    return match o:
+        @some(@one(_) | @two(_)) => 5
+        @some(@empty | @one(_)) => 6
+        _ => 0
+
+def main() -> int32:
+    var total = 0
+    total += no_bindings(@a, 1) * 1000000
+    total += no_bindings(@c, 2) * 200000 / 2
+    total += no_bindings(@b, 7) * 10000
+    total += with_bindings(@pair(4, 0)) * 1000
+    total += with_bindings(@pair(2, 5)) / 10 * 100
+    total += with_bindings(@pair(6, 8)) / 60 * 60
+    let h = @some(@two([4, 3]))
+    total += borrowed_payload(&h) - 7
+    total += borrowed_payload(&@none) - 7
+    total += owned_payload(@some(@one([1, 2, 3]))) + 2
+    total += owned_payload(@none)
+    return total

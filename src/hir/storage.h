@@ -279,7 +279,10 @@ enum class op_kind : uint8_t {
                       ///< from 1.
   coroutine_await,    ///< Step only, in a task: waits for the task at `source`,
                       ///< or, when `waits` is `all` or `any`, for a tuple of
-                      ///< tasks to all finish or for one of them to.
+                      ///< tasks to all finish or for one of them to. With
+                      ///< `waits == reschedule` it waits for nothing and has
+                      ///< no `source`: the scheduler queues the task again
+                      ///< and it resumes past this point (`await yield`).
                       ///< `dest` is the coroutine. If the wait is not over
                       ///< the step returns `pending` and, once woken,
                       ///< resumes here and polls again. `depth` numbers the
@@ -319,6 +322,8 @@ enum class wait_mode : uint8_t {
   all,  ///< Every task of a tuple (`await par`).
   any,  ///< The first task of a tuple to finish (`await race`).
   crew, ///< Every task spawned into one `crew` (the end of a crew block).
+  reschedule, ///< Nothing: the task goes to the back of its pool's queue
+              ///< (`await yield`).
 };
 
 [[nodiscard]] auto wait_mode_name(wait_mode mode) -> const char *;

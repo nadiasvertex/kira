@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <string_view>
 #include <utility>
 
@@ -21,7 +22,7 @@
 #include "src/bytecode/value.h"
 #include "src/comptime_vm/backend.h"
 #include "src/hir/link.h"
-#include "src/hir/lower.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/nodes.h"
 #include "src/hir/storage_program.h"
 #include "src/llvm_codegen/codegen.h"
@@ -73,6 +74,9 @@ struct checked_fixture {
   cinder::diagnostic_bag diag{};
   cinder::testing::parsed_stdlib stdlib;
   cinder::ast::ptr<cinder::ast::file> ast_file;
+  /// What was checked: the stdlib's files and the fixture's, `file_id`.
+  std::vector<cinder::semantic::parsed_module> parsed;
+  cinder::file_id_type file_id = 0;
   cinder::semantic::checked_types checked;
 };
 
@@ -112,6 +116,8 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   auto parsed_modules = fixture.stdlib.modules;
   parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
+  fixture.parsed = parsed_modules;
+  fixture.file_id = *file_id;
   auto comptime = cinder::comptime_vm::vm_backend{};
   fixture.checked = cinder::semantic::check_program(
       parsed_modules, fixture.diag, file_has_errors, &comptime);
@@ -157,13 +163,11 @@ auto compile_storage(std::span<const hir::hir_module *const> reachable,
 /// `src/std/list.cn`. The fixture must outlive the result.
 auto compile_checked(checked_fixture &fixture) -> lc::compiled_module {
   static auto keep = std::vector<hir::ptr_vec<hir::hir_module>>{};
-  auto entry = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(entry.has_value(), "expected fixture to lower to HIR");
-  auto &modules = keep.emplace_back();
-  modules.push_back(std::move(*entry));
+  auto lowered = cinder::testing::lower_test_program(
+      fixture.parsed, fixture.checked, fixture.file_id,
+      {{fixture.file_id, "sample"}});
+  auto &modules = keep.emplace_back(std::move(lowered));
   const auto *entry_module = modules.front().get();
-  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
-                                        modules);
   const auto reachable = hir::find_reachable_modules(*entry_module, modules);
   return compile_storage(reachable, fixture.checked);
 }
@@ -310,26 +314,17 @@ auto jit_fixture_for_multi(
       parsed_modules, fixture.diag, file_has_errors, &comptime);
   expect_checked_cleanly(fixture.sources, fixture.diag);
 
-  auto &modules = kept.modules;
+  // The whole program, as the driver lowers it: a file with no `module`
+  // declaration is named by its path, and functor instantiations are
+  // modules of their own, so a `use m[args] as db` fixture's `db.f(...)`
+  // calls resolve.
+  auto names = std::unordered_map<cinder::file_id_type, std::string>{};
   for (size_t i = 0; i < files.size(); ++i) {
-    auto lowered =
-        hir::lower_module(*ast_files[i], files[i].first, fixture.checked);
-    expect(lowered.has_value(), "expected every fixture module to lower");
-    modules.push_back(std::move(*lowered));
+    names.emplace(file_ids[i], files[i].first);
   }
-  // Materialized functor instantiations have no source file of their own;
-  // lower them into standalone modules just as `driver::lower_and_emit_
-  // modules` does, so a `use m[args] as db` fixture's `db.f(...)` calls
-  // resolve.
-  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
-                                        modules);
-
-  auto functor_modules = hir::lower_functor_modules(fixture.checked);
-  expect(functor_modules.has_value(),
-         "expected functor instantiations to lower");
-  for (auto &functor_module : *functor_modules) {
-    modules.push_back(std::move(functor_module));
-  }
+  auto &modules = kept.modules;
+  modules = cinder::testing::lower_test_program(
+      parsed_modules, fixture.checked, file_ids.front(), std::move(names));
 
   const hir::hir_module *entry = nullptr;
   for (const auto &module : modules) {
@@ -558,8 +553,8 @@ auto test_implicit_tail_match_and_if_are_the_return_value() -> void {
   // `return`, no assignment — as opposed to `if_expression.cn`'s `return
   // if ...`) previously lowered with `k_unknown_type` and was never
   // wrapped as a value-producing tail, so it silently returned 0/unit
-  // instead of the matched/branch value (src/hir/lower.cpp's
-  // `lower_block`/`lower_tail_control_flow_stmt`, and — for `if` only —
+  // instead of the matched/branch value (the lowering of a block's tail
+  // control flow, and — for `if` only —
   // src/semantic/check.cpp's `if_stmt` case, which previously always typed
   // `unit` unlike `match_stmt`). Also exercises the case where every
   // branch diverges via `return` (`grade_returns`), which separately
@@ -691,7 +686,7 @@ auto test_calls_into_a_materialized_functor_instantiation() -> void {
   // own; `use audited[postgres] as db` materializes it (clones its `def`s,
   // checks them with `DB` bound to `postgres`). `semantic::checker::
   // materialize_functor` records those clones as `functor_instance`s, and
-  // `hir::lower_functor_modules` (exercised by `jit_fixture_for_multi`) turns
+  // lowering (exercised by `jit_fixture_for_multi`) turns
   // them into a standalone `hir_module` the cross-module dispatch here can
   // find — proving an instantiated functor doesn't just type-check but runs.
   auto jf = jit_fixture_for_multi(
@@ -775,7 +770,7 @@ auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
 // `test_calls_a_self_receiver_trait_default_method_across_modules` exactly,
 // on the LLVM/AOT side: proves trait-default-method monomorphization
 // (`semantic::check.cpp`'s `monomorphize_trait_default`) and its
-// cross-module lowering (`synthesized_trait_defaults`, `hir/lower.cpp`)
+// cross-module lowering (`synthesized_trait_defaults`)
 // produce IR the JIT can actually run, not just bytecode the VM can — no
 // existing test compiled a `self`-receiver method call through this
 // backend before.

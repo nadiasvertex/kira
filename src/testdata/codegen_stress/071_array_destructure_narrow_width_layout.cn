@@ -37,8 +37,7 @@ def main() -> int32:
     let arr = make()
     let destructure_ok = destructure_matches(&arr)
 
-    # `match` against an array pattern (`array_pattern` lowering,
-    # src/hir/lower.cpp), covering the array side of pattern-projection
+    # `match` against an array pattern (`array_pattern` lowering), covering the array side of pattern-projection
     # separately from the `let (...)` path above.
     let matched: int8 = match arr:
         (10, b, c, 40) => b + c

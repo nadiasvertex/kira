@@ -1,0 +1,17 @@
+module main
+
+# Todo 41: a constructor's type parameters that its own parts do not fix
+# come from the type the context expects. Here the return type fixes `T`.
+type wrap[I, T] = { inner: I, last: option[T] }
+type tagged[I, T] = { inner: I, count: int32 }
+
+def mk[I, T](it: I) -> wrap[I, T]:
+    return wrap { inner: it, last: @none }
+
+def tag[I, T](it: I) -> tagged[I, T]:
+    return tagged { inner: it, count: 3 }
+
+def main() -> int32:
+    let w: wrap[int32, int64] = mk(3)
+    let t: tagged[int32, str] = tag(4)
+    return w.inner + t.inner + t.count

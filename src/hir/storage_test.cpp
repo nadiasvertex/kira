@@ -14,7 +14,6 @@
 
 #include "src/comptime_vm/backend.h"
 #include "src/hir/abi.h"
-#include "src/hir/lower.h"
 #include "src/hir/nodes.h"
 #include "src/hir/storage.h"
 #include "src/hir/storage_lower.h"
@@ -124,9 +123,9 @@ auto build(const std::string &text, bool nrvo = false,
                      .render_all(out->diag);
     fail("expected fixture to check cleanly");
   }
-  auto lowered = hir::lower_module(*out->ast_file, "sample", out->checked);
-  expect(lowered.has_value(), "expected the fixture to lower to HIR");
-  out->module = std::move(*lowered);
+  auto lowered = cinder::testing::lower_test_program(
+      parsed_modules, out->checked, *file_id, {{*file_id, "sample"}});
+  out->module = std::move(lowered.front());
   out->layouts = std::make_unique<runtime::value_layouts>(out->checked.types,
                                                           out->checked.shapes);
   out->env = std::make_unique<hir::storage_env>(
@@ -2948,17 +2947,18 @@ auto test_arrays_forget_and_owned_receivers() -> void {
   expect_rejects(*f, borrowed, hir::verify_error_kind::uninitialized,
                  "a receiver moved in before it was filled");
 
-  // A `cell[T]` call result read as a `&T` is built apart and copied.
+  // A `cell[T]` call result read as a `&T` is the same address, so the call
+  // writes it straight into the payload.
   expect_ops(*f, "first_of",
-             {"call s2 = list::at_ref$list_noisy_$usize(s1, #0)",
-              "compute s0.@some.0 = copy s2", "publish s0 @some", "dead s2",
-              "return"});
+             {"call s0.@some.0 = list::at_ref$list_noisy_$usize(s1, #0)",
+              "publish s0 @some", "return"});
   expect_verifies(*f, f->function("first_of"), "first_of");
   // Only a `cell_mut[T]` may be read as a `&mut T`, and only as a reference
   // to its own `T`.
   auto &types = f->checked.types;
-  const auto cell = f->function("first_of").slots[2].type;
-  const auto element = types.entry(cell).args.front();
+  const auto result = f->function("first_of").slots[0].type;
+  const auto element = types.entry(types.entry(result).args.front()).result;
+  const auto cell = types.builtin_generic("cell", {element});
   const auto cell_mut = types.builtin_generic("cell_mut", {element});
   expect(f->env->cell_reads_as_reference(cell, types.ref_to(element, false)),
          "expected a `cell[T]` to read as a `&T`");

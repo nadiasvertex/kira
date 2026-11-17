@@ -1,0 +1,44 @@
+module codegen_stress.await_yield_takes_turns
+
+# expect: 400
+# max-live-blocks: 0
+
+# Eight tasks of one crew pass a turn around a ring through an atomic, 25
+# times each: the task in seat `k` moves the turn on when it is `k` modulo 8,
+# and otherwise waits for its turn with `await yield`.
+#
+# The scheduler promises no order between tasks when its `io` pool has more
+# than one worker (the harness runs four), so the program asserts what it does
+# promise: a task at `await yield` goes to the back of its pool's queue and
+# gives up its worker, so the tasks queued behind it run. Eight tasks on four
+# workers finish only if that holds; a task that kept its worker while it
+# waited would hold up the ring. 200 turns, plus 25 rounds from each task.
+
+use std.sync.atomic
+
+async def take_turns(turn: &atomic[int32], seat: int32, rounds: int32) -> int32:
+    var done: int32 = 0
+    while done < rounds:
+        if turn.load() % 8 == seat:
+            turn.fetch_add(1)
+            done += 1
+        else:
+            await yield
+    return done
+
+async def main() -> int32:
+    let turn = atomic.new(0)
+    let tasks = crew c:
+        let t0 = c.spawn(take_turns(&turn, 0, 25))
+        let t1 = c.spawn(take_turns(&turn, 1, 25))
+        let t2 = c.spawn(take_turns(&turn, 2, 25))
+        let t3 = c.spawn(take_turns(&turn, 3, 25))
+        let t4 = c.spawn(take_turns(&turn, 4, 25))
+        let t5 = c.spawn(take_turns(&turn, 5, 25))
+        let t6 = c.spawn(take_turns(&turn, 6, 25))
+        let t7 = c.spawn(take_turns(&turn, 7, 25))
+        (t0, t1, t2, t3, t4, t5, t6, t7)
+    let (t0, t1, t2, t3, t4, t5, t6, t7) = tasks
+    let rounds = (t0.get() + t1.get() + t2.get() + t3.get() + t4.get() +
+                  t5.get() + t6.get() + t7.get())
+    return turn.load() + rounds

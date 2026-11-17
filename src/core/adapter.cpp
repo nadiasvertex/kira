@@ -20,8 +20,8 @@ namespace cinder::core {
 namespace {
 
 /// The bare target-type name an `impl`/`extend` block's methods are named
-/// under (`Target::method`), as `hir::lower_module` names them. Any other
-/// target shape is not lowered there, so it is not enumerated here.
+/// under (`Target::method`), the name HIR knows them by. Any other target
+/// shape has no methods to lower, so it is not enumerated here.
 ///
 /// A generic block (`extend[T] list[T]`) has no instance of its own to
 /// lower, so lowering skips it whatever its target; its methods are
@@ -53,9 +53,6 @@ enum class template_kind : std::uint8_t {
   declared,
   /// An unannotated parameter the body leaves open (`open_param_templates`).
   implicit,
-  /// A trait default cloned for a generic impl: its signature names the
-  /// impl's parameters.
-  default_clone,
 };
 
 /// One function the module will hold, before its body is built.
@@ -84,45 +81,9 @@ struct module_plan {
   std::vector<planned_intrinsic> intrinsics;
 };
 
-/// Whether `type` mentions a type parameter, a parameter application or a
-/// symbolic value, and each type parameter it mentions, in first-seen order.
-auto collect_params(const semantic::type_table &types, type_id type,
-                    std::vector<type_id> &out) -> bool {
-  auto found = false;
-  auto pending = std::vector<type_id>{type};
-  auto seen = std::unordered_set<type_id>{};
-  while (!pending.empty()) {
-    const auto id = pending.back();
-    pending.pop_back();
-    if (!seen.insert(id).second) {
-      continue;
-    }
-    const auto &entry = types.entry(id);
-    if (entry.kind == semantic::type_kind::type_param_kind) {
-      found = true;
-      if (std::ranges::find(out, id) == out.end()) {
-        out.push_back(id);
-      }
-      continue;
-    }
-    if (entry.kind == semantic::type_kind::param_app_kind ||
-        entry.kind == semantic::type_kind::symbolic_value_kind) {
-      found = true;
-    }
-    for (const auto arg : entry.args) {
-      pending.push_back(arg);
-    }
-    if (entry.result != k_unknown_type && entry.result != id) {
-      pending.push_back(entry.result);
-    }
-  }
-  return found;
-}
-
-/// Enumerates functions the way `hir::lower_module_items`,
-/// `lower_module_synthesized`, `lower_inline_submodules` and
-/// `lower_functor_modules` do, so the core holds the same set under the same
-/// names and owner modules.
+/// Enumerates the functions of each module, its synthesized items, its inline
+/// submodules and the functor instances, under the names and owner modules
+/// HIR knows them by.
 class module_planner {
 public:
   explicit module_planner(const semantic::checked_types &checked)
@@ -186,13 +147,16 @@ public:
     auto &out = plan.functions;
     for (const auto &method : checked_.lowering.synthesized_trait_defaults) {
       if (method.owner_module == module_name && method.decl != nullptr) {
+        // A generic impl's copy is a template over the impl's parameters,
+        // as the impl's written methods are.
         out.push_back(
             {.decl = method.decl,
              .name = std::format("{}::{}", method.target_type_name,
                                  method.decl->name),
-             .generic = clone_is_template(*method.decl)
-                            ? template_kind::default_clone
-                            : template_kind::none});
+             .generic = method.block_type_params != nullptr
+                            ? template_kind::declared
+                            : template_kind::none,
+             .block_params = method.block_type_params});
       }
     }
     for (const auto &instance : checked_.lowering.const_generic_instances) {
@@ -210,30 +174,6 @@ public:
   }
 
 private:
-  /// Whether a trait default cloned for an impl still names the impl's
-  /// parameters in its signature: the clone of a generic impl's default.
-  [[nodiscard]] auto clone_is_template(const ast::func_decl &decl) const
-      -> bool {
-    auto params = std::vector<type_id>{};
-    auto found = false;
-    for (const auto &param : decl.params) {
-      if (param.pattern == nullptr) {
-        continue;
-      }
-      if (const auto type = checked_.node_types.find(param.pattern.get());
-          type != checked_.node_types.end()) {
-        found = collect_params(checked_.types, type->second, params) || found;
-      }
-    }
-    if (decl.return_type != nullptr) {
-      if (const auto type = checked_.node_types.find(decl.return_type.get());
-          type != checked_.node_types.end()) {
-        found = collect_params(checked_.types, type->second, params) || found;
-      }
-    }
-    return found;
-  }
-
   /// The methods of an `impl`/`extend` block named `target`. A block with
   /// type parameters makes every method a template.
   auto plan_block(const std::vector<ast::ptr<ast::node>> &items,
@@ -353,29 +293,6 @@ public:
     return params;
   }
 
-  /// The parameters a generic impl's trait-default clone names in its
-  /// signature: the impl's, which the clone does not otherwise record.
-  [[nodiscard]] auto clone_params(const ast::func_decl &decl)
-      -> std::vector<type_id> {
-    auto params = std::vector<type_id>{};
-    for (const auto &param : decl.params) {
-      if (param.pattern == nullptr) {
-        continue;
-      }
-      if (const auto type = checked_.node_types.find(param.pattern.get());
-          type != checked_.node_types.end()) {
-        (void)collect_params(checked_.types, type->second, params);
-      }
-    }
-    if (decl.return_type != nullptr) {
-      if (const auto type = checked_.node_types.find(decl.return_type.get());
-          type != checked_.node_types.end()) {
-        (void)collect_params(checked_.types, type->second, params);
-      }
-    }
-    return params;
-  }
-
   /// Records each planned template's parameters, so every body built later
   /// knows a call to a template when it meets one.
   auto register_templates(const module_plan &plan) -> void {
@@ -389,9 +306,6 @@ public:
         break;
       case template_kind::implicit:
         templates_.insert_or_assign(planned.decl, std::vector<type_id>{});
-        break;
-      case template_kind::default_clone:
-        templates_.insert_or_assign(planned.decl, clone_params(*planned.decl));
         break;
       }
     }

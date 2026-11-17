@@ -6,15 +6,15 @@
 #include "src/hir/lower_core.h"
 #include "src/hir/lower_core_lowerer.h"
 
-/// Whole modules from the core (`lower_core_program`): what `lower_module`,
-/// `lower_inline_submodules` and `lower_functor_modules` make from the AST.
+/// Whole modules and programs from the core (`lower_core_program`,
+/// `lower_program`).
 namespace cinder::hir {
 
 namespace {
 
-/// A reified static's value (`build_static_value` in the adapter) as
-/// `lower_reified_value` builds it: literals, aggregates, variants, and
-/// the `from_array` call that makes a collection.
+/// A reified static's value (`build_static_value` in the adapter):
+/// literals, aggregates, variants, and the `from_array` call that makes a
+/// collection.
 auto static_value(const core::expr &value)
     -> std::expected<ptr<hir_expr>, unsupported> {
   const auto parts = [&](const ptr_vec<core::expr> &from)
@@ -79,7 +79,7 @@ auto static_value(const core::expr &value)
         span, value.type, init.variant, std::move(*payload)));
   }
   case core::node_kind::call: {
-    // `T::from_array([...])`, named as the old lowerer names it, with no
+    // `T::from_array([...])`, named by the callee's bare name with no
     // symbol: a static's initializer is no function's body.
     const auto &made = static_cast<const core::call &>(value);
     if (made.target.kind != core::callee::form::function ||
@@ -108,8 +108,7 @@ auto static_value(const core::expr &value)
 }
 
 /// Moves the functions lowering made inside `functions` (task blocks, see
-/// `hir_function::nested`) into the list, skipping a name already there, as
-/// the old lowerer's `hoist_nested_functions` does.
+/// `hir_function::nested`) into the list, skipping a name already there.
 auto hoist_nested(ptr_vec<hir_function> &functions) -> void {
   auto names = std::unordered_set<std::string>{};
   for (const auto &function : functions) {
@@ -159,14 +158,16 @@ auto lower_core_program(const core_lowering_input &input,
     const auto &hir_name = names.at(module);
     auto failed = false;
     const auto fail = [&](std::string item, std::string message,
-                          source_span span) {
-      result.failures.push_back(core_module_failure{.module = hir_name,
-                                                    .item = std::move(item),
-                                                    .message =
-                                                        std::move(message),
-                                                    .span = span,
-                                                    .file_id =
-                                                        module->file_id});
+                          source_span span, bool feature,
+                          std::string construct) {
+      result.failures.push_back(
+          core_module_failure{.module = hir_name,
+                              .item = std::move(item),
+                              .message = std::move(message),
+                              .span = span,
+                              .file_id = module->file_id,
+                              .feature = feature,
+                              .construct = std::move(construct)});
       failed = true;
     };
     // What the adapter left out of this module: a template is not lowered,
@@ -176,52 +177,24 @@ auto lower_core_program(const core_lowering_input &input,
           gap.item == core::gap::item_kind::intrinsic) {
         continue;
       }
-      result.records.push_back(core_lowering_record{
-          .module = hir_name,
-          .function = gap.function,
-          .from_core = false,
-          .fallback = std::format("not built by the adapter: {}",
-                                  gap.construct),
-          .span = gap.span});
       fail(gap.function,
            gap.feature ? gap.detail
-                       : std::format("`{}` could not be compiled: {} ({})",
-                                     gap.function, gap.construct, gap.detail),
-           gap.span);
+                       : std::format("{} ({})", gap.construct, gap.detail),
+           gap.span, gap.feature, gap.construct);
     }
     auto functions = ptr_vec<hir_function>{};
     for (const auto &function : module->functions) {
-      if (!function->generic_params.empty() &&
-          !is_type_erased_default_copy(*function, *module, checked)) {
+      if (!function->generic_params.empty()) {
         continue;
       }
-      auto record = core_lowering_record{.module = hir_name,
-                                         .function = function->name,
-                                         .from_core = false,
-                                         .fallback = {},
-                                         .span = function->span};
       auto lowered = lower_core_function(*function, module->name, hir_name,
                                          checked, options);
       if (!lowered.has_value()) {
-        record.fallback = lowered.error().kind;
-        record.span = lowered.error().span;
-        result.records.push_back(std::move(record));
+        const auto feature = !lowered.error().message.empty();
         fail(function->name,
-             !lowered.error().message.empty()
-                 ? lowered.error().message
-                 : std::format("`{}` could not be compiled: {}",
-                               function->name, lowered.error().kind),
-             lowered.error().span);
+             feature ? lowered.error().message : lowered.error().kind,
+             lowered.error().span, feature, lowered.error().kind);
         continue;
-      }
-      record.from_core = true;
-      result.records.push_back(std::move(record));
-      for (const auto &made : (*lowered)->nested) {
-        result.records.push_back(core_lowering_record{.module = hir_name,
-                                                      .function = made->name,
-                                                      .from_core = true,
-                                                      .fallback = {},
-                                                      .span = made->span});
       }
       functions.push_back(std::move(*lowered));
     }
@@ -229,12 +202,10 @@ auto lower_core_program(const core_lowering_input &input,
     for (const auto &global : module->statics) {
       auto lowered = lower_core_static(global);
       if (!lowered.has_value()) {
+        const auto feature = !lowered.error().message.empty();
         fail(global.name,
-             !lowered.error().message.empty()
-                 ? lowered.error().message
-                 : std::format("the static `{}` could not be compiled: {}",
-                               global.name, lowered.error().kind),
-             lowered.error().span);
+             feature ? lowered.error().message : lowered.error().kind,
+             lowered.error().span, feature, lowered.error().kind);
         continue;
       }
       statics.push_back(std::move(*lowered));
@@ -251,6 +222,28 @@ auto lower_core_program(const core_lowering_input &input,
     result.modules.push_back(std::move(made));
   }
   return result;
+}
+
+auto lower_program(std::span<const semantic::parsed_module> inputs,
+                   const std::vector<bool> &file_has_errors,
+                   semantic::checked_types &checked,
+                   std::unordered_map<file_id_type, std::string>
+                       file_module_names,
+                   const lowering_options &options) -> lowered_program {
+  auto out = lowered_program{
+      .core = core::adapt_program(
+          inputs, file_has_errors, checked,
+          core::adapt_options{.contract_checks = options.contract_checks}),
+      .hir = {}};
+  auto program = std::vector<const core::module *>{};
+  program.reserve(out.core.modules.size());
+  for (const auto &module : out.core.modules) {
+    program.push_back(module.get());
+  }
+  const auto input = core_lowering_input{
+      .modules = program, .file_module_names = std::move(file_module_names)};
+  out.hir = lower_core_program(input, out.core.gaps, checked, options);
+  return out;
 }
 
 } // namespace cinder::hir

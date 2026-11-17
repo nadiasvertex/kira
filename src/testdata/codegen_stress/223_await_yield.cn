@@ -1,0 +1,29 @@
+module codegen_stress.await_yield
+
+# expect: 46
+# max-live-blocks: 0
+
+# `await yield` suspends a task without waiting on anything: the scheduler
+# queues it again and it carries on. It works as a statement and as a value
+# (`unit`), in a loop, in an `async:` block, and in the entry `async def
+# main`, which is no task and goes straight on. 0 + 1 + ... + 9 = 45, plus
+# one from the `async:` block.
+
+async def work(n: int32) -> int32:
+    let nothing = await yield
+    var total: int32 = 0
+    var i: int32 = 0
+    while i < n:
+        total += i
+        await yield
+        i += 1
+    let rest = async:
+        await yield
+        total + 1
+    return await rest
+
+async def main() -> int32:
+    await yield
+    let r = await work(10)
+    await yield
+    return r

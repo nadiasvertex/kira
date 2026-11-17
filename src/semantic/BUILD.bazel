@@ -114,6 +114,7 @@ cc_test(
 cc_test(
     name = "check_test",
     srcs = ["check_test.cpp"],
+    shard_count = 4,
     data = [
         "//src:semantic_check_test_files",
         "//src:std_sources",

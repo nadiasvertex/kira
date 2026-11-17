@@ -350,7 +350,10 @@ struct walker {
       return;
     }
     case hir_node_kind::hir_yield: {
-      walk_expr(*dynamic_cast<const hir_yield &>(node).value);
+      if (const auto &value = dynamic_cast<const hir_yield &>(node).value;
+          value != nullptr) {
+        walk_expr(*value);
+      }
       ++generation;
       return;
     }

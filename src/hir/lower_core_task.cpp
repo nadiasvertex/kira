@@ -8,7 +8,6 @@
 #include "src/hir/captures.h"
 #include "src/hir/lower_core_lowerer.h"
 #include "src/hir/reference_check.h"
-#include "src/parser/ast.h"
 #include "src/runtime/scheduler.h"
 #include "src/semantic/ownership_cfg.h"
 
@@ -138,7 +137,8 @@ auto may_suspend(const core::node &node) -> bool {
     const auto &made = static_cast<const core::call &>(node);
     if (made.target.kind == core::callee::form::intrinsic) {
       const auto &name = made.target.name;
-      if (name == "await_par" || name == "await_race" || name == "crew_new") {
+      if (name == "await_par" || name == "await_race" || name == "crew_new" ||
+          name == "task_yield") {
         return true;
       }
       // `on(...)` not awaited makes a task of its own.
@@ -948,9 +948,11 @@ auto core_lowerer::task_block(const core::call &source)
                               .type = hir_type(root.type)});
   }
   const auto declared = hir_type(body.return_type);
-  const auto &block_expr = *static_cast<const ast::expr *>(key);
+  if (body.task_start == nullptr) {
+    return refuse("task_block without its start key", source.span);
+  }
   return task_function(
-      key, semantic::ownership::task_block_start(block_expr),
+      key, body.task_start,
       std::format("<task block {}@{}>", function_name_, body.span.start),
       [&] { return block(*body.body, declared); }, declared,
       hir_type(source.type), source.span, outer);
@@ -982,8 +984,10 @@ auto core_lowerer::on_task(const core::call &source)
   const auto held = mint();
   names_.insert_or_assign(held, "<on task>");
   // The drop schedule names the wrapper by the `on(...)`'s context.
-  const auto *key =
-      &static_cast<const ast::on_expr *>(source.origin)->context_type;
+  const auto *key = source.context_origin;
+  if (key == nullptr) {
+    return refuse("on with no context key", span);
+  }
   auto carried = ptr_vec<hir_expr>{};
   carried.push_back(hir::make<hir_local_ref>(span, task_type, held, "<on task>"));
   auto outer = std::vector<hir_param>{
@@ -1343,12 +1347,40 @@ auto core_lowerer::crew_errors(const core::call &source)
   return ptr<hir_expr>(hir::make<hir_block>(span, type, std::move(stmts)));
 }
 
+auto core_lowerer::task_yield(const core::call &source)
+    -> core_result<ptr<hir_expr>> {
+  const auto span = source.span;
+  auto unit = ptr<hir_expr>(
+      hir::make<hir_block>(span, hir_type(source.type), ptr_vec<hir_node>{}));
+  if (!source.args.empty()) {
+    return refuse("task_yield with an operand", span);
+  }
+  // The entry `async def main` is no task: nothing queues it, and nothing
+  // can cancel it, so there is nothing to give up or check.
+  if (!in_task_body_) {
+    return unit;
+  }
+  if (cannot_hoist()) {
+    return refuse_feature("await where it cannot go ahead of its statement",
+                          k_conditional_await_message, span);
+  }
+  if (auto waited = task_wait_into(*hoist_, nullptr, source.origin, span,
+                                   /*all=*/false, {});
+      !waited.has_value()) {
+    return std::unexpected(waited.error());
+  }
+  return unit;
+}
+
 auto core_lowerer::task_intrinsic(const core::call &source)
     -> std::optional<core_result<ptr<hir_expr>>> {
   const auto &name = source.target.name;
   const auto type = hir_type(source.type);
   if (name == "task_block") {
     return task_block(source);
+  }
+  if (name == "task_yield") {
+    return task_yield(source);
   }
   if (name == "on_cpu" || name == "on_io") {
     return on_task(source);

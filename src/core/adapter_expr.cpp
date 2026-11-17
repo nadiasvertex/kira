@@ -14,8 +14,7 @@
 #include "src/semantic/linear_poly.h"
 
 /// Expressions, places and calls. Each construct reads the record the checker
-/// left for it and nothing else; `src/hir/lower.cpp` is the reference for which
-/// record answers which question.
+/// left for it and nothing else.
 namespace cinder::core {
 
 using semantic::k_error_type;
@@ -290,8 +289,19 @@ auto body_builder::task_of(type_id body) -> type_id {
 auto body_builder::await_of(const ast::await_expr &awaited)
     -> result<ptr<expr>> {
   if (awaited.is_yield || awaited.operand == nullptr) {
-    return fail_feature("await_expr", "`await yield` is not lowered yet",
-                        awaited.span);
+    // A task body: an `async def`, the entry `async def main`, or an
+    // `async:`/`on(...)` block. The checker accepts `await yield` anywhere,
+    // but an `await` outside an `async` function is an error (chapter 26).
+    const auto in_async = lambdas_.empty()
+                              ? decl_ != nullptr && decl_->modifiers.is_async
+                              : lambdas_.back().task_key != nullptr;
+    if (!in_async) {
+      return fail_feature("await_expr",
+                          "`await yield` can only be used in an `async def` "
+                          "or an `async:` block",
+                          awaited.span);
+    }
+    return intrinsic_call("task_yield", unit_type(), {}, {}, awaited.span);
   }
   if (auto form = await_task_form(awaited)) {
     return std::move(*form);

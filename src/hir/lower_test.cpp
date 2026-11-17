@@ -1,14 +1,16 @@
 #include <algorithm>
 #include <cstdlib>
 #include <exception>
+#include <expected>
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "src/comptime_vm/backend.h"
-#include "src/hir/lower.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/nodes.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
@@ -37,14 +39,15 @@ using cinder::testing::expect;
 using cinder::testing::fail;
 namespace hir = cinder::hir;
 
-// Parses and checks one fixture source, returning the AST root, the checked
-// types, and the requested function's declaration for the caller to feed
-// into `hir::lower_function`/`hir::lower_module`.
+// One fixture source, parsed and checked, with what lowering it needs.
 struct checked_fixture {
   cinder::source_manager sources;
   cinder::diagnostic_bag diag{};
   cinder::testing::parsed_stdlib stdlib;
   cinder::ast::ptr<cinder::ast::file> ast_file;
+  /// What was checked: the stdlib's files and the fixture's, `file_id`.
+  std::vector<cinder::semantic::parsed_module> parsed;
+  cinder::file_id_type file_id = 0;
   cinder::semantic::checked_types checked;
 };
 
@@ -59,9 +62,7 @@ auto expect_checked_cleanly(const cinder::source_manager &sources,
   }
 }
 
-// Parses and checks one fixture source, returning the AST root, the checked
-// types, and the requested function's declaration for the caller to feed
-// into `hir::lower_function`/`hir::lower_module`.
+// Parses and checks one fixture source.
 //
 // The stdlib is injected alongside the fixture, exactly as the driver
 // injects it: `list`, `option` and friends are ordinary Cinder types declared
@@ -89,6 +90,8 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   auto parsed_modules = fixture.stdlib.modules;
   parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
+  fixture.parsed = parsed_modules;
+  fixture.file_id = *file_id;
   auto comptime = cinder::comptime_vm::vm_backend{};
   fixture.checked = cinder::semantic::check_program(
       parsed_modules, fixture.diag, file_has_errors, &comptime);
@@ -104,6 +107,9 @@ struct multi_checked_fixture {
   cinder::diagnostic_bag diag{};
   cinder::testing::parsed_stdlib stdlib;
   std::vector<cinder::ast::ptr<cinder::ast::file>> ast_files;
+  /// What was checked, and the fixture files' ids, in order.
+  std::vector<cinder::semantic::parsed_module> parsed;
+  std::vector<cinder::file_id_type> file_ids;
   cinder::semantic::checked_types checked;
 };
 
@@ -137,6 +143,8 @@ auto check_fixture_multi(
         .file_id = file_ids[i], .ast_file = fixture.ast_files[i].get()});
   }
 
+  fixture.parsed = parsed_modules;
+  fixture.file_ids = file_ids;
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(file_ids.back()) + 1, false);
   auto comptime = cinder::comptime_vm::vm_backend{};
@@ -159,12 +167,90 @@ auto find_func(const cinder::ast::file &file, std::string_view name)
   fail("expected to find a function declaration by name");
 }
 
+/// The fixture lowered as the driver lowers it (`hir::lower_program`), with
+/// the module of `entry` first. A fixture file with no `module` declaration
+/// is named `entry_name` when it is the entry and by its file id otherwise.
+auto lower_all(std::span<const cinder::semantic::parsed_module> parsed,
+               cinder::semantic::checked_types &checked,
+               cinder::file_id_type entry, std::string entry_name,
+               const hir::lowering_options &options = {})
+    -> hir::ptr_vec<hir::hir_module> {
+  return cinder::testing::lower_test_program(
+      parsed, checked, entry, {{entry, std::move(entry_name)}}, options);
+}
+
+/// The function `name` of the fixture's own module, lowered with the whole
+/// program; an error when lowering made no such function (a generic
+/// template, which has no run-time form).
+auto lower_named(checked_fixture &fixture, std::string_view name,
+                 const hir::lowering_options &options = {})
+    -> std::expected<hir::ptr<hir::hir_function>, std::string> {
+  auto modules = lower_all(fixture.parsed, fixture.checked, fixture.file_id,
+                           "sample", options);
+  return cinder::testing::take_lowered_function(
+      modules, modules.front()->module_name, name);
+}
+
+/// The same, from whichever fixture file's module declares `name`.
+auto lower_named(multi_checked_fixture &fixture, std::string_view name)
+    -> std::expected<hir::ptr<hir::hir_function>, std::string> {
+  for (const auto file_id : fixture.file_ids) {
+    auto modules =
+        lower_all(fixture.parsed, fixture.checked, file_id, "sample");
+    auto found = cinder::testing::take_lowered_function(
+        modules, modules.front()->module_name, name);
+    if (found.has_value()) {
+      return found;
+    }
+  }
+  return std::unexpected(std::format("no fixture module lowers `{}`", name));
+}
+
+/// The fixture's own module, named `name` when it has no `module`
+/// declaration.
+auto lower_entry_module(checked_fixture &fixture,
+                        std::string name = "sample")
+    -> std::expected<hir::ptr<hir::hir_module>, std::string> {
+  auto modules = lower_all(fixture.parsed, fixture.checked, fixture.file_id,
+                           std::move(name));
+  return std::move(modules.front());
+}
+
+/// The module of the fixture file `index`.
+auto lower_entry_module(multi_checked_fixture &fixture, std::size_t index,
+                        std::string name)
+    -> std::expected<hir::ptr<hir::hir_module>, std::string> {
+  auto modules = lower_all(fixture.parsed, fixture.checked,
+                           fixture.file_ids[index], std::move(name));
+  return std::move(modules.front());
+}
+
+/// Builds the core and lowers the whole program without failing the test,
+/// for a case that expects lowering to refuse something.
+auto try_lower(checked_fixture &fixture) -> hir::lowered_program {
+  auto no_errors =
+      std::vector<bool>(static_cast<size_t>(fixture.file_id) + 1, false);
+  return hir::lower_program(fixture.parsed, no_errors, fixture.checked,
+                            {{fixture.file_id, "sample"}});
+}
+
+/// The failure lowering reported for the function `name`, or none.
+auto failure_for(const hir::lowered_program &lowered, std::string_view name)
+    -> const hir::core_module_failure * {
+  for (const auto &failure : lowered.hir.failures) {
+    if (failure.item == name) {
+      return &failure;
+    }
+  }
+  return nullptr;
+}
+
 auto test_lowers_fully_annotated_function() -> void {
   auto fixture =
       check_fixture(read_program("lowers_fully_annotated_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "add");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a fully-annotated function to lower");
 
   const auto &function = **result;
@@ -208,17 +294,15 @@ auto test_rejects_unannotated_parameter_with_specific_error() -> void {
   // `x` is legally unannotated, and `probe`'s body only hands it to a
   // generic, so nothing pins its type: `probe` is an implicit generic. It has
   // no single body to lower, only the per-call instances the checker makes,
-  // so lowering the template itself must be refused — not skipped, and not
-  // lowered with a guessed type.
+  // so the template itself is never lowered, and nothing here calls it.
   auto fixture = check_fixture(
       read_program("rejects_unannotated_parameter_with_specific_error.cn"));
-  const auto &decl = find_func(*fixture.ast_file, "probe");
-
-  auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(),
-         "expected a function with an unannotated parameter to be rejected");
-  expect(result.error().kind == hir::lowering_error_kind::unannotated_parameter,
-         "expected the specific unannotated_parameter error kind");
+  auto lowered = try_lower(fixture);
+  expect(lowered.hir.failures.empty(),
+         "expected an uncalled implicit generic to cause no failure");
+  expect(cinder::testing::find_lowered_function(lowered.hir.modules, "sample",
+                                                "probe") == nullptr,
+         "expected the implicit generic template not to be lowered");
 }
 
 auto test_lowers_unannotated_parameter_the_body_pins() -> void {
@@ -228,7 +312,7 @@ auto test_lowers_unannotated_parameter_the_body_pins() -> void {
       read_program("lowers_unannotated_parameter_the_body_pins.cn"));
   const auto &decl = find_func(*fixture.ast_file, "double");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a parameter the body pins to lower like an annotated one");
 }
@@ -238,7 +322,7 @@ auto test_lowers_function_with_inferred_return_type() -> void {
       read_program("lowers_function_with_inferred_return_type.cn"));
   const auto &decl = find_func(*fixture.ast_file, "add");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a return type inferred from the body to lower");
   expect(fixture.checked.types.display((*result)->type) != "",
@@ -254,13 +338,14 @@ auto test_rejects_function_whose_return_type_cannot_be_inferred() -> void {
   // nothing about what that result is.
   auto fixture = check_fixture(
       read_program("rejects_function_whose_return_type_cannot_be_inferred.cn"));
-  const auto &decl = find_func(*fixture.ast_file, "forever");
-
-  auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(),
-         "expected a function with no inferable return type to be rejected");
-  expect(result.error().kind == hir::lowering_error_kind::missing_return_type,
-         "expected the specific missing_return_type error kind");
+  auto lowered = try_lower(fixture);
+  const auto *failure = failure_for(lowered, "forever");
+  expect(failure != nullptr,
+         "expected a function with no inferable return type to be refused");
+  expect(failure->feature &&
+             failure->message.find("no declared return type") !=
+                 std::string::npos,
+         "expected the refusal to say the return type could not be inferred");
 }
 
 auto test_preserves_source_spans() -> void {
@@ -268,7 +353,7 @@ auto test_preserves_source_spans() -> void {
       check_fixture(read_program("lowers_fully_annotated_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "add");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a fully-annotated function to lower");
 
   const auto &function = **result;
@@ -294,22 +379,26 @@ auto test_lowers_compact_expression_body() -> void {
       check_fixture(read_program("lowers_compact_expression_body.cn"));
   const auto &decl = find_func(*fixture.ast_file, "identity");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a compact-body function to lower");
 
   const auto &function = **result;
+  // The body is a block whose trailing value is the function's result, as
+  // for any block-bodied function that ends in an expression.
   expect(function.body->stmts.size() == 1,
-         "expected the compact body to lower to a single implicit return");
-  expect(function.body->stmts.front()->kind == hir::hir_node_kind::hir_return,
-         "expected the compact body's value to become a hir_return");
+         "expected the compact body to lower to a single statement");
+  expect(function.body->stmts.front()->kind ==
+             hir::hir_node_kind::hir_expr_stmt,
+         "expected the compact body's value to be the block's trailing "
+         "value");
 }
 
 auto test_lowers_if_expression_and_module() -> void {
-  const auto fixture =
+  auto fixture =
       check_fixture(read_program("lowers_if_expression_and_module.cn"));
 
   auto module_result =
-      hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+      lower_entry_module(fixture);
   expect(module_result.has_value(), "expected the module to lower");
   expect((*module_result)->functions.size() == 1,
          "expected exactly one lowered function in the module");
@@ -327,13 +416,15 @@ auto test_lowers_if_expression_and_module() -> void {
 }
 
 auto test_rejects_generic_function() -> void {
+  // A generic template has no run-time form; only its instances are lowered,
+  // and nothing here instantiates it.
   auto fixture = check_fixture(read_program("rejects_generic_function.cn"));
-  const auto &decl = find_func(*fixture.ast_file, "identity");
-
-  auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(), "expected a generic function to be rejected");
-  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
-         "expected the specific unsupported_construct error kind");
+  auto lowered = try_lower(fixture);
+  expect(lowered.hir.failures.empty(),
+         "expected an uncalled generic to cause no failure");
+  expect(cinder::testing::find_lowered_function(lowered.hir.modules, "sample",
+                                                "identity") == nullptr,
+         "expected the generic template not to be lowered");
 }
 
 // A function generic over a compile-time *value* is compiled once per
@@ -343,7 +434,7 @@ auto test_lowers_const_generic_instance_per_constant() -> void {
   auto fixture = check_fixture(
       read_program("lowers_const_generic_instance_per_constant.cn"));
 
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  auto module = lower_entry_module(fixture);
   expect(module.has_value(), "expected the module to lower");
 
   auto names = std::vector<std::string>{};
@@ -368,7 +459,7 @@ auto test_lowers_try_from_on_a_const_generic_refinement() -> void {
   auto fixture = check_fixture(
       read_program("lowers_try_from_on_a_const_generic_refinement.cn"));
 
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  auto module = lower_entry_module(fixture);
   expect(module.has_value(), "expected the module to lower");
   const auto lowered = std::ranges::any_of(
       (*module)->functions,
@@ -382,7 +473,7 @@ auto test_lowers_match_with_literal_and_wildcard_patterns() -> void {
       read_program("lowers_match_with_literal_and_wildcard_patterns.cn"));
   const auto &decl = find_func(*fixture.ast_file, "classify");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a literal/wildcard match to lower");
 
   const auto &function = **result;
@@ -414,7 +505,7 @@ auto test_lowers_plain_binding_arm_as_wildcard_plus_let() -> void {
       read_program("lowers_plain_binding_arm_as_wildcard_plus_let.cn"));
   const auto &decl = find_func(*fixture.ast_file, "echo");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a plain-binding match arm to lower");
 
   const auto &function = **result;
@@ -446,7 +537,7 @@ auto test_lowers_pattern_alias_to_synthetic_let() -> void {
       check_fixture(read_program("lowers_pattern_alias_to_synthetic_let.cn"));
   const auto &decl = find_func(*fixture.ast_file, "classify");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a pattern-alias match arm to lower");
 
   const auto &function = **result;
@@ -454,32 +545,42 @@ auto test_lowers_pattern_alias_to_synthetic_let() -> void {
       dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
   const auto &match = dynamic_cast<const hir::hir_match &>(*ret.value);
 
-  // The alias doesn't change the structural pattern: it's still the `0 | 1`
-  // dispatch, plus one extra synthetic let for `small`.
-  expect(match.arms[0].pattern->kind == hir::hir_node_kind::hir_or_pattern,
-         "expected the aliased arm's structural pattern to still be the "
-         "`0 | 1` or-pattern");
-  expect(match.arms[0].body->stmts.size() == 2,
-         "expected the synthetic alias let plus the arm's yielded expression");
-  const auto &let =
-      dynamic_cast<const hir::hir_let &>(*match.arms[0].body->stmts.front());
-  expect(let.name == "small", "expected the synthetic let to bind `small`");
-  const auto &subject_ref =
-      dynamic_cast<const hir::hir_local_ref &>(*let.initializer);
-  expect(subject_ref.symbol == match.subject_symbol,
-         "expected the alias let to reference the match's subject_symbol");
+  // The core gives each alternative of `0 | 1` an arm of its own, so the
+  // alias is bound once per alternative: two literal arms, each with a
+  // synthetic let for `small`, then the wildcard.
+  expect(match.arms.size() == 3,
+         "expected one arm per alternative of `0 | 1`, plus the wildcard");
+  for (std::size_t i = 0; i < 2; ++i) {
+    expect(match.arms[i].pattern->kind ==
+               hir::hir_node_kind::hir_literal_pattern,
+           "expected each alternative of the aliased arm to be a literal "
+           "pattern");
+    expect(match.arms[i].body->stmts.size() == 2,
+           "expected the synthetic alias let plus the arm's yielded "
+           "expression");
+    const auto &let =
+        dynamic_cast<const hir::hir_let &>(*match.arms[i].body->stmts.front());
+    expect(let.name == "small", "expected the synthetic let to bind `small`");
+    const auto &subject_ref =
+        dynamic_cast<const hir::hir_local_ref &>(*let.initializer);
+    expect(subject_ref.symbol == match.subject_symbol,
+           "expected the alias let to reference the match's subject_symbol");
+  }
 }
 
 auto test_rejects_binding_inside_or_pattern_alternative() -> void {
+  // `y` is bound by one alternative and not the other, so the arm's body
+  // reads a name the `0` alternative never binds. The checker accepts it, and
+  // the core has no binding to lower `y` from: lowering refuses it as a
+  // compiler bug, not as a missing feature.
   auto fixture = check_fixture(
       read_program("rejects_binding_inside_or_pattern_alternative.cn"));
-  const auto &decl = find_func(*fixture.ast_file, "classify");
-
-  auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(),
-         "expected a binding inside a `|` alternative to be rejected");
-  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
-         "expected the specific unsupported_construct error kind");
+  auto lowered = try_lower(fixture);
+  const auto *failure = failure_for(lowered, "classify");
+  expect(failure != nullptr,
+         "expected a binding inside one `|` alternative to be refused");
+  expect(!failure->feature,
+         "expected the refusal to be an internal error, not a feature gap");
 }
 
 auto test_lowers_struct_pattern_field_destructuring() -> void {
@@ -487,7 +588,7 @@ auto test_lowers_struct_pattern_field_destructuring() -> void {
       read_program("lowers_struct_pattern_field_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "unwrap");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected struct field destructuring to lower");
 
   const auto &function = **result;
@@ -524,7 +625,7 @@ auto test_lowers_struct_pattern_shorthand_field() -> void {
       check_fixture(read_program("lowers_struct_pattern_shorthand_field.cn"));
   const auto &decl = find_func(*fixture.ast_file, "unwrap");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a shorthand struct field pattern to lower");
 
@@ -550,7 +651,7 @@ auto test_lowers_tuple_pattern_destructuring() -> void {
       check_fixture(read_program("lowers_tuple_pattern_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "first");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected tuple pattern destructuring to lower");
 
   const auto &function = **result;
@@ -585,7 +686,7 @@ auto test_lowers_constructor_pattern_destructuring() -> void {
       read_program("lowers_constructor_pattern_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "area_hint");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected sum-type constructor destructuring to lower");
 
@@ -624,7 +725,7 @@ auto test_lowers_option_and_result_pattern_sugar() -> void {
       check_fixture(read_program("lowers_option_and_result_pattern_sugar.cn"));
   const auto &decl = find_func(*fixture.ast_file, "unwrap_or_zero");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected option pattern sugar to lower");
 
   const auto &function = **result;
@@ -652,7 +753,7 @@ auto test_lowers_range_pattern() -> void {
   auto fixture = check_fixture(read_program("lowers_range_pattern.cn"));
   const auto &decl = find_func(*fixture.ast_file, "bucket");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a range pattern to lower");
 
   const auto &function = **result;
@@ -677,7 +778,7 @@ auto test_lowers_plain_let_as_single_statement() -> void {
       check_fixture(read_program("lowers_plain_let_as_single_statement.cn"));
   const auto &decl = find_func(*fixture.ast_file, "double");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a plain let binding to lower");
 
   const auto &function = **result;
@@ -695,7 +796,7 @@ auto test_lowers_tuple_pattern_let_destructuring() -> void {
       check_fixture(read_program("lowers_tuple_pattern_let_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "first_of_pair");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a destructuring let binding to lower");
 
   const auto &function = **result;
@@ -731,7 +832,7 @@ auto test_lowers_struct_pattern_let_destructuring() -> void {
       check_fixture(read_program("lowers_struct_pattern_let_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "read");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a destructuring struct let binding to lower");
 
@@ -751,7 +852,7 @@ auto test_lowers_tuple_destructuring_parameter() -> void {
       check_fixture(read_program("lowers_tuple_destructuring_parameter.cn"));
   const auto &decl = find_func(*fixture.ast_file, "first");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a destructuring tuple parameter to lower");
 
@@ -761,20 +862,27 @@ auto test_lowers_tuple_destructuring_parameter() -> void {
          "expected the destructured parameter itself to get a synthetic "
          "name, not the bound name `a`");
 
-  expect(function.body->stmts.size() == 2,
-         "expected the synthetic `a` let plus the return");
-  const auto &a_let =
+  // The pattern's subject is bound once, then `a` is projected from it.
+  expect(function.body->stmts.size() == 3,
+         "expected the subject let, the synthetic `a` let, and the return");
+  const auto &subject_let =
       dynamic_cast<const hir::hir_let &>(*function.body->stmts[0]);
+  const auto &param_ref =
+      dynamic_cast<const hir::hir_local_ref &>(*subject_let.initializer);
+  expect(param_ref.symbol == function.params[0].symbol,
+         "expected the subject let to read the synthetic parameter");
+  const auto &a_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[1]);
   expect(a_let.name == "a", "expected the prelude let to bind `a`");
   expect(a_let.initializer->kind == hir::hir_node_kind::hir_tuple_index,
          "expected `a` to be initialized from a tuple-index projection");
   const auto &tuple_ref =
       dynamic_cast<const hir::hir_tuple_index &>(*a_let.initializer);
   expect(tuple_ref.index == 0, "expected the projection to read slot 0");
-  const auto &param_ref =
+  const auto &subject_ref =
       dynamic_cast<const hir::hir_local_ref &>(*tuple_ref.object);
-  expect(param_ref.symbol == function.params[0].symbol,
-         "expected the projection to read the synthetic parameter");
+  expect(subject_ref.symbol == subject_let.symbol,
+         "expected the projection to read the bound subject");
 }
 
 auto test_lowers_struct_destructuring_parameter() -> void {
@@ -782,16 +890,18 @@ auto test_lowers_struct_destructuring_parameter() -> void {
       check_fixture(read_program("lowers_struct_destructuring_parameter.cn"));
   const auto &decl = find_func(*fixture.ast_file, "read_value");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a destructuring struct parameter to lower");
 
   const auto &function = **result;
   expect(function.params.size() == 1, "expected one lowered parameter");
-  expect(function.body->stmts.size() == 2,
-         "expected the synthetic `value` let plus the return");
+  // The pattern's subject is bound once, then `value` is projected from it.
+  expect(function.body->stmts.size() == 3,
+         "expected the subject let, the synthetic `value` let, and the "
+         "return");
   const auto &value_let =
-      dynamic_cast<const hir::hir_let &>(*function.body->stmts[0]);
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[1]);
   expect(value_let.name == "value", "expected the prelude let to bind `value`");
   expect(value_let.initializer->kind == hir::hir_node_kind::hir_field,
          "expected `value` to be initialized from a field projection");
@@ -806,7 +916,7 @@ auto test_lowers_array_pattern_destructuring() -> void {
       check_fixture(read_program("lowers_array_pattern_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "head");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected an array pattern to lower");
 
   const auto &function = **result;
@@ -842,7 +952,7 @@ auto test_lowers_array_pattern_let_destructuring() -> void {
       check_fixture(read_program("lowers_array_pattern_let_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "second");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a destructuring array let binding to lower");
 
@@ -862,7 +972,7 @@ auto test_lowers_let_else_fallible_destructuring() -> void {
       check_fixture(read_program("lowers_let_else_fallible_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "parse");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a let-else fallible destructure to lower");
 
@@ -917,7 +1027,7 @@ auto test_lowers_var_and_plain_assignment() -> void {
       check_fixture(read_program("lowers_var_and_plain_assignment.cn"));
   const auto &decl = find_func(*fixture.ast_file, "counter");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a var binding plus assignment to lower");
 
   const auto &function = **result;
@@ -950,21 +1060,26 @@ auto test_lowers_compound_assignment() -> void {
   auto fixture = check_fixture(read_program("lowers_compound_assignment.cn"));
   const auto &decl = find_func(*fixture.ast_file, "counter");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a compound assignment to lower");
 
   const auto &function = **result;
   const auto &assign =
       dynamic_cast<const hir::hir_assign &>(*function.body->stmts[1]);
-  expect(assign.op == cinder::ast::assign_op::add_assign,
-         "expected `+=` to lower to assign_op::AddAssign");
+  // The core spells `total += 1` as `total = total + 1`.
+  expect(assign.op == cinder::ast::assign_op::assign,
+         "expected `+=` to lower to a plain assignment");
+  expect(assign.value->kind == hir::hir_node_kind::hir_binary &&
+             dynamic_cast<const hir::hir_binary &>(*assign.value).op ==
+                 cinder::ast::binary_op::add,
+         "expected `+=` to assign the sum of the target and the operand");
 }
 
 auto test_lowers_while_loop() -> void {
   auto fixture = check_fixture(read_program("lowers_while_loop.cn"));
   const auto &decl = find_func(*fixture.ast_file, "count_down");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a while loop to lower");
 
   const auto &function = **result;
@@ -1002,16 +1117,14 @@ auto test_needs_drop_folds_dead_branch() -> void {
     return dynamic_cast<const hir::hir_if &>(*stmt.expr);
   };
 
-  auto plain = hir::lower_function(find_func(*fixture.ast_file, "plain"),
-                                   fixture.checked);
+  auto plain = lower_named(fixture, "plain");
   expect(plain.has_value(), "expected the guarded function to lower");
   const auto &dead = first_if(**plain);
   expect(dead.branches.size() == 1 && dead.branches[0].body->stmts.empty(),
          "expected `needs_drop[int32]()` to leave no loop behind: the guarded "
          "body is dead");
 
-  auto owned = hir::lower_function(find_func(*fixture.ast_file, "owned"),
-                                   fixture.checked);
+  auto owned = lower_named(fixture, "owned");
   expect(owned.has_value(), "expected the guarded function to lower");
   const auto &live = first_if(**owned);
   expect(live.branches.size() == 1 && !live.branches[0].body->stmts.empty(),
@@ -1022,7 +1135,7 @@ auto test_lowers_while_let() -> void {
   auto fixture = check_fixture(read_program("lowers_while_let.cn"));
   const auto &decl = find_func(*fixture.ast_file, "parse");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected `while let` to lower");
 
   const auto &function = **result;
@@ -1055,7 +1168,7 @@ auto test_lowers_if_let() -> void {
   auto fixture = check_fixture(read_program("lowers_if_let.cn"));
   const auto &decl = find_func(*fixture.ast_file, "unwrap_or");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected `if let` to lower");
 
   // An `if let` has no boolean condition to test, so it lowers to a `match`
@@ -1107,7 +1220,7 @@ auto test_lowers_elif_let_chain() -> void {
   auto fixture = check_fixture(read_program("lowers_elif_let_chain.cn"));
   const auto &decl = find_func(*fixture.ast_file, "pick");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected an `elif let` chain to lower");
 
   const auto &function = **result;
@@ -1135,26 +1248,24 @@ auto test_lowers_elif_let_chain() -> void {
 }
 
 auto test_rejects_for_loop_over_user_defined_type() -> void {
-  // list/array/slice/str iteration lowers now (see
-  // test_lowers_list_for_loop and friends) — a user-defined iterable is
-  // the one shape still deferred, since it
-  // would need a real trait-based protocol this project doesn't have yet.
+  // `counter` has no `next`, `iter` or `into_iter`, so it is not iterable.
   auto fixture =
       check_fixture(read_program("rejects_for_loop_over_user_defined_type.cn"));
-  const auto &decl = find_func(*fixture.ast_file, "sum_counters");
-
-  auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(),
+  auto lowered = try_lower(fixture);
+  const auto *failure = failure_for(lowered, "sum_counters");
+  expect(failure != nullptr,
          "expected a `for` loop over a user-defined type to be rejected");
-  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
-         "expected the specific unsupported_construct error kind");
+  expect(failure->feature &&
+             failure->message.find("`counter` has no iterator") !=
+                 std::string::npos,
+         "expected the refusal to say `counter` has no iterator");
 }
 
 auto test_lowers_tuple_literal() -> void {
   auto fixture = check_fixture(read_program("lowers_tuple_literal.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make_pair");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a tuple literal to lower");
 
   const auto &function = **result;
@@ -1172,7 +1283,7 @@ auto test_lowers_array_literal() -> void {
   auto fixture = check_fixture(read_program("lowers_array_literal.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make_array");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected an array literal to lower");
 
   const auto &function = **result;
@@ -1190,7 +1301,7 @@ auto test_lowers_array_fill_literal() -> void {
   auto fixture = check_fixture(read_program("lowers_array_fill_literal.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make_filled");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected an array fill literal to lower");
 
   const auto &function = **result;
@@ -1212,7 +1323,7 @@ auto test_lowers_struct_literal_explicit_field() -> void {
       check_fixture(read_program("lowers_struct_literal_explicit_field.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make_container");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a struct literal to lower");
 
   const auto &function = **result;
@@ -1233,7 +1344,7 @@ auto test_lowers_struct_literal_shorthand_field() -> void {
       check_fixture(read_program("lowers_struct_literal_shorthand_field.cn"));
   const auto &decl = find_func(*fixture.ast_file, "wrap");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a shorthand struct literal field to lower");
 
@@ -1259,7 +1370,7 @@ auto test_lowers_cast_expression() -> void {
   auto fixture = check_fixture(read_program("lowers_cast_expression.cn"));
   const auto &decl = find_func(*fixture.ast_file, "widen");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a cast expression to lower");
 
   const auto &function = **result;
@@ -1282,7 +1393,7 @@ auto test_lowers_lambda_expression() -> void {
   auto fixture = check_fixture(read_program("lowers_lambda_expression.cn"));
   const auto &decl = find_func(*fixture.ast_file, "double_value");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a lambda expression to lower");
 
   const auto &function = **result;
@@ -1322,7 +1433,7 @@ auto test_lowers_where_expression() -> void {
   auto fixture = check_fixture(read_program("lowers_where_expression.cn"));
   const auto &decl = find_func(*fixture.ast_file, "compute");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a where expression to lower");
 
   const auto &function = **result;
@@ -1362,7 +1473,7 @@ auto test_lowers_call_to_named_function() -> void {
       check_fixture(read_program("lowers_call_to_named_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a call to a named function to lower");
 
   const auto &function = **result;
@@ -1397,7 +1508,7 @@ auto test_lowers_module_qualified_call() -> void {
   });
   const auto &decl = find_func(*fixture.ast_files[1], "run");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a module-qualified call to lower");
 
   const auto &function = **result;
@@ -1430,7 +1541,7 @@ auto test_lowers_cross_module_generic_return_type() -> void {
   });
 
   auto module_result =
-      hir::lower_module(*fixture.ast_files[2], "app", fixture.checked);
+      lower_entry_module(fixture, 2, "app");
   expect(module_result.has_value(),
          "expected the calling module to lower a call to a generic function "
          "returning another module's generic type");
@@ -1461,7 +1572,7 @@ auto test_lowers_type_qualified_associated_call() -> void {
       check_fixture(read_program("lowers_type_qualified_associated_call.cn"));
 
   auto module_result =
-      hir::lower_module(*fixture.ast_file, "app", fixture.checked);
+      lower_entry_module(fixture, "app");
   expect(module_result.has_value(),
          "expected the module to lower, including the associated function");
   expect((*module_result)->functions.size() == 2,
@@ -1488,8 +1599,9 @@ auto test_lowers_type_qualified_associated_call() -> void {
   const auto &callee = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
   expect(callee.name == "wrapper::from",
          "expected the callee to name `wrapper::from`");
-  expect(callee.owner_module.has_value() && *callee.owner_module == "app",
-         "expected the callee to carry owner_module `app`");
+  // A call within its own module names no owner module.
+  expect(!callee.owner_module.has_value(),
+         "expected the same-module callee to carry no owner_module");
 }
 
 auto test_lowers_named_call_arguments_in_declared_order() -> void {
@@ -1497,7 +1609,7 @@ auto test_lowers_named_call_arguments_in_declared_order() -> void {
       read_program("lowers_named_call_arguments_in_declared_order.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a named-argument call to lower");
 
   const auto &function = **result;
@@ -1531,7 +1643,7 @@ auto test_lowers_call_relying_on_default_argument() -> void {
       check_fixture(read_program("lowers_call_relying_on_default_argument.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a call relying on a default argument to lower");
 
@@ -1558,14 +1670,12 @@ auto test_lowers_call_relying_on_default_argument() -> void {
 auto test_rejects_default_referring_to_another_parameter() -> void {
   auto fixture = check_fixture(
       read_program("rejects_default_referring_to_another_parameter.cn"));
-  const auto &decl = find_func(*fixture.ast_file, "caller");
-
-  auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(),
+  auto lowered = try_lower(fixture);
+  const auto *failure = failure_for(lowered, "caller");
+  expect(failure != nullptr,
          "expected a default referring to another parameter to be rejected");
-  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
-         "expected the specific unsupported_construct error kind");
-  expect(result.error().message.find("parameter `a`") != std::string::npos,
+  expect(failure->feature, "expected the refusal to be a feature gap");
+  expect(failure->message.find("parameter `a`") != std::string::npos,
          "expected the message to name the parameter the default refers to");
 }
 
@@ -1574,7 +1684,7 @@ auto test_lowers_variant_construction_with_payload() -> void {
       read_program("lowers_variant_construction_with_payload.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make_circle");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected variant construction to lower");
 
   const auto &function = **result;
@@ -1594,7 +1704,7 @@ auto test_lowers_bare_unit_variant() -> void {
   auto fixture = check_fixture(read_program("lowers_bare_unit_variant.cn"));
   const auto &decl = find_func(*fixture.ast_file, "none_int");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a bare unit variant to lower");
 
   const auto &function = **result;
@@ -1612,7 +1722,7 @@ auto test_lowers_try_expr_on_result() -> void {
   auto fixture = check_fixture(read_program("lowers_try_expr_on_result.cn"));
   const auto &decl = find_func(*fixture.ast_file, "parse");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a `?` on a result to lower");
 
   const auto &function = **result;
@@ -1668,7 +1778,7 @@ auto test_lowers_try_expr_on_option() -> void {
   auto fixture = check_fixture(read_program("lowers_try_expr_on_option.cn"));
   const auto &decl = find_func(*fixture.ast_file, "parse");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a `?` on an option to lower");
 
   const auto &function = **result;
@@ -1695,7 +1805,7 @@ auto test_lowers_or_else_on_result() -> void {
   auto fixture = check_fixture(read_program("lowers_or_else_on_result.cn"));
   const auto &decl = find_func(*fixture.ast_file, "port");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected an `or else` on a result to lower");
 
   const auto &function = **result;
@@ -1733,7 +1843,7 @@ auto test_lowers_or_else_with_return_fallback_on_option() -> void {
   auto fixture = check_fixture(read_program("lowers_or_else_on_option.cn"));
   const auto &decl = find_func(*fixture.ast_file, "port");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected `or else return` to lower");
 
   const auto &function = **result;
@@ -1758,7 +1868,7 @@ auto test_lowers_try_expr_with_from_conversion() -> void {
       check_fixture(read_program("lowers_try_expr_with_from_conversion.cn"));
   const auto &decl = find_func(*fixture.ast_file, "parse_num");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected a `?` with a resolved `from`-conversion to lower");
 
@@ -1798,7 +1908,7 @@ auto test_lowers_range_for_loop() -> void {
   auto fixture = check_fixture(read_program("lowers_range_for_loop.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_up_to");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a range `for` loop to lower");
 
   const auto &function = **result;
@@ -1863,7 +1973,7 @@ auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
       read_program("lowers_inclusive_range_for_loop_with_guard.cn"));
   const auto &decl = find_func(*fixture.ast_file, "count_evens");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(),
          "expected an inclusive-range `for` loop with a guard to lower");
 
@@ -1904,7 +2014,7 @@ auto test_lowers_list_for_loop() -> void {
   auto fixture = check_fixture(read_program("lowers_list_for_loop.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_list");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a `for` loop over a list to lower");
 
   const auto &function = **result;
@@ -1953,7 +2063,7 @@ auto test_lowers_array_for_loop_with_static_length() -> void {
       read_program("lowers_array_for_loop_with_static_length.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_array");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a `for` loop over an array to lower");
 
   const auto &function = **result;
@@ -1974,7 +2084,7 @@ auto test_lowers_str_for_loop_yields_char() -> void {
       check_fixture(read_program("lowers_str_for_loop_yields_char.cn"));
   const auto &decl = find_func(*fixture.ast_file, "count_chars");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a `for` loop over a str to lower");
 
   const auto &function = **result;
@@ -2008,7 +2118,7 @@ auto test_lowers_option_for_loop() -> void {
   auto fixture = check_fixture(read_program("lowers_option_for_loop.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_opt");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected `option` iteration to lower");
 
   const auto &function = **result;
@@ -2049,7 +2159,7 @@ auto test_lowers_generator_for_loop() -> void {
   auto fixture = check_fixture(read_program("lowers_generator_for_loop.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_gen");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected `generator[T]` iteration to lower");
 
   const auto &function = **result;
@@ -2094,7 +2204,7 @@ auto test_lowers_simple_comprehension() -> void {
   auto fixture = check_fixture(read_program("lowers_simple_comprehension.cn"));
   const auto &decl = find_func(*fixture.ast_file, "squares");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a simple comprehension to lower");
 
   const auto &function = **result;
@@ -2181,7 +2291,7 @@ auto test_lowers_comprehension_with_guard() -> void {
       check_fixture(read_program("lowers_comprehension_with_guard.cn"));
   const auto &decl = find_func(*fixture.ast_file, "evens");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a guarded comprehension to lower");
 
   const auto &function = **result;
@@ -2191,9 +2301,15 @@ auto test_lowers_comprehension_with_guard() -> void {
   const auto &loop =
       dynamic_cast<const hir::hir_while &>(*comprehension.stmts[4]);
 
-  expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_if,
+  // The guard is an `if` statement: a `hir_if` held by an expression
+  // statement.
+  expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_expr_stmt,
+         "expected the guard to be an expression statement");
+  const auto &guard_stmt =
+      dynamic_cast<const hir::hir_expr_stmt &>(*loop.body->stmts[1]);
+  expect(guard_stmt.expr->kind == hir::hir_node_kind::hir_if,
          "expected the guard to wrap the push in a hir_if");
-  const auto &guarded = dynamic_cast<const hir::hir_if &>(*loop.body->stmts[1]);
+  const auto &guarded = dynamic_cast<const hir::hir_if &>(*guard_stmt.expr);
   expect(guarded.branches.size() == 1, "expected a single guard branch");
   expect(guarded.branches[0].body->stmts.size() == 1,
          "expected the guarded branch to contain just the push");
@@ -2210,7 +2326,7 @@ auto test_lowers_nested_comprehension() -> void {
   auto fixture = check_fixture(read_program("lowers_nested_comprehension.cn"));
   const auto &decl = find_func(*fixture.ast_file, "products");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a nested comprehension to lower");
 
   const auto &function = **result;
@@ -2246,22 +2362,22 @@ auto test_lowers_nested_comprehension() -> void {
 }
 
 auto test_rejects_comprehension_over_user_defined_type() -> void {
+  // The checker leaves the element type of a comprehension over a
+  // non-iterable `counter` open, so the result `list[_]` never settles.
   auto fixture = check_fixture(
       read_program("rejects_comprehension_over_user_defined_type.cn"));
-  const auto &decl = find_func(*fixture.ast_file, "values");
-
-  auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(),
+  auto lowered = try_lower(fixture);
+  const auto *failure = failure_for(lowered, "values");
+  expect(failure != nullptr,
          "expected a comprehension over a user-defined type to be rejected");
-  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
-         "expected the specific unsupported_construct error kind");
+  expect(failure->feature, "expected the refusal to be a feature gap");
 }
 
 auto test_lowers_generator_function() -> void {
   auto fixture = check_fixture(read_program("lowers_generator_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "counter");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a generator function to lower");
   expect((*result)->is_generator(),
          "expected the lowered function to be marked as a generator");
@@ -2321,7 +2437,7 @@ auto test_lowers_existential_return_type_to_concrete_backing_type() -> void {
       "lowers_existential_return_type_to_concrete_backing_type.cn"));
 
   const auto &counter_decl = find_func(*fixture.ast_file, "make_thing");
-  auto producer = hir::lower_function(counter_decl, fixture.checked);
+  auto producer = lower_named(fixture, counter_decl.name);
   expect(producer.has_value(),
          "expected the existential-returning function to lower");
   const auto &counter_entry =
@@ -2332,7 +2448,7 @@ auto test_lowers_existential_return_type_to_concrete_backing_type() -> void {
          "`counter` struct, not the existential wrapper");
 
   const auto &use_decl = find_func(*fixture.ast_file, "use_thing");
-  auto consumer = hir::lower_function(use_decl, fixture.checked);
+  auto consumer = lower_named(fixture, use_decl.name);
   expect(consumer.has_value(),
          "expected the existential-consuming function to lower");
   const auto &let_node =
@@ -2349,7 +2465,7 @@ auto test_lowers_unproven_precondition_to_entry_check() -> void {
       read_program("lowers_unproven_precondition_to_entry_check.cn"));
   const auto &decl = find_func(*fixture.ast_file, "half");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a function with a `pre` to lower");
 
   const auto &stmts = (*result)->body->stmts;
@@ -2366,7 +2482,9 @@ auto test_lowers_unproven_precondition_to_entry_check() -> void {
          "expected the contract's message to survive lowering");
   expect(check.condition->type == fixture.checked.types.bool_type(),
          "expected the lowered condition to be a bool");
-  expect(stmts.back()->kind == hir::hir_node_kind::hir_return,
+  // The compact body is the block's trailing value (see
+  // test_lowers_compact_expression_body).
+  expect(stmts.back()->kind == hir::hir_node_kind::hir_expr_stmt,
          "expected the body to follow the check");
 }
 
@@ -2377,7 +2495,7 @@ auto test_lowers_postcondition_at_each_exit() -> void {
       check_fixture(read_program("lowers_postcondition_at_each_exit.cn"));
   const auto &decl = find_func(*fixture.ast_file, "clamp_low");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected a function with a `post` to lower");
 
   // Each exit expands to `let return = <value>`, the check, then the return.
@@ -2414,7 +2532,7 @@ auto test_postcondition_adds_nothing_after_a_diverging_tail() -> void {
       read_program("postcondition_adds_nothing_after_a_diverging_tail.cn"));
   const auto &decl = find_func(*fixture.ast_file, "abs_val");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected the function to lower");
 
   const auto &stmts = (*result)->body->stmts;
@@ -2438,7 +2556,7 @@ auto test_omits_proved_precondition() -> void {
   auto fixture = check_fixture(read_program("omits_proved_precondition.cn"));
   const auto &decl = find_func(*fixture.ast_file, "scale");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected the function to lower");
   for (const auto &stmt : (*result)->body->stmts) {
     expect(stmt->kind != hir::hir_node_kind::hir_contract_check,
@@ -2453,10 +2571,10 @@ auto test_contract_checks_can_be_disabled() -> void {
       check_fixture(read_program("contract_checks_can_be_disabled.cn"));
   const auto &decl = find_func(*fixture.ast_file, "half");
 
-  auto result = hir::lower_function(decl, fixture.checked,
-                                    hir::lowering_options{
-                                        .contract_checks = false,
-                                    });
+  auto result = lower_named(fixture, decl.name,
+                            hir::lowering_options{
+                                .contract_checks = false,
+                            });
   expect(result.has_value(), "expected the function to lower");
   for (const auto &stmt : (*result)->body->stmts) {
     expect(stmt->kind != hir::hir_node_kind::hir_contract_check,
@@ -2471,7 +2589,7 @@ auto test_lowers_struct_invariant_at_construction_and_mutation() -> void {
       read_program("lowers_struct_invariant_at_construction_and_mutation.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected the function to lower");
 
   const auto &stmts = (*result)->body->stmts;
@@ -2515,7 +2633,7 @@ auto test_marks_direct_call_in_return_position_as_tail() -> void {
       read_program("marks_direct_call_in_return_position_as_tail.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected the function to lower");
 
   const auto &ret =
@@ -2534,7 +2652,7 @@ auto test_does_not_mark_call_nested_as_an_argument() -> void {
       check_fixture(read_program("lowers_call_to_named_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected the function to lower");
 
   const auto &ret =
@@ -2554,7 +2672,7 @@ auto test_marks_calls_in_tail_position_of_if_branches() -> void {
       read_program("marks_calls_in_tail_position_of_if_branches.cn"));
   const auto &decl = find_func(*fixture.ast_file, "dispatch");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected the function to lower");
 
   // `hir::lowerer::lower_block` wraps a block's trailing `if`/`match` in
@@ -2587,7 +2705,7 @@ auto test_does_not_mark_indirect_call_through_a_parameter() -> void {
       read_program("does_not_mark_indirect_call_through_a_parameter.cn"));
   const auto &decl = find_func(*fixture.ast_file, "apply_twice");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected the function to lower");
 
   const auto &ret =
@@ -2603,7 +2721,7 @@ auto test_does_not_mark_intrinsic_call() -> void {
   auto fixture = check_fixture(read_program("does_not_mark_intrinsic_call.cn"));
   const auto &decl = find_func(*fixture.ast_file, "boom");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected the function to lower");
 
   const auto &ret =
@@ -2624,7 +2742,7 @@ auto test_does_not_mark_calls_inside_a_generator_function() -> void {
       read_program("does_not_mark_calls_inside_a_generator_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "gen");
 
-  auto result = hir::lower_function(decl, fixture.checked);
+  auto result = lower_named(fixture, decl.name);
   expect(result.has_value(), "expected the generator function to lower");
   expect((*result)->is_generator(),
          "expected the function to lower as a generator");

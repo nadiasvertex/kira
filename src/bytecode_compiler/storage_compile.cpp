@@ -1747,6 +1747,8 @@ private:
     // number of members.
     const auto name = op.waits == hir::wait_mode::one    ? "rt_task_await_poll"
                       : op.waits == hir::wait_mode::crew ? "rt_crew_join_poll"
+                      : op.waits == hir::wait_mode::reschedule
+                          ? "rt_task_yield_poll"
                       : op.waits == hir::wait_mode::all
                           ? "rt_task_await_all_poll"
                           : "rt_task_await_any_poll";
@@ -1755,11 +1757,16 @@ private:
       return fail(compile_error_kind::internal_error, op.span,
                   std::string{"the runtime has no `"} + name + "`");
     }
-    const auto arity = is_handle_wait(op.waits) ? uint8_t{2} : uint8_t{3};
+    const auto reschedules = op.waits == hir::wait_mode::reschedule;
+    const auto arity = reschedules                ? uint8_t{1}
+                       : is_handle_wait(op.waits) ? uint8_t{2}
+                                                  : uint8_t{3};
     const auto block = alloc_group(arity);
     emit_move(block, *object);
-    if (auto ok = emit_group_operand(op, block, 1); !ok.has_value()) {
-      return ok;
+    if (!reschedules) {
+      if (auto ok = emit_group_operand(op, block, 1); !ok.has_value()) {
+        return ok;
+      }
     }
     const auto finished = alloc_register();
     emit_op(opcode::op_call_intrinsic);

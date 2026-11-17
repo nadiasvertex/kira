@@ -1,34 +1,21 @@
 #pragma once
 
-#include <cstdint>
-#include <expected>
-#include <span>
 #include <string>
 
-#include "src/hir/nodes.h"
-#include "src/parser/ast.h"
 #include "src/parser/source_location.h"
-#include "src/semantic/checker_results.h"
 
+/// The types HIR lowering shares with its callers. Lowering itself, from the
+/// typed core, is `lower_core.h`.
 namespace cinder::hir {
 
-/// Why `lower_function`/`lower_module` refused to produce HIR for some
-/// construct. Lowering fails closed: an unsupported or not-fully-typed
-/// construct is a hard error, never a silently-skipped function or a
-/// placeholder node.
-enum class lowering_error_kind : uint8_t {
-  unsupported_construct, ///< A construct HIR lowering does not handle yet.
-  unannotated_parameter, ///< A parameter has no explicit type annotation.
-  missing_return_type,   ///< The function has no explicit declared return type.
-  unresolved_type,       ///< An expression's or declaration's checked type
-                         ///< isn't concrete, or was never recorded at all.
-};
-
-/// One reason lowering stopped, plus where in the source it happened.
+/// Why drop emission (`drop_emission.h`) could not make a drop the schedule
+/// asked for, and where.
 struct lowering_error {
-  lowering_error_kind kind;
   source_span span;
   std::string message;
+  /// A feature the compiler does not build yet, which the user can avoid.
+  /// Otherwise the error is a compiler bug.
+  bool feature = false;
 };
 
 /// Knobs the driver hands lowering, as opposed to facts it reads out of the
@@ -47,85 +34,5 @@ struct lowering_options {
   /// run-time form.
   bool compile_time = false;
 };
-
-/// Lowers one free function to HIR. Requires (Decision 1, Decision 2, and
-/// this milestone's Non-Goals): every parameter explicitly annotated, an
-/// explicit declared return type, and no generic parameters — with one
-/// exception, a const-generic *instance* (`semantic::const_generic_instance`),
-/// which keeps its template's `[n: usize]` list but had every value parameter
-/// substituted for a constant before its body was checked, and so is as
-/// concrete as any other function by the time it arrives here.
-[[nodiscard]] auto lower_function(const ast::func_decl &decl,
-                                  const semantic::checked_types &checked,
-                                  const lowering_options &options = {})
-    -> std::expected<ptr<hir_function>, lowering_error>;
-
-/// A name a compile-time expression reads from where it is written — a
-/// `static for` loop variable, say — which `lower_comptime_expression`
-/// passes in as a parameter.
-struct comptime_capture {
-  std::string name;
-  type_id type = semantic::k_unknown_type;
-};
-
-/// Lowers a compile-time expression (a `static assert` condition, a
-/// `static let` initializer, ...) as the whole body of a function of its
-/// own, named `name`, that takes each of `captures` as a parameter in order
-/// and returns the expression's value. It runs once, while compiling, so
-/// nothing it owns is dropped.
-[[nodiscard]] auto lower_comptime_expression(
-    const ast::expr &expr, std::span<const comptime_capture> captures,
-    std::string name, const semantic::checked_types &checked)
-    -> std::expected<ptr<hir_function>, lowering_error>;
-
-/// Builds a reified `static let` (`lowering_results::static_global_def`) as
-/// the global the backends initialize once before running anything — the
-/// same `hir_static_global` `lower_module` produces for one, for a caller that
-/// assembles its own module, such as compile-time execution.
-[[nodiscard]] auto
-lower_static_global(const semantic::lowering_results::static_global_def &def,
-                    const semantic::checked_types &checked, source_span span)
-    -> std::expected<hir_static_global, lowering_error>;
-
-/// Lowers every top-level free function declared directly in `file`'s item
-/// list — not one nested inside a `module`/`impl`/`extend`/`trait` block,
-/// which is out of this milestone's scope — plus every function the checker
-/// synthesized for this module: trait defaults, item splices, and one
-/// const-generic instance per constant a call site instantiated a template
-/// with (the templates themselves are skipped; they have no runtime form).
-/// Fails closed on the first function `lower_function` rejects: a
-/// module-level failure means the module isn't lowered yet, not that the
-/// offending function was silently dropped from the result.
-[[nodiscard]] auto lower_module(const ast::file &file, std::string module_name,
-                                const semantic::checked_types &checked,
-                                const lowering_options &options = {})
-    -> std::expected<ptr<hir_module>, lowering_error>;
-
-/// Lowers every inline `module child:` declared in `file` into a standalone
-/// HIR module named `<module_name>.child`, recursing for modules nested
-/// further. `lower_module` covers only the file's own top-level items — a
-/// submodule's functions belong to a module of their own, since that dotted
-/// path is the `owner_module` the checker records for calls into it and the
-/// key both backends dispatch those calls on. A functor submodule is skipped
-/// (see `lower_functor_modules`), as is a bodyless forward declaration, whose
-/// contents are lowered from the file that actually defines them.
-[[nodiscard]] auto
-lower_inline_submodules(const ast::file &file, const std::string &module_name,
-                        const semantic::checked_types &checked,
-                        const lowering_options &options = {})
-    -> std::expected<ptr_vec<hir_module>, lowering_error>;
-
-/// Lowers every materialized functor instantiation (`checked.functor_
-/// instances`) into standalone HIR modules — one `hir_module` per distinct
-/// synthetic module name, holding that instantiation's cloned `def`s. A
-/// parameterized `module m[P: sig]` has no source file the per-file walk in
-/// `driver::lower_and_emit_modules` visits, so its instantiations are lowered
-/// here instead, after the real files, and appended to the module set. A
-/// `db.f(...)` call site records the synthetic module name as its callee's
-/// owner, so ordinary cross-module dispatch links the two. Fails closed on
-/// the first clone `lower_function` rejects, exactly like `lower_module`.
-[[nodiscard]] auto lower_functor_modules(const semantic::checked_types &checked,
-                                         const lowering_options &options = {})
-    -> std::expected<ptr_vec<hir_module>, lowering_error>;
 
 } // namespace cinder::hir

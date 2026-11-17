@@ -12,12 +12,13 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "src/comptime_vm/backend.h"
 #include "src/hir/link.h"
-#include "src/hir/lower.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/storage.h"
 #include "src/hir/storage_lower.h"
 #include "src/hir/storage_verify.h"
@@ -106,30 +107,23 @@ inline auto companion_names(std::string_view text) -> std::vector<std::string> {
   return out;
 }
 
-/// Lowers one checked module to HIR and then to storage form, refusing
-/// nothing.
-inline auto
-lower_storage_module(storage_program &program, const ast::file &ast_file,
-                     const std::string &module_name, uint64_t max_frame_bytes)
-    -> std::pair<hir::ptr<hir::hir_module>, hir::storage_lowering> {
-  auto lowered = hir::lower_module(ast_file, module_name, program.checked);
-  if (!lowered.has_value()) {
-    std::cerr << "HIR lowering of `" << module_name << "` at byte "
-              << lowered.error().span.start << ": " << lowered.error().message
-              << "\n";
-  }
-  expect(lowered.has_value(), "expected the fixture to lower to HIR");
+/// Lowers one HIR module to storage form, refusing nothing.
+inline auto lower_storage_module(storage_program &program,
+                                 const hir::hir_module &module,
+                                 uint64_t max_frame_bytes)
+    -> hir::storage_lowering {
   auto lowering = hir::lower_to_storage(
-      **lowered, *program.env,
+      module, *program.env,
       hir::storage_lower_options{.nrvo = storage_nrvo_enabled(),
                                  .max_frame_bytes = max_frame_bytes});
   for (const auto &refused : lowering.refused) {
-    std::cerr << "refused " << refused.name << ": " << refused.error.message
-              << " (at byte " << refused.error.span.start << ")\n";
+    std::cerr << "refused " << module.module_name << "." << refused.name
+              << ": " << refused.error.message << " (at byte "
+              << refused.error.span.start << ")\n";
   }
   expect(lowering.refused.empty(),
          "expected every fixture function to lower to storage form");
-  return {std::move(*lowered), std::move(lowering)};
+  return lowering;
 }
 
 /// Verifies every module of the program, each against the others.
@@ -202,41 +196,43 @@ build_storage_program(const std::vector<fixture_source> &sources,
     auto name = module_name_of(file);
     return name.empty() ? std::string("sample") : name;
   };
+  // The whole program in HIR: the entry module first, then the
+  // companions', then the rest (the stdlib and any submodules).
+  auto names = std::unordered_map<file_id_type, std::string>{};
+  for (std::size_t i = 0; i < asts.size(); ++i) {
+    names.emplace(parsed_modules[out->stdlib.modules.size() + i].file_id,
+                  name_of(*asts[i]));
+  }
+  auto all = lower_test_program(parsed_modules, out->checked,
+                                parsed_modules[out->stdlib.modules.size()]
+                                    .file_id,
+                                std::move(names));
   out->ast_file = std::move(asts.front());
-  auto [entry_module, entry_lowering] = lower_storage_module(
-      *out, *out->ast_file, name_of(*out->ast_file), max_frame_bytes);
-  out->module = std::move(entry_module);
-  out->lowering = std::move(entry_lowering);
-  for (size_t i = 1; i < asts.size(); ++i) {
+  for (std::size_t i = 1; i < asts.size(); ++i) {
     out->companion_asts.push_back(std::move(asts[i]));
-    const auto &ast_file = *out->companion_asts.back();
-    auto [module, lowering] = lower_storage_module(
-        *out, ast_file, name_of(ast_file), max_frame_bytes);
-    out->companion_modules.push_back(std::move(module));
-    out->companion_lowerings.push_back(std::move(lowering));
-  }
-  // The stdlib modules the program reaches are part of it. Every function of
-  // a reached module must lower, as for the fixture's own modules.
-  lower_stdlib_modules(out->stdlib, out->checked, out->stdlib_modules);
-  auto all = hir::ptr_vec<hir::hir_module>{};
-  all.push_back(std::move(out->module));
-  for (auto &module : out->companion_modules) {
-    all.push_back(std::move(module));
-  }
-  for (auto &module : out->stdlib_modules) {
-    all.push_back(std::move(module));
   }
   auto reached = std::vector<std::string>{};
   for (const auto *module : hir::find_reachable_modules(*all.front(), all)) {
     reached.push_back(module->module_name);
   }
-  out->module = std::move(all[0]);
-  for (size_t i = 0; i < out->companion_modules.size(); ++i) {
-    out->companion_modules[i] = std::move(all[i + 1]);
+  out->lowering = lower_storage_module(*out, *all.front(), max_frame_bytes);
+  out->module = std::move(all.front());
+  for (const auto &companion : out->companion_asts) {
+    const auto name = name_of(*companion);
+    const auto found = std::ranges::find_if(all, [&](const auto &module) {
+      return module != nullptr && module->module_name == name;
+    });
+    expect(found != all.end(), "expected a companion module to be lowered");
+    out->companion_lowerings.push_back(
+        lower_storage_module(*out, **found, max_frame_bytes));
+    out->companion_modules.push_back(std::move(*found));
   }
-  for (size_t i = 0; i < out->stdlib_modules.size(); ++i) {
-    out->stdlib_modules[i] =
-        std::move(all[i + 1 + out->companion_modules.size()]);
+  // The stdlib modules the program reaches are part of it. Every function of
+  // a reached module must lower, as for the fixture's own modules.
+  for (auto &module : all) {
+    if (module != nullptr) {
+      out->stdlib_modules.push_back(std::move(module));
+    }
   }
   for (const auto &module : out->stdlib_modules) {
     if (std::ranges::find(reached, module->module_name) == reached.end()) {

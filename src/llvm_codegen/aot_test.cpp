@@ -24,7 +24,8 @@
 #include <vector>
 
 #include "src/comptime_vm/backend.h"
-#include "src/hir/lower.h"
+#include "src/hir/link.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/nodes.h"
 #include "src/hir/storage_program.h"
 #include "src/llvm_codegen/aot.h"
@@ -37,6 +38,7 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
 #include "src/semantic/type_table.h"
+#include "src/testing/stdlib_fixtures.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
 
@@ -101,10 +103,10 @@ auto compile_to_object(const std::string &text, const fs::path &object_path)
                                                  file_has_errors, &comptime);
   expect(diag.error_count() == 0, "expected fixture to check cleanly");
 
-  auto lowered = hir::lower_module(*ast_file, "sample", checked);
-  expect(lowered.has_value(), "expected fixture to lower to HIR");
-
-  const auto modules = std::array<const hir::hir_module *, 1>{lowered->get()};
+  auto lowered = cinder::testing::lower_test_program(
+      parsed_modules, checked, *file_id, {{*file_id, "sample"}});
+  const auto reached = hir::find_reachable_modules(*lowered.front(), lowered);
+  const auto modules = std::span<const hir::hir_module *const>(reached);
   auto program = hir::prepare_storage_program(modules, checked);
   expect(program.has_value(),
          program.has_value()

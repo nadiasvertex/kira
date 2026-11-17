@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string_view>
 #include <system_error>
+#include <unordered_map>
 
 #include "lowering_stage.h"
 #include "parse_stage.h"
@@ -325,27 +326,6 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
   }
 }
 
-/// `CINDER_LOWER_FROM_CORE=old`: run-time and compile-time code are lowered
-/// from the AST, whatever `cli_config` asks for.
-[[nodiscard]] static auto old_lowering_requested() -> bool {
-  const auto *mode = std::getenv("CINDER_LOWER_FROM_CORE");
-  return mode != nullptr && std::string_view(mode) == "old";
-}
-
-/// Whether every module is lowered from the core alone
-/// (`cli_config::lower_from_core_only`, `CINDER_LOWER_FROM_CORE=only`).
-[[nodiscard]] static auto lower_from_core_only_requested(const cli_config &cfg)
-    -> bool {
-  if (old_lowering_requested()) {
-    return false;
-  }
-  if (cfg.lower_from_core_only) {
-    return true;
-  }
-  const auto *mode = std::getenv("CINDER_LOWER_FROM_CORE");
-  return mode != nullptr && std::string_view(mode) == "only";
-}
-
 auto compile_sources(const cli_config &cfg, bool use_color)
     -> std::expected<compile_report, std::string> {
   if (cfg.sources.empty()) {
@@ -388,17 +368,8 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 
   // Compile-time code runs on the VM.
   auto comptime_backend = comptime_vm::vm_backend{};
-  {
-    // Only mode covers compile-time code too; `CINDER_LOWER_FROM_CORE=old`
-    // turns both off.
-    auto lowering = comptime_vm::comptime_lowering::from_environment();
-    lowering.from_core = (lowering.from_core ||
-                          lower_from_core_only_requested(effective_cfg)) &&
-                         !old_lowering_requested();
-    lowering.verify_core = lowering.from_core &&
-                           std::getenv("CINDER_CORE_VERIFY") != nullptr;
-    comptime_backend.set_lowering(lowering);
-  }
+  comptime_backend.set_lowering(comptime_vm::comptime_lowering{
+      .verify_core = std::getenv("CINDER_CORE_VERIFY") != nullptr});
   auto checked = semantic::validate_semantics(
       semantic_inputs, session_diagnostics, file_has_errors,
       semantic::semantic_options{.check_names_and_types =
@@ -425,36 +396,26 @@ auto compile_sources(const cli_config &cfg, bool use_color)
                               std::numeric_limits<unsigned>::max());
   }
 
-  // The typed core, built from the checker's side tables and verified, when
-  // asked for (`cli_config::core_check`). Its findings go to the report only.
-  // `cli_config::lower_from_core` builds it too, and keeps it for lowering.
-  // `CINDER_LOWER_FROM_CORE=old` lowers from the AST alone; any other value
-  // but `only` substitutes the core's functions where it can.
-  const auto lower_from_core =
-      (effective_cfg.lower_from_core || effective_cfg.lower_from_core_only ||
-       std::getenv("CINDER_LOWER_FROM_CORE") != nullptr) &&
-      !old_lowering_requested() && !effective_cfg.parse_only &&
-      session_diagnostics.error_count() == 0;
-  // `CINDER_LOWER_FROM_CORE=only`: no module is lowered from the AST.
-  const auto lower_from_core_only = lower_from_core && lower_from_core_only_requested(effective_cfg);
-  auto adapted = std::optional<core::adapted_program>{};
-  // Without contract checks the core leaves them out, as lowering does.
-  const auto adapt_options =
-      core::adapt_options{.contract_checks = effective_cfg.contract_checks};
-  if (lower_from_core) {
-    adapted = core::adapt_program(semantic_inputs, file_has_errors, checked,
-                                  adapt_options);
-  }
-  if ((effective_cfg.core_check ||
-       std::getenv("CINDER_CORE_VERIFY") != nullptr) &&
-      !effective_cfg.parse_only && session_diagnostics.error_count() == 0) {
-    if (!adapted.has_value()) {
-      adapted = core::adapt_program(semantic_inputs, file_has_errors, checked,
-                                    adapt_options);
+  // Lowering: the adapter builds the typed core from the checker's side
+  // tables, and HIR is lowered from it. Only for a program with no errors.
+  auto lowered = std::optional<hir::lowered_program>{};
+  if (!effective_cfg.parse_only && session_diagnostics.error_count() == 0) {
+    auto file_module_names = std::unordered_map<file_id_type, std::string>{};
+    for (const auto &parsed : parsed_inputs) {
+      file_module_names.try_emplace(parsed.file_id, hir_module_name(parsed));
     }
+    lowered = hir::lower_program(
+        semantic_inputs, file_has_errors, checked, std::move(file_module_names),
+        hir::lowering_options{.contract_checks = effective_cfg.contract_checks});
+  }
+  // The core verified, when asked for (`cli_config::core_check`). Its
+  // findings go to the report only.
+  if (lowered.has_value() &&
+      (effective_cfg.core_check ||
+       std::getenv("CINDER_CORE_VERIFY") != nullptr)) {
     auto program = std::vector<const core::module *>{};
     auto core_result = core_report{};
-    for (const auto &built : adapted->modules) {
+    for (const auto &built : lowered->core.modules) {
       program.push_back(built.get());
       for (const auto &function : built->functions) {
         core_result.built.emplace_back(built->name, function->name);
@@ -464,7 +425,7 @@ auto compile_sources(const cli_config &cfg, bool use_color)
       }
     }
     core_result.violations = core::verify(program, checked);
-    core_result.gaps = adapted->gaps;
+    core_result.gaps = lowered->core.gaps;
     report.core = std::move(core_result);
   }
 
@@ -474,61 +435,27 @@ auto compile_sources(const cli_config &cfg, bool use_color)
       diagnostic_renderer(sources, use_color).render_all(session_diagnostics));
 
   const auto lowering_renderer = diagnostic_renderer(sources, use_color);
-  auto core_only = std::optional<hir::core_program_lowering>{};
-  if (adapted.has_value() && lower_from_core_only) {
-    auto program = std::vector<const core::module *>{};
-    for (const auto &built : adapted->modules) {
-      program.push_back(built.get());
-    }
-    auto input = hir::core_lowering_input{.modules = program,
-                                          .file_module_names = {}};
-    for (const auto &parsed : parsed_inputs) {
-      input.file_module_names.try_emplace(parsed.file_id,
-                                          hir_module_name(parsed));
-    }
-    core_only = hir::lower_core_program(
-        input, adapted->gaps, checked,
-        hir::lowering_options{.contract_checks = effective_cfg.contract_checks});
-    report.core_lowering = core_only->records;
-  }
   auto lowered_modules = lower_and_emit_modules(
       effective_cfg, parsed_inputs, file_has_errors, checked, metadata_root,
-      lowering_renderer, report, core_only.has_value() ? &*core_only : nullptr);
-  if (adapted.has_value() && lower_from_core && !lower_from_core_only) {
-    auto program = std::vector<const core::module *>{};
-    for (const auto &built : adapted->modules) {
-      program.push_back(built.get());
-    }
-    auto input = hir::core_lowering_input{.modules = program,
-                                          .file_module_names = {}};
-    // A file's own module is the first lowered with its file id.
-    for (const auto &module : lowered_modules) {
-      if (module->file_id.has_value()) {
-        input.file_module_names.try_emplace(*module->file_id,
-                                            module->module_name);
-      }
-    }
-    report.core_lowering = hir::substitute_core_functions(
-        lowered_modules, input, checked,
-        hir::lowering_options{.contract_checks = effective_cfg.contract_checks});
-  }
+      lowering_renderer, report, lowered.has_value() ? &lowered->hir : nullptr);
   // Every borrow and deref must be explicit before a backend sees the code:
   // a reference is the address of its place, so an implicit one would be
   // compiled as the wrong operation (`hir::make_references_explicit`). A
-  // leftover is a lowering gap, reported rather than run.
+  // leftover is an internal compiler error, reported rather than run.
   if (effective_cfg.run || effective_cfg.build) {
     for (const auto &violation :
          hir::find_implicit_references(lowered_modules, checked.types)) {
       auto diag = diagnostic(
           diagnostic_level::error,
-          std::format("could not lower `{}` in module `{}`: {}",
+          std::format("internal compiler error: could not lower `{}` in "
+                      "module `{}`: {}",
                       violation.function, violation.module, violation.what),
           violation.file_id.value_or(0));
       if (violation.file_id.has_value() && !violation.span.empty()) {
         diag.with_label(violation.span, "this is where lowering stopped");
       }
-      diag.with_note("this is a gap in the compiler's lowering, not a "
-                     "mistake in your program");
+      diag.with_note("this is a bug in the compiler, not in your program; "
+                     "please report it with this program");
       append_text(report.diagnostics, lowering_renderer.render(diag));
       ++report.error_count;
     }

@@ -192,6 +192,9 @@ struct variant_drop {
 
 struct drop_plan {
   std::optional<resolved_callee> own_drop;
+  /// With `own_drop`: the name lowering calls it by, `impl_target_type::drop`
+  /// or, for a monomorphized instance, the instance's own mangled name.
+  std::string own_drop_name;
   std::vector<std::pair<std::string, type_id>> droppable_fields;
   std::vector<variant_drop> variant_drops; ///< Sum types only.
   /// A `generator[T]`: dropping one that has not finished resumes it once to
@@ -332,6 +335,10 @@ struct synthesized_method {
   const ast::func_decl *decl = nullptr;
   std::string target_type_name;
   std::string owner_module;
+  /// A generic impl's parameters, when the copy is a template over them:
+  /// it is not lowered itself, and each call names an instance of it
+  /// (`const_generic_instances`), as for a written method of that impl.
+  const std::vector<ast::type_param> *block_type_params = nullptr;
 };
 
 /// One item-level splice (`~expr` used directly among a file/module's

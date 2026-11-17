@@ -3109,6 +3109,9 @@ private:
         !self.has_value()) {
       return std::unexpected(self.error());
     }
+    if (op.waits == wait_mode::reschedule) {
+      return {};
+    }
     if (op.waits == wait_mode::crew) {
       return require_crew(op.source, "an await");
     }

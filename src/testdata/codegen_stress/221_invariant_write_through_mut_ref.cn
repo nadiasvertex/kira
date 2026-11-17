@@ -1,9 +1,9 @@
-# todo: 40
-# tier: both
-# currently-accepted
-# currently-result: 0
-# want: a panic, "invariant violated", because the field write through a `&mut` parameter breaks `value > 0`.
-module known_gaps.invariant_write_through_mut_ref
+module codegen_stress.invariant_write_through_mut_ref
+
+# expect-panic: invariant violated
+
+# A type invariant is checked after a field write made through a `&mut`
+# parameter, as after any field write (chapter 34). Todo 40.
 
 type pos = { pub value: int32 }
     invariant self.value > 0

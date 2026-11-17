@@ -394,6 +394,21 @@ public:
   [[nodiscard]] auto alternative_of(const ast::node &pattern, type_id subject,
                                     binding_context &context)
       -> result<pattern_alternative>;
+  /// The arm alternatives `pattern` stands for: one per alternative of a
+  /// top-level `|`, and each of those expanded over the `|`s nested inside
+  /// it, the product of the choices at each position in source order.
+  [[nodiscard]] auto alternatives_of(const ast::node &pattern,
+                                     type_id subject,
+                                     binding_context &context,
+                                     source_span span)
+      -> result<std::vector<pattern_alternative>>;
+  /// The choices made at the nested `|`s of the alternative being built
+  /// (`alternatives_of`): the alternative taken at each `|` met so far,
+  /// and the `|`s this build met, in source order, with their sizes.
+  struct or_choices {
+    std::unordered_map<const ast::node *, std::size_t> taken;
+    std::vector<std::pair<const ast::node *, std::size_t>> met;
+  };
   /// The test for `pattern` against the part at `path`, of type `type`.
   [[nodiscard]] auto test_of(const ast::node &pattern, type_id type,
                              const std::vector<projection> &path,
@@ -699,6 +714,9 @@ public:
   std::optional<std::unordered_set<const void *>> owned_static_reads_;
   std::string module_name_;
   std::vector<std::unordered_map<std::string, local_info>> scopes_;
+  /// Set while `alternatives_of` builds an alternative; a nested `|` met
+  /// with none set is outside a matching form's arm.
+  or_choices *or_choices_ = nullptr;
   std::vector<lambda_frame> lambdas_;
   const ast::func_decl *decl_ = nullptr;
   std::optional<borrowed_records> borrowed_captures_;

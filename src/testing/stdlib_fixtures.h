@@ -11,15 +11,22 @@
 // driver injects. `inject_stdlib_prelude` (`src/driver/driver.cpp`) is the
 // production copy of this list; keep the two in step.
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <expected>
 #include <filesystem>
+#include <format>
+#include <iostream>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <system_error>
 #include <vector>
 
-#include "src/hir/lower.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/nodes.h"
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
@@ -188,28 +195,88 @@ inline auto module_name_of(const ast::file &file) -> std::string {
   return name;
 }
 
-/// Lowers every injected stdlib module to HIR, so a fixture that calls into
-/// the stdlib (`xs.push(x)` on a `list[T]`, say) has real functions to be
-/// linked against. Appended to `modules`, which the caller then hands to
-/// `hir::find_reachable_modules` along with its own entry module.
-inline auto lower_stdlib_modules(const parsed_stdlib &stdlib,
-                                 const semantic::checked_types &checked,
-                                 hir::ptr_vec<hir::hir_module> &modules)
-    -> void {
-  for (const auto &ast_file : stdlib.ast_files) {
-    auto lowered =
-        hir::lower_module(*ast_file, module_name_of(*ast_file), checked);
-    expect(lowered.has_value(), "expected a stdlib module to lower");
-    modules.push_back(std::move(*lowered));
-
-    auto submodules = hir::lower_inline_submodules(
-        *ast_file, module_name_of(*ast_file), checked);
-    expect(submodules.has_value(),
-           "expected a stdlib module's inline submodules to lower");
-    for (auto &submodule : *submodules) {
-      modules.push_back(std::move(submodule));
+/// Lowers a checked program to HIR as the driver does (`hir::lower_program`)
+/// and fails the test when a module cannot be lowered. `entry` is the file
+/// whose module comes first. `names` names the module of each file with no
+/// `module` declaration; one it leaves out is named after its file id. The
+/// modules after the entry's are in the core's order: its inline submodules,
+/// the other files' modules (the stdlib's among them), and functor
+/// instantiations.
+inline auto lower_test_program(std::span<const semantic::parsed_module> parsed,
+                               semantic::checked_types &checked,
+                               file_id_type entry,
+                               std::unordered_map<file_id_type, std::string>
+                                   names,
+                               const hir::lowering_options &options = {})
+    -> hir::ptr_vec<hir::hir_module> {
+  auto last = file_id_type{0};
+  for (const auto &module : parsed) {
+    names.try_emplace(module.file_id, std::format("file{}", module.file_id));
+    last = std::max(last, module.file_id);
+  }
+  const auto no_errors = std::vector<bool>(static_cast<size_t>(last) + 1, false);
+  auto lowered =
+      hir::lower_program(parsed, no_errors, checked, std::move(names), options);
+  for (const auto &failure : lowered.hir.failures) {
+    std::cerr << std::format("module `{}` not lowered: `{}`: {} (at bytes "
+                             "{}..{})\n",
+                             failure.module, failure.item, failure.message,
+                             failure.span.start, failure.span.end);
+  }
+  expect(lowered.hir.failures.empty(),
+         "expected every module of the program to lower to HIR");
+  auto out = hir::ptr_vec<hir::hir_module>{};
+  auto &modules = lowered.hir.modules;
+  for (auto &module : modules) {
+    if (module->file_id == std::optional<file_id_type>(entry)) {
+      out.push_back(std::move(module));
     }
   }
+  expect(!out.empty(), "expected the entry file's module to be lowered");
+  for (auto &module : modules) {
+    if (module != nullptr) {
+      out.push_back(std::move(module));
+    }
+  }
+  return out;
+}
+
+/// The function `name` of the HIR module `module` among `modules`, or null.
+inline auto find_lowered_function(const hir::ptr_vec<hir::hir_module> &modules,
+                                  std::string_view module,
+                                  std::string_view name)
+    -> hir::hir_function * {
+  for (const auto &candidate : modules) {
+    if (candidate->module_name != module) {
+      continue;
+    }
+    for (const auto &function : candidate->functions) {
+      if (function->name == name) {
+        return function.get();
+      }
+    }
+  }
+  return nullptr;
+}
+
+/// Takes the function `name` of the HIR module `module` out of `modules`, or
+/// says it is not there (a generic template, say, which is not lowered).
+inline auto take_lowered_function(hir::ptr_vec<hir::hir_module> &modules,
+                                  std::string_view module,
+                                  std::string_view name)
+    -> std::expected<hir::ptr<hir::hir_function>, std::string> {
+  for (auto &candidate : modules) {
+    if (candidate->module_name != module) {
+      continue;
+    }
+    for (auto &function : candidate->functions) {
+      if (function != nullptr && function->name == name) {
+        return std::move(function);
+      }
+    }
+  }
+  return std::unexpected(
+      std::format("no function `{}` was lowered in `{}`", name, module));
 }
 
 } // namespace cinder::testing

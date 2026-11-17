@@ -1,7 +1,9 @@
 #include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <format>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -4074,305 +4076,450 @@ auto test_rejects_non_task_spawned() -> void {
                     "expected a non-task `race:` branch to be rejected");
 }
 
+// ==========================================================================
+//  Settled constructor types (todo 41)
+// ==========================================================================
+
+namespace {
+
+/// Whether `id` still holds a type nothing settled: an `unknown` hole or an
+/// inference variable, anywhere inside it.
+auto holds_unsettled(const cinder::semantic::type_table &types,
+                     cinder::semantic::type_id id) -> bool {
+  const auto &entry = types.entry(id);
+  if (entry.kind == cinder::semantic::type_kind::unknown_kind ||
+      entry.kind == cinder::semantic::type_kind::type_var_kind) {
+    return true;
+  }
+  for (const auto arg : entry.args) {
+    if (arg != id && holds_unsettled(types, arg)) {
+      return true;
+    }
+  }
+  return entry.result != id &&
+         entry.result != cinder::semantic::k_unknown_type &&
+         holds_unsettled(types, entry.result);
+}
+
+/// Checks `filename` with the prelude and fails, naming each node, when an
+/// expression of that file is recorded with an unsettled type.
+auto expect_settled_expression_types(std::string_view filename) -> void {
+  auto fixtures = prelude_fixtures();
+  fixtures.push_back(source_fixture{.path = std::string(filename),
+                                    .text = read_program(filename)});
+  auto sources = cinder::source_manager{};
+  auto diag = cinder::diagnostic_bag{};
+  auto file_has_errors = std::vector<bool>{};
+  auto ast_files = std::vector<cinder::ast::ptr<cinder::ast::file>>{};
+  auto parsed_modules = std::vector<cinder::semantic::parsed_module>{};
+  auto user_file = cinder::file_id_type{};
+  for (const auto &fixture : fixtures) {
+    const auto file_id = sources.add_file(fixture.path, fixture.text);
+    expect(file_id.has_value(), "expected fixture source to register");
+    user_file = *file_id;
+    if (file_has_errors.size() <= static_cast<size_t>(*file_id)) {
+      file_has_errors.resize(static_cast<size_t>(*file_id) + 1, false);
+    }
+    const auto *file = sources.get(*file_id);
+    auto lexer = cinder::lexer(file->source(), file->id(), diag);
+    auto parser = cinder::parser(lexer.tokenize(), file->id(), diag);
+    auto ast_file = parser.parse_file();
+    parsed_modules.push_back(cinder::semantic::parsed_module{
+        .file_id = *file_id, .ast_file = ast_file.get()});
+    ast_files.push_back(std::move(ast_file));
+  }
+  auto comptime = cinder::comptime_vm::vm_backend{};
+  const auto checked = cinder::semantic::validate_semantics(
+      parsed_modules, diag, file_has_errors,
+      cinder::semantic::semantic_options{.comptime = &comptime});
+  if (diag.error_count() != 0) {
+    std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
+    fail(std::format("expected {} to check cleanly", filename));
+  }
+  const auto *file = sources.get(user_file);
+  auto unsettled = std::string{};
+  for (const auto &[node, type] : checked.node_types) {
+    const auto where = checked.node_files.find(node);
+    // The placeholder condition an `if let` carries has no type of its own.
+    if (where == checked.node_files.end() || where->second != user_file ||
+        dynamic_cast<const cinder::ast::error_expr *>(node) != nullptr ||
+        !holds_unsettled(checked.types, type)) {
+      continue;
+    }
+    const auto start = static_cast<size_t>(node->span.start);
+    const auto text = file->source().substr(
+        start, std::min<size_t>(node->span.len(), 40));
+    unsettled += std::format("  `{}` at offset {} is `{}`\n", text, start,
+                             checked.types.display(type));
+  }
+  if (!unsettled.empty()) {
+    std::cerr << "check_test: unsettled recorded types in " << filename
+              << ":\n"
+              << unsettled;
+    fail(std::format("expected every expression of {} to have a settled "
+                     "recorded type",
+                     filename));
+  }
+}
+
+/// A struct literal whose type parameters its fields do not fix takes them
+/// from the type the context expects: the return type, here. Both a field
+/// holding `@none` and a parameter no field mentions are covered.
+auto test_struct_literal_settles_from_expected_type() -> void {
+  expect_settled_expression_types("settled_constructor_from_return_type.cn");
+}
+
+/// An `@none` passed to a generic parameter takes its payload type from the
+/// solution the call's other argument fixes.
+auto test_none_argument_settles_from_solution() -> void {
+  expect_settled_expression_types("settled_none_argument_from_sibling.cn");
+}
+
+} // namespace
+
+// Bazel sharding: when TEST_TOTAL_SHARDS and TEST_SHARD_INDEX are set, a
+// process runs only the cases whose position in `cases` modulo the total
+// equals the shard index. Without them every case runs.
+struct test_case {
+  const char *name;
+  void (*run)();
+};
+
+auto env_size(const char *name) -> std::optional<std::size_t> {
+  const char *value = std::getenv(name);
+  if (value == nullptr || *value == '\0') {
+    return std::nullopt;
+  }
+  return static_cast<std::size_t>(std::strtoull(value, nullptr, 10));
+}
+
 auto main() -> int {
   try {
-    test_accepts_typed_core_program();
-    test_reports_structural_equality_refusals();
-    test_accepts_async_task_types();
-    test_reports_async_call_used_as_value();
-    test_reports_await_outside_async();
-    test_reports_crew_errors_without_collect();
-    test_reports_crew_collect_mixed_tasks();
-    test_reports_spawn_raw_pointer();
-    test_reports_task_captures_raw_pointer();
-    test_accepts_spawn_vouched_pointer();
-    test_reports_await_wrong_context();
-    test_reports_arithmetic_on_task();
-    test_reports_write_through_deref();
-    test_reports_write_through_shared();
-    test_reports_deref_operator_misuse();
-    test_reports_member_missing_through_deref();
-    test_rejects_task_block_exits();
-    test_rejects_non_task_spawned();
-    test_rejects_on_sender_that_is_not_a_task();
-    test_rejects_task_function_values();
-    test_accepts_task_function_values();
-    test_accepts_sync_values_that_are_only_send();
-    test_rejects_sync_values_that_need_share();
-    test_rejects_on_io_non_sendable();
-    test_accepts_on_io_sendable();
-    test_reports_copy_bound_unsatisfied();
-    test_reports_fn_value_reference_mismatch();
-    test_accepts_try_from_conversion();
-    test_accepts_structs_and_methods();
-    test_accepts_packed_struct();
-    test_accepts_collections_and_lambdas();
-    test_accepts_capture_lists();
-    test_reports_capture_list_omits_name();
-    test_reports_empty_capture_list_blocks_everything();
-    test_reports_capture_list_unknown_name();
-    test_reports_capture_list_module_level_name();
-    test_reports_duplicate_capture();
-    test_reports_mut_ref_capture_of_immutable();
-    test_reports_ref_capture_through_by_value_capture();
-    test_accepts_option_result_flow();
-    test_accepts_cross_module_qualified_types();
-    test_accepts_module_qualified_call();
-    test_accepts_member_import_call();
-    test_accepts_wildcard_import();
-    test_accepts_fully_qualified_call();
-    test_rejects_unimported_root_module_path();
-    test_value_module_name_conflicts();
-    test_module_name_conflicts_are_general();
-    test_root_module_alias();
-    test_dotted_name_rooted_at_module_value();
-    test_accepts_aliased_module_without_parent();
-    test_accepts_local_shadowing_visible_module();
-    test_accepts_type_qualified_associated_call();
-    test_accepts_indexing_local_bindings();
-    test_accepts_str_byte_index();
-    test_accepts_for_over_user_iterator();
-    test_accepts_type_generic_free_function();
-    test_reports_type_generic_unsolved();
-    test_reports_generic_lambda_as_value();
-    test_reports_mutable_generic_lambda();
-    test_reports_generic_lambda_member();
-    test_reports_generic_lambda_shorthand();
-    test_generic_lambda_copy_error_names_use();
-    test_reports_str_index_non_integer();
-    test_accepts_associated_type_self_output();
-    test_accepts_extend_on_builtin_type();
-    test_accepts_extend_on_user_type();
-    test_accepts_parameterized_extend();
-    test_generic_method_body_sees_its_own_imports();
-    test_qualified_type_path_through_import();
-    test_finds_static_on_primitive_through_impl();
-    test_finds_static_on_primitive_through_extend();
-    test_derived_cmp_returns_the_ordering_sum_type();
-    test_ordering_variants_are_prelude_reachable();
-    test_reports_extend_on_unapplied_generic();
-    test_impl_method_takes_priority_over_extend();
-    test_reports_raw_pointer_outside_machine();
-    test_accepts_machine_pointer_ops();
-    test_reports_write_through_const_pointer();
-    test_reports_index_without_impl();
-    test_reports_index_wrong_key_type();
-    test_dispatches_index_by_key_type();
-    test_scope_and_where_bindings_end_with_their_scope();
-    test_reports_direct_drop_call();
-    test_accepts_bare_drop_call();
-    test_accepts_needs_drop_query();
-    test_user_needs_drop_shadows_the_query();
-    test_reports_needs_drop_arguments();
-    test_reports_needs_drop_without_type();
-    test_reports_interpolated_reference();
-    test_reports_generic_call_conflicting_args();
-    test_reports_bare_generic_static_call_unsolved();
-    test_reports_borrowed_number_used_as_a_number();
-    test_reports_reference_key_for_ord_bound();
-    test_reports_method_where_bound_at_call();
-    test_reports_index_write_without_index_set();
-    test_reports_index_mut_borrow_without_impl();
-    test_dispatches_index_mut_borrow();
-    test_accepts_intrinsic_decl();
-    test_accepts_string_interpolation();
-    test_accepts_static_let_evaluates();
-    test_accepts_static_if_selects_taken_branch();
-    test_accepts_static_if_selects_branch_by_sum_type_equality();
-    test_accepts_static_if_variant_equality_selects_else_branch();
-    test_accepts_static_if_statement_body_in_generic_static_def();
-    test_accepts_static_if_narrows_in_bound_generic_instance();
-    test_accepts_static_if_narrows_through_let_bound_name();
-    test_accepts_static_if_chain_with_trailing_static_assert();
-    test_accepts_static_assert_compares_variant_payloads();
-    test_accepts_quote_expr_typed_by_fragment_kind();
-    test_accepts_static_def_call_evaluates();
-    test_accepts_static_generic_call_casts_to_bound_type_param();
-    test_accepts_static_struct_value_evaluates();
-    test_accepts_static_let_forward_reference();
-    test_accepts_splice_expr_reifies_quoted_value();
-    test_accepts_splice_stmt_reifies_quoted_statement();
-    test_accepts_splice_type_reifies_quoted_type();
-    test_accepts_expr_keyword_usable_as_identifier();
-    test_accepts_expr_builder_constructs_fragment();
-    test_accepts_item_splice_injects_impl();
-    test_accepts_type_reflection_primitives();
-    test_accepts_module_reflection();
-    test_accepts_generator_yields_typed_values();
-    test_accepts_for_loop_over_generator();
-    test_accepts_existential_return_type();
-    test_accepts_existential_return_type_combined_bounds();
+    // New cases must be added to this list; a case that is only defined
+    // above is never run.
+    const std::vector<test_case> cases = {
+      {"test_accepts_typed_core_program", test_accepts_typed_core_program},
+      {"test_reports_structural_equality_refusals", test_reports_structural_equality_refusals},
+      {"test_accepts_async_task_types", test_accepts_async_task_types},
+      {"test_reports_async_call_used_as_value", test_reports_async_call_used_as_value},
+      {"test_reports_await_outside_async", test_reports_await_outside_async},
+      {"test_reports_crew_errors_without_collect", test_reports_crew_errors_without_collect},
+      {"test_reports_crew_collect_mixed_tasks", test_reports_crew_collect_mixed_tasks},
+      {"test_reports_spawn_raw_pointer", test_reports_spawn_raw_pointer},
+      {"test_reports_task_captures_raw_pointer", test_reports_task_captures_raw_pointer},
+      {"test_accepts_spawn_vouched_pointer", test_accepts_spawn_vouched_pointer},
+      {"test_reports_await_wrong_context", test_reports_await_wrong_context},
+      {"test_reports_arithmetic_on_task", test_reports_arithmetic_on_task},
+      {"test_reports_write_through_deref", test_reports_write_through_deref},
+      {"test_reports_write_through_shared", test_reports_write_through_shared},
+      {"test_reports_deref_operator_misuse", test_reports_deref_operator_misuse},
+      {"test_reports_member_missing_through_deref", test_reports_member_missing_through_deref},
+      {"test_rejects_task_block_exits", test_rejects_task_block_exits},
+      {"test_rejects_non_task_spawned", test_rejects_non_task_spawned},
+      {"test_rejects_on_sender_that_is_not_a_task", test_rejects_on_sender_that_is_not_a_task},
+      {"test_rejects_task_function_values", test_rejects_task_function_values},
+      {"test_accepts_task_function_values", test_accepts_task_function_values},
+      {"test_accepts_sync_values_that_are_only_send", test_accepts_sync_values_that_are_only_send},
+      {"test_rejects_sync_values_that_need_share", test_rejects_sync_values_that_need_share},
+      {"test_rejects_on_io_non_sendable", test_rejects_on_io_non_sendable},
+      {"test_accepts_on_io_sendable", test_accepts_on_io_sendable},
+      {"test_reports_copy_bound_unsatisfied", test_reports_copy_bound_unsatisfied},
+      {"test_reports_fn_value_reference_mismatch", test_reports_fn_value_reference_mismatch},
+      {"test_accepts_try_from_conversion", test_accepts_try_from_conversion},
+      {"test_accepts_structs_and_methods", test_accepts_structs_and_methods},
+      {"test_accepts_packed_struct", test_accepts_packed_struct},
+      {"test_accepts_collections_and_lambdas", test_accepts_collections_and_lambdas},
+      {"test_accepts_capture_lists", test_accepts_capture_lists},
+      {"test_reports_capture_list_omits_name", test_reports_capture_list_omits_name},
+      {"test_reports_empty_capture_list_blocks_everything", test_reports_empty_capture_list_blocks_everything},
+      {"test_reports_capture_list_unknown_name", test_reports_capture_list_unknown_name},
+      {"test_reports_capture_list_module_level_name", test_reports_capture_list_module_level_name},
+      {"test_reports_duplicate_capture", test_reports_duplicate_capture},
+      {"test_reports_mut_ref_capture_of_immutable", test_reports_mut_ref_capture_of_immutable},
+      {"test_reports_ref_capture_through_by_value_capture", test_reports_ref_capture_through_by_value_capture},
+      {"test_accepts_option_result_flow", test_accepts_option_result_flow},
+      {"test_accepts_cross_module_qualified_types", test_accepts_cross_module_qualified_types},
+      {"test_accepts_module_qualified_call", test_accepts_module_qualified_call},
+      {"test_accepts_member_import_call", test_accepts_member_import_call},
+      {"test_accepts_wildcard_import", test_accepts_wildcard_import},
+      {"test_accepts_fully_qualified_call", test_accepts_fully_qualified_call},
+      {"test_rejects_unimported_root_module_path", test_rejects_unimported_root_module_path},
+      {"test_value_module_name_conflicts", test_value_module_name_conflicts},
+      {"test_module_name_conflicts_are_general", test_module_name_conflicts_are_general},
+      {"test_root_module_alias", test_root_module_alias},
+      {"test_dotted_name_rooted_at_module_value", test_dotted_name_rooted_at_module_value},
+      {"test_accepts_aliased_module_without_parent", test_accepts_aliased_module_without_parent},
+      {"test_accepts_local_shadowing_visible_module", test_accepts_local_shadowing_visible_module},
+      {"test_accepts_type_qualified_associated_call", test_accepts_type_qualified_associated_call},
+      {"test_accepts_indexing_local_bindings", test_accepts_indexing_local_bindings},
+      {"test_accepts_str_byte_index", test_accepts_str_byte_index},
+      {"test_accepts_for_over_user_iterator", test_accepts_for_over_user_iterator},
+      {"test_accepts_type_generic_free_function", test_accepts_type_generic_free_function},
+      {"test_reports_type_generic_unsolved", test_reports_type_generic_unsolved},
+      {"test_reports_generic_lambda_as_value", test_reports_generic_lambda_as_value},
+      {"test_reports_mutable_generic_lambda", test_reports_mutable_generic_lambda},
+      {"test_reports_generic_lambda_member", test_reports_generic_lambda_member},
+      {"test_reports_generic_lambda_shorthand", test_reports_generic_lambda_shorthand},
+      {"test_generic_lambda_copy_error_names_use", test_generic_lambda_copy_error_names_use},
+      {"test_reports_str_index_non_integer", test_reports_str_index_non_integer},
+      {"test_accepts_associated_type_self_output", test_accepts_associated_type_self_output},
+      {"test_accepts_extend_on_builtin_type", test_accepts_extend_on_builtin_type},
+      {"test_accepts_extend_on_user_type", test_accepts_extend_on_user_type},
+      {"test_accepts_parameterized_extend", test_accepts_parameterized_extend},
+      {"test_generic_method_body_sees_its_own_imports", test_generic_method_body_sees_its_own_imports},
+      {"test_qualified_type_path_through_import", test_qualified_type_path_through_import},
+      {"test_finds_static_on_primitive_through_impl", test_finds_static_on_primitive_through_impl},
+      {"test_finds_static_on_primitive_through_extend", test_finds_static_on_primitive_through_extend},
+      {"test_derived_cmp_returns_the_ordering_sum_type", test_derived_cmp_returns_the_ordering_sum_type},
+      {"test_ordering_variants_are_prelude_reachable", test_ordering_variants_are_prelude_reachable},
+      {"test_reports_extend_on_unapplied_generic", test_reports_extend_on_unapplied_generic},
+      {"test_impl_method_takes_priority_over_extend", test_impl_method_takes_priority_over_extend},
+      {"test_reports_raw_pointer_outside_machine", test_reports_raw_pointer_outside_machine},
+      {"test_accepts_machine_pointer_ops", test_accepts_machine_pointer_ops},
+      {"test_reports_write_through_const_pointer", test_reports_write_through_const_pointer},
+      {"test_reports_index_without_impl", test_reports_index_without_impl},
+      {"test_reports_index_wrong_key_type", test_reports_index_wrong_key_type},
+      {"test_dispatches_index_by_key_type", test_dispatches_index_by_key_type},
+      {"test_scope_and_where_bindings_end_with_their_scope", test_scope_and_where_bindings_end_with_their_scope},
+      {"test_reports_direct_drop_call", test_reports_direct_drop_call},
+      {"test_accepts_bare_drop_call", test_accepts_bare_drop_call},
+      {"test_accepts_needs_drop_query", test_accepts_needs_drop_query},
+      {"test_user_needs_drop_shadows_the_query", test_user_needs_drop_shadows_the_query},
+      {"test_reports_needs_drop_arguments", test_reports_needs_drop_arguments},
+      {"test_reports_needs_drop_without_type", test_reports_needs_drop_without_type},
+      {"test_reports_interpolated_reference", test_reports_interpolated_reference},
+      {"test_reports_generic_call_conflicting_args", test_reports_generic_call_conflicting_args},
+      {"test_reports_bare_generic_static_call_unsolved", test_reports_bare_generic_static_call_unsolved},
+      {"test_reports_borrowed_number_used_as_a_number", test_reports_borrowed_number_used_as_a_number},
+      {"test_reports_reference_key_for_ord_bound", test_reports_reference_key_for_ord_bound},
+      {"test_reports_method_where_bound_at_call", test_reports_method_where_bound_at_call},
+      {"test_reports_index_write_without_index_set", test_reports_index_write_without_index_set},
+      {"test_reports_index_mut_borrow_without_impl", test_reports_index_mut_borrow_without_impl},
+      {"test_dispatches_index_mut_borrow", test_dispatches_index_mut_borrow},
+      {"test_accepts_intrinsic_decl", test_accepts_intrinsic_decl},
+      {"test_accepts_string_interpolation", test_accepts_string_interpolation},
+      {"test_accepts_static_let_evaluates", test_accepts_static_let_evaluates},
+      {"test_accepts_static_if_selects_taken_branch", test_accepts_static_if_selects_taken_branch},
+      {"test_accepts_static_if_selects_branch_by_sum_type_equality", test_accepts_static_if_selects_branch_by_sum_type_equality},
+      {"test_accepts_static_if_variant_equality_selects_else_branch", test_accepts_static_if_variant_equality_selects_else_branch},
+      {"test_accepts_static_if_statement_body_in_generic_static_def", test_accepts_static_if_statement_body_in_generic_static_def},
+      {"test_accepts_static_if_narrows_in_bound_generic_instance", test_accepts_static_if_narrows_in_bound_generic_instance},
+      {"test_accepts_static_if_narrows_through_let_bound_name", test_accepts_static_if_narrows_through_let_bound_name},
+      {"test_accepts_static_if_chain_with_trailing_static_assert", test_accepts_static_if_chain_with_trailing_static_assert},
+      {"test_accepts_static_assert_compares_variant_payloads", test_accepts_static_assert_compares_variant_payloads},
+      {"test_accepts_quote_expr_typed_by_fragment_kind", test_accepts_quote_expr_typed_by_fragment_kind},
+      {"test_accepts_static_def_call_evaluates", test_accepts_static_def_call_evaluates},
+      {"test_accepts_static_generic_call_casts_to_bound_type_param", test_accepts_static_generic_call_casts_to_bound_type_param},
+      {"test_accepts_static_struct_value_evaluates", test_accepts_static_struct_value_evaluates},
+      {"test_accepts_static_let_forward_reference", test_accepts_static_let_forward_reference},
+      {"test_accepts_splice_expr_reifies_quoted_value", test_accepts_splice_expr_reifies_quoted_value},
+      {"test_accepts_splice_stmt_reifies_quoted_statement", test_accepts_splice_stmt_reifies_quoted_statement},
+      {"test_accepts_splice_type_reifies_quoted_type", test_accepts_splice_type_reifies_quoted_type},
+      {"test_accepts_expr_keyword_usable_as_identifier", test_accepts_expr_keyword_usable_as_identifier},
+      {"test_accepts_expr_builder_constructs_fragment", test_accepts_expr_builder_constructs_fragment},
+      {"test_accepts_item_splice_injects_impl", test_accepts_item_splice_injects_impl},
+      {"test_accepts_type_reflection_primitives", test_accepts_type_reflection_primitives},
+      {"test_accepts_module_reflection", test_accepts_module_reflection},
+      {"test_accepts_generator_yields_typed_values", test_accepts_generator_yields_typed_values},
+      {"test_accepts_for_loop_over_generator", test_accepts_for_loop_over_generator},
+      {"test_accepts_existential_return_type", test_accepts_existential_return_type},
+      {"test_accepts_existential_return_type_combined_bounds", test_accepts_existential_return_type_combined_bounds},
 
-    test_reports_undefined_name_with_suggestion();
-    test_reports_undefined_type();
-    test_undefined_explicit_type_argument_reported_once();
-    test_reports_packed_on_sum_type();
-    test_reports_annotation_mismatch();
-    test_reports_quote_type_annotation_mismatch();
-    test_reports_static_assert_evaluates_false();
-    test_reports_static_for_evaluates_each_iteration();
-    test_accepts_static_for_inline_as_function_tail();
-    test_reports_static_for_inline_unbuildable_value();
-    test_accepts_static_for_inline_runtime_yield();
-    test_reports_static_for_field_info_unknown_field();
-    test_reports_splice_expr_wrong_fragment_kind();
-    test_reports_hygiene_prevents_spliced_binding_leak();
-    test_reports_splice_requires_quote_value();
-    test_reports_integer_literal_overflow();
-    test_reports_conversion_literal_overflow();
-    test_accepts_negative_min_integer_literals();
-    test_reports_negated_integer_literal_still_too_large();
-    test_reports_int64_positive_literal_still_too_large();
-    test_reports_128_bit_literals_too_large();
-    test_accepts_negative_min_literal_through_cast();
-    test_accepts_wide_literal_in_generic_return();
-    test_reports_generic_return_literal_overflow();
-    test_reports_mixed_numeric_types();
-    test_reports_compound_assign_mixed_numeric_types();
-    test_reports_non_numeric_builtin_arithmetic();
-    test_reports_non_bool_condition();
-    test_reports_assignment_to_immutable();
-    test_reports_let_element_write();
-    test_accepts_let_mut_reassignment();
-    test_reports_return_type_mismatch();
-    test_reports_call_argument_problems();
-    test_reports_struct_literal_problems();
-    test_reports_unknown_field_and_method();
-    test_reports_unknown_field_on_builtin_generic();
-    test_reports_non_exhaustive_match();
-    test_reports_unknown_variant_in_pattern();
-    test_reports_bare_variant_spelling();
-    test_reports_try_in_plain_function();
-    test_reports_try_with_no_from_conversion();
-    test_reports_unknown_intrinsic();
-    test_reports_unannotated_intrinsic();
-    test_reports_yield_outside_generator();
-    test_reports_generator_missing_return_type();
-    test_reports_generator_yield_type_mismatch();
-    test_reports_generator_return_with_value();
-    test_reports_generator_postcondition();
-    test_reports_existential_type_outside_generator();
-    test_reports_existential_return_type_in_parameter();
-    test_reports_existential_bound_not_satisfied();
-    test_reports_existential_return_type_mismatch();
-    test_reports_existential_method_not_in_bound();
-    test_accepts_higher_kinded_functor_monad();
-    test_reports_hk_impl_target_wrong_kind();
-    test_reports_hk_ctor_arity_mismatch();
-    test_reports_hk_param_wrong_arity();
-    test_reports_hk_plain_param_applied();
-    test_reports_hk_param_used_as_type();
-    test_reports_unannotated_pub_function();
-    test_reports_duplicate_trait_impl();
-    test_reports_incomplete_trait_impl();
-    test_reports_impl_signature_mismatch();
-    test_accepts_impl_signature_match();
-    test_accepts_drop_impl();
-    test_reports_duplicate_drop_impl();
-    test_reports_incomplete_drop_impl();
-    test_reports_unsatisfied_trait_requirement();
-    test_reports_unknown_deriving();
-    test_reports_impure_contract_call();
-    test_reports_string_interpolation_unsupported_style();
-    test_reports_string_interpolation_precision_on_integer_style();
-    test_reports_string_interpolation_bad_dynamic_width();
-    test_reports_associated_type_output_mismatch();
-    test_reports_extend_method_arity_mismatch();
-    test_reports_missing_return_value();
-    test_reports_missing_return_on_if_without_else();
-    test_accepts_all_paths_returning();
-    test_reports_const_generic_value_mismatch();
-    test_accepts_const_generic_value_match();
-    test_accepts_const_generic_try_from();
-    test_reports_unsolved_const_generic_value_param();
-    test_reports_underdetermined_value_params();
-    test_reports_unsolved_impl_const_generic_value_param();
-    test_accepts_explicit_generic_args();
-    test_accepts_generic_methods();
-    test_reports_bad_explicit_generic_args();
-    test_accepts_return_position_inference();
-    test_reports_unsolved_return_position_type_param();
-    test_accepts_method_explicit_generic_args();
-    test_reports_bad_method_explicit_generic_args();
-    test_accepts_qualified_generic_call();
-    test_accepts_type_param_static_dispatch();
-    test_reports_type_param_static_not_found();
-    test_reports_refinement_predicate_not_bool();
-    test_accepts_refinement_predicate();
-    test_accepts_concept_bound();
-    test_reports_state_machine_mismatch();
-    test_accepts_state_machine_match();
+      {"test_reports_undefined_name_with_suggestion", test_reports_undefined_name_with_suggestion},
+      {"test_reports_undefined_type", test_reports_undefined_type},
+      {"test_undefined_explicit_type_argument_reported_once", test_undefined_explicit_type_argument_reported_once},
+      {"test_reports_packed_on_sum_type", test_reports_packed_on_sum_type},
+      {"test_reports_annotation_mismatch", test_reports_annotation_mismatch},
+      {"test_reports_quote_type_annotation_mismatch", test_reports_quote_type_annotation_mismatch},
+      {"test_reports_static_assert_evaluates_false", test_reports_static_assert_evaluates_false},
+      {"test_reports_static_for_evaluates_each_iteration", test_reports_static_for_evaluates_each_iteration},
+      {"test_accepts_static_for_inline_as_function_tail", test_accepts_static_for_inline_as_function_tail},
+      {"test_reports_static_for_inline_unbuildable_value", test_reports_static_for_inline_unbuildable_value},
+      {"test_accepts_static_for_inline_runtime_yield", test_accepts_static_for_inline_runtime_yield},
+      {"test_reports_static_for_field_info_unknown_field", test_reports_static_for_field_info_unknown_field},
+      {"test_reports_splice_expr_wrong_fragment_kind", test_reports_splice_expr_wrong_fragment_kind},
+      {"test_reports_hygiene_prevents_spliced_binding_leak", test_reports_hygiene_prevents_spliced_binding_leak},
+      {"test_reports_splice_requires_quote_value", test_reports_splice_requires_quote_value},
+      {"test_reports_integer_literal_overflow", test_reports_integer_literal_overflow},
+      {"test_reports_conversion_literal_overflow", test_reports_conversion_literal_overflow},
+      {"test_accepts_negative_min_integer_literals", test_accepts_negative_min_integer_literals},
+      {"test_reports_negated_integer_literal_still_too_large", test_reports_negated_integer_literal_still_too_large},
+      {"test_reports_int64_positive_literal_still_too_large", test_reports_int64_positive_literal_still_too_large},
+      {"test_reports_128_bit_literals_too_large", test_reports_128_bit_literals_too_large},
+      {"test_accepts_negative_min_literal_through_cast", test_accepts_negative_min_literal_through_cast},
+      {"test_accepts_wide_literal_in_generic_return", test_accepts_wide_literal_in_generic_return},
+      {"test_reports_generic_return_literal_overflow", test_reports_generic_return_literal_overflow},
+      {"test_reports_mixed_numeric_types", test_reports_mixed_numeric_types},
+      {"test_reports_compound_assign_mixed_numeric_types", test_reports_compound_assign_mixed_numeric_types},
+      {"test_reports_non_numeric_builtin_arithmetic", test_reports_non_numeric_builtin_arithmetic},
+      {"test_reports_non_bool_condition", test_reports_non_bool_condition},
+      {"test_reports_assignment_to_immutable", test_reports_assignment_to_immutable},
+      {"test_reports_let_element_write", test_reports_let_element_write},
+      {"test_accepts_let_mut_reassignment", test_accepts_let_mut_reassignment},
+      {"test_reports_return_type_mismatch", test_reports_return_type_mismatch},
+      {"test_reports_call_argument_problems", test_reports_call_argument_problems},
+      {"test_reports_struct_literal_problems", test_reports_struct_literal_problems},
+      {"test_reports_unknown_field_and_method", test_reports_unknown_field_and_method},
+      {"test_reports_unknown_field_on_builtin_generic", test_reports_unknown_field_on_builtin_generic},
+      {"test_reports_non_exhaustive_match", test_reports_non_exhaustive_match},
+      {"test_reports_unknown_variant_in_pattern", test_reports_unknown_variant_in_pattern},
+      {"test_reports_bare_variant_spelling", test_reports_bare_variant_spelling},
+      {"test_reports_try_in_plain_function", test_reports_try_in_plain_function},
+      {"test_reports_try_with_no_from_conversion", test_reports_try_with_no_from_conversion},
+      {"test_reports_unknown_intrinsic", test_reports_unknown_intrinsic},
+      {"test_reports_unannotated_intrinsic", test_reports_unannotated_intrinsic},
+      {"test_reports_yield_outside_generator", test_reports_yield_outside_generator},
+      {"test_reports_generator_missing_return_type", test_reports_generator_missing_return_type},
+      {"test_reports_generator_yield_type_mismatch", test_reports_generator_yield_type_mismatch},
+      {"test_reports_generator_return_with_value", test_reports_generator_return_with_value},
+      {"test_reports_generator_postcondition", test_reports_generator_postcondition},
+      {"test_reports_existential_type_outside_generator", test_reports_existential_type_outside_generator},
+      {"test_reports_existential_return_type_in_parameter", test_reports_existential_return_type_in_parameter},
+      {"test_reports_existential_bound_not_satisfied", test_reports_existential_bound_not_satisfied},
+      {"test_reports_existential_return_type_mismatch", test_reports_existential_return_type_mismatch},
+      {"test_reports_existential_method_not_in_bound", test_reports_existential_method_not_in_bound},
+      {"test_accepts_higher_kinded_functor_monad", test_accepts_higher_kinded_functor_monad},
+      {"test_reports_hk_impl_target_wrong_kind", test_reports_hk_impl_target_wrong_kind},
+      {"test_reports_hk_ctor_arity_mismatch", test_reports_hk_ctor_arity_mismatch},
+      {"test_reports_hk_param_wrong_arity", test_reports_hk_param_wrong_arity},
+      {"test_reports_hk_plain_param_applied", test_reports_hk_plain_param_applied},
+      {"test_reports_hk_param_used_as_type", test_reports_hk_param_used_as_type},
+      {"test_reports_unannotated_pub_function", test_reports_unannotated_pub_function},
+      {"test_reports_duplicate_trait_impl", test_reports_duplicate_trait_impl},
+      {"test_reports_incomplete_trait_impl", test_reports_incomplete_trait_impl},
+      {"test_reports_impl_signature_mismatch", test_reports_impl_signature_mismatch},
+      {"test_accepts_impl_signature_match", test_accepts_impl_signature_match},
+      {"test_accepts_drop_impl", test_accepts_drop_impl},
+      {"test_reports_duplicate_drop_impl", test_reports_duplicate_drop_impl},
+      {"test_reports_incomplete_drop_impl", test_reports_incomplete_drop_impl},
+      {"test_reports_unsatisfied_trait_requirement", test_reports_unsatisfied_trait_requirement},
+      {"test_reports_unknown_deriving", test_reports_unknown_deriving},
+      {"test_reports_impure_contract_call", test_reports_impure_contract_call},
+      {"test_reports_string_interpolation_unsupported_style", test_reports_string_interpolation_unsupported_style},
+      {"test_reports_string_interpolation_precision_on_integer_style", test_reports_string_interpolation_precision_on_integer_style},
+      {"test_reports_string_interpolation_bad_dynamic_width", test_reports_string_interpolation_bad_dynamic_width},
+      {"test_reports_associated_type_output_mismatch", test_reports_associated_type_output_mismatch},
+      {"test_reports_extend_method_arity_mismatch", test_reports_extend_method_arity_mismatch},
+      {"test_reports_missing_return_value", test_reports_missing_return_value},
+      {"test_reports_missing_return_on_if_without_else", test_reports_missing_return_on_if_without_else},
+      {"test_accepts_all_paths_returning", test_accepts_all_paths_returning},
+      {"test_reports_const_generic_value_mismatch", test_reports_const_generic_value_mismatch},
+      {"test_accepts_const_generic_value_match", test_accepts_const_generic_value_match},
+      {"test_accepts_const_generic_try_from", test_accepts_const_generic_try_from},
+      {"test_reports_unsolved_const_generic_value_param", test_reports_unsolved_const_generic_value_param},
+      {"test_reports_underdetermined_value_params", test_reports_underdetermined_value_params},
+      {"test_reports_unsolved_impl_const_generic_value_param", test_reports_unsolved_impl_const_generic_value_param},
+      {"test_accepts_explicit_generic_args", test_accepts_explicit_generic_args},
+      {"test_accepts_generic_methods", test_accepts_generic_methods},
+      {"test_reports_bad_explicit_generic_args", test_reports_bad_explicit_generic_args},
+      {"test_accepts_return_position_inference", test_accepts_return_position_inference},
+      {"test_reports_unsolved_return_position_type_param", test_reports_unsolved_return_position_type_param},
+      {"test_accepts_method_explicit_generic_args", test_accepts_method_explicit_generic_args},
+      {"test_reports_bad_method_explicit_generic_args", test_reports_bad_method_explicit_generic_args},
+      {"test_accepts_qualified_generic_call", test_accepts_qualified_generic_call},
+      {"test_accepts_type_param_static_dispatch", test_accepts_type_param_static_dispatch},
+      {"test_reports_type_param_static_not_found", test_reports_type_param_static_not_found},
+      {"test_reports_refinement_predicate_not_bool", test_reports_refinement_predicate_not_bool},
+      {"test_accepts_refinement_predicate", test_accepts_refinement_predicate},
+      {"test_accepts_concept_bound", test_accepts_concept_bound},
+      {"test_reports_state_machine_mismatch", test_reports_state_machine_mismatch},
+      {"test_accepts_state_machine_match", test_accepts_state_machine_match},
 
-    test_accepts_dependent_length_arithmetic();
-    test_reports_dependent_length_refuted();
-    test_accepts_proved_refinements();
-    test_reports_unproven_refinement();
-    test_reports_refuted_refinement();
-    test_accepts_flow_narrowed_refinement();
-    test_reports_refinement_outside_narrowed_path();
-    test_accepts_proved_contracts();
-    test_reports_return_outside_a_postcondition();
-    test_reports_refuted_precondition();
+      {"test_accepts_dependent_length_arithmetic", test_accepts_dependent_length_arithmetic},
+      {"test_reports_dependent_length_refuted", test_reports_dependent_length_refuted},
+      {"test_accepts_proved_refinements", test_accepts_proved_refinements},
+      {"test_reports_unproven_refinement", test_reports_unproven_refinement},
+      {"test_reports_refuted_refinement", test_reports_refuted_refinement},
+      {"test_accepts_flow_narrowed_refinement", test_accepts_flow_narrowed_refinement},
+      {"test_reports_refinement_outside_narrowed_path", test_reports_refinement_outside_narrowed_path},
+      {"test_accepts_proved_contracts", test_accepts_proved_contracts},
+      {"test_reports_return_outside_a_postcondition", test_reports_return_outside_a_postcondition},
+      {"test_reports_refuted_precondition", test_reports_refuted_precondition},
 
-    test_check_program_persists_expression_types();
+      {"test_check_program_persists_expression_types", test_check_program_persists_expression_types},
 
-    test_bare_literal_never_forces_a_concrete_param_type();
-    test_infers_param_type_from_annotated_sibling();
-    test_infers_param_type_from_call_to_annotated_function();
-    test_infers_param_type_from_struct_field_type();
-    test_infers_param_type_from_struct_field_shorthand();
-    test_infers_param_type_from_annotated_let_binding();
-    test_infers_param_type_from_annotated_var_binding();
-    test_infers_param_type_from_declared_return_type();
-    test_infers_param_type_from_declared_return_type_on_expr_body();
-    test_method_call_receiver_subexpr_still_inferred();
-    test_pinned_param_rejects_wrong_argument();
-    test_inferred_return_type_is_held_against_the_caller();
-    test_pass_through_param_stays_unannotated();
-    test_recursive_function_param_inference_terminates();
+      {"test_bare_literal_never_forces_a_concrete_param_type", test_bare_literal_never_forces_a_concrete_param_type},
+      {"test_infers_param_type_from_annotated_sibling", test_infers_param_type_from_annotated_sibling},
+      {"test_infers_param_type_from_call_to_annotated_function", test_infers_param_type_from_call_to_annotated_function},
+      {"test_infers_param_type_from_struct_field_type", test_infers_param_type_from_struct_field_type},
+      {"test_infers_param_type_from_struct_field_shorthand", test_infers_param_type_from_struct_field_shorthand},
+      {"test_infers_param_type_from_annotated_let_binding", test_infers_param_type_from_annotated_let_binding},
+      {"test_infers_param_type_from_annotated_var_binding", test_infers_param_type_from_annotated_var_binding},
+      {"test_infers_param_type_from_declared_return_type", test_infers_param_type_from_declared_return_type},
+      {"test_infers_param_type_from_declared_return_type_on_expr_body", test_infers_param_type_from_declared_return_type_on_expr_body},
+      {"test_method_call_receiver_subexpr_still_inferred", test_method_call_receiver_subexpr_still_inferred},
+      {"test_pinned_param_rejects_wrong_argument", test_pinned_param_rejects_wrong_argument},
+      {"test_inferred_return_type_is_held_against_the_caller", test_inferred_return_type_is_held_against_the_caller},
+      {"test_pass_through_param_stays_unannotated", test_pass_through_param_stays_unannotated},
+      {"test_recursive_function_param_inference_terminates", test_recursive_function_param_inference_terminates},
 
-    test_accepts_wellformed_signature_and_functor();
-    test_reports_module_missing_signature_member();
-    test_reports_signature_member_not_pub();
-    test_reports_signature_member_type_mismatch();
-    test_reports_signature_return_type_mismatch();
-    test_reports_unknown_functor_instantiation();
-    test_materializes_functor_and_resolves_alias();
-    test_functor_type_projection_resolves_concretely();
-    test_functor_body_type_and_static_members_check();
-    test_functor_body_impl_and_extend_members_check();
-    test_functor_body_impl_coherence_across_instantiations();
-    test_functor_instantiation_arity_mismatch();
-    test_bare_for_names_bind_tuple_components();
-    test_for_head_arity_must_match_element();
-    test_for_head_cannot_split_a_non_tuple();
-    test_free_function_callable_as_method();
-    test_method_wins_over_ufcs();
-    test_ufcs_ambiguity_is_an_error();
-    test_ufcs_mut_receiver_must_be_mutable();
-    test_unknown_method_on_builtin_receiver_is_reported();
-    test_builtin_method_suggestion_includes_extend_methods();
-    test_unknown_method_on_generic_receiver_reports_once();
-    test_method_on_type_param_needs_its_bound();
-    test_bound_includes_required_traits();
-    test_method_ambiguous_between_bounds();
-    test_operator_on_type_param_needs_a_bound();
-    test_literal_as_type_param_follows_its_domain();
-    test_cast_with_type_param_needs_numeric();
-    test_bounds_are_checked_at_the_call();
-    test_type_param_is_rigid_in_its_body();
-    test_ufcs_reports_receiver_mismatch();
-    test_ufcs_literal_receiver_takes_param_type();
-    test_ufcs_skips_private_functions_in_other_modules();
-    test_nested_def_resolves_as_a_value();
-    test_generic_struct_literal_explicit_type_args_drive_field_types();
-    test_generic_struct_literal_explicit_type_args_accepted();
-    test_generic_struct_literal_wrong_type_arg_count();
-    test_impl_type_param_substituted_at_call_site();
-    test_inline_submodule_paths_resolve();
-    test_import_conflicts_with_inline_submodule();
-    test_impls_on_distinct_instantiations_are_coherent();
-    test_overlapping_generic_impl_still_conflicts();
+      {"test_accepts_wellformed_signature_and_functor", test_accepts_wellformed_signature_and_functor},
+      {"test_reports_module_missing_signature_member", test_reports_module_missing_signature_member},
+      {"test_reports_signature_member_not_pub", test_reports_signature_member_not_pub},
+      {"test_reports_signature_member_type_mismatch", test_reports_signature_member_type_mismatch},
+      {"test_reports_signature_return_type_mismatch", test_reports_signature_return_type_mismatch},
+      {"test_reports_unknown_functor_instantiation", test_reports_unknown_functor_instantiation},
+      {"test_materializes_functor_and_resolves_alias", test_materializes_functor_and_resolves_alias},
+      {"test_functor_type_projection_resolves_concretely", test_functor_type_projection_resolves_concretely},
+      {"test_functor_body_type_and_static_members_check", test_functor_body_type_and_static_members_check},
+      {"test_functor_body_impl_and_extend_members_check", test_functor_body_impl_and_extend_members_check},
+      {"test_functor_body_impl_coherence_across_instantiations", test_functor_body_impl_coherence_across_instantiations},
+      {"test_functor_instantiation_arity_mismatch", test_functor_instantiation_arity_mismatch},
+      {"test_bare_for_names_bind_tuple_components", test_bare_for_names_bind_tuple_components},
+      {"test_for_head_arity_must_match_element", test_for_head_arity_must_match_element},
+      {"test_for_head_cannot_split_a_non_tuple", test_for_head_cannot_split_a_non_tuple},
+      {"test_free_function_callable_as_method", test_free_function_callable_as_method},
+      {"test_method_wins_over_ufcs", test_method_wins_over_ufcs},
+      {"test_ufcs_ambiguity_is_an_error", test_ufcs_ambiguity_is_an_error},
+      {"test_ufcs_mut_receiver_must_be_mutable", test_ufcs_mut_receiver_must_be_mutable},
+      {"test_unknown_method_on_builtin_receiver_is_reported", test_unknown_method_on_builtin_receiver_is_reported},
+      {"test_builtin_method_suggestion_includes_extend_methods", test_builtin_method_suggestion_includes_extend_methods},
+      {"test_unknown_method_on_generic_receiver_reports_once", test_unknown_method_on_generic_receiver_reports_once},
+      {"test_method_on_type_param_needs_its_bound", test_method_on_type_param_needs_its_bound},
+      {"test_bound_includes_required_traits", test_bound_includes_required_traits},
+      {"test_method_ambiguous_between_bounds", test_method_ambiguous_between_bounds},
+      {"test_operator_on_type_param_needs_a_bound", test_operator_on_type_param_needs_a_bound},
+      {"test_literal_as_type_param_follows_its_domain", test_literal_as_type_param_follows_its_domain},
+      {"test_cast_with_type_param_needs_numeric", test_cast_with_type_param_needs_numeric},
+      {"test_bounds_are_checked_at_the_call", test_bounds_are_checked_at_the_call},
+      {"test_type_param_is_rigid_in_its_body", test_type_param_is_rigid_in_its_body},
+      {"test_ufcs_reports_receiver_mismatch", test_ufcs_reports_receiver_mismatch},
+      {"test_ufcs_literal_receiver_takes_param_type", test_ufcs_literal_receiver_takes_param_type},
+      {"test_ufcs_skips_private_functions_in_other_modules", test_ufcs_skips_private_functions_in_other_modules},
+      {"test_nested_def_resolves_as_a_value", test_nested_def_resolves_as_a_value},
+      {"test_generic_struct_literal_explicit_type_args_drive_field_types", test_generic_struct_literal_explicit_type_args_drive_field_types},
+      {"test_generic_struct_literal_explicit_type_args_accepted", test_generic_struct_literal_explicit_type_args_accepted},
+      {"test_generic_struct_literal_wrong_type_arg_count", test_generic_struct_literal_wrong_type_arg_count},
+      {"test_impl_type_param_substituted_at_call_site", test_impl_type_param_substituted_at_call_site},
+      {"test_inline_submodule_paths_resolve", test_inline_submodule_paths_resolve},
+      {"test_import_conflicts_with_inline_submodule", test_import_conflicts_with_inline_submodule},
+      {"test_impls_on_distinct_instantiations_are_coherent", test_impls_on_distinct_instantiations_are_coherent},
+      {"test_overlapping_generic_impl_still_conflicts", test_overlapping_generic_impl_still_conflicts},
+      {"test_struct_literal_settles_from_expected_type", test_struct_literal_settles_from_expected_type},
+      {"test_none_argument_settles_from_solution", test_none_argument_settles_from_solution},
+    };
+
+    const auto total = env_size("TEST_TOTAL_SHARDS").value_or(1);
+    const auto index = env_size("TEST_SHARD_INDEX").value_or(0);
+    if (total == 0 || index >= total) {
+      std::cerr << "check_test: invalid shard " << index << " of " << total
+                << '\n';
+      return 1;
+    }
+    if (const char *status = std::getenv("TEST_SHARD_STATUS_FILE");
+        status != nullptr && *status != '\0') {
+      std::ofstream{status};
+    }
+
+    std::size_t ran = 0;
+    for (std::size_t n = 0; n < cases.size(); ++n) {
+      if (n % total == index) {
+        cases[n].run();
+        ++ran;
+      }
+    }
+    std::cout << "check_test: shard " << index << " of " << total << " ran "
+              << ran << " of " << cases.size() << " cases\n";
   } catch (const std::exception &ex) {
     std::cerr << "check_test failed: unhandled exception: " << ex.what()
               << '\n';

@@ -16,8 +16,8 @@ using cinder::testing::expect;
 namespace hir = cinder::hir;
 
 // Hand-builds the HIR for `def add(x: int32, y: int32) -> int32: return x +
-// y`, since lowering (src/hir/lower.cpp) doesn't exist yet — this exercises
-// only the node shapes themselves.
+// y`, with no lowering involved — this exercises only the node shapes
+// themselves.
 auto test_builds_add_function_by_hand() -> void {
   auto types = cinder::semantic::type_table{};
   const auto int32_type = types.builtin("int32");

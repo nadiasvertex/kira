@@ -1,12 +1,13 @@
 #include <exception>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "src/comptime_vm/backend.h"
 #include "src/hir/link.h"
-#include "src/hir/lower.h"
+#include "src/hir/lower_core.h"
 #include "src/hir/nodes.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
@@ -15,9 +16,9 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
 #include "src/semantic/checker_results.h"
+#include "src/testing/stdlib_fixtures.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
-#include "src/util/str.h"
 
 namespace {
 
@@ -35,9 +36,8 @@ using cinder::testing::expect;
 namespace hir = cinder::hir;
 
 // Parses, checks, and lowers several files together as one session, keyed by
-// module name — mirrors `lower_test.cpp`'s `check_fixture_multi` plus the
-// `hir::lower_module` step, since `find_reachable_modules` operates on
-// already-lowered `hir_module`s.
+// module name, since `find_reachable_modules` operates on already-lowered
+// `hir_module`s.
 struct lowered_fixture {
   cinder::source_manager sources;
   cinder::diagnostic_bag diag{};
@@ -81,16 +81,13 @@ auto lower_fixture(
       parsed_modules, fixture.diag, file_has_errors, &comptime);
   expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
 
-  for (size_t i = 0; i < fixture.ast_files.size(); ++i) {
-    auto module_name = fixture.ast_files[i]->module_decl != nullptr
-                           ? cinder::util::join_strings(
-                                 fixture.ast_files[i]->module_decl->path, ".")
-                           : files[i].first;
-    auto lowered =
-        hir::lower_module(*fixture.ast_files[i], module_name, fixture.checked);
-    expect(lowered.has_value(), "expected every fixture module to lower");
-    fixture.modules.push_back(std::move(*lowered));
+  // A file with no `module` declaration is named by its path.
+  auto names = std::unordered_map<cinder::file_id_type, std::string>{};
+  for (size_t i = 0; i < files.size(); ++i) {
+    names.emplace(file_ids[i], files[i].first);
   }
+  fixture.modules = cinder::testing::lower_test_program(
+      parsed_modules, fixture.checked, file_ids.front(), std::move(names));
 
   return fixture;
 }

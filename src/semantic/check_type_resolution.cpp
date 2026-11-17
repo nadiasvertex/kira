@@ -601,6 +601,13 @@ auto checker::resolve_drop_plan(type_id id,
     return std::nullopt;
   }
   auto plan = drop_plan{.own_drop = resolve_own_drop(entry, id)};
+  if (plan.own_drop.has_value()) {
+    const auto &own = *plan.own_drop;
+    plan.own_drop_name = own.impl_target_type.empty()
+                             ? own.decl->name
+                             : std::format("{}::{}", own.impl_target_type,
+                                           own.decl->name);
+  }
   if (is_prelude_sum) {
     // `option`/`result` have no declaration to read variants from; their
     // payloads are the generic arguments. `some`/`ok` hold `args[0]`,

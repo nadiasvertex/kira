@@ -47,7 +47,6 @@ public:
   /// view the checker kept while checking. A difference means the view was
   /// missing a record lowering reads — compile-time code then ran something
   /// other than what the program says. Returns one message per difference.
-  /// With `comptime_lowering::from_core`, both lowerings are from the core.
   [[nodiscard]] auto verify(semantic::checked_types &checked) const
       -> std::vector<std::string>;
 

@@ -196,11 +196,10 @@ auto core_lowerer::drop_glue(const core::lambda &source,
     // `node` was checked against; else the local `name`, which for a
     // generic lambda's name is every copy made for it.
     auto parts = std::vector<std::pair<symbol_id, type_id>>{};
-    const auto copy = capture.node != nullptr
-                          ? checked_.ownership.generic_lambda_refs.find(
-                                capture.node)
-                          : checked_.ownership.generic_lambda_refs.end();
-    if (copy != checked_.ownership.generic_lambda_refs.end()) {
+    const auto &copies = drops_.schedule().generic_lambda_copies;
+    const auto copy = capture.node != nullptr ? copies.find(capture.node)
+                                              : copies.end();
+    if (copy != copies.end()) {
       for (const auto &held : source.captures) {
         const auto key = binding_keys_.find(held.from.root.symbol);
         if (key != binding_keys_.end() && key->second == copy->second) {

@@ -517,6 +517,21 @@ auto op_task_block(const call_shape &c) -> verdict {
   return std::nullopt;
 }
 
+/// `task_yield() -> unit`: `await yield`, which queues the task again and
+/// checks cancellation when it resumes.
+auto op_task_yield(const call_shape &c) -> verdict {
+  if (auto e = c.arity(0)) {
+    return e;
+  }
+  if (auto e = c.generic_count(0)) {
+    return e;
+  }
+  if (!c.is_unit(c.result)) {
+    return c.message(std::format("the result is `{}`, expected `unit`", c.show(c.result)));
+  }
+  return std::nullopt;
+}
+
 auto op_on_context(const call_shape &c) -> verdict {
   if (auto e = c.arity(1)) {
     return e;
@@ -743,6 +758,7 @@ constexpr auto k_operations = std::to_array<operation>({
     {"str_decode_scalar", op_str_decode_scalar},
     {"str_scalar_width", op_str_scalar_width},
     {"task_block", op_task_block},
+    {"task_yield", op_task_yield},
     {"on_cpu", op_on_context},
     {"on_io", op_on_context},
     {"await_par", op_await_par},
