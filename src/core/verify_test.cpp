@@ -1818,6 +1818,9 @@ auto test_c5_compiler_operations() -> void {
   bad(op_call(w, "task_block", {fn0_i32}, w.task_err), "C5",
       "task_block: a fallible task whose closure does not return `result`");
   bad(op_call(w, "task_block", {fn0_i32}, i32), "C5", "task_block: a non-task result");
+  ok(op_call(w, "task_yield", {}, unit), "task_yield: `await yield`");
+  bad(op_call(w, "task_yield", {i32}, unit), "C5", "task_yield: an operand");
+  bad(op_call(w, "task_yield", {}, i32), "C5", "task_yield: a result that is not `unit`");
   ok(op_call(w, "on_cpu", {w.task_i32}, w.task_i32), "on_cpu");
   ok(op_call(w, "on_io", {w.task_err}, w.task_err), "on_io");
   bad(op_call(w, "on_cpu", {w.task_i32}, w.task_err), "C5", "on_cpu: another task type");

@@ -614,6 +614,7 @@ auto body_builder::apply_deref_steps(place p,
 
 auto body_builder::receiver_place(const ast::expr &source) -> result<place> {
   CORE_TRY(p, place_of(source));
+  std::fprintf(stderr, "DBG receiver_place kind=%d node=%p has=%d total=%zu\n", static_cast<int>(source.kind), static_cast<const void*>(&source), static_cast<int>(checked_.deref_adjustments.contains(&source)), checked_.deref_adjustments.size());
   if (const auto steps = checked_.deref_adjustments.find(&source);
       steps != checked_.deref_adjustments.end()) {
     return apply_deref_steps(std::move(p), steps->second, source.span);

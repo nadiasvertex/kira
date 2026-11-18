@@ -1,0 +1,13 @@
+module codegen_stress.named_on_block
+
+# expect: 42
+# max-live-blocks: 0
+
+# An `on(ctx): body` block is a task value, typed like an `async def` call.
+# `let w = on(cpu): ...` binds the task, and `await w` runs the body on the
+# `cpu` pool and reads its value.
+
+async def main() -> int32:
+    let w = on(cpu):
+        41 + 1
+    return await w

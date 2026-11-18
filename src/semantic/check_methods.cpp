@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "checker.h"
 #include "src/parser/ast_traversal.h"
 
@@ -1493,6 +1494,7 @@ auto checker::lookup_through_deref(const deref_site &site, type_id object,
     return std::nullopt;
   }
   auto chain = deref_chain(deref_site_receiver(site), object, name, span);
+  std::fprintf(stderr, "DBG2 lookup_through_deref name=%s object=%s chain=%d tmpl=%d\n", std::string(name).c_str(), session_.types_.display(object).c_str(), (int)chain.has_value(), (int)(function_.current_template_ != nullptr));
   if (function_.current_template_ != nullptr) {
     defer_deref_steps(site, object, std::string(name), span);
   }

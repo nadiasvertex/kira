@@ -3,16 +3,16 @@ module codegen_stress.await_yield_cancelled
 # expect: 1011
 # max-live-blocks: 0
 
-# A cancelled task stops at its next `await yield`. `spin` would loop
-# forever, counting before and after each `await yield`, and holds a list on
+# A cancelled task stops at its next `await yield`. `spin` loops a million
+# times, counting before and after each `await yield`, and holds a list on
 # the heap the whole time. `main` spawns it, waits until it has been round
 # the loop once, and drops its handle, which cancels it. When `spin` resumes
 # at `await yield` it sees the cancel and returns at once, dropping the list:
 # the rest of that pass does not run, so `before` stays one ahead of `after`,
 # and neither moves again. The list freed shows in the block count. `main`
-# waits a bounded time, so a task that never stopped fails the program
-# instead of hanging it. 1000 for a list of the length `spin` built, 10 for
-# the gap, 1 for a task that has stopped.
+# waits a bounded time, so a task that did not stop fails the program
+# instead of hanging it. 1000, plus 10 for the gap, plus 1 for a task that
+# has stopped.
 
 use std.shared.shared
 use std.sync.atomic
@@ -22,7 +22,9 @@ async def spin(before: shared[atomic[int32]],
                after: shared[atomic[int32]]) -> int32:
     var held = list[int32].new()
     held.push(1)
-    while true:
+    var i: int32 = 0
+    while i < 1000000:
+        i += 1
         before.fetch_add(1)
         await yield
         after.fetch_add(1)

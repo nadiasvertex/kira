@@ -460,6 +460,85 @@ auto test_a_woken_worker_waits_for_a_place() -> void {
          "expected the single-worker io pool to run one poll at a time");
 }
 
+// ---- `await yield` -------------------------------------------------------
+
+std::mutex g_turns_mutex;
+std::vector<uint64_t> g_turns;
+
+// Records its `input` three times and gives up its worker with `yield_poll`
+// after each. `cursor` is even before a record and odd at a yield.
+auto take_turns_body(fake_task &t) -> uint64_t {
+  while (t.cursor < 6) {
+    if (t.cursor % 2 == 0) {
+      const auto lock = std::scoped_lock(g_turns_mutex);
+      g_turns.push_back(t.input);
+      ++t.cursor;
+    }
+    if (!sched::yield_poll(t.raw())) {
+      return co::raw(co::status::pending);
+    }
+    ++t.cursor;
+  }
+  return yield_result(t, t.input);
+}
+
+auto test_yielding_tasks_take_turns_on_one_worker() -> void {
+  // `io` has one worker here, and `block_on_all` queues both tasks before
+  // either runs: each yield puts a task behind the other.
+  auto a = fake_task{.body = take_turns_body, .input = 1};
+  auto b = fake_task{.body = take_turns_body, .input = 2};
+  auto group = std::array<uint64_t *, 2>{a.raw(), b.raw()};
+  sched::block_on_all(group.data(), group.size(), sched::pool::io,
+                      fake_runner());
+  const auto want = std::vector<uint64_t>{1, 2, 1, 2, 1, 2};
+  expect(g_turns == want,
+         "two tasks yielding on one worker should take turns, in the order "
+         "they were queued");
+  expect(result_of(a) == 1 && result_of(b) == 2,
+         "each task should finish after its third yield");
+}
+
+std::atomic<int> g_yields{0};
+
+// Yields until cancelled; then records that it saw the cancel and stops.
+auto yields_until_cancelled_body(fake_task &t) -> uint64_t {
+  if (t.cursor == 1) {
+    if (!sched::yield_poll(t.raw())) {
+      return co::raw(co::status::pending);
+    }
+    t.cursor = 0;
+  }
+  if (t.slots[co::k_status_slot] == co::raw(co::status::cancel_requested)) {
+    t.input = 1;
+    return co::raw(co::status::done);
+  }
+  g_yields.fetch_add(1);
+  t.cursor = 1;
+  if (!sched::yield_poll(t.raw())) {
+    return co::raw(co::status::pending);
+  }
+  return co::raw(co::status::done);
+}
+
+auto test_a_cancelled_task_stops_at_a_yield() -> void {
+  auto task = fake_task{.body = yields_until_cancelled_body};
+  sched::spawn(task.raw(), sched::pool::io, fake_runner());
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (g_yields.load() < 10 && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  expect(g_yields.load() >= 10, "a yielding task should keep being resumed");
+  expect(sched::cancel(task.raw()), "the scheduler owns the yielding task");
+  deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (!sched::is_finished(task.raw()) &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  expect(sched::is_finished(task.raw()) && task.input == 1,
+         "a cancelled task should see the cancel when it resumes at a yield");
+  sched::wait_idle();
+}
+
 auto main() -> int {
   // Read when the cpu pool first starts, so set before any test spawns.
   setenv("CINDER_CPU_WORKERS", "4", 1);
@@ -477,6 +556,8 @@ auto main() -> int {
   test_a_cancel_reaches_a_crew_while_the_body_waits();
   test_a_panic_in_a_crew_body_stops_the_crew_first();
   test_a_group_failure_waits_for_the_others();
+  test_yielding_tasks_take_turns_on_one_worker();
+  test_a_cancelled_task_stops_at_a_yield();
   test_shutdown_stops_a_detached_task();
   test_shutdown_gives_up_on_a_task_that_will_not_stop();
   return 0;

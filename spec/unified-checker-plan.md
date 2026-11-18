@@ -228,9 +228,12 @@ they checked. Implementation chapter 70 describes the result.
 Lowering no longer includes `parser/ast.h` or reads an AST node. It uses `origin` and a
 function's declaration only as keys into the drop schedule and the ownership facts. The
 facts it used to read from the AST are fields of the core that the adapter fills. From
-`checked_types` it reads the type table, shapes, drop plans, the drop schedule and the
-ownership facts keyed by `origin`. One AST read remains: a type's own `drop` is named
-through its drop plan's declaration.
+`checked_types` it reads only the type table, `shapes`, `open_shapes`, the drop plans and
+the drop schedule. The facts it read from other ownership records moved: whether a call
+or a function consumes its receiver is the core's `receiver_mode`, the copies of a generic
+lambda are in the drop schedule, and a type's own `drop` is named by its drop plan
+(`own_drop_name`), not through the declaration. The reference pass lowering runs on each
+function still reads `node_types` and `is_copy`.
 
 Every refusal is classified. A construct the compiler does not build yet is a feature
 refusal with a message for the user: 32 sites in the adapter, 10 in core lowering, and 2 in
@@ -240,10 +243,14 @@ operand checks of 15 intrinsics), and 4 in drop emission. Core lowering no longe
 on a malformed tree. Across the test suite and the `known_gaps` programs one internal
 error is reached, by a program the checker should reject (item 60).
 
-Items 15 and 36 stay open. `await yield` needs a suspension form that HIR and the
-runtime do not have. A named `on` block needs the checker to decide its type. The core
-path also gained one feature during the phase: a `pre` on a generator, which the old
-lowerer built and the adapter had refused.
+Items 15 and 36 are closed. `await yield` is the core intrinsic `task_yield`, a
+`hir_yield` that waits on nothing, a `reschedule` wait in the storage form and the
+runtime's `yield_poll`, which queues the task again; it checks for cancellation when it
+resumes. An `on(ctx): body` block is a task (decision 6), so a named one lowers to the
+wrapper task `await on(...)` already used. The core path also gained one feature during
+the phase: a `pre` on a generator, which the old lowerer built and the adapter had
+refused. `storage_codegen_test` is sharded like `check_test` instead of running under a
+long timeout.
 
 Phase 3 changed the plan in one place. The lowering view stays until phase 12: compile-time
 code runs during checking, so the adapter reads the view until the checker emits the core
@@ -258,6 +265,7 @@ Phase 3 added these debts.
 | `for` over a borrowed collection is `into_iter(bitwise_copy(xs))`, an intrinsic that duplicates a value without making an owner (item 39). | Phase 7 |
 | A call the checker ran at compile time (a `static if` condition calling a `static def`) has no callee record, so the adapter finds the callee by its bare name (`core::function_lookup`) when it builds compile-time code. | Phase 5 |
 | The adapter interns function and reference types while building compile-time code during checking, so the elaboration snapshot depends on which path lowered compile-time code. | Phase 12 |
+| The reference pass lowering runs on each function (`make_references_explicit`) still reads `node_types` and `is_copy`, and storage lowering names a type's own `drop` through its declaration. | Phase 4 (references explicit in the core) |
 
 ## Work assignment
 
@@ -324,3 +332,9 @@ These were agreed on 2026-11-15.
    `std.string` methods that allocate return `string`, and a `string` lends a `str`
    wherever one is expected. `str` stays `copy`, and the view rules keep the owner alive.
    A string literal stays a `str` of static bytes.
+6. **2026-11-17: an `on(ctx): body` block is a task value `task[T, E, C]`; `await on(...)`
+   is an ordinary await of it.** It is typed like an `async def` call: `E` is `never`
+   unless the body returns `result[T, E]`. `C` is the context the block is written in,
+   which is the one that awaits it, not `ctx`: with `C` = `ctx`, the existing context
+   check would reject `await on(cpu): ...` in every `async def`. Like any task it starts
+   when it is first awaited.

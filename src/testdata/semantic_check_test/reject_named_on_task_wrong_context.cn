@@ -1,0 +1,11 @@
+module reject_named_on_task_wrong_context
+
+# A named `on` task is awaited from the context it was made in: here `w`
+# belongs to `io`, and the `on(pool)` body runs on `cpu`.
+
+async def total() -> int32:
+    let w = on(cpu):
+        41 + 1
+    let a: int32 = await on(pool):
+        await w
+    return a

@@ -1,0 +1,36 @@
+module codegen_stress.named_on_block_awaited_later
+
+# expect: 1123
+# max-live-blocks: 0
+
+# A named `on` task is inert until it is awaited, as an `async def` call's
+# task is. `main` makes `w`, does other work (a sum, a nested task, a sleep
+# long enough for a task that had started to have run), and only then
+# awaits it. The body records whether it ran before `main` looked:
+# `started` is still 0 after the other work, and the body sees the value
+# `main` stored after making the task. 1000 for a task that had not started,
+# 100 for the body seeing `main`'s later store, 20 + 3 from the work.
+
+use std.sync.atomic
+use std.time.{duration, sleep}
+
+async def plus_one(x: int32) -> int32:
+    return x + 1
+
+async def main() -> int32:
+    let started = atomic.new(0)
+    let later = atomic.new(0)
+    let w = on(cpu):
+        started.store(1)
+        later.load() * 100 + 20
+    var sum: int32 = 0
+    var i: int32 = 0
+    while i < 3:
+        sum += await plus_one(i)
+        i += 1
+    await sleep(duration.from_millis(20))
+    let before = started.load()
+    later.store(1)
+    let got = await w
+    let inert: int32 = if before == 0: 1000 else: 0
+    return inert + got + sum - 3

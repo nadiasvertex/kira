@@ -12,17 +12,23 @@ module codegen_stress.await_yield_takes_turns
 # promise: a task at `await yield` goes to the back of its pool's queue and
 # gives up its worker, so the tasks queued behind it run. Eight tasks on four
 # workers finish only if that holds; a task that kept its worker while it
-# waited would hold up the ring. 200 turns, plus 25 rounds from each task.
+# waited would hold up the ring. A task gives up after a million waits, so a
+# ring held up that way fails the program instead of hanging it. 200 turns,
+# plus 25 rounds from each task.
 
 use std.sync.atomic
 
 async def take_turns(turn: &atomic[int32], seat: int32, rounds: int32) -> int32:
     var done: int32 = 0
+    var waits: int32 = 0
     while done < rounds:
         if turn.load() % 8 == seat:
             turn.fetch_add(1)
             done += 1
+        elif waits == 1000000:
+            return 0
         else:
+            waits += 1
             await yield
     return done
 

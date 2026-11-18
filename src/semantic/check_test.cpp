@@ -248,6 +248,23 @@ auto test_reports_await_wrong_context() -> void {
                     "expected awaiting an `io` task on `pool` to be rejected");
 }
 
+auto test_types_on_block_as_task() -> void {
+  const auto accepted = analyze_test_data_file("accept_named_on_task.cn");
+  expect_clean(accepted,
+               std::string("expected an `on(ctx): body` block to be a task "
+                           "that `await` reads:\n") +
+                   accepted.diagnostics);
+  const auto as_value =
+      analyze_test_data_file("reject_named_on_task_as_value.cn");
+  expect_diagnostic(as_value, "task[int32, never, io]",
+                    "expected an un-awaited `on` block to be a task");
+  const auto elsewhere =
+      analyze_test_data_file("reject_named_on_task_wrong_context.cn");
+  expect_diagnostic(elsewhere, "needs the `io` context",
+                    "expected a named `on` task awaited on `cpu` to be "
+                    "rejected");
+}
+
 auto test_reports_arithmetic_on_task() -> void {
   const auto analyzed = analyze_test_data_file("reject_arithmetic_on_task.cn");
   expect_diagnostic(analyzed, "is not defined for `task",
@@ -4210,6 +4227,7 @@ auto main() -> int {
       {"test_accepts_spawn_vouched_pointer", test_accepts_spawn_vouched_pointer},
       {"test_reports_await_wrong_context", test_reports_await_wrong_context},
       {"test_reports_arithmetic_on_task", test_reports_arithmetic_on_task},
+      {"test_types_on_block_as_task", test_types_on_block_as_task},
       {"test_reports_write_through_deref", test_reports_write_through_deref},
       {"test_reports_write_through_shared", test_reports_write_through_shared},
       {"test_reports_deref_operator_misuse", test_reports_deref_operator_misuse},

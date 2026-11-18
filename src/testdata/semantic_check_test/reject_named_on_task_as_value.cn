@@ -1,0 +1,9 @@
+module reject_named_on_task_as_value
+
+# An `on` block that is not awaited is a task, not the body's value.
+
+async def total() -> int32:
+    let n: int32 = 41
+    let w: int32 = on(cpu):
+        n + 1
+    return w

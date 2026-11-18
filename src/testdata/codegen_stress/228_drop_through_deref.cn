@@ -1,0 +1,18 @@
+module codegen_stress.drop_through_deref
+
+# expect: 1
+
+use std.shared.shared
+use std.sync.atomic
+
+type guard = { c: shared[atomic[int32]] }
+
+impl drop for guard:
+    def drop(mut self):
+        let _ = self.c.fetch_add(1)
+
+def main() -> int32:
+    let c = shared[atomic[int32]].new(atomic.new(0))
+    let g = guard { c: c.clone() }
+    drop(g)
+    return c.load()

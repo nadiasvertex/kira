@@ -149,9 +149,9 @@ cc_test(
 
 cc_test(
     name = "storage_codegen_test",
-    # About three and a half minutes on its own; under a full
-    # `bazelisk test //...` it can pass the default five-minute timeout.
-    timeout = "long",
+    # About three and a half minutes in one process; the runner splits its
+    # cases across the shards (`TEST_TOTAL_SHARDS`, `TEST_SHARD_INDEX`).
+    shard_count = 4,
     srcs = ["storage_codegen_test.cpp"],
     data = [
         "//src:bytecode_storage_test_files",

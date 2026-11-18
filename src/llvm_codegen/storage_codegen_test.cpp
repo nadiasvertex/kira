@@ -5,7 +5,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <format>
+#include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -387,35 +390,101 @@ auto test_accesses_through_addresses_claim_only_the_alignment_they_have()
   expect(checked_accesses >= 4, "expected to check the packed field accesses");
 }
 
-auto test_every_case_passes_at_each_optimization_level() -> void {
+/// One group of value cases at one optimization level, with or without the
+/// lowering's NRVO.
+struct value_cases {
+  std::string_view name;
+  void (*run)(cases::case_backend &);
+};
+
+constexpr auto k_value_cases = std::array{
+    value_cases{"run_all", cases::run_all},
+    value_cases{"intrinsic_cases", cases::intrinsic_cases},
+    value_cases{"memory_cases", cases::memory_cases},
+    value_cases{"closure_cases", cases::closure_cases},
+    value_cases{"pattern_cases", cases::pattern_cases},
+    value_cases{"rvo_cases", cases::rvo_cases},
+    value_cases{"generator_cases", cases::generator_cases},
+    value_cases{"task_cases", cases::task_cases},
+    value_cases{"module_cases", cases::module_cases},
+};
+
+/// A case `main` runs, alone or in its shard.
+struct test_case {
+  std::string name;
+  std::function<void()> run;
+};
+
+/// The structural checks, then every group of value cases at each
+/// optimization level, with NRVO and without.
+auto all_cases() -> std::vector<test_case> {
+  auto out = std::vector<test_case>{
+      {"signatures_follow_the_internal_abi",
+       test_signatures_follow_the_internal_abi},
+      {"no_allocation_symbol_is_declared_or_called",
+       test_no_allocation_symbol_is_declared_or_called},
+      {"only_scalar_tail_calls_are_musttail",
+       test_only_scalar_tail_calls_are_musttail},
+      {"entry_thunks_are_optional", test_entry_thunks_are_optional},
+      {"accesses_through_addresses_claim_only_the_alignment_they_have",
+       test_accesses_through_addresses_claim_only_the_alignment_they_have},
+  };
   for (const auto level : {llvm_codegen::optimization_level::o0,
                            llvm_codegen::optimization_level::o2}) {
-    auto backend = llvm_backend{level};
     for (const auto nrvo : {true, false}) {
-      cinder::testing::storage_nrvo_enabled() = nrvo;
-      cases::run_all(backend);
-      cases::intrinsic_cases(backend);
-      cases::memory_cases(backend);
-      cases::closure_cases(backend);
-      cases::pattern_cases(backend);
-      cases::rvo_cases(backend);
-      cases::generator_cases(backend);
-      cases::task_cases(backend);
-      cases::module_cases(backend);
+      for (const auto &group : k_value_cases) {
+        out.push_back(test_case{
+            .name = std::format(
+                "{} at -O{}{}", group.name,
+                level == llvm_codegen::optimization_level::o0 ? 0 : 2,
+                nrvo ? "" : " without NRVO"),
+            .run = [level, nrvo, run = group.run] {
+              auto backend = llvm_backend{level};
+              cinder::testing::storage_nrvo_enabled() = nrvo;
+              run(backend);
+              cinder::testing::storage_nrvo_enabled() = true;
+            }});
+      }
     }
   }
-  cinder::testing::storage_nrvo_enabled() = true;
+  return out;
+}
+
+auto env_size(const char *name) -> std::optional<std::size_t> {
+  const char *value = std::getenv(name);
+  if (value == nullptr || *value == '\0') {
+    return std::nullopt;
+  }
+  return static_cast<std::size_t>(std::strtoull(value, nullptr, 10));
 }
 
 } // namespace
 
+// Bazel sharding: when TEST_TOTAL_SHARDS and TEST_SHARD_INDEX are set, a
+// process runs only the cases whose position in `all_cases()` modulo the
+// total equals the shard index. Without them every case runs.
 auto main() -> int {
-  test_signatures_follow_the_internal_abi();
-  test_no_allocation_symbol_is_declared_or_called();
-  test_only_scalar_tail_calls_are_musttail();
-  test_entry_thunks_are_optional();
-  test_accesses_through_addresses_claim_only_the_alignment_they_have();
-  test_every_case_passes_at_each_optimization_level();
-  std::cout << "storage_codegen_test: ok\n";
+  const auto cases_to_run = all_cases();
+  const auto total = env_size("TEST_TOTAL_SHARDS").value_or(1);
+  const auto index = env_size("TEST_SHARD_INDEX").value_or(0);
+  if (total == 0 || index >= total) {
+    std::cerr << "storage_codegen_test: invalid shard " << index << " of "
+              << total << '\n';
+    return 1;
+  }
+  if (const char *status = std::getenv("TEST_SHARD_STATUS_FILE");
+      status != nullptr && *status != '\0') {
+    std::ofstream{status};
+  }
+  auto ran = std::size_t{0};
+  for (std::size_t n = 0; n < cases_to_run.size(); ++n) {
+    if (n % total == index) {
+      std::cout << "case: " << cases_to_run[n].name << '\n';
+      cases_to_run[n].run();
+      ++ran;
+    }
+  }
+  std::cout << "storage_codegen_test: shard " << index << " of " << total
+            << " ran " << ran << " of " << cases_to_run.size() << " cases\n";
   return 0;
 }

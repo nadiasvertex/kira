@@ -1,6 +1,6 @@
 # 41. Advanced Cancellation
 
-**Status:** Planned
+**Status:** Partial
 
 Cooperative cancellation mechanics for tasks: the per-task cancellation token, explicit checking, `await yield` as a suspension-and-check point, and cancelling a `crew` from outside.
 
@@ -37,7 +37,12 @@ await handle    # waits for clean shutdown
 
 ## Implementation status
 
-Not implemented. This depends on the concurrency runtime described in `spec/concurrency-implementation-plan.md`: today `crew` bodies type-check only against an unknown placeholder type, `async`/`await` surface syntax parses but `await` is typed as a pass-through with no scheduling semantics, and neither the bytecode VM nor the AOT runtime has a scheduler, threads, or task/handle machinery to cancel. There is no cancellation token type, no `cancel.is_requested()`, and no `handle.cancel()` anywhere in `src/`. Cancellation is planned as part of the concurrency plan's Phase 5 (`crew`, `par`, `race`, error handling, external cancellation), which itself depends on the earlier phases (task typing, `send`/`share`, crew borrow rules, the HIR/scheduler core) landing first.
+Partial. `await yield` is built on both backends; the token, explicit checks and cancelling a crew from outside are not.
+
+- `await yield` suspends the task, puts it at the back of its pool's queue, and checks for cancellation when it resumes ([The Task Scheduler](../05-implementation/69-task-scheduler.md)). In the entry `async def main`, which is not a task, it does nothing.
+- A task cancelled at `await yield` unwinds, as it does at any other `await` ([Concurrency Execution Model](../02-intermediate/26-concurrency-execution-model.md#cancellation)): it runs its drops and returns. It does not return `@err(@cancelled)` as the design above describes. The two chapters differ on this point, and there is no `cancelled` type to return.
+- Cancellation itself is cooperative and works today: dropping an unfinished task, a failing sibling in a `crew`, or losing a `race` cancels a task, which stops at its next `await`.
+- There is no `cancel` token, no `cancel.is_requested()`, and no `handle.cancel()`.
 
 ## See also
 

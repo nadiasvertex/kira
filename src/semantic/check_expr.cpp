@@ -2276,13 +2276,38 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     }
     const auto saved_context = function_.async_context_;
     function_.async_context_ = context_of_on_target(on);
+    // An expected task type expects the body to give what awaiting it reads.
+    const auto body_expected = [&] {
+      const auto &want = session_.types_.entry(strip_refs(expected));
+      if (want.kind != type_kind::builtin_generic_kind || want.name != "task" ||
+          want.args.size() < 2) {
+        return k_unknown_type;
+      }
+      return session_.types_.is_unknown(want.args[1]) ||
+                     session_.types_.entry(want.args[1]).name == "never"
+                 ? want.args[0]
+                 : session_.types_.builtin_generic(
+                       "result", {want.args[0], want.args[1]});
+    }();
     // The body runs as a task on the context's pool. Every context, `io`
     // included, may run it on another thread.
-    const auto result = check_task_body(expr, on.span, [&] -> type_id {
-      return check_body_nodes(on.body, expected);
+    const auto body = check_task_body(expr, on.span, [&] -> type_id {
+      return check_body_nodes(on.body, body_expected);
     });
     function_.async_context_ = saved_context;
-    return result;
+    if (body == k_unknown_type || body == k_error_type) {
+      return body;
+    }
+    // The block is a task, typed like an `async def` call (2026-11-17). Its
+    // context is the one `on` returns to, which awaits it: `on` bridges the
+    // two, as `on(ctx, task)` does.
+    const auto task = task_of_declared_result(body);
+    if (saved_context == k_unknown_type) {
+      return task;
+    }
+    const auto &made = session_.types_.entry(task);
+    return session_.types_.builtin_generic(
+        "task", {made.args[0], made.args[1], saved_context});
   }
   case ast::node_kind::block_expr:
     return check_body_nodes(ast::cast<const ast::block_expr>(expr).stmts,

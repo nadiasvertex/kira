@@ -1,0 +1,16 @@
+module accept_named_on_task
+
+# An `on(ctx): body` block is a task, typed like an `async def` call: `E` is
+# `never` unless the body gives a `result`. `await` reads it.
+
+async def total() -> int32:
+    let w: task[int32, never, io] = on(cpu):
+        41 + 1
+    let f: task[int32, str, io] = on(pool):
+        let r: result[int32, str] = @ok(1)
+        r
+    let a: int32 = await w
+    let b: result[int32, str] = await f
+    let c: int32 = await on(cpu):
+        a + 1
+    return a + c
