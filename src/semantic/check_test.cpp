@@ -2829,6 +2829,18 @@ auto test_rejects_write_to_binding_through_shared_ref() -> void {
                     "expected the help to say the binding is behind a `&`");
 }
 
+auto test_rejects_weakened_type_argument() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_weakened_type_argument.cn");
+  expect(analyzed.error_count == 1,
+         "expected one error for a `list[&mut int32]` used as `list[&int32]`");
+  expect_diagnostic(analyzed,
+                    "expected `list[&int32]`, found `list[&mut int32]`",
+                    "expected the mismatch to name both list types");
+  expect_diagnostic(analyzed, "Inside a type's arguments the two must match",
+                    "expected the help to explain nested mutability");
+}
+
 auto test_rejects_writes_through_deref_handles() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_write_through_deref_handle.cn");
@@ -4332,6 +4344,7 @@ auto main() -> int {
       {"test_reports_index_write_without_index_set", test_reports_index_write_without_index_set},
       {"test_reports_index_mut_borrow_without_impl", test_reports_index_mut_borrow_without_impl},
       {"test_rejects_write_to_binding_through_shared_ref", test_rejects_write_to_binding_through_shared_ref},
+      {"test_rejects_weakened_type_argument", test_rejects_weakened_type_argument},
       {"test_rejects_writes_through_deref_handles", test_rejects_writes_through_deref_handles},
       {"test_dispatches_index_mut_borrow", test_dispatches_index_mut_borrow},
       {"test_accepts_intrinsic_decl", test_accepts_intrinsic_decl},

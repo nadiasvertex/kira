@@ -1,0 +1,13 @@
+module t
+
+# `&mut int32` weakens to `&int32` as a single value, but not inside a type's
+# arguments: the elements of a `list[&mut int32]` cannot each be converted
+# where a `list[&int32]` is expected.
+
+def take(xs: list[&int32]) -> int32:
+    return *xs[0]
+
+def main() -> int32:
+    var a = 5
+    let xs: list[&mut int32] = [&mut a]
+    return take(xs)

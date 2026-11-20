@@ -713,7 +713,7 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
       return false;
     }
     for (size_t i = 0; i < expected_entry.args.size(); ++i) {
-      if (!compatible(expected_entry.args[i], found_entry.args[i])) {
+      if (!nested_compatible(expected_entry.args[i], found_entry.args[i])) {
         return false;
       }
     }
@@ -721,11 +721,11 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
   }
   case type_kind::tuple_kind: {
     if (expected_entry.args.size() != found_entry.args.size() ||
-        !compatible(expected_entry.result, found_entry.result)) {
+        !nested_compatible(expected_entry.result, found_entry.result)) {
       return false;
     }
     for (size_t i = 0; i < expected_entry.args.size(); ++i) {
-      if (!compatible(expected_entry.args[i], found_entry.args[i])) {
+      if (!nested_compatible(expected_entry.args[i], found_entry.args[i])) {
         return false;
       }
     }
@@ -748,12 +748,12 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
     };
     if (expected_entry.args.size() != found_entry.args.size() ||
         !same_ref(expected_entry.result, found_entry.result) ||
-        !compatible(expected_entry.result, found_entry.result)) {
+        !nested_compatible(expected_entry.result, found_entry.result)) {
       return false;
     }
     for (size_t i = 0; i < expected_entry.args.size(); ++i) {
       if (!same_ref(expected_entry.args[i], found_entry.args[i]) ||
-          !compatible(expected_entry.args[i], found_entry.args[i])) {
+          !nested_compatible(expected_entry.args[i], found_entry.args[i])) {
         return false;
       }
     }
@@ -764,7 +764,7 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
     // `array[T, 0]` is refuted by the same arithmetic that refutes it for a
     // user `vec[T, n + 1]` — a written-out length and a const generic are the
     // same mechanism.
-    return compatible(expected_entry.result, found_entry.result) &&
+    return nested_compatible(expected_entry.result, found_entry.result) &&
            (expected_entry.args.empty() || found_entry.args.empty() ||
             compatible(expected_entry.args.front(), found_entry.args.front()));
   case type_kind::ref_kind:
@@ -774,6 +774,23 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
   default:
     return false;
   }
+}
+
+auto type_table::nested_compatible(type_id expected, type_id found) const
+    -> bool {
+  if (expected == found || is_unknown(expected) || is_unknown(found)) {
+    return true;
+  }
+  const auto &want = entry(strip_refinement(expected));
+  const auto &got = entry(strip_refinement(found));
+  const auto indirect = [](const type_entry &e) -> bool {
+    return e.kind == type_kind::ref_kind || e.kind == type_kind::ptr_kind;
+  };
+  if (indirect(want) || indirect(got)) {
+    return want.kind == got.kind && want.is_mut == got.is_mut &&
+           nested_compatible(want.result, got.result);
+  }
+  return compatible(expected, found);
 }
 
 /// Linear search over `k_builtin_scalar_names`.

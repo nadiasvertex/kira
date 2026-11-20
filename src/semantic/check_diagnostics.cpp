@@ -547,6 +547,38 @@ auto checker::report_missing_deref(const ast::expr &value, type_id found)
           session_.types_.display(referent)));
 }
 
+/// The first pair of type arguments inside `expected` and `found` that
+/// would be accepted as single values but not as type arguments: a `&T` and
+/// a `T`, or a `&mut T` and a `&T` (and the same for raw pointers). Names
+/// both for the help, which explains why the weakening does not reach in.
+static auto nested_indirection_conflict(const type_table &types,
+                                        type_id expected, type_id found)
+    -> std::optional<std::pair<type_id, type_id>> {
+  const auto &want = types.entry(expected);
+  const auto &got = types.entry(found);
+  if (want.kind != got.kind || want.args.size() != got.args.size()) {
+    return std::nullopt;
+  }
+  const auto indirect = [](const type_entry &e) -> bool {
+    return e.kind == type_kind::ref_kind || e.kind == type_kind::ptr_kind;
+  };
+  for (std::size_t i = 0; i < want.args.size(); ++i) {
+    const auto a = want.args[i];
+    const auto b = got.args[i];
+    if (a == b) {
+      continue;
+    }
+    if ((indirect(types.entry(a)) || indirect(types.entry(b))) &&
+        types.compatible(a, b)) {
+      return std::pair{a, b};
+    }
+    if (auto inner = nested_indirection_conflict(types, a, b)) {
+      return inner;
+    }
+  }
+  return std::nullopt;
+}
+
 auto checker::type_mismatch(source_span span, type_id expected, type_id found,
                             std::string_view context, const ast::expr *value)
     -> void {
@@ -570,6 +602,16 @@ auto checker::type_mismatch(source_span span, type_id expected, type_id found,
                               session_.types_.display(expected), context));
   if (auto conflict = value_slot_conflict(expected, found)) {
     diag.with_help(*conflict);
+  } else if (auto nested = nested_indirection_conflict(session_.types_,
+                                                        expected, found)) {
+    diag.with_help(std::format(
+        "A `{1}` is accepted where a `{0}` is expected only as a single "
+        "value. Inside a type's arguments the two must match exactly, "
+        "because the values in a `{3}` cannot each be converted where the "
+        "`{2}` is expected. Build a new `{2}` from them instead.",
+        session_.types_.display(nested->first),
+        session_.types_.display(nested->second),
+        session_.types_.display(expected), session_.types_.display(found)));
   } else if (session_.types_.is_numeric(expected) &&
              session_.types_.is_numeric(found)) {
     diag.with_help(std::format(" Cinder never converts numbers implicitly; "

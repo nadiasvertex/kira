@@ -427,9 +427,20 @@ public:
   /// that could still be solved stays compatible, exactly as an unsolved `T`
   /// does, while one that provably cannot (`n + 1 = 0` for `n: usize`) is
   /// rejected.
+  ///
+  /// The conversions a single value can undergo — lending a `T` as a `&T`,
+  /// reading through an aggregate's `&T`, and weakening `&mut T` to `&T` or
+  /// `*mut T` to `*T` — apply only at the top. Inside a type's arguments
+  /// (`list[&mut int32]` against `list[&int32]`) no single value is there to
+  /// convert, so reference-ness and mutability must match exactly
+  /// (`nested_compatible`).
   [[nodiscard]] auto compatible(type_id expected, type_id found) const -> bool;
 
 private:
+  /// `compatible` for a type argument: a reference or raw pointer must meet
+  /// one of the same kind and mutability. See `compatible`.
+  [[nodiscard]] auto nested_compatible(type_id expected, type_id found) const
+      -> bool;
   /// Returns the existing id for `key` if already interned, otherwise
   /// stores `entry` and returns its new id.
   [[nodiscard]] auto intern(std::string key, type_entry entry) -> type_id;
