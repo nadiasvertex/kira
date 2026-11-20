@@ -110,6 +110,7 @@ cc_test(
 
 cc_test(
     name = "lower_test",
+    env = {"CINDER_CORE_VERIFY": "1"},
     srcs = ["lower_test.cpp"],
     data = [
         "//src:hir_lower_test_files",

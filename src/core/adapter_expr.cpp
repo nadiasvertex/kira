@@ -612,9 +612,16 @@ auto body_builder::apply_deref_steps(place p,
   return p;
 }
 
-auto body_builder::receiver_place(const ast::expr &source) -> result<place> {
-  CORE_TRY(p, place_of(source));
-  std::fprintf(stderr, "DBG receiver_place kind=%d node=%p has=%d total=%zu\n", static_cast<int>(source.kind), static_cast<const void*>(&source), static_cast<int>(checked_.deref_adjustments.contains(&source)), checked_.deref_adjustments.size());
+auto body_builder::receiver_place(const ast::expr &source,
+                                  place_access access) -> result<place> {
+  CORE_TRY(p, place_of(source, access));
+  if (access == place_access::mutate) {
+    // A part written through a handle reaches it through `deref_mut`.
+    if (const auto steps = checked_.deref_mut_adjustments.find(&source);
+        steps != checked_.deref_mut_adjustments.end()) {
+      return apply_deref_steps(std::move(p), steps->second, source.span);
+    }
+  }
   if (const auto steps = checked_.deref_adjustments.find(&source);
       steps != checked_.deref_adjustments.end()) {
     return apply_deref_steps(std::move(p), steps->second, source.span);
@@ -622,11 +629,12 @@ auto body_builder::receiver_place(const ast::expr &source) -> result<place> {
   return p;
 }
 
-auto body_builder::place_of(const ast::expr &source) -> result<place> {
+auto body_builder::place_of(const ast::expr &source, place_access access)
+    -> result<place> {
   if (const auto rewritten = checked_.spliced_fragments.find(&source);
       rewritten != checked_.spliced_fragments.end()) {
     if (const auto *fragment = ast::as<const ast::expr>(rewritten->second)) {
-      return place_of(*fragment);
+      return place_of(*fragment, access);
     }
   }
   if (source.has_error) {
@@ -672,7 +680,7 @@ auto body_builder::place_of(const ast::expr &source) -> result<place> {
     if (group.inner == nullptr) {
       return fail("group_expr", "empty parentheses", source.span);
     }
-    return place_of(*group.inner);
+    return place_of(*group.inner, access);
   }
   case ast::node_kind::ident_expr: {
     const auto &ident = ast::cast<const ast::ident_expr>(source);
@@ -723,7 +731,7 @@ auto body_builder::place_of(const ast::expr &source) -> result<place> {
     if (!field.generic_args.empty()) {
       return fail("field_expr", "generic method arguments", source.span);
     }
-    CORE_TRY(p, receiver_place(*field.object));
+    CORE_TRY(p, receiver_place(*field.object, access));
     while (is_ref(p.type())) {
       add_deref(p);
     }
@@ -754,9 +762,11 @@ auto body_builder::place_of(const ast::expr &source) -> result<place> {
       }
       return fail_feature(
           "module_path_expr",
-          std::format("`{}` reads a non-scalar part of the module-level value "
-                      "`{}`, and a struct-valued `static` has no runtime "
-                      "storage yet (see spec/todo.md)",
+          std::format("`{}` reads a part of the `static` `{}` that is a "
+                      "struct or a sum; reading such a part is not "
+                      "implemented yet. A whole struct-valued `static` and "
+                      "its scalar fields can be read (see spec/todo.md, "
+                      "item 26)",
                       written, path.segments[0]),
           source.span);
     }
@@ -772,11 +782,21 @@ auto body_builder::place_of(const ast::expr &source) -> result<place> {
     p.root.name = path.segments[0];
     p.root.type = root->type;
     const auto derefs = checked_.path_deref_adjustments.find(&path);
+    const auto mut_derefs = access == place_access::mutate
+                                ? checked_.path_deref_mut_adjustments.find(&path)
+                                : checked_.path_deref_mut_adjustments.end();
     for (std::size_t i = 1; i < path.segments.size(); ++i) {
-      if (derefs != checked_.path_deref_adjustments.end() &&
-          i < derefs->second.size() && !derefs->second[i].empty()) {
-        CORE_TRY(through,
-                 apply_deref_steps(std::move(p), derefs->second[i], source.span));
+      // A segment written through a handle reaches it through `deref_mut`.
+      const auto *steps =
+          mut_derefs != checked_.path_deref_mut_adjustments.end() &&
+                  i < mut_derefs->second.size() && !mut_derefs->second[i].empty()
+              ? &mut_derefs->second[i]
+          : derefs != checked_.path_deref_adjustments.end() &&
+                  i < derefs->second.size() && !derefs->second[i].empty()
+              ? &derefs->second[i]
+              : nullptr;
+      if (steps != nullptr) {
+        CORE_TRY(through, apply_deref_steps(std::move(p), *steps, source.span));
         p = std::move(through);
       }
       while (is_ref(p.type())) {
@@ -791,17 +811,21 @@ auto body_builder::place_of(const ast::expr &source) -> result<place> {
     if (un.op != ast::unary_op::deref || un.operand == nullptr) {
       break;
     }
-    CORE_TRY(p, place_of(*un.operand));
+    CORE_TRY(p, place_of(*un.operand, access));
+    if (access == place_access::mutate) {
+      if (const auto steps =
+              checked_.deref_mut_adjustments.find(un.operand.get());
+          steps != checked_.deref_mut_adjustments.end()) {
+        // `*g = v` on a handle with `deref_mut` writes through
+        // `g.deref_mut()`.
+        return apply_deref_steps(std::move(p), steps->second, source.span);
+      }
+    }
     if (const auto steps = checked_.deref_adjustments.find(un.operand.get());
         steps != checked_.deref_adjustments.end() && !steps->second.empty()) {
       // `*h` on a `deref` handle reads through `h.deref()`, whose result is
       // already followed by its `deref` step.
       return apply_deref_steps(std::move(p), steps->second, source.span);
-    }
-    if (is_cell(p.type())) {
-      // `*c` on a `cell[T]` / `cell_mut[T]` reads through the reference the
-      // cell converts to.
-      return cell_place(use_of(std::move(p), source.span));
     }
     const auto kind = checked_.types.entry(p.type()).kind;
     if (kind != type_kind::ref_kind && kind != type_kind::ptr_kind) {
@@ -819,20 +843,39 @@ auto body_builder::place_of(const ast::expr &source) -> result<place> {
       return fail("index_expr", "an index has no object or key", source.span);
     }
     CORE_TRY(type, type_of(source));
+    if (access == place_access::mutate) {
+      if (const auto by_mut = checked_.lowering.index_mut_dispatches.find(&index);
+          by_mut != checked_.lowering.index_mut_dispatches.end()) {
+        // A written element is reached through `*at_mut(&mut v, i)`; the
+        // receiver is itself a written place.
+        CORE_TRY(called, dispatch_call(by_mut->second, *index.object,
+                                       {index.index.get()}, source.span));
+        if (!is_ref(called->type) || !checked_.types.entry(called->type).is_mut) {
+          return fail("index_expr",
+                      std::format("`at_mut` returns `{}`, not a `&mut`",
+                                  checked_.types.display(called->type)),
+                      source.span);
+        }
+        auto p = temporary(std::move(called));
+        add_deref(p);
+        return p;
+      }
+    }
     if (const auto by_ref = checked_.lowering.index_ref_dispatches.find(&index);
         by_ref != checked_.lowering.index_ref_dispatches.end() &&
         !checked_.is_copy(type)) {
-      // Lowering reads the element through `*at_ref(v, i)`, whose result
-      // is a `cell[T]`.
+      // The element is read in place, through `*at_ref(v, i)`.
       CORE_TRY(called, dispatch_call(by_ref->second, *index.object,
                                      {index.index.get()}, source.span));
-      if (!is_cell(called->type)) {
+      if (!is_ref(called->type)) {
         return fail("index_expr",
-                    std::format("`at_ref` returns `{}`, not a cell",
+                    std::format("`at_ref` returns `{}`, not a reference",
                                 checked_.types.display(called->type)),
                     source.span);
       }
-      return cell_place(std::move(called));
+      auto p = temporary(std::move(called));
+      add_deref(p);
+      return p;
     }
     if (const auto found = checked_.lowering.index_dispatches.find(&index);
         found != checked_.lowering.index_dispatches.end()) {
@@ -855,7 +898,7 @@ auto body_builder::place_of(const ast::expr &source) -> result<place> {
                            type));
       return temporary(std::move(view));
     }
-    CORE_TRY(p, place_of(*index.object));
+    CORE_TRY(p, place_of(*index.object, access));
     while (is_ref(p.type())) {
       add_deref(p);
     }
@@ -926,75 +969,10 @@ auto body_builder::coerce(ptr<expr> value, type_id need)
   if (have_entry.kind == type_kind::builtin_kind && have_entry.name == "never") {
     return value;
   }
-  // The checker accepts a `cell[T]` where a `&T` is expected, a
-  // `cell_mut[T]` where a `&mut T` is, and both the other way, without a
-  // record (todo 38). The conversion is made explicit as an intrinsic.
-  if (const auto name = cell_conversion_name(have, need)) {
-    const auto element = have_entry.kind == type_kind::ref_kind
-                             ? have_entry.result
-                             : have_entry.args[0];
-    auto args = ptr_vec<expr>{};
-    args.push_back(std::move(value));
-    return intrinsic_call(*name, need, std::move(args), {element}, span);
-  }
   return fail("implicit conversion",
               std::format("`{}` used as `{}`", checked_.types.display(have),
                           checked_.types.display(need)),
               span);
-}
-
-auto body_builder::cell_conversion_name(type_id have, type_id need) const
-    -> std::optional<std::string> {
-  const auto &have_entry = checked_.types.entry(have);
-  const auto &need_entry = checked_.types.entry(need);
-  const auto cell_of = [&](const semantic::type_entry &entry,
-                           std::string_view name) -> std::optional<type_id> {
-    if (entry.kind == type_kind::builtin_generic_kind && entry.name == name &&
-        entry.args.size() == 1) {
-      return entry.args[0];
-    }
-    return std::nullopt;
-  };
-  const auto ref_of = [&](const semantic::type_entry &entry,
-                          bool is_mut) -> std::optional<type_id> {
-    if (entry.kind == type_kind::ref_kind && entry.is_mut == is_mut) {
-      return entry.result;
-    }
-    return std::nullopt;
-  };
-  const auto same = [](std::optional<type_id> a, std::optional<type_id> b) {
-    return a.has_value() && b.has_value() && *a == *b;
-  };
-  if (same(cell_of(have_entry, "cell"), ref_of(need_entry, false))) {
-    return "cell_to_ref";
-  }
-  if (same(cell_of(have_entry, "cell_mut"), ref_of(need_entry, true))) {
-    return "cell_mut_to_ref_mut";
-  }
-  if (same(ref_of(have_entry, false), cell_of(need_entry, "cell"))) {
-    return "ref_to_cell";
-  }
-  if (same(ref_of(have_entry, true), cell_of(need_entry, "cell_mut"))) {
-    return "ref_mut_to_cell_mut";
-  }
-  return std::nullopt;
-}
-
-auto body_builder::cell_place(ptr<expr> cell) -> result<place> {
-  const auto &entry = checked_.types.entry(cell->type);
-  const auto is_mut = entry.name == "cell_mut";
-  CORE_TRY(lent, coerce(std::move(cell),
-                        checked_.types.ref_to(entry.args[0], is_mut)));
-  auto p = temporary(std::move(lent));
-  add_deref(p);
-  return p;
-}
-
-auto body_builder::is_cell(type_id type) const -> bool {
-  const auto &entry = checked_.types.entry(type);
-  return entry.kind == type_kind::builtin_generic_kind &&
-         (entry.name == "cell" || entry.name == "cell_mut") &&
-         entry.args.size() == 1;
 }
 
 auto body_builder::value_as(const ast::expr &source, type_id need)
@@ -1389,9 +1367,9 @@ auto body_builder::unary_of(const ast::unary_expr &un) -> result<ptr<expr>> {
         }
         CORE_TRY(called, dispatch_call(found->second, *index.object,
                                        {index.index.get()}, un.span));
-        if (is_mut && is_ref(type)) {
-          // A view that is not a cell (the `slice_mut[T]` of a range) is a
-          // value, and `&mut` lends it, as lowering does.
+        if (is_mut && !is_ref(called->type) && is_ref(type)) {
+          // A view that is not a reference (the `slice_mut[T]` of a range)
+          // is a value, and `&mut` lends it, as lowering does.
           auto lent = make_node<borrow>(
               un.span, checked_.types.ref_to(called->type, true));
           lent->of = temporary(std::move(called));
@@ -1404,13 +1382,12 @@ auto body_builder::unary_of(const ast::unary_expr &un) -> result<ptr<expr>> {
     if (checked_.types.entry(type).kind == type_kind::ptr_kind) {
       return element_address(un, type);
     }
-    CORE_TRY(p, place_of(*un.operand));
+    CORE_TRY(p, place_of(*un.operand, is_mut ? place_access::mutate
+                                               : place_access::read));
     auto lent = make_node<borrow>(un.span,
                                   checked_.types.ref_to(p.type(), is_mut));
     lent->of = std::move(p);
     lent->is_mut = is_mut;
-    // The checker may type the borrow as what its context expects (a
-    // `cell[T]` for a `&T`); `coerce` reports that as a conversion.
     return coerce(ptr<expr>(std::move(lent)), type);
   }
   case ast::unary_op::deref: {
@@ -2042,7 +2019,9 @@ auto body_builder::argument_of(const ast::expr &arg, type_id param,
       return value_as(arg, param);
     }
   }
-  CORE_TRY(p, place_of(arg));
+  CORE_TRY(p, place_of(arg, mode == semantic::param_passing::mut_ref
+                                ? place_access::mutate
+                                : place_access::read));
   if (is_ref(p.type()) && mode == semantic::param_passing::shared_ref) {
     return coerce(use_of(std::move(p), arg.span), param);
   }
@@ -2099,15 +2078,16 @@ auto body_builder::builtin_method(const ast::call_expr &call,
            entry.name == generic;
   };
   // The receiver, as a place with its reference layers followed.
-  const auto receiver = [&]() -> result<place> {
-    CORE_TRY(p, receiver_place(*field.object));
+  const auto receiver = [&](place_access access =
+                                place_access::read) -> result<place> {
+    CORE_TRY(p, receiver_place(*field.object, access));
     while (is_ref(p.type())) {
       add_deref(p);
     }
     return p;
   };
   const auto by_borrow = [&](bool is_mut) -> result<ptr<expr>> {
-    CORE_TRY(p, receiver());
+    CORE_TRY(p, receiver(is_mut ? place_access::mutate : place_access::read));
     const auto param = checked_.types.ref_to(p.type(), is_mut);
     return receiver_argument(std::move(p), param, field.span);
   };
@@ -2154,26 +2134,6 @@ auto body_builder::builtin_method(const ast::call_expr &call,
   }
   if (name == "next" && generic_named("generator")) {
     return one(by_borrow(true), "generator_next");
-  }
-  if (name == "get" && call.args.empty() &&
-      (generic_named("cell") || generic_named("cell_mut"))) {
-    return one(by_value(), "cell_get");
-  }
-  if (name == "set" && call.args.size() == 1 && generic_named("cell_mut") &&
-      call.args.front().value != nullptr) {
-    auto cell = by_value();
-    if (!cell.has_value()) {
-      return std::unexpected(cell.error());
-    }
-    const auto &element = entry.args.empty() ? k_unknown_type : entry.args[0];
-    auto value = value_as(*call.args.front().value, element);
-    if (!value.has_value()) {
-      return std::unexpected(value.error());
-    }
-    auto args = ptr_vec<expr>{};
-    args.push_back(std::move(*cell));
-    args.push_back(std::move(*value));
-    return intrinsic_call("cell_set", *type, std::move(args), {}, call.span);
   }
   return std::nullopt;
 }
@@ -2428,7 +2388,11 @@ auto body_builder::call_of(const ast::call_expr &call) -> result<ptr<expr>> {
       return fail("missing record: resolved_callees",
                   "a method call to a callee with no parameters", call.span);
     }
-    CORE_TRY(p, receiver_place(*receiver_ast));
+    const auto &first = checked_.types.entry(params[0]);
+    CORE_TRY(p, receiver_place(*receiver_ast,
+                               first.kind == type_kind::ref_kind && first.is_mut
+                                   ? place_access::mutate
+                                   : place_access::read));
     args.push_back(receiver_argument(std::move(p), params[0], receiver_ast->span));
     args.back()->origin = receiver_ast;
     offset = 1;

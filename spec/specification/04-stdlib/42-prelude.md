@@ -6,11 +6,11 @@ The prelude is the set of names available in every module without a `use` declar
 
 ## Contents
 
-**Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types (`int8`..`int128`, `uint8`..`uint128`, `float32`/`float64`/`float128`, `isize`, `usize`), `array`, `slice`, `mut slice`, `option`, `result`, `list`, `unique`, `cell`, `cell_mut`.
+**Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types (`int8`..`int128`, `uint8`..`uint128`, `float32`/`float64`/`float128`, `isize`, `usize`), `array`, `slice`, `mut slice`, `option`, `result`, `list`, `unique`.
 
-**Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `rem`, `neg`, `drop`, `clone`, `deref`, `index`, `index_mut`, `index_set`, `from_array`, and the remaining arithmetic operator traits. `clone` and `deref` are declared in `std.traits` and specified in [Traits](../02-intermediate/18-traits.md#deref).
+**Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `rem`, `neg`, `drop`, `clone`, `deref`, `index`, `index_ref`, `index_mut`, `index_set`, `from_array`, and the remaining arithmetic operator traits. `clone` and `deref` are declared in `std.traits` and specified in [Traits](../02-intermediate/18-traits.md#deref).
 
-`index`/`index_set` are what make `v[i]` and `v[i] = x` work on a user type, and `from_array` is what makes `let v: my_type = [1, 2, 3]` work — the operators that used to be reserved for the built-in sequences. `index_mut` is declared but not yet wired (`../../todo.md` item 19).
+`index`, `index_ref`, `index_mut` and `index_set` are what make `v[i]`, `&v[i]`, `&mut v[i]` and `v[i] = x` work on a user type, and `from_array` is what makes `let v: my_type = [1, 2, 3]` work — the operators that used to be reserved for the built-in sequences.
 
 **Concepts:** `copy`, `send`, `share`. `copy` is satisfied by the types listed in [Ownership and Borrowing](../02-intermediate/14-ownership-and-borrowing.md#copy-and-move). It is declared in `std.traits` and answered by the checker, not by its body.
 
@@ -34,7 +34,7 @@ Four of these are not ordinary functions but compiler-answered forms, each takin
 
 The last three are raw-memory operations and are refused outside a `machine` function — see [The `machine` Layer](../03-advanced/38-machine-layer.md). `size_of`/`align_of` are not gated: they only ask about a type.
 
-Each prelude type/trait/function is specified in full in its owning chapter — this list is an index, not the normative definition of any of them. See [Built-in Types](../01-core/02-built-in-types.md), [Traits](../02-intermediate/18-traits.md), [Error Handling](../01-core/11-error-handling.md) (`option`/`result`), [Views](../02-intermediate/15-views.md) (`slice`, `cell`), [Trait Objects](../02-intermediate/24-trait-objects.md) (`unique`), and [Data-Race Freedom](../02-intermediate/30-data-race-freedom.md) (`send`/`share`).
+Each prelude type/trait/function is specified in full in its owning chapter — this list is an index, not the normative definition of any of them. See [Built-in Types](../01-core/02-built-in-types.md), [Traits](../02-intermediate/18-traits.md), [Error Handling](../01-core/11-error-handling.md) (`option`/`result`), [Views](../02-intermediate/15-views.md) (`slice`), [Trait Objects](../02-intermediate/24-trait-objects.md) (`unique`), and [Data-Race Freedom](../02-intermediate/30-data-race-freedom.md) (`send`/`share`).
 
 ## Opting out
 

@@ -62,23 +62,11 @@ extend[T] list[T]:
             return @none
         return @some(self[self.len - 1])
 
-    #: A single-element view of `v[i]`, unchecked at the type level.
+    #: A mutable reference to `v[i]`, or `@none` when `i` is out of range.
     #:
-    #: The same address `&v[i]` computes, named `cell[T]` rather than `&T`
-    #: (`spec/specification/02-intermediate/15-views.md`). Out of range
-    #: panics, exactly as `v[i]` does; `mutable_cell` is the sibling that
-    #: answers `@none` instead.
-    pub machine def cell(self, i: usize) -> cell[T]:
-        if i >= self.len:
-            panic("index out of bounds")
-        return &self.data[i]
-
-    #: A writable single-element view of `v[i]`, or `@none` when `i` is out
-    #: of range.
-    #:
-    #: The checked, non-panicking sibling of `cell` above: a caller that does
-    #: not already know `i` is in bounds gets to ask rather than guess.
-    pub machine def mutable_cell(mut self, i: usize) -> option[cell_mut[T]]:
+    #: The checked, non-panicking form of `&mut v[i]`: a caller that does not
+    #: already know `i` is in bounds gets to ask rather than guess.
+    pub machine def get_mut(mut self, i: usize) -> option[&mut T]:
         if i >= self.len:
             return @none
         return @some(&mut self.data[i])
@@ -198,17 +186,16 @@ impl[T] index[usize] for list[T]:
 
 #: Borrowing `&mut v[i]`, with the same bounds check.
 impl[T] index_mut[usize] for list[T]:
-    type output_mut = cell_mut[T]
-    machine def at_mut(mut self, i: usize) -> cell_mut[T]:
+    type output_mut = &mut T
+    machine def at_mut(mut self, i: usize) -> &mut T:
         if i >= self.len:
             panic("index out of bounds")
         return &mut self.data[i]
 
 #: Borrowing `&v[i]`, with the same bounds check. The read-only sibling of
-#: `index_mut` above: same address, but a `cell[T]` rather than `cell_mut[T]`
-#: so only `.get()` is offered, not `.set()`.
+#: `index_mut` above: the same address, as a `&T`.
 impl[T] index_ref[usize] for list[T]:
-    machine def at_ref(self, i: usize) -> cell[T]:
+    machine def at_ref(self, i: usize) -> &T:
         if i >= self.len:
             panic("index out of bounds")
         return &self.data[i]
@@ -229,7 +216,7 @@ impl[T] index[range[usize]] for list[T]:
 
 #: Borrowing `&mut v[a..b]`. The mutable sibling of the impl above, and the
 #: reason `index_mut` carries its own `output_mut`: this hands back a
-#: `slice_mut[T]`, which is already a mutable view, not a `cell` around one.
+#: `slice_mut[T]`, which is already a mutable view, not a reference to one.
 impl[T] index_mut[range[usize]] for list[T]:
     type output_mut = slice_mut[T]
     machine def at_mut(mut self, i: range[usize]) -> slice_mut[T]:

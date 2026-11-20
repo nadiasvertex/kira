@@ -1,8 +1,13 @@
+#include <algorithm>
+#include <array>
+#include <cstdlib>
 #include <format>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
+#include "src/core/verify.h"
 #include "src/hir/lower_core.h"
 #include "src/hir/lower_core_lowerer.h"
 
@@ -243,6 +248,45 @@ auto lower_program(std::span<const semantic::parsed_module> inputs,
   const auto input = core_lowering_input{
       .modules = program, .file_module_names = std::move(file_module_names)};
   out.hir = lower_core_program(input, out.core.gaps, checked, options);
+  // `CINDER_CORE_VERIFY`, set by every test that compiles programs: a core
+  // that breaks a verifier rule is an internal compiler error. The known
+  // violations are skipped. Each names the todo item that removes it.
+  struct known_violation {
+    std::string_view rule;
+    std::string_view module;   ///< Empty for any module.
+    std::string_view function; ///< Empty for any function.
+  };
+  static constexpr auto known = std::array{
+      // No record holds the generic arguments an instance was made with
+      // (a phase 5 debt of spec/unified-checker-plan.md).
+      known_violation{.rule = "C8", .module = "", .function = ""},
+  };
+  if (std::getenv("CINDER_CORE_VERIFY") != nullptr) {
+    for (const auto &v : core::verify(program, checked)) {
+      if (std::ranges::any_of(known, [&](const known_violation &k) {
+            return k.rule == v.rule &&
+                   (k.module.empty() || k.module == v.module) &&
+                   (k.function.empty() || k.function == v.function);
+          })) {
+        continue;
+      }
+      auto file = std::optional<file_id_type>{};
+      for (const auto *module : program) {
+        if (module->name == v.module) {
+          file = module->file_id;
+        }
+      }
+      out.hir.failures.push_back(core_module_failure{
+          .module = v.module,
+          .item = v.function,
+          .message = std::format("the typed core breaks verifier rule {}: {}",
+                                 v.rule, v.message),
+          .span = v.span,
+          .file_id = file,
+          .feature = false,
+          .construct = std::format("core verifier rule {}", v.rule)});
+    }
+  }
   return out;
 }
 

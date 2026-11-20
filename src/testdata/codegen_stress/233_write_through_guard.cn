@@ -1,0 +1,39 @@
+module codegen_stress.write_through_guard
+
+# A lock guard implements `deref_mut` (todo item 12), so a place written
+# through it reaches the value through `deref_mut()`: `*guard += 1`,
+# `*guard = v`, a field of the guarded value, and a `&mut` borrow of it.
+# Every write is read back through a second lock, so a write to a copy
+# changes the answer.
+
+use std.sync.mutex
+use std.sync.rwlock
+
+type pt = { x: int32, y: int32 }
+
+# expect: 61182
+
+def main() -> int32:
+    let count = mutex.new(5)
+    var guard = count.lock()
+    *guard += 1
+    let first = *guard
+    drop(guard)
+
+    let m = mutex.new(pt { x: 1, y: 2 })
+    var g = m.lock()
+    g.x = 10
+    (*g).y += 5
+    let r = &mut *g
+    r.x += 1
+    drop(g)
+    let again = m.lock()
+    let from_mutex = again.x * 10 + again.y
+
+    let lock = rwlock.new(3)
+    var w = lock.write()
+    *w = *w * 4
+    drop(w)
+    let from_rwlock = *lock.read().get()
+
+    return first * 10000 + from_mutex * 10 + from_rwlock

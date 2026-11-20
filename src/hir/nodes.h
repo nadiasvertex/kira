@@ -72,7 +72,6 @@ enum class hir_node_kind : uint8_t {
   hir_str_scalar_width,    ///< Bytes consumed decoding the scalar at a byte
                            ///< offset into a `str` — companion to
                            ///< `hir_str_decode_scalar`.
-  hir_cell_set,  ///< `c.set(v)` on a `cell_mut[T]`; see `hir_cell_set`.
   hir_host_call, ///< An operation only the compiler can do, for code it runs
                  ///< while compiling; see `hir_host_call`.
   // patterns (match arms only)
@@ -679,23 +678,6 @@ struct hir_closure_drop : hir_expr {
 struct hir_coroutine_cancelled : hir_expr {
   hir_coroutine_cancelled(source_span s, type_id t)
       : hir_expr(hir_node_kind::hir_coroutine_cancelled, s, t) {}
-};
-
-/// `c.set(v)` on a `cell_mut[T]`: stores `v` through the address `c` already
-/// is (a `cell_mut[T]` is a bare element address) and evaluates to `unit`. A
-/// dedicated node rather than reuse of `hir_assign` (`*c = v`), because
-/// `hir_assign` is a statement — it has no value of its own to plug into an
-/// expression position, and `c.set(v)` is a method call used as one.
-/// `cell.get()`/ `cell_mut.get()` need no equivalent node: they lower straight
-/// to `hir_unary(deref, cell_expr)`, since reading through the address is all
-/// `get` ever does.
-struct hir_cell_set : hir_expr {
-  ptr<hir_expr> cell;
-  ptr<hir_expr> value;
-
-  hir_cell_set(source_span s, type_id t, ptr<hir_expr> c, ptr<hir_expr> v)
-      : hir_expr(hir_node_kind::hir_cell_set, s, t), cell(std::move(c)),
-        value(std::move(v)) {}
 };
 
 /// Indentation-delimited block. In expression position its `type` is the

@@ -1,6 +1,6 @@
 # Unified type checker plan
 
-Status: accepted, 2026-11-15. Phases 1 and 2 are complete; phase 3 is in progress.
+Status: accepted, 2026-11-15. Phases 1 to 3 are complete; phase 3 finished on 2026-11-19. Phase 4 is in progress: its done-when programs pass (2026-11-20), and two debts remain.
 
 The type-checking bugs in [todo.md](todo.md) share three structural causes. The checker
 hands later stages about 85 side tables keyed by AST node, and each later stage decides
@@ -167,8 +167,8 @@ Each phase leaves the tree green and removes the code it replaces.
 |---|---|---|---|
 | 1. Baseline (done) | A `known_gaps` corpus and test (`//src:known_gaps_test`): one program per in-scope todo item, with the wrong behavior the compiler shows today recorded beside it. Each program runs in its own process on both tiers. The test passes while the gap is open and fails when it closes, so the program is then moved to the regular corpus. | Done 2026-11-15: 29 programs cover every in-scope item except 24, which corpus 110 and 167 pin. Items 6, 7, 11, and 13 no longer reproduce and have corpus programs 206 to 209. | — |
 | 2. Core and verifier (done) | Define the core. Build it from the AST and the current side tables with an adapter. Write the verifier and run it over the corpus and the standard library. | Done 2026-11-15: every concrete function of the corpus and the standard library builds and verifies, except five (item 39). About a third of the generic templates build; the rest wait for phase 5. See "Phase 2 results". | 38 to 41 found here; cause of 32 located |
-| 3. Lowering reads the core | HIR lowering takes the core as input. Refusals move into the adapter as user diagnostics or become assertions. Compile-time execution lowers from the same core. Lower `await yield` and a named `on` block. | Lowering no longer includes the AST or the side tables. | 15, 26 (stale message), 36, 40 |
-| 4. Places and patterns | One place function and one pattern elaboration, emitting core directly. Add the mutable dereference trait. A binding through a `&mut` subject is writable without `mut`. | Compound assignment to a list element, `replace(&mut xs[i], v)`, `*guard += 1`, and or-pattern bindings run on both tiers with `# expect:`. | 12, 21, 22, 33, 37, 38 |
+| 3. Lowering reads the core (done) | HIR lowering takes the core as input. Refusals move into the adapter as user diagnostics or become assertions. Compile-time execution lowers from the same core. Lower `await yield` and a named `on` block. | Done 2026-11-19: lowering reads no AST node and only the type table, shapes, drop plans and drop schedule from the checker; the verifier runs in every test build. See "Phase 3 results". | 15, 26 (stale message), 36, 40 |
+| 4. Places and patterns (in progress) | One place function and one pattern elaboration, emitting core directly. Add the mutable dereference trait. A binding through a `&mut` subject is writable without `mut`. | Compound assignment to a list element, `replace(&mut xs[i], v)`, `*guard += 1`, and or-pattern bindings run on both tiers with `# expect:`. | 12, 21, 22, 33, 37, 38 |
 | 5. Calls and names | One call pipeline emitting core directly. One lookup for a variant name, used by construction and by patterns, in which a user's variant shadows the prelude's. | The 17 entry points are gone; qualified, static, and trait-static calls share tests. | 8, 9, 27, 35, 41 |
 | 6. Equality and predicates | One type equality and one satisfaction query. | The `bool`-index program is rejected; `implements[T, copy]` works. | 14, 32 |
 | 7. Ownership graph on the core | Rebuild the ownership graph from the core with field-level places. Check generated code. Reject moves out of `self` in every body. Record loan origins for diagnostics. | Existing ownership tests pass on the new graph; a derived impl that moves out of `self` gets a diagnostic; the item 34 program names the closure. | 16, 23, 34, 39 |
@@ -205,8 +205,7 @@ phase removes.
 
 | Debt | Removed in |
 |---|---|
-| The verifier runs only in the core tests, not in every test build. | Phase 3 |
-| `cell[T]` and `&T` convert through intrinsic calls the adapter inserts (item 38). | Phase 4 |
+| `cell[T]` and `&T` convert through intrinsic calls the adapter inserts (item 38). Removed in phase 4 with the cell types. | Phase 4 (done) |
 | A bare call to a function of the same module has no callee record; the adapter looks the name up. Recording it in the checker changes ownership checking and lowering, which both branch on whether the record exists. | Phase 5 |
 | No record holds the generic arguments an instance was made with, so verifier rule C8 is allow-listed for every call to an instance. | Phase 5 |
 | About 250 templates do not build. Most defer a call, an operator, or a cast to their instances and have no record of their own. Implicit generics and reads of a value parameter have no core form yet. | Phase 5 |
@@ -252,6 +251,20 @@ the phase: a `pre` on a generator, which the old lowerer built and the adapter h
 refused. `storage_codegen_test` is sharded like `check_test` instead of running under a
 long timeout.
 
+The verifier runs in every test build. `hir::lower_program` runs it when
+`CINDER_CORE_VERIFY` is set, which every test target that compiles programs sets, and a
+violation becomes an internal compiler error. Turning it on found three defects. Item 63
+is fixed: a `drop` body checked early for compile-time code kept the caller's template as
+its own, and lost a `deref` step (rule A2). A write to a nested collection element breaks
+rule A4 but runs correctly (item 65). The moves out of `self` of items 16 and 23 break
+rule A2; their `known_gaps` programs now record the verifier's message. Rule C8 and the
+one cli_test function that writes a nested element are skipped by a list in
+`lower_program`; each entry names the item that removes it.
+
+Item 26's message is corrected. A part of a struct-valued `static` that is a struct or a
+sum cannot be read at compile time or at run time, and the message now says so. The read
+itself is item 26's phase 10 work.
+
 Phase 3 changed the plan in one place. The lowering view stays until phase 12: compile-time
 code runs during checking, so the adapter reads the view until the checker emits the core
 directly.
@@ -265,7 +278,26 @@ Phase 3 added these debts.
 | `for` over a borrowed collection is `into_iter(bitwise_copy(xs))`, an intrinsic that duplicates a value without making an owner (item 39). | Phase 7 |
 | A call the checker ran at compile time (a `static if` condition calling a `static def`) has no callee record, so the adapter finds the callee by its bare name (`core::function_lookup`) when it builds compile-time code. | Phase 5 |
 | The adapter interns function and reference types while building compile-time code during checking, so the elaboration snapshot depends on which path lowered compile-time code. | Phase 12 |
+| The verifier skips rule C8 everywhere (item 65's A4 entry was removed in phase 4). | Phase 5 |
 | The reference pass lowering runs on each function (`make_references_explicit`) still reads `node_types` and `is_copy`, and storage lowering names a type's own `drop` through its declaration. | Phase 4 (references explicit in the core) |
+
+## Phase 4 results
+
+Phase 4 so far settled how places are typed and written. Items 12, 21, 33, 37 and 65 are closed, item 38 is closed except for raw pointers, and each closed item has a corpus program checked with `# expect:` (229 to 233). Item 22 closed in phase 3.
+
+- **Element borrows are references.** `cell[T]` and `cell_mut[T]` are removed (decided 2026-11-20). `&v[i]` is a `&T` and `&mut v[i]` a `&mut T`; `index_ref`'s `at_ref` and `index_mut`'s `at_mut` return references, and `list.mutable_cell` became `get_mut`, returning `option[&mut T]`. The checker no longer equates two types, so the adapter's four conversion intrinsics, `hir_cell_set` and the storage form's cell rules are gone. Chapters 14, 15, 42 and 43 changed. One fix came with it: `*m` on a `&mut T` whose `T` was still an integer literal's leaf spent the `int32` default, because `demand_shape` looks through references; a reference's own head is now enough.
+- **One place function with an access mode.** The adapter's `place_of` takes a `place_access`. A written or mutably borrowed place (assignment target, `&mut` operand, `&mut` argument, `&mut self` receiver, and every place built under one) is built with `mutate`, which reaches a user collection's element through `*at_mut(&mut v, i)`. The checker records the `at_mut` dispatch beside every read of a user collection. This makes `xs[0][1] = 9` verify (item 65, and the A4 allow-list entry is gone) and `xs[i] += v` compile (item 37).
+- **`deref_mut`.** `std.traits.deref_mut` is new, implemented by `mutex_guard` and `write_guard`. A place written through a handle that has it (`*g += 1`, `*g = v`, `g.x = v`, `&mut *g`) records a `deref_mut` step, which lowering and the ownership check use in place of the `deref` step. The guard must be `var`; chapter 30's example changed to say so.
+- **Bindings through `&mut`.** A pattern binding reached through a `&mut` subject can be assigned without `mut` (decision 3); one reached through `&` gets an error that says so.
+
+Phase 4 is not complete. These remain.
+
+| Debt | Removed in |
+|---|---|
+| The reference pass lowering runs on each function (`make_references_explicit`) still reads `node_types` and `is_copy` (a phase 3 debt). | Phase 4 |
+| The checker accepts `*mut T` where `*T` is expected without a record; the adapter inserts a cast (item 38). | Phase 4 |
+| A `mut self` method is not called through `deref_mut` automatically (`guard.push(1)`), and a write through a handle in a generic body over the handle's parameters is not resolved to `deref_mut` (item 12). | Phase 4 |
+| The place function lives in the adapter; the checker does not emit places itself. | Phase 12 |
 
 ## Work assignment
 

@@ -1625,8 +1625,6 @@ auto test_c5_compiler_operations() -> void {
   const auto raw = w.raw_i32, raw_mut = w.raw_mut_i32;
   const auto ref_list = t.ref_to(list, false), mut_ref_list = t.ref_to(list, true);
   const auto ref_str = t.ref_to(str, false), ref_arr = t.ref_to(arr, false);
-  const auto cell = t.builtin_generic("cell", {i32}), cell_mut = t.builtin_generic("cell_mut", {i32});
-  const auto mut_ref_i32 = t.ref_to(i32, true);
   const auto gen = t.builtin_generic("generator", {i32}), gen_unit = t.builtin_generic("generator", {unit});
   const auto mut_ref_gen = t.ref_to(gen, true), ref_gen = t.ref_to(gen, false);
   const auto un_bool = t.builtin_generic("uninit", {boolean, t.const_value(usize, 4)});
@@ -1724,35 +1722,6 @@ auto test_c5_compiler_operations() -> void {
   bad(op_call(w, "generator_next", {mut_ref_gen}, t.builtin_generic("option", {boolean})), "C5",
       "generator_next: an option of another item type");
   bad(op_call(w, "generator_next", {mut_ref_gen}, i32), "C5", "generator_next: a non-option result");
-
-  // cell_get, cell_set
-  ok(op_call(w, "cell_get", {cell}, i32), "cell_get: `cell`");
-  ok(op_call(w, "cell_get", {cell_mut}, i32), "cell_get: `cell_mut`");
-  bad(op_call(w, "cell_get", {cell}, boolean), "C5", "cell_get: another element type");
-  bad(op_call(w, "cell_get", {i32}, i32), "C5", "cell_get: a non-cell");
-  ok(op_call(w, "cell_set", {cell_mut, i32}, unit), "cell_set: `cell_mut` and a value");
-  bad(op_call(w, "cell_set", {cell, i32}, unit), "C5", "cell_set: a shared cell");
-  bad(op_call(w, "cell_set", {cell_mut, boolean}, unit), "C5", "cell_set: a value of another type");
-  bad(op_call(w, "cell_set", {cell_mut, i32}, i32), "C5", "cell_set: a result that is not `unit`");
-
-  // The four cell conversions.
-  ok(op_call(w, "cell_to_ref", {cell}, w.ref_i32, {i32}), "cell_to_ref: `cell[T]` to `&T`");
-  bad(op_call(w, "cell_to_ref", {cell}, mut_ref_i32, {i32}), "C5", "cell_to_ref: a `&mut` result");
-  bad(op_call(w, "cell_to_ref", {cell_mut}, w.ref_i32, {i32}), "C5", "cell_to_ref: a `cell_mut`");
-  bad(op_call(w, "cell_to_ref", {cell}, w.ref_i32, {boolean}), "C5",
-      "cell_to_ref: a generic argument that is not the element");
-  bad(op_call(w, "cell_to_ref", {cell}, w.ref_i32), "C5", "cell_to_ref: no generic argument");
-  ok(op_call(w, "cell_mut_to_ref_mut", {cell_mut}, mut_ref_i32, {i32}),
-     "cell_mut_to_ref_mut: `cell_mut[T]` to `&mut T`");
-  bad(op_call(w, "cell_mut_to_ref_mut", {cell_mut}, w.ref_i32, {i32}), "C5",
-      "cell_mut_to_ref_mut: a shared result");
-  ok(op_call(w, "ref_to_cell", {w.ref_i32}, cell, {i32}), "ref_to_cell: `&T` to `cell[T]`");
-  bad(op_call(w, "ref_to_cell", {mut_ref_i32}, cell, {i32}), "C5", "ref_to_cell: a `&mut` operand");
-  bad(op_call(w, "ref_to_cell", {w.ref_i32}, cell_mut, {i32}), "C5", "ref_to_cell: a `cell_mut` result");
-  ok(op_call(w, "ref_mut_to_cell_mut", {mut_ref_i32}, cell_mut, {i32}),
-     "ref_mut_to_cell_mut: `&mut T` to `cell_mut[T]`");
-  bad(op_call(w, "ref_mut_to_cell_mut", {mut_ref_i32}, cell, {i32}), "C5",
-      "ref_mut_to_cell_mut: a shared cell result");
 
   // uninit_len, stack_buffer
   ok(op_call(w, "uninit_len", {}, usize, {w.uninit_i32}), "uninit_len: a buffer type");

@@ -1,5 +1,10 @@
 module codegen_stress.drop_through_deref
 
+# A method call through a `deref` field in a `drop` body (todo item 63).
+# Compile-time code in a generic std function used to check this impl
+# early with that template still current, so the `deref` step was never
+# recorded and the drop updated the `shared` itself.
+
 # expect: 1
 
 use std.shared.shared

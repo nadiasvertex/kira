@@ -936,6 +936,13 @@ auto checker::project_node(const ast::node &node) -> void {
                    fix_steps(steps);
                  }
                });
+    copy_entry(session_.path_deref_mut_adjustments_,
+               view.path_deref_mut_adjustments, path,
+               [&](std::vector<std::vector<deref_step>> &segments) {
+                 for (auto &steps : segments) {
+                   fix_steps(steps);
+                 }
+               });
     break;
   }
   case ast::node_kind::struct_expr: {
@@ -1034,6 +1041,8 @@ auto checker::project_node(const ast::node &node) -> void {
   if (const auto *expr = ast::as<const ast::expr>(&node); expr != nullptr) {
     copy_entry(session_.deref_adjustments_, view.deref_adjustments, expr,
                fix_steps);
+    copy_entry(session_.deref_mut_adjustments_, view.deref_mut_adjustments,
+               expr, fix_steps);
     copy_entry(session_.interp_dispatches_, lowered.interp_dispatches, expr,
                [this](interp_dispatch &dispatch) -> void {
                  dispatch.value_type = view_type(dispatch.value_type);
@@ -1095,6 +1104,11 @@ auto checker::check_item_for_comptime(const ast::func_decl &decl) -> void {
   const auto saved_wildcard = file_.file_has_external_wildcard_;
   auto module_level = body_context{};
   swap_body_context(module_level);
+  // A module-level item is never part of the template whose compile-time
+  // code asked for it. Inheriting that template would defer the item's
+  // instance-only decisions (such as `deref` steps) to instances that are
+  // never made (todo item 63).
+  const auto *saved_template = std::exchange(function_.current_template_, nullptr);
   [[maybe_unused]] const auto done =
       in_module_context(*owner, file, [&] -> bool {
         file_.file_no_prelude_ = source->second->no_prelude;
@@ -1104,6 +1118,7 @@ auto checker::check_item_for_comptime(const ast::func_decl &decl) -> void {
         pop_scope();
         return true;
       });
+  function_.current_template_ = saved_template;
   swap_body_context(module_level);
   file_.file_no_prelude_ = saved_no_prelude;
   file_.file_has_external_wildcard_ = saved_wildcard;

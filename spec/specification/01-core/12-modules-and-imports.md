@@ -97,7 +97,7 @@ Because every rule is evaluated against a finite, locally-declared set — the e
 
 - `use`, visibility, and re-exporting are implemented.
 - **Visible Modules** and **Dotted Names** are implemented. The checker alone decides what a dotted name means (`checker::classify_dotted_root`, `src/semantic/check.cpp`) and records value-rooted paths for lowering (`checked_types::value_path_types`); module-rooted ones are validated through `validate_module_reference` (`src/semantic/resolution.cpp`), and both path validation and the checker's own lookups apply the one visibility rule, `root_visible_without_import`. The compile-time evaluator asks the checker through `comptime::evaluator::set_path_resolver`, supplying only whether the root is one of its own frame locals. Rule 2 is `validate_module_name_conflicts`.
-- A field read through a module-level `static` (rules 3 and 4) lowers when the value read is a scalar, which is embedded as a constant. A non-scalar part of a struct-valued `static` (`origin` itself, or `seg.a` where `a` is a struct) has no runtime storage yet; only arrays and lists of scalars are reified as globals.
+- A field read through a module-level `static` (rules 3 and 4) lowers when the value read is a scalar, which is embedded as a constant. A whole struct-valued `static` is rebuilt from its compile-time value at each use. A part of one that is itself a struct or a sum (`seg.a` where `a` is a struct) cannot be read yet, at compile time or at run time; only arrays and lists of scalars are reified as globals.
 
 ## See also
 

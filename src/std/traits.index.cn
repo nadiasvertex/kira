@@ -61,17 +61,12 @@ pub trait index[I]:
 pub trait index_mut[I] requires index[I]:
     #: The type `&mut self[i]` evaluates to.
     #:
-    #: Its own associated type rather than `cell[index.output]`, because a
-    #: mutable borrow is not uniformly "a cell around what a read yields".
-    #: Borrowing one element gives `cell[T]`, an address to write through;
-    #: borrowing a range gives `slice_mut[T]`, which is already a mutable
-    #: view and wants no cell around it. Spelling it here lets one type
-    #: implement both without either impl lying about its shape.
-    #:
-    #: Spelled as the mutable view itself (`cell_mut[T]`, `slice_mut[T]`)
-    #: rather than with a `mut` prefix: `mut` in type position is sugar for
-    #: the `_mut` counterpart of the view it precedes, and there is nothing
-    #: for it to precede here.
+    #: Its own associated type rather than `&mut index.output`, because a
+    #: mutable borrow is not uniformly "a reference to what a read yields".
+    #: Borrowing one element gives `&mut T`; borrowing a range gives
+    #: `slice_mut[T]`, which is already a mutable view and wants no
+    #: reference around it. Spelling it here lets one type implement both
+    #: without either impl lying about its shape.
     type output_mut
     #: Returns a mutable view of the value at `i`.
     #: Args:
@@ -86,10 +81,9 @@ pub trait index_mut[I] requires index[I]:
 #: Separate from `index` for the same reason `index_mut` is: handing out an
 #: interior reference (even a read-only one) is a promise about the
 #: collection's storage, not just about what value `self[i]` holds. Unlike
-#: `index_mut`, the borrowed view is always `cell[self.output]` — never
-#: something like `slice[T]`, which is already immutable and needs no cell
-#: around it, so a range-index impl has no reason to implement `index_ref`
-#: at all; only element access does.
+#: `index_mut`, the borrow is always `&self.output`: a range is read as a
+#: `slice[T]`, which is already a read-only view, so a range-index impl has
+#: no reason to implement `index_ref`; only element access does.
 pub trait index_ref[I] requires index[I]:
     #: Returns a read-only view of the value at `i`.
     #: Args:
@@ -97,7 +91,7 @@ pub trait index_ref[I] requires index[I]:
     #:   i: the index.
     #: Returns:
     #:   a read-only view of the value at that index.
-    def at_ref(self, i: I) -> cell[self.output]
+    def at_ref(self, i: I) -> &self.output
 
 #: Writing `self[i] = value`.
 pub trait index_set[I]:

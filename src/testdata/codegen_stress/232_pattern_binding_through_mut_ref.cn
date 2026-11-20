@@ -1,0 +1,30 @@
+module codegen_stress.pattern_binding_through_mut_ref
+
+# A pattern binding reached through a `&mut` subject names part of the
+# referent and can be written without `mut` (todo item 21, chapter 3): an
+# assignment to it and a `mut self` method on it both change the value the
+# caller owns.
+
+# expect: 603
+
+def bump(o: &mut option[int32]) -> unit:
+    if let @some(n) = o:
+        n = n + 1
+
+def grow(o: &mut option[list[int32]]) -> unit:
+    match o:
+        @some(xs) => xs.push(9)
+        @none => return
+
+def main() -> int32:
+    var o: option[int32] = @some(5)
+    bump(&mut o)
+    var l: option[list[int32]] = @some([1, 2])
+    grow(&mut l)
+    let a = match o:
+        @some(n) => n
+        @none => 0
+    let b = match l:
+        @some(xs) => xs.len() as int32
+        @none => 0
+    return a * 100 + b

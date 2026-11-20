@@ -1,0 +1,18 @@
+module codegen_stress.compound_assign_list_element
+
+# A compound assignment to a list element (todo item 37). `xs[i] += v` reads
+# and writes the element in place through `at_mut`, with the index evaluated
+# once.
+
+# expect: 4730
+
+def main() -> int32:
+    var xs: list[int32] = [1, 2, 3]
+    var i: usize = 0
+    xs[0] += 3
+    xs[i + 1] *= 7
+    i = 2
+    xs[i] -= 3
+    var grid: list[list[int32]] = [[5]]
+    grid[0][0] += 25
+    return xs[0] * 1000 + xs[1] * 50 + xs[2] + grid[0][0]

@@ -85,18 +85,6 @@ private:
            types_.entry(type).kind == type_kind::ref_kind;
   }
 
-  /// A reference, or a `cell` view, which is the address of one element.
-  [[nodiscard]] auto is_ref_like(type_id type) const -> bool {
-    if (is_ref(type)) {
-      return true;
-    }
-    if (types_.is_unknown(type)) {
-      return false;
-    }
-    const auto &entry = types_.entry(type);
-    return entry.kind == type_kind::builtin_generic_kind &&
-           (entry.name == "cell" || entry.name == "cell_mut");
-  }
 
   auto report(source_span span, std::string what) -> void {
     out_.push_back(reference_violation{
@@ -120,7 +108,7 @@ private:
     if (types_.is_unknown(want) || types_.is_unknown(value.type)) {
       return;
     }
-    if (is_ref_like(want) != is_ref_like(value.type)) {
+    if (is_ref(want) != is_ref(value.type)) {
       report(value.span,
              std::format("{}: `{}` flows where `{}` is expected", where,
                          types_.display(value.type), types_.display(want)));
@@ -182,10 +170,6 @@ private:
     case hir_node_kind::hir_str_scalar_width:
       projection(*dynamic_cast<const hir_str_scalar_width &>(node).object,
                  "a string decode");
-      break;
-    case hir_node_kind::hir_cell_set:
-      projection(*dynamic_cast<const hir_cell_set &>(node).cell,
-                 "a cell write");
       break;
     case hir_node_kind::hir_match:
       projection(*dynamic_cast<const hir_match &>(node).subject,
@@ -789,15 +773,6 @@ private:
            types_.entry(type).kind == type_kind::ref_kind;
   }
 
-  [[nodiscard]] auto is_cell(type_id type) const -> bool {
-    if (types_.is_unknown(type)) {
-      return false;
-    }
-    const auto &entry = types_.entry(type);
-    return entry.kind == type_kind::builtin_generic_kind &&
-           (entry.name == "cell" || entry.name == "cell_mut");
-  }
-
   /// `expr` read through every reference it is: `*expr`, `**expr`, ...
   auto deref(ptr<hir_expr> expr) -> ptr<hir_expr> {
     while (expr != nullptr && is_ref(expr->type)) {
@@ -857,10 +832,8 @@ private:
         is_bare_param(types_, slot->type)) {
       return;
     }
-    // A `cell[T]` is the address of one element — what `&xs[i]` lowers to
-    // through `index_ref` — so it already is the reference a `&T` wants.
-    const auto want_ref = is_ref(want) || is_cell(want);
-    const auto have_ref = is_ref(slot->type) || is_cell(slot->type);
+    const auto want_ref = is_ref(want);
+    const auto have_ref = is_ref(slot->type);
     if (want_ref && !have_ref) {
       slot = borrow(std::move(slot), want);
     } else if (!want_ref && have_ref) {
@@ -1198,9 +1171,6 @@ private:
       return;
     case hir_node_kind::hir_str_scalar_width:
       project(dynamic_cast<hir_str_scalar_width &>(node).object);
-      return;
-    case hir_node_kind::hir_cell_set:
-      project(dynamic_cast<hir_cell_set &>(node).cell);
       return;
     case hir_node_kind::hir_tuple_index:
       project(dynamic_cast<hir_tuple_index &>(node).object);

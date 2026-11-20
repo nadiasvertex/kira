@@ -2224,14 +2224,14 @@ auto test_stdlib_shapes() -> void {
   expect_ops(*f, "as_words", {"compute s1 = copy s0", "return s1"});
   expect_verifies(*f, f->function("as_words"), "as_words");
 
-  // A `cell[T]` is the address of a `T`, and of nothing else.
+  // A reference to an element is the address of a `T`, and of nothing else.
   expect_ops(*f, "first_cell", {"return &s0.*[0]"});
   expect_verifies(*f, f->function("first_cell"), "first_cell");
   auto wrong = f->function("first_cell");
   wrong.ops[0].value->type =
-      f->checked.types.builtin_generic("cell", {f->builtin("int32")});
+      f->checked.types.ref_to(f->builtin("int32"), false);
   expect_rejects(*f, wrong, hir::verify_error_kind::type_mismatch,
-                 "a cell of int32 that addresses an int64", {},
+                 "a reference to int32 that addresses an int64", {},
                  "the address of");
 }
 
@@ -2947,28 +2947,12 @@ auto test_arrays_forget_and_owned_receivers() -> void {
   expect_rejects(*f, borrowed, hir::verify_error_kind::uninitialized,
                  "a receiver moved in before it was filled");
 
-  // A `cell[T]` call result read as a `&T` is the same address, so the call
-  // writes it straight into the payload.
+  // An `at_ref` result is the `&T` the payload holds, so the call writes it
+  // straight into the payload.
   expect_ops(*f, "first_of",
              {"call s0.@some.0 = list::at_ref$list_noisy_$usize(s1, #0)",
               "publish s0 @some", "return"});
   expect_verifies(*f, f->function("first_of"), "first_of");
-  // Only a `cell_mut[T]` may be read as a `&mut T`, and only as a reference
-  // to its own `T`.
-  auto &types = f->checked.types;
-  const auto result = f->function("first_of").slots[0].type;
-  const auto element = types.entry(types.entry(result).args.front()).result;
-  const auto cell = types.builtin_generic("cell", {element});
-  const auto cell_mut = types.builtin_generic("cell_mut", {element});
-  expect(f->env->cell_reads_as_reference(cell, types.ref_to(element, false)),
-         "expected a `cell[T]` to read as a `&T`");
-  expect(!f->env->cell_reads_as_reference(cell, types.ref_to(element, true)),
-         "expected a `cell[T]` not to read as a `&mut T`");
-  expect(f->env->cell_reads_as_reference(cell_mut, types.ref_to(element, true)),
-         "expected a `cell_mut[T]` to read as a `&mut T`");
-  expect(!f->env->cell_reads_as_reference(
-             cell, types.ref_to(f->builtin("int32"), false)),
-         "expected a `cell[T]` not to read as a reference to another type");
 
   // A borrowed list is copied bit for bit into `into_iter`, and the iterator
   // it returns owns nothing, so nothing drops it.
@@ -3026,7 +3010,7 @@ auto test_arrays_forget_and_owned_receivers() -> void {
   // `option[_]` with no layout.
   const auto keep_literal = f->function("keep_literal");
   const auto option_int32 =
-      types.builtin_generic("option", {f->builtin("int32")});
+      f->checked.types.builtin_generic("option", {f->builtin("int32")});
   expect(std::ranges::any_of(
              keep_literal.slots,
              [&](const hir::storage_slot &slot) {

@@ -372,10 +372,6 @@ auto value_layouts::compute(type_id id)
       return simple_layout(id, value_layout_kind::descriptor, k_descriptor_size,
                            k_word_size);
     }
-    if (entry.name == "cell" || entry.name == "cell_mut") {
-      return simple_layout(id, value_layout_kind::address, k_word_size,
-                           k_word_size);
-    }
     if (entry.name == "task" || entry.name == "crew" ||
         entry.name == "generator") {
       return simple_layout(id, value_layout_kind::handle, k_word_size,

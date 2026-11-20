@@ -1,0 +1,24 @@
+module codegen_stress.replace_list_element
+
+# `replace(&mut xs[i], v)` on a `list[T]` exchanges an element and returns the
+# old one (todo item 33). `&mut xs[i]` is a `&mut T`, so `replace`'s `T` is
+# the element type. The old element is returned by value and the new one is
+# read back, so a write to the wrong address changes the answer.
+
+# expect: 1112
+
+def replace_at[T](xs: &mut list[T], i: usize, v: T) -> option[T]:
+    if i >= xs.len():
+        return @none
+    return @some(replace(&mut xs[i], v))
+
+def main() -> int32:
+    var xs: list[list[int32]] = [[1], [2]]
+    let old = replace_at(&mut xs, 0, [10, 11])
+    let missing = replace_at(&mut xs, 5, [99])
+    var total: int32 = 0
+    if let @some(o) = old:
+        total = total + o[0] * 1000
+    if let @none = missing:
+        total = total + 100
+    return total + xs[0][0] + xs[1][0]

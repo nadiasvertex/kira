@@ -337,9 +337,14 @@ auto body_builder::assign_into(const ast::assign_stmt &assign,
   }
   if (assign.target->kind == ast::node_kind::index_expr) {
     const auto &index = ast::cast<const ast::index_expr>(*assign.target);
+    // `v[i] op= x` with an `index_mut` impl updates the element in place
+    // through `at_mut`, below; `v[i] = x` stores through `set_at`.
+    const auto compound = assign.op != ast::assign_op::assign;
+    const auto in_place =
+        compound && checked_.lowering.index_mut_dispatches.contains(&index);
     if (const auto found = checked_.lowering.index_set_dispatches.find(&index);
-        found != checked_.lowering.index_set_dispatches.end()) {
-      if (assign.op != ast::assign_op::assign) {
+        found != checked_.lowering.index_set_dispatches.end() && !in_place) {
+      if (compound) {
         return fail_feature("compound index_set",
                             "compound assignment through an `index_set` impl "
                             "is not supported yet — write `v[i] = v[i] + x`",
@@ -356,7 +361,7 @@ auto body_builder::assign_into(const ast::assign_stmt &assign,
       return {};
     }
   }
-  CORE_TRY(target, place_of(*assign.target));
+  CORE_TRY(target, place_of(*assign.target, place_access::mutate));
   const auto target_type = target.type();
   auto made = make_node<core::assign>(assign.span);
   auto checks = ptr_vec<stmt>{};

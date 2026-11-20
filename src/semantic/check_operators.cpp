@@ -1112,11 +1112,11 @@ auto checker::infer_binary(const ast::binary_expr &binary, type_id expected)
 /// with no way to express pointer arithmetic at all — the one thing a
 /// raw pointer is for. `nullopt` when this isn't that shape, leaving the
 /// ordinary borrow rules to run.
-/// An expected `cell[T]`/`cell_mut[T]` wins over it: a single-element
-/// view and an offset address are the same address at runtime, and an
-/// `index_mut` impl body writing `&mut self.data[i]` against a declared
-/// `cell_mut[T]` means the view. Only where nothing else is expected does
-/// the machine-layer reading apply.
+/// An expected `&T`/`&mut T` wins over it: a reference to the element and
+/// an offset address are the same address at runtime, and an `index_mut`
+/// impl body writing `&mut self.data[i]` against a declared `&mut T` means
+/// the reference. Only where no reference is expected does the
+/// machine-layer reading apply.
 auto checker::raw_pointer_element_address(const ast::unary_expr &unary,
                                           type_id expected)
     -> std::optional<type_id> {
@@ -1124,9 +1124,7 @@ auto checker::raw_pointer_element_address(const ast::unary_expr &unary,
       unary.operand->kind != ast::node_kind::index_expr) {
     return std::nullopt;
   }
-  if (const auto &expected_entry = session_.types_.entry(expected);
-      expected_entry.kind == type_kind::builtin_generic_kind &&
-      (expected_entry.name == "cell" || expected_entry.name == "cell_mut")) {
+  if (session_.types_.entry(expected).kind == type_kind::ref_kind) {
     return std::nullopt;
   }
   const auto &index = ast::cast<const ast::index_expr>(*unary.operand);
@@ -1237,8 +1235,15 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
     return stripped;
   case ast::unary_op::deref: {
     // What a deref reads is chosen by the operand's head — a borrow, a
-    // pointer, a cell — so a head still open is owed its answer now.
-    const auto &entry = session_.types_.entry(demand_shape(operand));
+    // pointer — so a head still open is owed its answer now. A reference's
+    // head is its own: `demand_shape` looks through references, and would
+    // spend a default on the pointee (`*m = 7` with `m: &mut list-element`
+    // settling the element to `int32` before a later annotation is heard).
+    const auto zonked = leaf_ctxt_.zonk(operand);
+    const auto &entry = session_.types_.entry(
+        session_.types_.entry(zonked).kind == type_kind::ref_kind
+            ? zonked
+            : demand_shape(operand));
     if (entry.kind == type_kind::ptr_kind) {
       require_machine_context(unary.span, "dereferencing a raw pointer");
       return entry.result;
@@ -1246,13 +1251,6 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
     if (entry.kind == type_kind::ref_kind) {
       // A `&T`/`&mut T` is a checked borrow, not raw memory — never gated.
       return entry.result;
-    }
-    // `&xs[i]`/`&mut xs[i]` hand back a `cell[T]`/`cell_mut[T]`, which is
-    // the element's address, so reading through one is a read of `T`.
-    if (entry.kind == type_kind::builtin_generic_kind &&
-        (entry.name == "cell" || entry.name == "cell_mut") &&
-        entry.args.size() == 1) {
-      return entry.args.front();
     }
     // A handle that implements `deref` (spec ch. 18): `*h` reads the
     // target `h.deref()` lends.
@@ -1317,9 +1315,8 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
                 index, object_type, object_entry, recorded_key_type(index));
             if (!session_.types_.is_unknown(result)) {
               record_expr_type(index, result);
-              // A `cell[T]` *is* the address of the element, so it stands
-              // as the whole `&v[i]` — matching `&mut v[i]`'s `cell_mut[T]`
-              // result above.
+              // `at_ref`'s `&T` is the address of the element, so it
+              // stands as the whole `&v[i]`.
               return result;
             }
           } else if (type_has_trait(object_entry, "index")) {
@@ -1335,26 +1332,13 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
                     "Taking an interior reference is a separate capability "
                     "from reading by value. Add:\n\n    impl "
                     "index_ref[usize] for {}:\n"
-                    "        def at_ref(self, i: usize) -> cell[...]:\n"
+                    "        def at_ref(self, i: usize) -> &...:\n"
                     "            ...",
                     object_entry.name));
             return k_error_type;
           }
         }
       }
-    }
-    // `&expr` where a `cell[T]` is expected (an `index_mut`-style trait
-    // method's body handing back the single-element view its signature
-    // promises) types directly as the `cell[T]` rather than `&T`: the two
-    // are the same bare address at runtime (`spec/todo.md` item 19), so
-    // there is nothing this would paper over — it just lets the checker
-    // record the shape lowering (and the borrow checker's view tracking)
-    // already expect instead of a mismatched-but-compatible `&T`.
-    const auto &expected_entry = session_.types_.entry(expected);
-    if (expected_entry.kind == type_kind::builtin_generic_kind &&
-        expected_entry.name == "cell" && expected_entry.args.size() == 1 &&
-        session_.types_.compatible(expected_entry.args.front(), stripped)) {
-      return expected;
     }
     return session_.types_.ref_to(stripped, false);
   }
@@ -1371,7 +1355,9 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
       if (const auto *root = assignment_root_ident(*unary.operand)) {
         invalidate_facts(root->name);
       }
-      if (const auto handle = place_through_deref(*unary.operand)) {
+      if (record_write_through_deref_mut(*unary.operand, "mutably borrow")) {
+        // Borrowed through `deref_mut`.
+      } else if (const auto handle = place_through_deref(*unary.operand)) {
         report_write_through_deref(unary.span, *handle, "mutably borrow");
         return k_error_type;
       }
@@ -1449,20 +1435,17 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
                 index, object_type, object_entry, recorded_key_type(index));
             if (!session_.types_.is_unknown(result)) {
               record_expr_type(index, result);
-              // A `cell_mut[T]` *is* the address of the element, so it
-              // stands as the whole `&mut v[i]`. Any other view — the
+              // A `&mut T` *is* the address of the element, so it stands
+              // as the whole `&mut v[i]`. Any other view — the
               // `slice_mut[T]` a range impl hands back — is a value, and
               // `&mut` of it is a reference to that value, matching what
               // `&mut arr[a..b]` on a builtin container already answers
               // (`&mut slice_mut[T]`). Without this the two spellings
               // disagree and a `slice_mut[T]` argument fails to solve the
               // callee's `T` against a `&mut slice_mut[T]` parameter.
-              const auto &result_entry = session_.types_.entry(result);
-              const auto is_cell =
-                  result_entry.kind == type_kind::builtin_generic_kind &&
-                  (result_entry.name == "cell" ||
-                   result_entry.name == "cell_mut");
-              return is_cell || result == k_error_type
+              const auto is_ref =
+                  session_.types_.entry(result).kind == type_kind::ref_kind;
+              return is_ref || result == k_error_type
                          ? result
                          : session_.types_.ref_to(result, true);
             }
@@ -1478,7 +1461,7 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
                 std::format("Taking a mutable interior reference is a separate "
                             "capability from reading. Add:\n\n    impl "
                             "index_mut[usize] for {}:\n"
-                            "        type output_mut = cell_mut[...]\n"
+                            "        type output_mut = &mut ...\n"
                             "        def at_mut(mut self, i: usize) -> "
                             "self.output_mut:\n            ...",
                             object_entry.name));
@@ -1486,14 +1469,6 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
           }
         }
       }
-    }
-    // `&mut expr` where a `cell_mut[T]` is expected — the mutable sibling
-    // of the `addr_of` case above.
-    const auto &expected_entry = session_.types_.entry(expected);
-    if (expected_entry.kind == type_kind::builtin_generic_kind &&
-        expected_entry.name == "cell_mut" && expected_entry.args.size() == 1 &&
-        session_.types_.compatible(expected_entry.args.front(), stripped)) {
-      return expected;
     }
     return session_.types_.ref_to(stripped, true);
   }

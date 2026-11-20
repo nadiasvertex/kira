@@ -99,7 +99,7 @@ constexpr auto k_inputs = std::array{
     snapshot_input{.corpus = "codegen_stress",
                    .filename = "082_default_parameter_values.cn"},
     snapshot_input{.corpus = "codegen_stress",
-                   .filename = "087_list_cell_and_mutable_cell.cn"},
+                   .filename = "087_list_element_references.cn"},
     snapshot_input{.corpus = "codegen_stress",
                    .filename = "089_elaboration_snapshot_gaps.cn"},
     // An unannotated `[]` accumulator inside a generic body, instantiated at

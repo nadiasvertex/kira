@@ -46,6 +46,12 @@ def err_len(r: result[int32, str]) -> int32:
         @ok(v) => v
         @err(m) => m.len() as int32
 
+# A copy of `nested` is the reader's own; writing it leaves `nested` as it was.
+def write_nested_element() -> int32:
+    var own = nested
+    own[0][0] = 10
+    return own[0][0]
+
 def main() -> int32:
     # 2 + 3 + 4 = 9
     var total = names[1].len() as int32 + words[2].len() as int32 + grid[1][1]
@@ -59,9 +65,7 @@ def main() -> int32:
     # + 1 + 3 + 2 = 64
     total = total + table[1].key.len() as int32 + table[1].values[1] + table[1].values.len() as int32
     # + 10 - 1 + 5 = 78; `nested[0][0]` is still 1.
-    var own = nested
-    own[0][0] = 10
-    total = total + own[0][0] - nested[0][0] + computed[1].len() as int32
+    total = total + write_nested_element() - nested[0][0] + computed[1].len() as int32
     # + 6 + 1 + 3 = 88
     total = total + or_one(maybe) + or_one(nothing) + err_len(outcome)
     return total

@@ -978,13 +978,6 @@ private:
           entry.kind == semantic::type_kind::ptr_kind && layout.has_value() &&
           (*layout)->kind == runtime::value_layout_kind::array &&
           same_type(entry.result, (*layout)->element);
-      // A `cell[T]` or `cell_mut[T]` is the address of a `T`.
-      const auto cell = (entry.name == "cell" || entry.name == "cell_mut") &&
-                        entry.args.size() == 1 &&
-                        same_type(entry.args.front(), value.where.type);
-      if (cell) {
-        return {};
-      }
       if ((entry.kind != semantic::type_kind::ref_kind &&
            entry.kind != semantic::type_kind::ptr_kind) ||
           (!same_bytes(entry.result, value.where.type) && !element_pointer)) {
@@ -2142,8 +2135,7 @@ private:
         !same_type(op.operands[0].type, op.dest.type) &&
         !(is_raw_pointer(op.operands[0].type) &&
           is_raw_pointer(op.dest.type)) &&
-        !reference_to_pointer(op.operands[0].type, op.dest.type) &&
-        !env_.cell_reads_as_reference(op.operands[0].type, op.dest.type)) {
+        !reference_to_pointer(op.operands[0].type, op.dest.type)) {
       return fail(verify_error_kind::type_mismatch,
                   "a copy joins " + name_of(op.operands[0].type) + " and " +
                       name_of(op.dest.type));

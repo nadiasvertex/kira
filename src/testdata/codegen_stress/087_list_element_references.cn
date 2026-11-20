@@ -1,0 +1,32 @@
+module main
+
+# expect: 1220
+
+# `xs.get_mut(i)` and `&xs[i]` hand out references to one element of a list.
+# A reference is a bare element address at run time, and `get_mut` builds its
+# `option[&mut T]` by hand, with a bounds check that answers `@none`.
+# Exercises both arms of `get_mut`, a read through `&xs[i]`, and a write
+# through the `&mut T`, on both backends, combined into one integer so
+# agreement alone cannot hide a shared addressing bug.
+
+def double_at(xs: &mut list[int32], i: usize) -> bool:
+    if let @some(c) = xs.get_mut(i):
+        *c = *c * 2
+        return true
+    return false
+
+def main() -> int32:
+    var xs = [10, 20, 30, 40, 50]
+
+    let doubled = double_at(&mut xs, 2)   # 30 -> 60
+    let oob = double_at(&mut xs, 99)       # out of bounds, no-op
+
+    let c = &xs[3]
+    let read_back = *c                    # 40
+
+    let sum = xs[0] + xs[1] + xs[2] + xs[3] + xs[4] # 10+20+60+40+50 = 180
+
+    let doubled_flag = if doubled: 1 else: 0
+    let oob_flag = if oob: 1 else: 0
+
+    return sum + read_back + doubled_flag * 1000 - oob_flag * 1000

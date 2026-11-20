@@ -1,0 +1,14 @@
+module codegen_stress.nested_index_write
+
+# A write to an element of a nested list (todo item 65). `xs[0][1] = 9` stores
+# through `set_at` on `xs[0]`, which is reached through `at_mut`, so the inner
+# list is borrowed mutably. A write into the wrong list, or into a copy of it,
+# changes the answer.
+
+# expect: 1917
+
+def main() -> int32:
+    var xs: list[list[int32]] = [[1, 2], [3, 4]]
+    xs[0][1] = 9
+    xs[1][0] = 13
+    return xs[0][0] * 1000 + xs[0][1] * 100 + xs[1][0] + xs[1][1]

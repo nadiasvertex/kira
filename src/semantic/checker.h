@@ -67,8 +67,12 @@ enum class binding_origin : uint8_t {
   pattern_binding, ///< Bound by a pattern (match arm, `if let`, `for`, ...)
                    ///< to a value it owns — immutable.
   pattern_alias,   ///< Bound by a pattern to a part of a value reached
-                   ///< through a reference (`match &mut opt`); it cannot be
-                   ///< reassigned, but what it names may be written.
+                   ///< through a shared reference (`match &opt`): it cannot
+                   ///< be written.
+  pattern_alias_mut, ///< Bound by a pattern to a part of a value reached
+                     ///< through `&mut` (`match &mut opt`): it names that
+                     ///< part, and assigning to it writes the part
+                     ///< (ch. 3; plan decision 3).
   mut_binding,     ///< A pattern binding written with a leading `mut`
                    ///< (`let mut x`, `mut self`) — mutable like `var`.
   synthetic,       ///< Introduced by the checker itself (e.g. a `crew`/`cancel`
@@ -149,8 +153,6 @@ enum class builtin_result_shape : uint8_t {
   element,                       ///< The receiver's element type, `T`.
   option_of_element,             ///< `option[T]`.
   byte_slice,                    ///< `slice[byte]`.
-  cell_of_element,               ///< `cell[T]`.
-  option_of_mut_cell_of_element, ///< `option[cell_mut[T]]`.
   ptr_to_element,                ///< `*T` -- `as_ptr`.
   mut_ptr_to_element,            ///< `*mut T` -- `as_mut_ptr`.
 };
@@ -218,15 +220,6 @@ inline constexpr auto k_builtin_methods =
         // errors its tasks finished with; typed by `infer_call`.
         {.owner = "crew",
          .name = "errors",
-         .result = builtin_result_shape::unit_result},
-        {.owner = "cell",
-         .name = "get",
-         .result = builtin_result_shape::element},
-        {.owner = "cell_mut",
-         .name = "get",
-         .result = builtin_result_shape::element},
-        {.owner = "cell_mut",
-         .name = "set",
          .result = builtin_result_shape::unit_result},
         // `as_ptr`/`as_mut_ptr` (spec/specification/03-advanced/
         // 38-machine-layer.md): the address of element 0 of a container's
@@ -747,10 +740,16 @@ private:
     /// Populated by `record_deref_steps`.
     std::unordered_map<const ast::expr *, std::vector<deref_step>>
         deref_adjustments_;
+    /// See `checked_types::deref_mut_adjustments`.
+    std::unordered_map<const ast::expr *, std::vector<deref_step>>
+        deref_mut_adjustments_;
 
     std::unordered_map<const ast::module_path_expr *,
                        std::vector<std::vector<deref_step>>>
         path_deref_adjustments_;
+    std::unordered_map<const ast::module_path_expr *,
+                       std::vector<std::vector<deref_step>>>
+        path_deref_mut_adjustments_;
 
     /// Calls built only to resolve an implicit `deref()` through the ordinary
     /// method-call machinery (`resolve_deref_step`). Nothing outside the
@@ -1007,6 +1006,9 @@ private:
     /// Empty otherwise, and the bindings are aliases
     /// (`check_owning_pattern`).
     std::optional<binding_origin> owning_pattern_origin_;
+    /// Whether the pattern being checked reached its value through a shared
+    /// reference somewhere above it, which makes its aliases read-only.
+    bool pattern_through_shared_ = false;
 
     /// How many block `static for` bodies enclose the code being checked. A
     /// nested one is unrolled by the outermost, once per its iteration.
@@ -3537,6 +3539,15 @@ private:
 
   auto place_through_deref(const ast::expr &target) -> std::optional<type_id>;
 
+  auto deref_handle_node(const ast::expr &target) -> const ast::expr *;
+  auto record_path_write_through_deref_mut(const ast::module_path_expr &path,
+                                           std::string_view what) -> bool;
+  auto record_write_through_deref_mut(const ast::expr &target,
+                                      std::string_view what) -> bool;
+  auto deref_mut_method_of(type_id type) -> const method_entry *;
+  auto resolve_handle_step(const ast::expr &receiver, type_id handle,
+                           source_span span, const method_entry *method)
+      -> std::optional<deref_step>;
   auto report_write_through_deref(source_span span, type_id handle,
                                   std::string_view what) -> void;
 
@@ -3840,6 +3851,8 @@ private:
   auto resolve_index_mut_output(type_id target, std::string_view trait_key,
                                 const method_entry &method) -> type_id;
 
+  auto record_index_mut_dispatch(const ast::index_expr &index, type_id target,
+                                 const type_entry &entry, type_id key) -> void;
   auto require_index_mut_trait(const ast::index_expr &index, type_id object,
                                const type_entry &entry, type_id key) -> type_id;
 
@@ -4078,6 +4091,8 @@ private:
   /// Checks a binding pattern against `subject` (`raw_subject` before any
   /// reference was stripped from it). The bindings take `origin` unless the
   /// value is reached through a reference.
+  [[nodiscard]] auto reaches_through_shared(const ast::pattern &pattern,
+                                            type_id raw_subject) const -> bool;
   auto check_owning_pattern(const ast::pattern &pattern, type_id raw_subject,
                             type_id subject, binding_origin origin) -> void;
   /// How a name `pattern` binds is held: `mut`, `let`, or a pattern
@@ -4109,7 +4124,7 @@ private:
   auto assignment_root_ident(const ast::expr &target)
       -> const ast::ident_expr *;
 
-  auto check_user_index_assignment(const ast::expr &target)
+  auto check_user_index_assignment(const ast::expr &target, bool compound)
       -> std::optional<type_id>;
 
   auto check_assignment(const ast::assign_stmt &stmt) -> void;

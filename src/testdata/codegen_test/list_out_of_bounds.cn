@@ -11,14 +11,14 @@ module sample
 # `test_built_program_panics_on_list_index_out_of_bounds`.
 #
 # What a harness running either tier in-process can still check is the
-# bounds *decision*, which `mutable_cell` reports instead of panicking on:
+# bounds *decision*, which `get_mut` reports instead of panicking on:
 # it answers `@none` for exactly the indices `xs[i]` would refuse. Written
 # as a computed value rather than as "no diagnostic", so an off-by-one in
 # the comparison changes the answer.
 def at_or_sentinel(i: usize) -> int32:
     var xs = [10, 20, 30]
-    if let @some(c) = xs.mutable_cell(i):
-        return c.get()
+    if let @some(c) = xs.get_mut(i):
+        return *c
     return -1
 
 def main() -> int32:

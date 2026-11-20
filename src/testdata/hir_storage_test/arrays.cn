@@ -43,8 +43,8 @@ def walk(b: bag) -> unit:
         let id = n.id
     return
 
-# `&xs[0]` on a list is a `cell[noisy]` from the list's `at`, read as the
-# `&noisy` the payload holds: the same address.
+# `&xs[0]` on a list is the `&noisy` the list's `at_ref` returns, which the
+# payload holds as it is.
 def first_of(xs: &list[noisy]) -> option[&noisy]:
     return @some(&xs[0])
 

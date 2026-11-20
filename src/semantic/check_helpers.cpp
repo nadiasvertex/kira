@@ -33,12 +33,6 @@ auto builtin_method_owner(const type_entry &object) -> std::string_view {
   if (object.name == "slice" || object.name == "slice_mut") {
     return "slice";
   }
-  if (object.name == "cell" || object.name == "cell_mut") {
-    // Unlike `slice`/`slice_mut`, `cell` and `cell_mut` do *not* share one
-    // bucket: `set` is only ever valid on a `cell_mut` receiver, and folding
-    // both into one owner would offer it on a read-only `cell` too.
-    return object.name;
-  }
   if (object.name == "option" || object.name == "result" ||
       object.name == "generator" || object.name == "task" ||
       object.name == "crew" || object.name == "uninit") {

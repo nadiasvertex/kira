@@ -1141,13 +1141,17 @@ private:
       const auto &path = ast::cast<ast::module_path_expr>(expr);
       const auto types = checked_.value_path_types.find(&path);
       const auto derefs = checked_.path_deref_adjustments.find(&path);
+      const auto mut_derefs = checked_.path_deref_mut_adjustments.find(&path);
       for (std::size_t i = 1; i < path.segments.size(); ++i) {
         const auto type =
             types != checked_.value_path_types.end() && i < types->second.size()
                 ? types->second[i]
                 : k_unknown_type;
-        if (derefs != checked_.path_deref_adjustments.end() &&
-            i < derefs->second.size()) {
+        if (mut_derefs != checked_.path_deref_mut_adjustments.end() &&
+            i < mut_derefs->second.size() && !mut_derefs->second[i].empty()) {
+          push_deref_steps(mut_derefs->second[i], out);
+        } else if (derefs != checked_.path_deref_adjustments.end() &&
+                   i < derefs->second.size()) {
           push_deref_steps(derefs->second[i], out);
         }
         out.push_back(place_step{.step = place_step::kind::field,
@@ -1159,11 +1163,7 @@ private:
     case ast::node_kind::field_expr: {
       const auto &field = ast::cast<ast::field_expr>(expr);
       place_steps(*field.object, out);
-      if (const auto derefs =
-              checked_.deref_adjustments.find(field.object.get());
-          derefs != checked_.deref_adjustments.end()) {
-        push_deref_steps(derefs->second, out);
-      }
+      push_handle_steps(*field.object, out);
       out.push_back(place_step{.step = place_step::kind::field,
                                .field = field.field_name,
                                .type = type_of(&expr)});
@@ -1183,11 +1183,7 @@ private:
       const auto &unary = ast::cast<ast::unary_expr>(expr);
       place_steps(*unary.operand, out);
       // `*h` on a `deref` handle reads through `h.deref()`.
-      if (const auto derefs =
-              checked_.deref_adjustments.find(unary.operand.get());
-          derefs != checked_.deref_adjustments.end()) {
-        push_deref_steps(derefs->second, out);
-      }
+      push_handle_steps(*unary.operand, out);
       out.push_back(
           place_step{.step = place_step::kind::deref, .type = type_of(&expr)});
       return;
@@ -1199,6 +1195,21 @@ private:
 
   /// One `through_deref` step per implicit `deref()` call, each typed as
   /// the `&target` it returns.
+  /// The implicit steps through the handle `receiver`: `deref_mut()` where
+  /// the place is written through it, else `deref()`.
+  auto push_handle_steps(const ast::expr &receiver,
+                         std::vector<place_step> &out) const -> void {
+    if (const auto derefs = checked_.deref_mut_adjustments.find(&receiver);
+        derefs != checked_.deref_mut_adjustments.end()) {
+      push_deref_steps(derefs->second, out);
+      return;
+    }
+    if (const auto derefs = checked_.deref_adjustments.find(&receiver);
+        derefs != checked_.deref_adjustments.end()) {
+      push_deref_steps(derefs->second, out);
+    }
+  }
+
   static auto push_deref_steps(const std::vector<deref_step> &derefs,
                                std::vector<place_step> &out) -> void {
     for (const auto &step : derefs) {

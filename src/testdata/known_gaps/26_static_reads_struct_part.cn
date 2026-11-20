@@ -1,6 +1,6 @@
 # todo: 26
 # tier: both
-# currently-error: a struct-valued `static` has no runtime storage yet
+# currently-error: reading such a part is not implemented yet
 # want: compile-time code reads the `form` part of a struct-valued static; main returns 12.
 module known_gaps.static_reads_struct_part
 

@@ -10,7 +10,7 @@
 #include "src/semantic/type_table.h"
 
 /// The compiler's own operations: the `intrinsic` callees the elaborator emits
-/// for builtin addressing, views, cells, raw pointers, layout queries, string
+/// for builtin addressing, views, raw pointers, layout queries, string
 /// iteration and task forms. Each has a fixed shape (operand kinds, how the
 /// result relates to the operands and to `generic_args`), which the verifier
 /// checks under rule C5. Any other intrinsic name must be declared by an

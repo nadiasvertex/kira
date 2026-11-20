@@ -11,17 +11,6 @@ namespace cinder::hir {
 
 using semantic::type_kind;
 
-namespace {
-
-/// The four conversions between a cell and a reference: the same address in
-/// HIR, so the operand is the result.
-[[nodiscard]] auto is_cell_conversion(std::string_view name) -> bool {
-  return name == "cell_to_ref" || name == "cell_mut_to_ref_mut" ||
-         name == "ref_to_cell" || name == "ref_mut_to_cell_mut";
-}
-
-} // namespace
-
 auto core_lowerer::hir_type(type_id type) const -> type_id {
   const auto &entry = checked_.types.entry(type);
   return entry.kind == type_kind::existential_kind ? entry.result : type;
@@ -392,18 +381,6 @@ auto core_lowerer::call(const core::call &source)
 auto core_lowerer::intrinsic_call(const core::call &source)
     -> core_result<ptr<hir_expr>> {
   const auto &name = source.target.name;
-  if (is_cell_conversion(name)) {
-    if (source.args.size() != 1) {
-      return refuse("a cell conversion with the wrong operands", source.span);
-    }
-    // Retyped as the conversion's result, which is what the old lowerer
-    // gives the value (a `cell[T]` call result, say).
-    auto operand = expr(*source.args.front());
-    if (operand.has_value()) {
-      (*operand)->type = hir_type(source.type);
-    }
-    return operand;
-  }
   const auto type = hir_type(source.type);
   // A verified core gives each operation its operands; a call with others
   // is a compiler bug, reported as one.
@@ -627,33 +604,6 @@ auto core_lowerer::intrinsic_call(const core::call &source)
     return ptr<hir_expr>(hir::make<hir_call>(source.span, type,
                                              std::move(callee),
                                              std::move(args)));
-  }
-  // A cell is the element's address: `get` reads through it.
-  if (name == "cell_get") {
-    if (wrong_operands(1)) {
-      return refuse_operands();
-    }
-    auto cell = expr(*source.args.front());
-    if (!cell.has_value()) {
-      return cell;
-    }
-    return ptr<hir_expr>(hir::make<hir_unary>(
-        source.span, type, ast::unary_op::deref, std::move(*cell)));
-  }
-  if (name == "cell_set") {
-    if (wrong_operands(2)) {
-      return refuse_operands();
-    }
-    auto cell = expr(*source.args[0]);
-    if (!cell.has_value()) {
-      return cell;
-    }
-    auto value = expr(*source.args[1]);
-    if (!value.has_value()) {
-      return value;
-    }
-    return ptr<hir_expr>(hir::make<hir_cell_set>(
-        source.span, type, std::move(*cell), std::move(*value)));
   }
   if (auto task = task_intrinsic(source)) {
     return std::move(*task);

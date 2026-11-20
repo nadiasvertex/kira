@@ -1,6 +1,6 @@
 # todo: 23
 # tier: both
-# currently-error: did not verify
+# currently-error: breaks verifier rule A2: a `use` moves out of a place behind a reference
 # want: a diagnostic from the ownership check that the spliced `take` moves the non-`copy` field `inner` out of `self`.
 module known_gaps.spliced_impl_moves_out_of_self
 

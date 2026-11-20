@@ -237,12 +237,6 @@ auto collect_bound_symbols(const hir_node &node,
                           bound);
     return;
   }
-  case hir_node_kind::hir_cell_set: {
-    const auto &n = dynamic_cast<const hir_cell_set &>(node);
-    collect_bound_symbols(*n.cell, bound);
-    collect_bound_symbols(*n.value, bound);
-    return;
-  }
   // A lambda is a separate scope compiled as its own function — see
   // `mark_tail_calls`'s doc comment on why its body is never descended
   // into. Its own captures/params contribute nothing to this function's

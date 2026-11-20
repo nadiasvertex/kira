@@ -149,6 +149,7 @@ cc_test(
 
 cc_test(
     name = "storage_codegen_test",
+    env = {"CINDER_CORE_VERIFY": "1"},
     # About three and a half minutes in one process; the runner splits its
     # cases across the shards (`TEST_TOTAL_SHARDS`, `TEST_SHARD_INDEX`).
     shard_count = 4,

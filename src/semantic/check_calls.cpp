@@ -487,11 +487,6 @@ auto checker::builtin_method_result(const type_entry &object,
     case builtin_result_shape::byte_slice:
       return session_.types_.builtin_generic("slice",
                                              {session_.types_.builtin("byte")});
-    case builtin_result_shape::cell_of_element:
-      return session_.types_.builtin_generic("cell", {element});
-    case builtin_result_shape::option_of_mut_cell_of_element:
-      return session_.types_.builtin_generic(
-          "option", {session_.types_.builtin_generic("cell_mut", {element})});
     case builtin_result_shape::ptr_to_element:
       return session_.types_.ptr_to(element, false);
     case builtin_result_shape::mut_ptr_to_element:

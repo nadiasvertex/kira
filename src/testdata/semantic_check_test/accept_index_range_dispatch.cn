@@ -27,8 +27,8 @@ impl index[range[usize]] for window:
         return i.end > i.start
 
 impl index_mut[usize] for window:
-    type output_mut = cell_mut[int32]
-    def at_mut(mut self, i: usize) -> cell_mut[int32]:
+    type output_mut = &mut int32
+    def at_mut(mut self, i: usize) -> &mut int32:
         return &mut self.a
 
 # The element impl answers a position.
@@ -46,8 +46,8 @@ def sub_inclusive(w: window) -> bool:
     let covers: bool = w[0..=1]
     return covers
 
-# `index_mut`'s own `output_mut` — a `cell_mut`, not a cell wrapped around
+# `index_mut`'s own `output_mut` — a `&mut int32`, not a reference to
 # `index`'s `output`, which for the range impl above would be nonsense.
 def borrow(mut w: window) -> unit:
-    let slot: cell_mut[int32] = &mut w[0]
-    slot.set(9)
+    let slot: &mut int32 = &mut w[0]
+    *slot = 9

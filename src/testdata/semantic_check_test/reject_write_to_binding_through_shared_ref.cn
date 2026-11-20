@@ -1,0 +1,7 @@
+module sample
+
+# A binding reached through a `&` subject cannot be assigned (ch. 3); one
+# reached through `&mut` can (corpus 232).
+def bump(o: &option[int32]) -> unit:
+    if let @some(n) = o:
+        n = n + 1

@@ -16,6 +16,7 @@ auto checker::binding_origin_description(binding_origin origin)
     return "bound with `let`";
   case binding_origin::pattern_binding:
   case binding_origin::pattern_alias:
+  case binding_origin::pattern_alias_mut:
     return "bound by a pattern";
   case binding_origin::parameter:
     return "a parameter";
@@ -79,7 +80,8 @@ auto checker::assignment_root_ident(const ast::expr &target)
 /// write against `index_set` and answers the element type the assigned
 /// value must have. `nullopt` for every other assignment shape, including
 /// an index into a builtin container, which keeps its direct store.
-auto checker::check_user_index_assignment(const ast::expr &target)
+auto checker::check_user_index_assignment(const ast::expr &target,
+                                          bool compound)
     -> std::optional<type_id> {
   if (target.kind != ast::node_kind::index_expr) {
     return std::nullopt;
@@ -104,6 +106,10 @@ auto checker::check_user_index_assignment(const ast::expr &target)
           ? strip_refs(infer_expr(*index.index, expected_index_key(index)))
           : k_unknown_type;
   const auto element = require_index_set_trait(index, object, entry, key);
+  // `v[i] += x` reads and writes the element in place, through `at_mut`.
+  if (compound) {
+    record_index_mut_dispatch(index, strip_refs(object), entry, key);
+  }
   record_expr_type(target, element);
   return element;
 }
@@ -146,10 +152,22 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
                               binding_origin_description(binding->origin)),
                   file_.file_id_)
                   .with_label(binding->span, "binding declared here"));
-          diag.with_help(std::format(
-              "Declare it with `var {}` to allow reassignment, or shadow "
-              "it with a new `let`.",
-              ident.name));
+          if (binding->origin == binding_origin::pattern_alias) {
+            diag.with_help(std::format(
+                "`{}` names part of a value reached through a shared `&` "
+                "reference, which cannot be written through. Match on a "
+                "`&mut` reference to write it.",
+                ident.name));
+          } else if (binding->origin == binding_origin::pattern_binding) {
+            diag.with_help(std::format(
+                "Bind it as `mut {}` in the pattern to allow assignment.",
+                ident.name));
+          } else {
+            diag.with_help(std::format(
+                "Declare it with `var {}` to allow reassignment, or shadow "
+                "it with a new `let`.",
+                ident.name));
+          }
           emit_diag(diag);
           mark_error();
         }
@@ -159,7 +177,8 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
       }
     } else {
       if (const auto assigned_element =
-              check_user_index_assignment(*stmt.target);
+              check_user_index_assignment(*stmt.target,
+                                          stmt.op != ast::assign_op::assign);
           assigned_element.has_value()) {
         // `v[i] = x` on a user type dispatches to `index_set`, and must not
         // go through `infer_expr` on the target: that would resolve the
@@ -171,7 +190,9 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
         target_type = infer_expr(*stmt.target, k_unknown_type);
       }
       auto root_name = std::string{};
-      if (const auto handle = place_through_deref(*stmt.target)) {
+      if (record_write_through_deref_mut(*stmt.target, "assign to")) {
+        // Written through `deref_mut`; the handle's binding was checked.
+      } else if (const auto handle = place_through_deref(*stmt.target)) {
         // The binding's mutability is beside the point: no binding makes
         // a write through `deref` legal.
         report_write_through_deref(stmt.target->span, *handle, "assign to");

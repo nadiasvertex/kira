@@ -4,14 +4,8 @@ module sample
 # rather than `index`'s `at` -- the two share syntax (`v[i]`) up to the
 # enclosing `&mut`, which is what selects between them.
 #
-# `at_mut`'s body returns `&mut self.a` where its signature promises a
-# `cell_mut[T]` -- these type-check as interchangeable (`type_table::
-# compatible`'s `cell`/`cell_mut` rule, `checker::infer_unary`'s matching
-# `addr_of_mut` case) because a `cell_mut[T]` is the same bare address at
-# runtime as a `&mut T` (see spec/todo.md item 19).
-#
 # `index_mut` carries its own `output_mut` rather than reusing `index`'s
-# `output`: borrowing an element yields a `cell_mut[T]`, borrowing a range
+# `output`: borrowing an element yields a `&mut T`, borrowing a range
 # yields a `slice_mut[T]`, and one type may implement both.
 
 type writable = { a: int32 }
@@ -22,8 +16,8 @@ impl index[usize] for writable:
         return self.a
 
 impl index_mut[usize] for writable:
-    type output_mut = cell_mut[int32]
-    def at_mut(mut self, i: usize) -> cell_mut[int32]:
+    type output_mut = &mut int32
+    def at_mut(mut self, i: usize) -> &mut int32:
         return &mut self.a
 
 def borrow_it(mut w: writable) -> unit:

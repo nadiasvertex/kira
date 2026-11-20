@@ -165,8 +165,6 @@ auto test_address_descriptor_and_handle_layouts() -> void {
                     "slice");
   expect_size_align(layouts, w.types.builtin_generic("slice_mut", {i32}), 16, 8,
                     "slice_mut");
-  expect_size_align(layouts, w.types.builtin_generic("cell", {i32}), 8, 8,
-                    "cell");
   expect_size_align(layouts, w.types.builtin_generic("generator", {i32}), 8, 8,
                     "generator");
   expect_size_align(layouts, w.types.builtin_generic("task", {i32}), 8, 8,

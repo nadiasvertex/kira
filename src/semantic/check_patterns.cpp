@@ -98,11 +98,29 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
                      entry.kind != type_kind::ptr_kind &&
                      pattern.kind != ast::node_kind::ref_pattern;
   const auto saved = function_.owning_pattern_origin_;
+  const auto saved_shared = function_.pattern_through_shared_;
   if (!owned) {
     function_.owning_pattern_origin_.reset();
+    function_.pattern_through_shared_ =
+        saved_shared || reaches_through_shared(pattern, raw_subject);
   }
   check_pattern_node(pattern, raw_subject);
   function_.owning_pattern_origin_ = saved;
+  function_.pattern_through_shared_ = saved_shared;
+}
+
+/// Whether matching `pattern` against `raw_subject` reads through a shared
+/// reference or a read-only pointer, or an unknown type (assumed shared).
+auto checker::reaches_through_shared(const ast::pattern &pattern,
+                                     type_id raw_subject) const -> bool {
+  if (pattern.kind == ast::node_kind::ref_pattern ||
+      session_.types_.is_unknown(raw_subject)) {
+    return true;
+  }
+  const auto &entry = session_.types_.entry(raw_subject);
+  return (entry.kind == type_kind::ref_kind ||
+          entry.kind == type_kind::ptr_kind) &&
+         !entry.is_mut;
 }
 
 auto checker::check_owning_pattern(const ast::pattern &pattern,
@@ -110,14 +128,19 @@ auto checker::check_owning_pattern(const ast::pattern &pattern,
                                    binding_origin origin) -> void {
   const auto &entry = session_.types_.entry(raw_subject);
   const auto saved = function_.owning_pattern_origin_;
+  const auto saved_shared = function_.pattern_through_shared_;
   function_.owning_pattern_origin_ =
       !session_.types_.is_unknown(raw_subject) &&
               entry.kind != type_kind::ref_kind &&
               entry.kind != type_kind::ptr_kind
           ? std::optional<binding_origin>{origin}
           : std::nullopt;
+  function_.pattern_through_shared_ =
+      !function_.owning_pattern_origin_.has_value() &&
+      reaches_through_shared(pattern, raw_subject);
   check_pattern(pattern, subject);
   function_.owning_pattern_origin_ = saved;
+  function_.pattern_through_shared_ = saved_shared;
 }
 
 auto checker::pattern_binding_origin(bool is_mut, const void *key)
@@ -126,7 +149,8 @@ auto checker::pattern_binding_origin(bool is_mut, const void *key)
     return binding_origin::mut_binding;
   }
   if (!function_.owning_pattern_origin_.has_value()) {
-    return binding_origin::pattern_alias;
+    return function_.pattern_through_shared_ ? binding_origin::pattern_alias
+                                             : binding_origin::pattern_alias_mut;
   }
   const auto origin = *function_.owning_pattern_origin_;
   if (origin == binding_origin::let_binding ||

@@ -149,6 +149,14 @@ auto checker::take_checked_types() -> checked_types {
   for (auto &[receiver, steps] : session_.deref_adjustments_) {
     settle_steps(steps);
   }
+  for (auto &[receiver, steps] : session_.deref_mut_adjustments_) {
+    settle_steps(steps);
+  }
+  for (auto &[path, segments] : session_.path_deref_mut_adjustments_) {
+    for (auto &steps : segments) {
+      settle_steps(steps);
+    }
+  }
   for (auto &[path, segments] : session_.path_deref_adjustments_) {
     for (auto &steps : segments) {
       settle_steps(steps);
@@ -204,7 +212,10 @@ auto checker::take_checked_types() -> checked_types {
           std::move(session_.immutable_pattern_bindings_),
       .value_path_types = std::move(session_.value_path_types_),
       .deref_adjustments = std::move(session_.deref_adjustments_),
-      .path_deref_adjustments = std::move(session_.path_deref_adjustments_)};
+      .deref_mut_adjustments = std::move(session_.deref_mut_adjustments_),
+      .path_deref_adjustments = std::move(session_.path_deref_adjustments_),
+      .path_deref_mut_adjustments =
+          std::move(session_.path_deref_mut_adjustments_)};
   result.lowering = lowering_results{
       .struct_pattern_field_types =
           std::move(session_.struct_pattern_field_types_),

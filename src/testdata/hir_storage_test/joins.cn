@@ -19,6 +19,6 @@ def release(h: hooks) -> unit:
 machine def as_words(p: *mut byte) -> *mut usize:
     return ptr_cast[usize](p)
 
-# A `cell[T]` is the address of a `T`.
-def first_cell(xs: &array[int64, 3]) -> cell[int64]:
+# A `&T` to an element is the address of that element.
+def first_cell(xs: &array[int64, 3]) -> &int64:
     return &xs[0]

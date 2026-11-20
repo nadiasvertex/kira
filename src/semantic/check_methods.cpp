@@ -1375,7 +1375,28 @@ auto checker::deref_method_of(type_id type) -> const method_entry * {
 auto checker::resolve_deref_step(const ast::expr &receiver, type_id handle,
                                  source_span span)
     -> std::optional<deref_step> {
-  const auto *method = deref_method_of(handle);
+  return resolve_handle_step(receiver, handle, span, deref_method_of(handle));
+}
+
+/// `type`'s `std.traits.deref_mut` method, when it implements it.
+auto checker::deref_mut_method_of(type_id type) -> const method_entry * {
+  const auto &entry = session_.types_.entry(type);
+  if (entry.kind != type_kind::struct_kind &&
+      entry.kind != type_kind::sum_kind &&
+      entry.kind != type_kind::opaque_kind) {
+    return nullptr;
+  }
+  return find_method(entry, "deref_mut", type,
+                     [](const method_entry &method) -> bool {
+                       return method.trait_name == "deref_mut";
+                     });
+}
+
+/// `resolve_deref_step` for a given handle method (`deref` or `deref_mut`).
+auto checker::resolve_handle_step(const ast::expr &receiver, type_id handle,
+                                  source_span span,
+                                  const method_entry *method)
+    -> std::optional<deref_step> {
   if (method == nullptr) {
     return std::nullopt;
   }
@@ -1494,7 +1515,6 @@ auto checker::lookup_through_deref(const deref_site &site, type_id object,
     return std::nullopt;
   }
   auto chain = deref_chain(deref_site_receiver(site), object, name, span);
-  std::fprintf(stderr, "DBG2 lookup_through_deref name=%s object=%s chain=%d tmpl=%d\n", std::string(name).c_str(), session_.types_.display(object).c_str(), (int)chain.has_value(), (int)(function_.current_template_ != nullptr));
   if (function_.current_template_ != nullptr) {
     defer_deref_steps(site, object, std::string(name), span);
   }
@@ -1541,8 +1561,18 @@ auto checker::deref_operator_target(const ast::expr &operand, type_id handle,
                                     source_span span)
     -> std::optional<type_id> {
   handle = settle(handle);
-  if (mentions_type_var(handle) || deref_method_of(handle) == nullptr) {
+  if (deref_method_of(handle) == nullptr) {
     return std::nullopt;
+  }
+  if (mentions_type_var(handle)) {
+    // What `*h` reads is the impl's `target`, which depends on the
+    // handle's arguments (`mutex.new(5)`'s element), so they are owed now.
+    const auto open = handle;
+    handle = settle(demand_until(
+        open, [&]() -> bool { return !mentions_type_var(settle(open)); }));
+    if (mentions_type_var(handle)) {
+      return std::nullopt;
+    }
   }
   auto step = resolve_deref_step(operand, handle, span);
   if (function_.current_template_ != nullptr) {
@@ -1696,8 +1726,157 @@ auto checker::place_through_deref(const ast::expr &target)
   }
 }
 
+/// The receiver whose `deref` a written place goes through (`g` in `*g = v`
+/// or `g.x = v`), or null when the place goes through none.
+auto checker::deref_handle_node(const ast::expr &target) -> const ast::expr * {
+  switch (target.kind) {
+  case ast::node_kind::field_expr: {
+    const auto &field = ast::cast<const ast::field_expr>(target);
+    if (field.object == nullptr) {
+      return nullptr;
+    }
+    if (session_.deref_adjustments_.contains(field.object.get())) {
+      return field.object.get();
+    }
+    return deref_handle_node(*field.object);
+  }
+  case ast::node_kind::index_expr: {
+    const auto &index = ast::cast<const ast::index_expr>(target);
+    return index.object != nullptr ? deref_handle_node(*index.object) : nullptr;
+  }
+  case ast::node_kind::group_expr: {
+    const auto &group = ast::cast<const ast::group_expr>(target);
+    return group.inner != nullptr ? deref_handle_node(*group.inner) : nullptr;
+  }
+  case ast::node_kind::unary_expr: {
+    const auto &unary = ast::cast<const ast::unary_expr>(target);
+    if (unary.op != ast::unary_op::deref || unary.operand == nullptr) {
+      return nullptr;
+    }
+    if (session_.deref_adjustments_.contains(unary.operand.get())) {
+      return unary.operand.get();
+    }
+    return deref_handle_node(*unary.operand);
+  }
+  default:
+    return nullptr;
+  }
+}
+
+/// A place written through a handle (`*g += 1`) whose type implements
+/// `deref_mut` reaches the value through `deref_mut(&mut g)`. Records that
+/// step and returns true; returns false when the handle has no `deref_mut`
+/// (a `shared[T]`), which leaves the write to be reported. The handle is
+/// borrowed mutably, so a `let`-bound handle is reported here.
+auto checker::record_write_through_deref_mut(const ast::expr &target,
+                                             std::string_view what)
+    -> bool {
+  if (target.kind == ast::node_kind::module_path_expr) {
+    return record_path_write_through_deref_mut(
+        ast::cast<const ast::module_path_expr>(target), what);
+  }
+  const auto *node = deref_handle_node(target);
+  if (node == nullptr) {
+    return false;
+  }
+  const auto steps = session_.deref_adjustments_.find(node);
+  if (steps == session_.deref_adjustments_.end() || steps->second.size() != 1) {
+    return false;
+  }
+  const auto typed = session_.node_types_.find(node);
+  if (typed == session_.node_types_.end()) {
+    return false;
+  }
+  const auto handle = strip_refs(settle(typed->second));
+  const auto *method = deref_mut_method_of(handle);
+  if (method == nullptr) {
+    return false;
+  }
+  auto step = resolve_handle_step(*node, handle, target.span, method);
+  if (!step.has_value()) {
+    return false;
+  }
+  session_.deref_mut_adjustments_[node] = {std::move(*step)};
+  if (const auto *ident = ast::as<const ast::ident_expr>(node)) {
+    if (const auto *binding = lookup_value(ident->name);
+        binding != nullptr &&
+        (binding->origin == binding_origin::let_binding ||
+         binding->origin == binding_origin::pattern_binding ||
+         binding->origin == binding_origin::pattern_alias)) {
+      error_with_help(
+          target.span,
+          std::format("cannot {} a value reached through `{}`", what,
+                      ident->name),
+          std::format("`deref_mut` borrows `{}` mutably, but it is {}",
+                      ident->name,
+                      binding_origin_description(binding->origin)),
+          binding->origin == binding_origin::pattern_binding
+              ? std::format("Bind it as `mut {}` in the pattern.", ident->name)
+              : std::format("Declare it with `var {}`.", ident->name));
+    }
+  }
+  return true;
+}
+
+/// `record_write_through_deref_mut` for a dotted path (`g.x = v`): the
+/// first segment reached through `deref` is reached through `deref_mut`
+/// instead. A path through more than one handle is left to be reported.
+auto checker::record_path_write_through_deref_mut(
+    const ast::module_path_expr &path, std::string_view what) -> bool {
+  const auto found = session_.path_deref_adjustments_.find(&path);
+  const auto types = session_.value_path_types_.find(&path);
+  if (found == session_.path_deref_adjustments_.end() ||
+      types == session_.value_path_types_.end()) {
+    return false;
+  }
+  auto segment = std::size_t{0};
+  for (std::size_t i = 1; i < found->second.size(); ++i) {
+    if (found->second[i].empty()) {
+      continue;
+    }
+    if (segment != 0 || found->second[i].size() != 1) {
+      return false;
+    }
+    segment = i;
+  }
+  if (segment == 0 || segment - 1 >= types->second.size()) {
+    return false;
+  }
+  const auto handle = strip_refs(settle(types->second[segment - 1]));
+  const auto *method = deref_mut_method_of(handle);
+  if (method == nullptr) {
+    return false;
+  }
+  auto step = resolve_handle_step(path, handle, path.span, method);
+  if (!step.has_value()) {
+    return false;
+  }
+  auto segments = std::vector<std::vector<deref_step>>(found->second.size());
+  segments[segment] = {std::move(*step)};
+  session_.path_deref_mut_adjustments_[&path] = std::move(segments);
+  if (segment == 1) {
+    const auto &root = path.segments.front();
+    if (const auto *binding = lookup_value(root);
+        binding != nullptr &&
+        (binding->origin == binding_origin::let_binding ||
+         binding->origin == binding_origin::pattern_binding ||
+         binding->origin == binding_origin::pattern_alias)) {
+      error_with_help(
+          path.span,
+          std::format("cannot {} a value reached through `{}`", what, root),
+          std::format("`deref_mut` borrows `{}` mutably, but it is {}", root,
+                      binding_origin_description(binding->origin)),
+          binding->origin == binding_origin::pattern_binding
+              ? std::format("Bind it as `mut {}` in the pattern.", root)
+              : std::format("Declare it with `var {}`.", root));
+    }
+  }
+  return true;
+}
+
 /// Reports a write through `deref` (`config.port = 1`, `&mut config.port`)
-/// — `deref` lends only a shared reference, and there is no `deref_mut`.
+/// — `deref` lends only a shared reference, and the handle has no
+/// `deref_mut`.
 auto checker::report_write_through_deref(source_span span, type_id handle,
                                          std::string_view what) -> void {
   const auto shown = session_.types_.display(handle);
@@ -1712,11 +1891,13 @@ auto checker::report_write_through_deref(source_span span, type_id handle,
       "returns a shared reference",
       shown));
   diag.with_help(
-      "There is no `deref_mut`: what a handle like `shared[T]` refers to "
-      "may be seen by every other handle, so it is read-only through any "
-      "of them. To change a shared value, share a `mutex[T]` and change "
-      "it while holding the lock, or build a new value and replace the "
-      "handle.");
+      std::format(
+          "`{}` does not implement `deref_mut`. What a handle like "
+          "`shared[T]` refers to may be seen by every other handle, so it "
+          "is read-only through any of them. To change a shared value, "
+          "share a `mutex[T]` and change it through the guard `lock()` "
+          "returns, or build a new value and replace the handle.",
+          shown));
   emit_diag(diag);
   mark_error();
 }

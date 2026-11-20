@@ -35,18 +35,12 @@ struct generic_arity_entry {
 };
 
 /// Prelude container names and their allowed generic-argument arities.
-constexpr std::array<generic_arity_entry, 15> k_builtin_generic_arities = {{
+constexpr std::array<generic_arity_entry, 13> k_builtin_generic_arities = {{
     {.name = "option", .min_args = 1, .max_args = 1},
     {.name = "result", .min_args = 2, .max_args = 2},
     {.name = "box", .min_args = 1, .max_args = 1},
     {.name = "slice", .min_args = 1, .max_args = 1},
     {.name = "slice_mut", .min_args = 1, .max_args = 1},
-    // Single-element views (`cell[T]`/`mut cell[T]`) — see
-    // spec/specification/02-intermediate/15-views.md. `cell_mut` shares
-    // `cell`'s inherent methods, differing only in mutability, exactly like
-    // `slice`/`slice_mut` above.
-    {.name = "cell", .min_args = 1, .max_args = 1},
-    {.name = "cell_mut", .min_args = 1, .max_args = 1},
     {.name = "task", .min_args = 1, .max_args = 3},
     // The handle a `crew` block binds: the set of tasks spawned into it.
     // Never written in source; `check_crew` builds it.
@@ -571,14 +565,13 @@ auto type_table::is_unit(type_id id) const -> bool {
 auto type_table::is_view(type_id id) const -> bool {
   const auto &item = entry(strip_refinement(id));
   return item.kind == type_kind::builtin_generic_kind &&
-         (item.name == "slice" || item.name == "slice_mut" ||
-          item.name == "cell" || item.name == "cell_mut");
+         (item.name == "slice" || item.name == "slice_mut");
 }
 
 auto type_table::is_mut_view(type_id id) const -> bool {
   const auto &item = entry(strip_refinement(id));
   return item.kind == type_kind::builtin_generic_kind &&
-         (item.name == "slice_mut" || item.name == "cell_mut");
+         item.name == "slice_mut";
 }
 
 auto type_table::is_copy(type_id id) const -> bool {
@@ -590,7 +583,7 @@ auto type_table::is_copy(type_id id) const -> bool {
   case type_kind::ref_kind:
     return !item.is_mut;
   case type_kind::builtin_generic_kind:
-    return item.name == "slice" || item.name == "cell";
+    return item.name == "slice";
   default:
     return false;
   }
@@ -690,37 +683,6 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
   }
 
   if (expected_entry.kind != found_entry.kind) {
-    // A `&T`/`&mut T` place and a `cell[T]`/`mut cell[T]` view are the same
-    // bare address at runtime (`spec/todo.md` item 19) — the distinction is
-    // purely in the API surface (a view is tracked by the borrow checker and
-    // travels with `get`/`set` instead of `*`/`= `), so a `&mut` place is
-    // accepted wherever a `cell_mut` is expected, and likewise `&`/`cell`.
-    // `cell_mut` still demands a *mutable* reference: accepting a plain `&T`
-    // there would let `c.set(...)` write through a borrow that was never
-    // granted exclusively.
-    if (expected_entry.kind == type_kind::builtin_generic_kind &&
-        found_entry.kind == type_kind::ref_kind &&
-        expected_entry.args.size() == 1 &&
-        (expected_entry.name == "cell" ||
-         (expected_entry.name == "cell_mut" && found_entry.is_mut))) {
-      return compatible(expected_entry.args.front(), found_entry.result);
-    }
-    // The reverse direction of the rule above: a `cell[T]`/`cell_mut[T]`
-    // view fits wherever a `&T`/`&mut T` place is expected, since they are
-    // the same bare address — needed for `index_ref`/`index_mut` dispatch
-    // results (typed as bare `cell[T]`/`cell_mut[T]`, see `checker::
-    // require_index_ref_trait`/`require_index_mut_trait`) to satisfy an
-    // ordinary reference-typed context, e.g. `std.iter`'s borrowing
-    // iterators returning `option[&T]`/`option[&mut T]` around a `let slot =
-    // &self.src[self.at]`. An expected `&mut T` still demands `cell_mut`,
-    // for the same write-through-an-unlent-borrow reason as above.
-    if (found_entry.kind == type_kind::builtin_generic_kind &&
-        expected_entry.kind == type_kind::ref_kind &&
-        found_entry.args.size() == 1 &&
-        (found_entry.name == "cell" || found_entry.name == "cell_mut") &&
-        (!expected_entry.is_mut || found_entry.name == "cell_mut")) {
-      return compatible(expected_entry.result, found_entry.args.front());
-    }
     // A `&T` argument position accepts a lent `T`; the borrow checker owns
     // the deeper rules, so typing treats the reference as its target here.
     if (expected_entry.kind == type_kind::ref_kind) {

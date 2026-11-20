@@ -167,10 +167,6 @@ async def chain(x: int32) -> int32:
 def greet(n: int32) -> str:
     return "n = {n}"
 
-def cell_read(xs: &list[int32]) -> int32:
-    let c = xs.cell(1)
-    return *c
-
 def squares_static() -> list[int32]:
     return static for i in 0..3 => i * i
 
@@ -894,23 +890,6 @@ auto test_compound_assign(const session &s) -> void {
          "bump_at: a `let` of the subscript starts the statement");
 }
 
-auto test_cell_deref(const session &s) -> void {
-  const auto facts = facts_of(function_named(s, "cell_read"));
-  expect(count_of(facts, "cell_to_ref") == 1,
-         "cell_read: `*c` converts the cell with `cell_to_ref`");
-  const auto &read = returned(function_named(s, "cell_read"), 1);
-  const auto &u = as<core::use>(&read, node_kind::use, "cell_read: `*c`");
-  expect(u.from.root.kind == core::place_root::origin::temporary &&
-             u.from.path.size() == 1 &&
-             u.from.path[0].kind == core::projection::step::deref,
-         "cell_read: `*c` is a deref of a temporary holding the conversion");
-  const auto &conv = as<core::call>(u.from.root.value.get(), node_kind::call,
-                                    "cell_read: the conversion");
-  expect(conv.target.generic_args.size() == 1 &&
-             s.checked.types.display(conv.target.generic_args[0]) == "int32",
-         "cell_read: the conversion carries T in generic_args");
-}
-
 auto test_static_for(const session &s) -> void {
   const auto &f = function_named(s, "unrolled");
   // `var total`, three iteration blocks, `return`.
@@ -1071,7 +1050,6 @@ auto main() -> int {
   test_generator(s);
   test_async(s);
   test_interpolation(s);
-  test_cell_deref(s);
   test_compound_assign(s);
   test_static_for(s);
   test_static_if(s);

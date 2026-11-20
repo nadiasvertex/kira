@@ -2820,6 +2820,26 @@ auto test_reports_index_mut_borrow_without_impl() -> void {
       "capability from a type that is not indexable at all");
 }
 
+auto test_rejects_write_to_binding_through_shared_ref() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_write_to_binding_through_shared_ref.cn");
+  expect(analyzed.error_count == 1,
+         "expected one error for assigning a binding reached through `&`");
+  expect_diagnostic(analyzed, "reached through a shared `&` reference",
+                    "expected the help to say the binding is behind a `&`");
+}
+
+auto test_rejects_writes_through_deref_handles() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_write_through_deref_handle.cn");
+  expect(analyzed.error_count == 2,
+         "expected one error for each write through a handle");
+  expect_diagnostic(analyzed, "`deref_mut` borrows `g` mutably",
+                    "expected the `let` guard to be reported");
+  expect_diagnostic(analyzed, "does not implement `deref_mut`",
+                    "expected the `shared` write to be reported");
+}
+
 auto test_dispatches_index_mut_borrow() -> void {
   // Not `analyze_test_data_file`: a bare error-count/diagnostic check here
   // could not fail on a broken dispatch. If `&mut w[0]` never reached
@@ -2904,10 +2924,8 @@ auto test_dispatches_index_mut_borrow() -> void {
   expect(it != checked.node_types.end(),
          "expected `&mut w[0]`'s resolved type to be persisted");
   const auto &entry = checked.types.entry(it->second);
-  expect(entry.kind == cinder::semantic::type_kind::builtin_generic_kind &&
-             entry.name == "cell_mut",
-         "expected `&mut w[0]` to resolve to `cell_mut[T]` via `at_mut`, not "
-         "an ordinary `&mut` reference to `at`'s read result");
+  expect(entry.kind == cinder::semantic::type_kind::ref_kind && entry.is_mut,
+         "expected `&mut w[0]` to resolve to `at_mut`'s `&mut T`");
 }
 
 auto test_accepts_intrinsic_decl() -> void {
@@ -4313,6 +4331,8 @@ auto main() -> int {
       {"test_reports_method_where_bound_at_call", test_reports_method_where_bound_at_call},
       {"test_reports_index_write_without_index_set", test_reports_index_write_without_index_set},
       {"test_reports_index_mut_borrow_without_impl", test_reports_index_mut_borrow_without_impl},
+      {"test_rejects_write_to_binding_through_shared_ref", test_rejects_write_to_binding_through_shared_ref},
+      {"test_rejects_writes_through_deref_handles", test_rejects_writes_through_deref_handles},
       {"test_dispatches_index_mut_borrow", test_dispatches_index_mut_borrow},
       {"test_accepts_intrinsic_decl", test_accepts_intrinsic_decl},
       {"test_accepts_string_interpolation", test_accepts_string_interpolation},

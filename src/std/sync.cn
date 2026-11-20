@@ -147,6 +147,11 @@ impl[T] deref for mutex_guard[T]:
     machine def deref(self) -> &T:
         return &self.inner[0].value
 
+#: `*guard = v` and `*guard += 1` write the value while the lock is held.
+impl[T] deref_mut for mutex_guard[T]:
+    machine def deref_mut(mut self) -> &mut T:
+        return &mut self.inner[0].value
+
 impl[T] drop for mutex_guard[T]:
     #: Lets the next task in.
     machine def drop(mut self) -> unit:
@@ -260,6 +265,11 @@ impl[T] deref for write_guard[T]:
     type target = T
     machine def deref(self) -> &T:
         return &self.inner[0].value
+
+#: `*guard = v` and `*guard += 1` write the value while the lock is held.
+impl[T] deref_mut for write_guard[T]:
+    machine def deref_mut(mut self) -> &mut T:
+        return &mut self.inner[0].value
 
 impl[T] drop for write_guard[T]:
     #: Lets the next reader or writer in.

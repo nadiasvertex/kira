@@ -763,10 +763,9 @@ auto checker::user_type_shadows_builtin(std::string_view name,
   return find_import(name) != nullptr;
 }
 
-/// Resolves a bare `mut` prefix in type position (`mut slice[T]`,
-/// `mut cell[T]`) to the `_mut` builtin-generic counterpart of the view
-/// type it prefixes. `mut` is only meaningful immediately before `slice[T]`
-/// or `cell[T]` — every other inner type (`mut int32`, `mut list[T]`, a
+/// Resolves a bare `mut` prefix in type position (`mut slice[T]`) to the
+/// `_mut` builtin-generic counterpart of the view type it prefixes. `mut` is
+/// only meaningful immediately before `slice[T]` — every other inner type (`mut int32`, `mut list[T]`, a
 /// user struct) has no defined meaning, so it is a diagnostic here rather
 /// than a silent pass-through.
 auto checker::resolve_mut_type(const ast::mut_type &mt, const resolve_ctx &ctx)
@@ -775,7 +774,7 @@ auto checker::resolve_mut_type(const ast::mut_type &mt, const resolve_ctx &ctx)
                           ? ast::as<const ast::named_type>(mt.inner.get())
                           : nullptr;
   if (named != nullptr && named->path.size() == 1 &&
-      (named->path.front() == "slice" || named->path.front() == "cell")) {
+      named->path.front() == "slice") {
     const auto mut_name = named->path.front() + "_mut";
     const auto arity = builtin_generic_arity(mut_name);
     auto args = resolve_type_args(named->type_args, ctx);
@@ -796,8 +795,8 @@ auto checker::resolve_mut_type(const ast::mut_type &mt, const resolve_ctx &ctx)
   }
   error_with_help(
       mt.span, "`mut` is not valid here in type position", "unexpected `mut`",
-      "`mut` may only appear immediately before `slice[T]` or `cell[T]` — "
-      "e.g. `mut slice[T]`, `mut cell[T]`.");
+      "`mut` may only appear immediately before `slice[T]`, as in "
+      "`mut slice[T]`.");
   return k_error_type;
 }
 
@@ -1403,6 +1402,13 @@ auto checker::require_index_trait(const ast::index_expr &index, type_id object,
                                   *by_ref, target, "index_ref");
     }
   }
+  // A write to a part of `v[i]` (`v[i].f = x`, `v[i][j] = x`, `v[i] += x`,
+  // a `mut self` method on `v[i]`) reaches the element through `at_mut`,
+  // not through `at` or `at_ref`. Which of these a place needs is known
+  // only from its context, so the mutable borrow is recorded beside the
+  // read, the way `at_ref` is, and lowering picks it where the place is
+  // written.
+  record_index_mut_dispatch(index, target, entry, key);
   // Resolved against *this* impl's bindings: a type with both
   // `index[usize]` and `index[range[usize]]` has two `output`s, and the
   // bare trait name names whichever was checked last.
@@ -1411,6 +1417,27 @@ auto checker::require_index_trait(const ast::index_expr &index, type_id object,
       parameterized_trait_key("index",
                               resolve_index_key_type(target, "index", *method)),
       *method);
+}
+
+/// Records `at_mut` for `v[i]` when the receiver's type implements
+/// `index_mut` with this key. Quiet: a type without it, or with no impl for
+/// this key, records nothing, and a write that needs it is then refused by
+/// the code that knows it is a write.
+auto checker::record_index_mut_dispatch(const ast::index_expr &index,
+                                        type_id target,
+                                        const type_entry &entry, type_id key)
+    -> void {
+  if (!type_has_trait(entry, "index_mut")) {
+    return;
+  }
+  const auto *method = find_method(entry, "at_mut", target,
+                                   index_key_filter(target, "index_mut", key));
+  if (method == nullptr || method->decl->params.empty() ||
+      param_name_of(method->decl->params.front()) != "self") {
+    return;
+  }
+  dispatch_index_when_settled(session_.index_mut_dispatches_, index, *method,
+                              target, "index_mut");
 }
 
 /// The read-borrow half: `&v[i]` on a user receiver, against `index_ref`.

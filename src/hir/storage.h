@@ -59,16 +59,9 @@ struct storage_env {
     return checked.types;
   }
   /// What dereferencing a value of `type` reaches: the referent of a
-  /// reference or raw pointer, or the `T` a `cell[T]`/`cell_mut[T]` is the
-  /// address of. None for any other type.
+  /// reference or raw pointer. None for any other type.
   [[nodiscard]] auto pointee(semantic::type_id type) const
       -> std::optional<semantic::type_id>;
-  /// Whether a `from` value can be read as a `to`: `from` is a
-  /// `cell[T]`/`cell_mut[T]` and `to` a reference to the same `T`, `&mut T`
-  /// only from a `cell_mut[T]`. Both are the address of the `T`.
-  [[nodiscard]] auto cell_reads_as_reference(semantic::type_id from,
-                                             semantic::type_id to) const
-      -> bool;
 };
 
 /// Index of a `storage_slot` in its function.

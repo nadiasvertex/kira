@@ -26,7 +26,7 @@ An unannotated sequence literal is a `list`: `let xs = [1, 2, 3]` is a `list[int
 Because the list owns its elements, nothing else may own one while it is stored:
 
 - `v[i]` by value copies the element, so it requires `T: copy`. For any other `T`, borrow it (`&v[i]`, `&mut v[i]`, or a method call on `v[i]`) or take it out with `pop`.
-- `first`, `last` and `get` return copies, so they are available only when `T` is `copy`. `cell` and `mutable_cell` borrow for any `T`.
+- `first`, `last` and `get` return copies, so they are available only when `T` is `copy`. `&v[i]`, `&mut v[i]` and `get_mut` borrow for any `T`.
 - `v[i] = x`, `set`, and `clear` drop the elements they overwrite or remove.
 - `for x in v` consumes `v`: each element moves into `x`, and the elements a loop leaves unvisited (through `break` or `return`) drop with the iterator.
 
@@ -48,8 +48,7 @@ Implemented as described, except that `v[i]` by value is rejected for a non-`cop
 | `reserve(mut self, n)` | ensures room for `n` elements; never shrinks |
 | `clear(mut self)` | keeps capacity; drops the elements (O(1) when `T` needs no drop) |
 | `free(mut self)` | drops the elements and releases the storage; the list is empty and reusable afterwards |
-| `cell(self, i) -> cell[T]` | view of one element; panics when out of range |
-| `mutable_cell(mut self, i) -> option[cell_mut[T]]` | writable view; `@none` when out of range |
+| `get_mut(mut self, i) -> option[&mut T]` | mutable reference to one element; `@none` when out of range |
 | `as_slice(self) -> slice[T]`, `as_mut_slice(mut self) -> slice_mut[T]` | view of every element |
 | `as_ptr(self) -> *T`, `as_mut_ptr(mut self) -> *mut T` | `machine` access; bounds are the caller's responsibility |
 
@@ -60,8 +59,8 @@ Implemented as described, except that `v[i]` by value is rejected for a non-`cop
 | `std.traits.from_array[T]` | `let v: list[int32] = [1, 2, 3]` | allocates exactly the literal's length |
 | `std.traits.index[usize]` | `v[i]` | `T: copy`; bounds-checked; out of range panics with `index out of bounds` |
 | `std.traits.index_set[usize]` | `v[i] = x` | same check; drops the old element |
-| `std.traits.index_ref[usize]` | `&v[i]` → `cell[T]` | same check |
-| `std.traits.index_mut[usize]` | `&mut v[i]` → `cell_mut[T]` | same check |
+| `std.traits.index_ref[usize]` | `&v[i]` → `&T` | same check |
+| `std.traits.index_mut[usize]` | `&mut v[i]` → `&mut T` | same check |
 | `std.traits.index[range[usize]]` | `v[a..b]` → `slice[T]` | no copy; `b == len` is allowed, `a > b` panics |
 | `std.traits.index_mut[range[usize]]` | `&mut v[a..b]` → `slice_mut[T]` | same check |
 | `std.iter.into_iterator[T]` | `for x in v` | **consumes `v`** |

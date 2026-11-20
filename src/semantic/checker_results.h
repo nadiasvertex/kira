@@ -1008,13 +1008,24 @@ struct checked_types {
   /// as it is.
   std::unordered_map<const ast::expr *, std::vector<deref_step>>
       deref_adjustments;
-  /// The same, for a value-rooted dotted path (`value_path_types`): for each
+  /// The receivers in `deref_adjustments` whose place is written (`*g = v`,
+  /// `*g += 1`, `g.x = v`, `&mut *g`): the same handle reached through
+  /// `std.traits.deref_mut` instead, one step, `deref_mut(&mut g)`.
+  std::unordered_map<const ast::expr *, std::vector<deref_step>>
+      deref_mut_adjustments;
+  /// `deref_adjustments` for a value-rooted dotted path (`value_path_types`): for each
   /// segment index `i`, the steps applied to the value of the first `i`
   /// segments before segment `i` is selected. Empty where a segment needs
   /// none; a path absent here needs none at all.
   std::unordered_map<const ast::module_path_expr *,
                      std::vector<std::vector<deref_step>>>
       path_deref_adjustments;
+  /// `deref_mut_adjustments` for a dotted path written through a handle
+  /// (`g.x = v`): the segment whose `path_deref_adjustments` entry is
+  /// replaced by one `deref_mut` step. Other segments are empty.
+  std::unordered_map<const ast::module_path_expr *,
+                     std::vector<std::vector<deref_step>>>
+      path_deref_mut_adjustments;
 
   /// Lowering decisions; see `lowering_results`.
   lowering_results lowering;

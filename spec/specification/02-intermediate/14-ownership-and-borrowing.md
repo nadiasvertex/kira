@@ -29,11 +29,11 @@ These types are `copy`:
 - the scalars: `bool`, `char`, `byte`, `unit`, and every integer and floating-point type
 - `str`, which is an immutable view of shared bytes
 - `&T` for any `T`, and the raw pointers `*T` and `*mut T`
-- the read-only views `slice[T]` and `cell[T]`
+- the read-only view `slice[T]`
 
 - a sum type — a user sum, `option[T]` or `result[T, E]` — whose every variant payload is `copy` and that does not implement `drop`, including a sum whose variants carry nothing (`ordering`). A sum value never changes after it is built, so sharing it is a copy.
 
-Every other type moves, including `&mut T`, `slice_mut[T]`, `cell_mut[T]`, function values, and every struct, tuple, fixed array and `list`, whatever they contain: each of those can be changed in place. A type that implements `drop` is never `copy`.
+Every other type moves, including `&mut T`, `slice_mut[T]`, function values, and every struct, tuple, fixed array and `list`, whatever they contain: each of those can be changed in place. A type that implements `drop` is never `copy`.
 
 `copy` is a built-in concept (see [Concepts](../03-advanced/35-concepts.md)). Like any concept it is satisfied structurally, with no `impl`, and it can be used as a bound:
 

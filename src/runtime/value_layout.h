@@ -26,7 +26,7 @@ namespace cinder::runtime {
 //  | Type family                | Bytes                                   |
 //  |----------------------------|-----------------------------------------|
 //  | scalar                     | natural size and alignment; `unit` is 0 |
-//  | `&T`, `*T`, `cell[T]`      | one 8-byte address                      |
+//  | `&T`, `*T`                 | one 8-byte address                      |
 //  | `str`, `slice[T]`          | `{len: u64, data: address}`, 16 bytes   |
 //  | `fn` value                 | `{entry, env, drop_glue}`, 24 bytes     |
 //  | `task`, `crew`, `generator`| one 8-byte handle to runtime state      |
@@ -48,7 +48,7 @@ namespace cinder::runtime {
 /// Which family of representation a `value_layout` describes.
 enum class value_layout_kind : uint8_t {
   scalar,     ///< A builtin scalar, including zero-sized `unit`.
-  address,    ///< `&T`, `&mut T`, `*T`, `cell[T]`, `cell_mut[T]`.
+  address,    ///< `&T`, `&mut T`, `*T`, `*mut T`.
   descriptor, ///< `str`, `slice[T]`, `slice_mut[T]`: `{len, data}`.
   closure,    ///< A `fn` value: `{entry, env, drop_glue}`.
   handle,     ///< `task`, `crew`, `generator`: one handle word.

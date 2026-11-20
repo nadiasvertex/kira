@@ -1039,7 +1039,7 @@ auto test_list_literal_construction_and_indexing() -> void {
 /// it is covered by running a built binary, in `src/cli_test.cpp`'s
 /// `test_built_program_panics_on_list_index_out_of_bounds`.
 ///
-/// `mutable_cell` reports the same decision without taking it — `@none` for
+/// `get_mut` reports the same decision without taking it — `@none` for
 /// exactly the indices `xs[i]` would refuse — so the comparison itself is
 /// still checked here, in both tiers, against a computed value.
 auto test_list_index_out_of_bounds_is_refused() -> void {

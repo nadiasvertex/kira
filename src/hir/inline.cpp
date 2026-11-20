@@ -360,11 +360,6 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
                                            clone_as(*n.object, rename),
                                            clone_as(*n.byte_offset, rename));
   }
-  case hir_node_kind::hir_cell_set: {
-    const auto &n = dynamic_cast<const hir_cell_set &>(node);
-    return hir::make<hir_cell_set>(span, type, clone_as(*n.cell, rename),
-                                   clone_as(*n.value, rename));
-  }
   case hir_node_kind::hir_wildcard_pattern:
     return with_subject(hir::make<hir_wildcard_pattern>(span),
                         dynamic_cast<const hir_pattern &>(node));

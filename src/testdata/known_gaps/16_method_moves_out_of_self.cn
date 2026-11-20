@@ -1,6 +1,6 @@
 # todo: 16
 # tier: both
-# currently-error: cannot move `tok` out of a reference
+# currently-error: breaks verifier rule A2: a `use` moves out of a place rooted at an alias
 # want: the checker rejects `@full(v) => v` in `grab`, because it moves a non-`copy` part out of `self`.
 module known_gaps.method_moves_out_of_self
 

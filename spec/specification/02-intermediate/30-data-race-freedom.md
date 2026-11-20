@@ -38,8 +38,8 @@ let counter: shared mutex[int32] = shared mutex(0)
 crew c:
     for _ in 0..n:
         c.spawn(async:
-            let guard = counter.lock()   # exclusive access, released when guard drops
-            *guard += 1
+            var guard = counter.lock()   # exclusive access, released when guard drops
+            *guard += 1                  # writes through `deref_mut`
         )
 ```
 
@@ -47,7 +47,7 @@ A `mutex` enforces "one writer at a time" at runtime, exactly as the borrow chec
 
 ## Implementation status
 
-Partial. Everything above works on both backends except writing through a guard with `*`.
+Partial. Everything above works on both backends. `*guard += 1` writes through `mutex_guard`'s and `write_guard`'s `deref_mut` (ch. 18).
 
 - `send` and `share` are marker traits in `std.traits`. The checker derives them structurally (`concurrency_offender`, `src/semantic/check_bounds.cpp`): a raw pointer is neither, a `&T` needs `T: share`, a `shared[T]` needs `T: share`, and a struct, sum, tuple or array is the conjunction of its parts. Standard-library types vouch for their own fields. A user type built on a raw pointer says `impl send for the_type:` and `impl share for the_type:`; the type's arguments are still checked. When a type fails, the error names the field that caused it and suggests the `impl`, or a `mutex` when the type is `send` but not `share`.
 - The check runs on the arguments of a call handed to `c.spawn`, `par` or `race`, on the outer locals an `async:` block or an `on(...)` body reads, on the task given to `on(ctx, task)`, and on function values and tasks that cross to another task. The checker follows a function value or task back to where it was made and checks what it carries; one whose origin it cannot see is rejected. The check is the same for every context, `io` included, because any context may run a task on another thread.

@@ -2,7 +2,7 @@
 
 **Status:** Partial
 
-`slice[T]`/`mut slice[T]` as first-class borrowing values, view inference through returned values and struct fields, and single-element views (`cell[T]`/`mut cell[T]`).
+`slice[T]`/`mut slice[T]` as first-class borrowing values, view inference through returned values and struct fields, and references to single elements.
 
 ## Slices and Strings
 
@@ -40,36 +40,29 @@ def make_window[T](xs: &list[T]) -> window[T]:
 
 3. When a result needs to escape and stand on its own, return an owned value or a handle (an index) rather than a view.
 
-## Single-Element Views: `cell[T]` and `mut cell[T]`
+## Single Elements
 
-`cell[T]` (read-only) and `mut cell[T]` (mutable) are borrowed views of a single element — the result of a hash-map lookup, a tree search, an array access — filling the gap between a whole collection (`slice[T]`) and a temporary borrow in a call (`&T`).
-
-```cinder
-cell[T]       # a read-only view of a single element
-mut cell[T]   # a mutable view
-```
-
-Like `slice[T]`, a `cell` is a first-class value: passed and returned, with its borrow tracked automatically so it cannot outlive the collection it points into, and without lifetime annotations.
+A borrow of one element is an ordinary reference: `&xs[i]` is a `&T` and `&mut xs[i]` is a `&mut T`, the same types `&x` and `&mut x` give for a variable. A reference is a first-class value like a view: it can be passed, stored and returned, and the collection it points into stays borrowed for as long as the reference lives.
 
 ```cinder
-def find[T](xs: &list[T], pred: fn(&T) -> bool) -> option[cell[T]]:
+def find(xs: &list[int32], want: int32) -> option[&int32]:
     for i in 0..xs.len():
-        if pred(&xs[i]):
-            return @some(xs.cell(i))
+        if xs[i] == want:
+            return @some(&xs[i])
     return @none
 
-def find_and_double(xs: &mut list[int32]) -> unit:
-    if let @some(c) = xs.mutable_cell(2):
-        c.set(c.get() * 2)         # mutates the element in place
+def double_third(xs: &mut list[int32]) -> unit:
+    if let @some(c) = xs.get_mut(2):
+        *c = *c * 2                # mutates the element in place
 ```
 
-`c.get()` yields the element value; a `mut cell` enforces exclusive access.
+`*c` reads the element and `*c = v` writes it. A `&mut T` gives exclusive access while it lives.
 
 ## Implementation status
 
 - `slice[T]` is a real builtin type constructor (`src/semantic/types.cpp`, registered as `"slice"`, one type argument), with dedicated resolution and checking paths throughout `src/semantic/resolution.cpp` and `src/semantic/check.cpp` (index expressions with a range key produce a `slice`, `slice`/`slice_mut` are distinguished, `.len()` and other builtin methods are wired up). It is genuinely usable today.
 - The tracking claim here — a view keeping its source borrowed for as long as the view lives, and never outliving it — **is** enforced by the ownership checker (see [Ownership and Borrowing](14-ownership-and-borrowing.md#implementation-status)). A view is a loan carried by whatever value holds it, through `let`/`var` bindings, reassignment, struct fields, `option`/sum payloads, `if`/`match` results, destructuring and pattern bindings, and across loop iterations; any conflicting access to the source while it is live — a borrow, a write, a move, or (for a `mut` view) a plain read — is rejected, as is a view outliving its source's scope or being returned from the function that owns its source. The `make_window` case above works because a call whose result stores a view carries every borrow its arguments made. What remains target design is *precision*: whole-variable granularity, and attributing a returned view to every reference argument rather than the exact one it was sliced from.
-- `cell[T]` / `mut cell[T]` are implemented, both directly (`xs.cell(i)`/`xs.mutable_cell(i)`, `.get()`/`.set()`) and as the return shape of a user `std.traits.index_mut` impl's `at_mut` (`&mut v[i]` on a type that implements it). Runtime representation is a bare pointer, identical to `&T`/`&mut T` — see `spec/todo.md` item 19 for the full implementation account.
+- A reference to an element is implemented for builtin collections and for a user type through `std.traits.index_ref` (`&v[i]`) and `std.traits.index_mut` (`&mut v[i]`). `list.get_mut(i)` gives an `option[&mut T]`. Until 2026-11-20 these were the separate types `cell[T]` and `mut cell[T]`, which the checker treated as equal to references without recording a conversion (`spec/todo.md` items 33 and 38).
 
 ## See also
 

@@ -2654,7 +2654,7 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
 /// through `cinder_codegen_panic`/`cinder_rt_panic`. A harness embedding either
 /// tier therefore cannot catch it, which is why
 /// `bytecode_compiler/compile_test.cpp` and `llvm_codegen/codegen_test.cpp`
-/// assert the bounds *decision* through `mutable_cell` instead, and the
+/// assert the bounds *decision* through `get_mut` instead, and the
 /// termination itself is checked here by running a real child process.
 ///
 /// Both containers are covered because they reach it by different routes:
@@ -2947,25 +2947,20 @@ auto test_out_of_bounds_index_terminates_for_every_container() -> void {
 }
 
 /// `&mut v[i]` on a user type implementing `std.traits.index_mut`
-/// (spec/todo.md item 19) — dispatches to `at_mut`, whose body returns
-/// `&mut self.a` where its signature promises a `cell_mut[T]`. That return
-/// type-checks (`type_table::compatible`'s `cell`/`cell_mut` rule,
-/// `checker::infer_unary`'s matching `addr_of_mut` case) because the two are
-/// the same bare address at runtime, and `c.get()`/`c.set(...)` on the
-/// result exercise `cell_mut`'s actual runtime representation on both
+/// dispatches to `at_mut`, whose `&mut T` result is written through on both
 /// tiers. This needs the full driver rather than `codegen_stress_test`'s
 /// corpus, which checks a single file with no stdlib injected and so has no
 /// `index`/`index_mut` traits to dispatch against (see
 /// `test_run_ord_dispatch_translates_ordering_to_bool` for the same
 /// constraint on a different trait).
-auto test_run_index_mut_dispatches_to_cell_mut() -> void {
+auto test_run_index_mut_dispatches_to_at_mut() -> void {
   auto temp = make_temp_dir();
   auto source_path = temp.path / "sample_index_mut.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_index_mut_bin";
 
   write_file(source_path,
-             read_program("run_index_mut_dispatches_to_cell_mut.cn"));
+             read_program("run_index_mut_dispatches_to_at_mut.cn"));
 
   cinder::driver::cli_config run_cfg{
       .program_name = "cinder",
@@ -3013,21 +3008,18 @@ auto test_run_index_mut_dispatches_to_cell_mut() -> void {
 #endif
 }
 
-/// `&v[i]` on a user type implementing `std.traits.index_ref`
-/// (spec/todo.md item 17) — the read-only mirror of
-/// `test_run_index_mut_dispatches_to_cell_mut` above. Dispatches to
-/// `at_ref`, whose body returns `&self.a` where its signature promises a
-/// `cell[T]`; `c.get()` on the result exercises `cell`'s actual runtime
-/// representation on both tiers. Needs the full driver for the same reason
-/// as the `index_mut` test: `codegen_stress_test`'s corpus has no stdlib
+/// `&v[i]` on a user type implementing `std.traits.index_ref` — the
+/// read-only mirror of `test_run_index_mut_dispatches_to_at_mut` above.
+/// Dispatches to `at_ref`, whose `&T` result is read through on both tiers.
+/// Needs the full driver for the same reason as the `index_mut` test: `codegen_stress_test`'s corpus has no stdlib
 /// injected, so no `index`/`index_ref` traits to dispatch against.
-auto test_run_index_ref_dispatches_to_cell() -> void {
+auto test_run_index_ref_dispatches_to_at_ref() -> void {
   auto temp = make_temp_dir();
   auto source_path = temp.path / "sample_index_ref.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_index_ref_bin";
 
-  write_file(source_path, read_program("run_index_ref_dispatches_to_cell.cn"));
+  write_file(source_path, read_program("run_index_ref_dispatches_to_at_ref.cn"));
 
   cinder::driver::cli_config run_cfg{
       .program_name = "cinder",
@@ -5410,8 +5402,8 @@ auto main() -> int {
     test_panic_in_task_stops_siblings_then_exits();
     test_blocking_wait_in_a_task_finishes_on_both_tiers();
     test_build_task_has_the_stack_of_the_main_thread();
-    test_run_index_mut_dispatches_to_cell_mut();
-    test_run_index_ref_dispatches_to_cell();
+    test_run_index_mut_dispatches_to_at_mut();
+    test_run_index_ref_dispatches_to_at_ref();
     test_cross_module_function_used_as_a_value();
     test_module_qualified_function_used_as_a_value();
     test_build_at_o2_still_links_and_runs_correctly();

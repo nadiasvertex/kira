@@ -1267,20 +1267,6 @@ private:
     case hir_node_kind::hir_host_call:
       return lower_host_call(as<hir_host_call>(expr), dest);
     case hir_node_kind::hir_call:
-      if (env_.cell_reads_as_reference(expr.type, dest.type)) {
-        // A `cell[T]` result read as a `&T`: the same address, retyped.
-        const auto temp = new_temp(expr.type, expr.span);
-        if (auto ok = lower_call(as<hir_call>(expr), whole(temp));
-            !ok.has_value() || terminated_) {
-          return ok;
-        }
-        auto op = storage_op{.kind = op_kind::compute};
-        op.dest = dest;
-        op.computation = compute_kind::copy;
-        op.operands.push_back(read_of(whole(temp), false));
-        emit(std::move(op), expr.span);
-        return {};
-      }
       return lower_call(as<hir_call>(expr), dest);
     case hir_node_kind::hir_tuple:
       return lower_tuple(as<hir_tuple>(expr), dest);
@@ -1305,8 +1291,6 @@ private:
       return lower_generator_next(as<hir_generator_next>(expr), dest);
     case hir_node_kind::hir_coroutine_cancelled:
       return lower_coroutine_cancelled(expr, dest);
-    case hir_node_kind::hir_cell_set:
-      return lower_cell_set(as<hir_cell_set>(expr), dest);
     case hir_node_kind::hir_coroutine_cancel:
       return lower_coroutine_cancel(as<hir_coroutine_cancel>(expr), dest);
     case hir_node_kind::hir_container_len:
@@ -4561,67 +4545,6 @@ private:
     }
     if (auto ended = flush_pending(assign.span); !ended.has_value()) {
       return ended;
-    }
-    return {};
-  }
-
-  /// `c.set(v)` on a `cell_mut[T]`: an assignment through the address `c`
-  /// is. HIR stages no drop of the old value here, so an element that needs
-  /// one is refused.
-  [[nodiscard]] auto lower_cell_set(const hir_cell_set &set,
-                                    const std::optional<place> &dest)
-      -> result {
-    auto cell = lower_place(*set.cell);
-    if (!cell.has_value()) {
-      return std::unexpected(cell.error());
-    }
-    auto address = place{};
-    if (cell->has_value()) {
-      address = std::move(**cell);
-    } else {
-      const auto temp = new_temp(set.cell->type, set.cell->span);
-      if (auto ok = lower_into(*set.cell, whole(temp)); !ok.has_value()) {
-        return ok;
-      }
-      address = whole(temp);
-    }
-    const auto element = env_.pointee(set.cell->type);
-    if (!element.has_value()) {
-      return malformed(set.span, "`set` on a value that is not a cell");
-    }
-    if (env_.needs_drop(*element)) {
-      return refuse(set.span, "`set` on a cell of " +
-                                  types().display(*element) +
-                                  ", whose old value needs a drop");
-    }
-    const auto target =
-        project(std::move(address), projection{.kind = projection_kind::deref},
-                *element);
-    const auto cls = class_of(*element, set.span);
-    if (!cls.has_value()) {
-      return std::unexpected(cls.error());
-    }
-    if (*cls == pass_class::scalar || *cls == pass_class::address) {
-      if (auto ok = lower_into(*set.value, target); !ok.has_value()) {
-        return ok;
-      }
-    } else {
-      // Built apart, because building it may read the cell.
-      const auto replacement = new_temp(*element, set.span);
-      if (auto ok = lower_into(*set.value, whole(replacement));
-          !ok.has_value()) {
-        return ok;
-      }
-      if (*cls != pass_class::zero_sized) {
-        auto move = storage_op{.kind = op_kind::move_into};
-        move.dest = target;
-        move.source = whole(replacement);
-        emit(std::move(move), set.span);
-      }
-      consumed(replacement);
-    }
-    if (dest.has_value()) {
-      emit(storage_op{.kind = op_kind::init_empty, .dest = *dest}, set.span);
     }
     return {};
   }

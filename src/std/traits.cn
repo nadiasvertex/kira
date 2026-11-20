@@ -40,8 +40,9 @@ pub trait clone:
 #:
 #: Field access and method calls look on the handle's own type first. When
 #: the member is not there, lookup is retried on `target` through `deref()`,
-#: so `h.x` reads `h.deref().x`. There is no `deref_mut`: what is reached
-#: through `deref` is read-only.
+#: so `h.x` reads `h.deref().x`. What is reached through `deref` is
+#: read-only; a handle that gives exclusive access also implements
+#: `deref_mut`.
 pub trait deref:
     #: The type the handle refers to.
     type target
@@ -52,10 +53,23 @@ pub trait deref:
     #:   a reference that borrows the handle.
     def deref(self) -> &self.target
 
+#: A handle that gives exclusive access to the value it refers to, such as a
+#: lock guard. A place written through the handle (`*g = v`, `*g += 1`,
+#: `g.x = v`, `&mut *g`) is reached through `deref_mut()`, so the handle
+#: itself must be writable. A shared handle like `shared[T]` does not
+#: implement it: every other handle could see the change.
+pub trait deref_mut requires deref:
+    #: Returns a mutable reference to the value the handle refers to.
+    #: Args:
+    #:   self: the handle (borrowed mutably).
+    #: Returns:
+    #:   a mutable reference that borrows the handle.
+    def deref_mut(mut self) -> &mut self.target
+
 #: A type whose values copy instead of moving
 #: (`spec/specification/02-intermediate/14-ownership-and-borrowing.md`, Copy
 #: and move): the builtin scalars, `str`, `&T`, the raw pointers, and the
-#: read-only views `slice[T]` and `cell[T]`. No user type is `copy`.
+#: read-only view `slice[T]`. No user type is `copy`.
 #:
 #: The body is the scalar part of that rule, as documentation. The checker
 #: answers `T: copy` itself, from the full list (`type_table::is_copy`),

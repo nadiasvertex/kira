@@ -1,0 +1,14 @@
+module sample
+
+use std.sync.mutex
+use std.shared.shared
+
+# `deref_mut` borrows the guard mutably, so a `let` guard cannot be written
+# through; a `shared` has no `deref_mut` at all.
+def main() -> int32:
+    let m = mutex.new(5)
+    let g = m.lock()
+    *g = 7
+    var s = shared.new(3)
+    *s = 4
+    return 0

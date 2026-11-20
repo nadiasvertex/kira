@@ -116,6 +116,15 @@ build_expression_function(semantic::checked_types &checked,
                                       const semantic::reified_value &value,
                                       source_span span) -> result<ptr<expr>>;
 
+/// What a place is built for. A part of a user collection, `v[i]`, is
+/// reached through `at`/`at_ref` when it is read and through `at_mut` when
+/// it is written or mutably borrowed, and so is every place it is the base
+/// of (`v[i].f = x`, `v[i][j] = x`).
+enum class place_access : std::uint8_t {
+  read,
+  mutate,
+};
+
 /// One function body being built. Every method reads the checker's records
 /// for the AST node it is given and reports a `failure` when one is absent.
 class body_builder {
@@ -161,9 +170,13 @@ public:
   [[nodiscard]] auto is_ref(type_id type) const -> bool;
 
   // ---- places and values (adapter_expr.cpp) ------------------------------
-  [[nodiscard]] auto place_of(const ast::expr &source) -> result<place>;
+  [[nodiscard]] auto place_of(const ast::expr &source,
+                              place_access access = place_access::read)
+      -> result<place>;
   /// `place_of(expr)` followed by the `deref_adjustments` recorded on it.
-  [[nodiscard]] auto receiver_place(const ast::expr &source) -> result<place>;
+  [[nodiscard]] auto receiver_place(const ast::expr &source,
+                                    place_access access = place_access::read)
+      -> result<place>;
   /// The value of `source`, its `origin` set to `source` unless an inner
   /// expression it stands for (a parenthesized one, a splice) already set
   /// it: the ownership check names the innermost.
@@ -177,15 +190,6 @@ public:
   /// `hir::make_references_explicit` does; anything else is left for the
   /// verifier to judge.
   [[nodiscard]] auto coerce(ptr<expr> value, type_id need) -> result<ptr<expr>>;
-  /// The intrinsic that converts `have` to `need` when they are one of the
-  /// four cell/reference pairs the checker accepts without a record
-  /// (todo 38): `cell[T]`/`&T` and `cell_mut[T]`/`&mut T`, either way.
-  [[nodiscard]] auto cell_conversion_name(type_id have, type_id need) const
-      -> std::optional<std::string>;
-  [[nodiscard]] auto is_cell(type_id type) const -> bool;
-  /// The place a `cell[T]` or `cell_mut[T]` value addresses: a temporary
-  /// holding its conversion to `&T`/`&mut T`, then a `deref` step.
-  [[nodiscard]] auto cell_place(ptr<expr> cell) -> result<place>;
   [[nodiscard]] auto use_of(place from, source_span span) -> ptr<expr>;
   [[nodiscard]] auto temporary(ptr<expr> value) -> place;
   /// The place `value` reads, or a temporary holding it.

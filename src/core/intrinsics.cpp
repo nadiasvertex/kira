@@ -316,7 +316,7 @@ auto op_as_bytes(const call_shape &c) -> verdict {
 }
 
 // ---------------------------------------------------------------------------
-//  Generators and cells
+//  Generators
 // ---------------------------------------------------------------------------
 
 auto op_generator_next(const call_shape &c) -> verdict {
@@ -334,73 +334,6 @@ auto op_generator_next(const call_shape &c) -> verdict {
         std::format("the result is `{}`, expected `option[{}]`", c.show(c.result), c.show(item)));
   }
   return std::nullopt;
-}
-
-auto op_cell_get(const call_shape &c) -> verdict {
-  if (auto e = c.arity(1)) {
-    return e;
-  }
-  if (!c.is_generic(c.params[0], "cell", 1) && !c.is_generic(c.params[0], "cell_mut", 1)) {
-    return c.message(
-        std::format("operand 0 is `{}`, expected `cell[T]` or `cell_mut[T]`", c.show(c.params[0])));
-  }
-  return c.result_is(c.entry(c.params[0]).args[0]);
-}
-
-auto op_cell_set(const call_shape &c) -> verdict {
-  if (auto e = c.arity(2)) {
-    return e;
-  }
-  if (!c.is_generic(c.params[0], "cell_mut", 1)) {
-    return c.message(std::format("operand 0 is `{}`, expected `cell_mut[T]`", c.show(c.params[0])));
-  }
-  if (auto e = c.operand_is(1, c.entry(c.params[0]).args[0])) {
-    return e;
-  }
-  if (!c.is_unit(c.result)) {
-    return c.message(std::format("the result is `{}`, expected `unit`", c.show(c.result)));
-  }
-  return std::nullopt;
-}
-
-/// `cell[T]` to `&T`, `cell_mut[T]` to `&mut T` (`from_cell`), or back.
-auto cell_conversion(const call_shape &c, std::string_view cell_name, bool ref_mut, bool from_cell)
-    -> verdict {
-  if (auto e = c.arity(1)) {
-    return e;
-  }
-  const auto from = c.params[0];
-  const auto to = c.result;
-  const auto cell_type = from_cell ? from : to;
-  const auto ref_type = from_cell ? to : from;
-  if (!c.is_generic(cell_type, cell_name, 1)) {
-    return c.message(std::format("expected `{}[T]` as the {}, found `{}`", cell_name,
-                                from_cell ? "operand" : "result", c.show(cell_type)));
-  }
-  if (!c.is_ref(ref_type, ref_mut)) {
-    return c.message(std::format("expected `&{}T` as the {}, found `{}`", ref_mut ? "mut " : "",
-                                from_cell ? "result" : "operand", c.show(ref_type)));
-  }
-  const auto element = c.entry(cell_type).args[0];
-  if (c.entry(ref_type).result != element) {
-    return c.message(std::format("the cell holds `{}` but the reference is to `{}`",
-                                 c.show(element), c.show(c.entry(ref_type).result)));
-  }
-  if (auto e = c.generic_count(1)) {
-    return e;
-  }
-  return c.generic_is(element);
-}
-
-auto op_cell_to_ref(const call_shape &c) -> verdict { return cell_conversion(c, "cell", false, true); }
-auto op_cell_mut_to_ref_mut(const call_shape &c) -> verdict {
-  return cell_conversion(c, "cell_mut", true, true);
-}
-auto op_ref_to_cell(const call_shape &c) -> verdict {
-  return cell_conversion(c, "cell", false, false);
-}
-auto op_ref_mut_to_cell_mut(const call_shape &c) -> verdict {
-  return cell_conversion(c, "cell_mut", true, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -741,12 +674,6 @@ constexpr auto k_operations = std::to_array<operation>({
     {"container_data", op_container_data},
     {"as_bytes", op_as_bytes},
     {"generator_next", op_generator_next},
-    {"cell_get", op_cell_get},
-    {"cell_set", op_cell_set},
-    {"cell_to_ref", op_cell_to_ref},
-    {"cell_mut_to_ref_mut", op_cell_mut_to_ref_mut},
-    {"ref_to_cell", op_ref_to_cell},
-    {"ref_mut_to_cell_mut", op_ref_mut_to_cell_mut},
     {"uninit_len", op_uninit_len},
     {"stack_buffer", op_stack_buffer},
     {"ptr_cast", op_ptr_cast},
