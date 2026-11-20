@@ -71,10 +71,10 @@ using temporary_end_fn =
 /// deref or an address-of. A value that is not a place is first stored in a
 /// fresh local (`mint`), so the address-of has something to point at.
 ///
-/// Parameter types come from each call's `target` declaration, or from the
-/// callee's `fn` type for a call through a function value. A parameter whose
-/// type is a bare type parameter is left alone: whether it is a reference
-/// depends on the instance.
+/// Parameter types come from each direct call's `target_signature`, or from
+/// the callee's `fn` type for a call through a function value. A `self`
+/// taken by value that is not `copy` is passed by reference all the same. The pass reads only
+/// the type table and the drop plans from the checker.
 ///
 /// It also drops temporaries (ch. 17, When drops run): a value that is not
 /// a place, stored so it can be borrowed or a field read from it, or

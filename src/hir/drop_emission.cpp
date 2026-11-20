@@ -360,10 +360,13 @@ auto drop_emitter::build_drop_calls(const place_fn &make_receiver, type_id type,
     args.push_back(make_receiver());
     // The checker holds an impl's `drop` to the trait's signature, which
     // returns `unit`.
-    const auto result_type =
-        const_cast<semantic::type_table &>(checked_.types).builtin("unit");
+    auto &types = const_cast<semantic::type_table &>(checked_.types);
+    const auto result_type = types.builtin("unit");
     auto own_drop = direct_call(span, result_type, std::move(callee),
                                 std::move(args), resolved.decl);
+    // `drop(mut self)` takes the value by `&mut`.
+    own_drop->target_signature =
+        types.fn_of({types.ref_to(type, true)}, result_type);
     own_drop->is_drop = true;
     out.push_back(ptr<hir_node>(
         make<hir_expr_stmt>(span, ptr<hir_expr>(std::move(own_drop)))));

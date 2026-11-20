@@ -915,11 +915,22 @@ private:
       -> std::vector<type_id> {
     auto out = std::vector<type_id>{};
     if (call.target != nullptr) {
-      for (const auto &param : call.target->params) {
-        const auto found = checked_.node_types.find(param.pattern.get());
-        out.push_back(found != checked_.node_types.end()
-                          ? found->second
-                          : semantic::k_unknown_type);
+      if (types_.is_unknown(call.target_signature)) {
+        return out;
+      }
+      const auto &signature = types_.entry(call.target_signature);
+      out.assign(signature.args.begin(), signature.args.end());
+      // A `self` taken by value is still passed by reference (`hir_call::
+      // consumes_receiver`), unless it is `copy`.
+      const auto *first =
+          call.target->params.empty()
+              ? nullptr
+              : dynamic_cast<const ast::binding_pattern *>(
+                    call.target->params.front().pattern.get());
+      if (!out.empty() && first != nullptr && first->name == "self" &&
+          !is_ref(out.front()) && !types_.is_copy(out.front())) {
+        out.front() =
+            const_cast<semantic::type_table &>(types_).ref_to(out.front(), false);
       }
       return out;
     }
@@ -1130,7 +1141,7 @@ private:
       auto path = std::vector<std::string>{};
       if (auto *temp = temporary_root(field, path); temp != nullptr) {
         temp->moved_paths.clear();
-        if (!checked_.is_copy(field.type)) {
+        if (!types_.is_copy(field.type)) {
           temp->moved_paths.push_back(std::move(path));
         }
       }

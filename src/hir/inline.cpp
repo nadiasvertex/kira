@@ -208,6 +208,7 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
     copy->receiver_borrowed = n.receiver_borrowed;
     copy->lent_args = n.lent_args;
     copy->target = n.target;
+    copy->target_signature = n.target_signature;
     return copy;
   }
   case hir_node_kind::hir_field: {

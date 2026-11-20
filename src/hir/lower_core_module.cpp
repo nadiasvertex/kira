@@ -102,6 +102,7 @@ auto static_value(const core::expr &value)
                                  made.target.name, made.target.owner_module),
         std::move(*args));
     call->target = made.target.decl;
+    call->target_signature = made.target.signature;
     return ptr<hir_expr>(std::move(call));
   }
   default:

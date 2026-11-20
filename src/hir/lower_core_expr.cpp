@@ -370,6 +370,7 @@ auto core_lowerer::call(const core::call &source)
                              function_callee(target, source.span),
                              std::move(args));
   made->target = target.decl;
+  made->target_signature = target.signature;
   if (consumes && source.origin != nullptr) {
     // The callee owns its receiver, so the storage form moves it in.
     made->consumes_receiver = true;
@@ -595,6 +596,7 @@ auto core_lowerer::intrinsic_call(const core::call &source)
                                                       source.span),
                                       std::move(args));
       made->target = source.target.decl;
+      made->target_signature = source.target.signature;
       return ptr<hir_expr>(std::move(made));
     }
     auto callee = hir::make<hir_local_ref>(source.span, k_unknown_type,

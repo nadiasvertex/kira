@@ -324,12 +324,15 @@ struct hir_call : hir_expr {
   /// a generator step. See spec/specification/03-advanced/
   /// 39-tail-call-optimization.md for the exact eligibility rules.
   bool is_tail_call = false;
-  /// The declaration a direct call reaches, when lowering resolved one: what
-  /// `make_references_explicit` reads the parameters' types from to make an
-  /// argument's borrow or deref explicit. Null for a call through a function
-  /// value, whose parameter types are its callee's `fn` type. Not read by
-  /// either backend.
+  /// The declaration a direct call reaches, when lowering resolved one. Null
+  /// for a call through a function value, whose parameter types are its
+  /// callee's `fn` type. Not read by either backend.
   const ast::func_decl *target = nullptr;
+  /// With `target`: the callee's `fn` type with the call's type arguments
+  /// substituted (`core::callee::signature`), which
+  /// `make_references_explicit` reads the parameter types from to make an
+  /// argument's borrow or deref explicit.
+  type_id target_signature = k_unknown_type;
   /// The callee takes ownership of the value its `self` receiver refers to
   /// (`into_iterator`'s `into_iter`, the one consuming `self`), though it
   /// receives it by reference like every `self`: a receiver stored in a

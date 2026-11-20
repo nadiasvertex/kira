@@ -1269,6 +1269,7 @@ auto core_lowerer::crew_errors(const core::call &source)
                                     function_callee(target, span),
                                     std::move(args));
     made->target = target.decl;
+    made->target_signature = target.signature;
     return made;
   };
   const auto local = [&](symbol_id symbol, type_id local_type,
