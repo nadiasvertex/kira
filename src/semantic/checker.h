@@ -750,6 +750,11 @@ private:
     std::unordered_map<const ast::module_path_expr *,
                        std::vector<std::vector<deref_step>>>
         path_deref_mut_adjustments_;
+    /// In a template, the number of `deref` steps at each site, which
+    /// each instance records for itself (`record_template_deref_count`).
+    std::unordered_map<const ast::expr *, std::size_t> template_deref_counts_;
+    std::unordered_map<const ast::module_path_expr *, std::vector<std::size_t>>
+        template_path_deref_counts_;
 
     /// Calls built only to resolve an implicit `deref()` through the ordinary
     /// method-call machinery (`resolve_deref_step`). Nothing outside the
@@ -3540,10 +3545,18 @@ private:
   auto place_through_deref(const ast::expr &target) -> std::optional<type_id>;
 
   auto deref_handle_node(const ast::expr &target) -> const ast::expr *;
+  auto record_template_deref_count(const deref_site &site, std::size_t count)
+      -> void;
+  [[nodiscard]] auto deref_step_count(const ast::expr *node) const
+      -> std::size_t;
+  [[nodiscard]] auto path_deref_step_counts(const ast::module_path_expr &path)
+      const -> std::vector<std::size_t>;
   auto record_path_write_through_deref_mut(const ast::module_path_expr &path,
                                            std::string_view what) -> bool;
   auto record_write_through_deref_mut(const ast::expr &target,
                                       std::string_view what) -> bool;
+  auto record_handle_deref_mut(const ast::expr &handle_node, source_span span,
+                               std::string_view what) -> bool;
   auto deref_mut_method_of(type_id type) -> const method_entry *;
   auto resolve_handle_step(const ast::expr &receiver, type_id handle,
                            source_span span, const method_entry *method)

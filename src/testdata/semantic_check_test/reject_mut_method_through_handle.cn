@@ -1,0 +1,20 @@
+module sample
+
+use std.sync.mutex
+use std.shared.shared
+
+# A `mut self` method called on a guard's value goes through `deref_mut`,
+# which borrows the guard mutably, so a `let` guard is reported, in a plain
+# body and in a generic one. A `shared` has no `deref_mut` at all.
+def push_generic[T](m: &mutex[list[T]], v: T) -> unit:
+    let guard = m.lock()
+    guard.push(v)
+
+def push_shared[T](s: shared[list[T]], v: T) -> unit:
+    s.push(v)
+
+def main() -> int32:
+    let m = mutex.new([1, 2])
+    let guard = m.lock()
+    guard.push(3)
+    return 0

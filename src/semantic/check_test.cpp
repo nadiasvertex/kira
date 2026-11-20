@@ -2852,6 +2852,18 @@ auto test_rejects_writes_through_deref_handles() -> void {
                     "expected the `shared` write to be reported");
 }
 
+auto test_rejects_mut_methods_through_deref_handles() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_mut_method_through_handle.cn");
+  expect(analyzed.error_count == 3,
+         "expected one error for each `mut self` call through a handle");
+  expect_diagnostic(analyzed,
+                    "cannot call `push` on a value reached through `guard`",
+                    "expected the `let` guards to be reported");
+  expect_diagnostic(analyzed, "through `shared[list[T]]`'s `deref`",
+                    "expected the `shared` call to be reported");
+}
+
 auto test_dispatches_index_mut_borrow() -> void {
   // Not `analyze_test_data_file`: a bare error-count/diagnostic check here
   // could not fail on a broken dispatch. If `&mut w[0]` never reached
@@ -4346,6 +4358,7 @@ auto main() -> int {
       {"test_rejects_write_to_binding_through_shared_ref", test_rejects_write_to_binding_through_shared_ref},
       {"test_rejects_weakened_type_argument", test_rejects_weakened_type_argument},
       {"test_rejects_writes_through_deref_handles", test_rejects_writes_through_deref_handles},
+      {"test_rejects_mut_methods_through_deref_handles", test_rejects_mut_methods_through_deref_handles},
       {"test_dispatches_index_mut_borrow", test_dispatches_index_mut_borrow},
       {"test_accepts_intrinsic_decl", test_accepts_intrinsic_decl},
       {"test_accepts_string_interpolation", test_accepts_string_interpolation},

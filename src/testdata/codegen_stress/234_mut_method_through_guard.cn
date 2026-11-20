@@ -1,0 +1,57 @@
+module codegen_stress.mut_method_through_guard
+
+# A `mut self` method called on a guard's value (`guard.push(3)`) goes
+# through `deref_mut()` (todo item 12), and so does a write through a
+# guard in a generic body, where each instance resolves its own
+# `deref_mut`. Every change is read back through a second lock, so a
+# change made to a copy changes the answer.
+
+use std.sync.mutex
+
+type pt[T] = { x: T, y: T }
+
+# expect: 44330789
+
+def append[T](m: &mutex[list[T]], v: T) -> unit:
+    var guard = m.lock()
+    guard.push(v)
+
+def store[T](m: &mutex[T], v: T) -> unit:
+    var guard = m.lock()
+    *guard = v
+
+def set_x[T](m: &mutex[pt[T]], v: T) -> unit:
+    var g = m.lock()
+    g.x = v
+
+def set_y[T](m: &mutex[pt[T]], v: T) -> unit:
+    var g = m.lock()
+    let r = &mut *g
+    r.y = v
+
+def main() -> int32:
+    let m = mutex.new([1, 2])
+    var guard = m.lock()
+    guard.push(3)
+    guard.push(4)
+    drop(guard)
+    let plain = m.lock()
+    let pushed = plain.len() as int32 * 10 + (*plain)[3]
+    drop(plain)
+
+    let g = mutex.new([1, 2])
+    append(&g, 3)
+    let generic = g.lock()
+    let appended = generic.len() as int32 * 10 + (*generic)[2]
+
+    let n = mutex.new(5)
+    store(&n, 9)
+    let stored = *n.lock()
+
+    let p: mutex[pt[int32]] = mutex.new(pt { x: 1, y: 2 })
+    set_x(&p, 7)
+    set_y(&p, 8)
+    let q = p.lock()
+    let fields = q.x * 10 + q.y
+
+    return pushed * 1000000 + appended * 10000 + fields * 10 + stored

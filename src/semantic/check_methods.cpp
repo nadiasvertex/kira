@@ -1489,6 +1489,54 @@ auto checker::record_deref_steps(const deref_site &site,
   session_.deref_adjustments_[site.receiver] = std::move(steps);
 }
 
+/// In a template, where each instance records its own steps, how many
+/// `deref` steps `site` takes, so a write through it can still be checked
+/// in the template (`record_handle_deref_mut`).
+auto checker::record_template_deref_count(const deref_site &site,
+                                          std::size_t count) -> void {
+  if (site.path != nullptr) {
+    auto &segments = session_.template_path_deref_counts_[site.path];
+    if (segments.size() < site.path->segments.size()) {
+      segments.resize(site.path->segments.size());
+    }
+    segments[site.segment] = count;
+    return;
+  }
+  session_.template_deref_counts_[site.receiver] = count;
+}
+
+/// How many `deref` steps `node` takes: recorded, or in a template,
+/// counted (`record_template_deref_count`).
+auto checker::deref_step_count(const ast::expr *node) const -> std::size_t {
+  if (const auto found = session_.deref_adjustments_.find(node);
+      found != session_.deref_adjustments_.end()) {
+    return found->second.size();
+  }
+  if (const auto found = session_.template_deref_counts_.find(node);
+      found != session_.template_deref_counts_.end()) {
+    return found->second;
+  }
+  return 0;
+}
+
+/// `deref_step_count` for each segment of a dotted path.
+auto checker::path_deref_step_counts(const ast::module_path_expr &path) const
+    -> std::vector<std::size_t> {
+  if (const auto found = session_.path_deref_adjustments_.find(&path);
+      found != session_.path_deref_adjustments_.end()) {
+    auto counts = std::vector<std::size_t>{};
+    for (const auto &steps : found->second) {
+      counts.push_back(steps.size());
+    }
+    return counts;
+  }
+  if (const auto found = session_.template_path_deref_counts_.find(&path);
+      found != session_.template_path_deref_counts_.end()) {
+    return found->second;
+  }
+  return {};
+}
+
 /// The receiver a deref chain at `site` is resolved against: the
 /// `field_expr`'s object, or the path itself for a dotted path (whose
 /// prefix has no node of its own; the probe only needs one for spans).
@@ -1524,6 +1572,8 @@ auto checker::lookup_through_deref(const deref_site &site, type_id object,
   const auto target = chain->second;
   if (function_.current_template_ == nullptr) {
     record_deref_steps(site, std::move(chain->first));
+  } else {
+    record_template_deref_count(site, chain->first.size());
   }
   return target;
 }
@@ -1593,6 +1643,8 @@ auto checker::deref_operator_target(const ast::expr &operand, type_id handle,
   const auto result = settle(step->result);
   if (function_.current_template_ == nullptr) {
     session_.deref_adjustments_[&operand] = {std::move(*step)};
+  } else {
+    session_.template_deref_counts_[&operand] = 1;
   }
   const auto &result_entry = session_.types_.entry(result);
   return result_entry.kind == type_kind::ref_kind ? result_entry.result
@@ -1735,7 +1787,7 @@ auto checker::deref_handle_node(const ast::expr &target) -> const ast::expr * {
     if (field.object == nullptr) {
       return nullptr;
     }
-    if (session_.deref_adjustments_.contains(field.object.get())) {
+    if (deref_step_count(field.object.get()) != 0) {
       return field.object.get();
     }
     return deref_handle_node(*field.object);
@@ -1753,7 +1805,7 @@ auto checker::deref_handle_node(const ast::expr &target) -> const ast::expr * {
     if (unary.op != ast::unary_op::deref || unary.operand == nullptr) {
       return nullptr;
     }
-    if (session_.deref_adjustments_.contains(unary.operand.get())) {
+    if (deref_step_count(unary.operand.get()) != 0) {
       return unary.operand.get();
     }
     return deref_handle_node(*unary.operand);
@@ -1779,8 +1831,17 @@ auto checker::record_write_through_deref_mut(const ast::expr &target,
   if (node == nullptr) {
     return false;
   }
-  const auto steps = session_.deref_adjustments_.find(node);
-  if (steps == session_.deref_adjustments_.end() || steps->second.size() != 1) {
+  return record_handle_deref_mut(*node, target.span, what);
+}
+
+/// `record_write_through_deref_mut` for the handle `node` itself: its one
+/// `deref` step is replaced by a `deref_mut` step. Also used for a
+/// `mut self` method called on the handle's target (`guard.push(1)`).
+auto checker::record_handle_deref_mut(const ast::expr &handle_node,
+                                      source_span span, std::string_view what)
+    -> bool {
+  const auto *node = &handle_node;
+  if (deref_step_count(node) != 1) {
     return false;
   }
   const auto typed = session_.node_types_.find(node);
@@ -1792,11 +1853,24 @@ auto checker::record_write_through_deref_mut(const ast::expr &target,
   if (method == nullptr) {
     return false;
   }
-  auto step = resolve_handle_step(*node, handle, target.span, method);
-  if (!step.has_value()) {
-    return false;
+  if (function_.current_template_ != nullptr) {
+    // Each instance resolves the step against its own handle type.
+    defer_to_instances(
+        *node, [this, node, handle, span](instance_subst &subst) -> void {
+          const auto *clone = clone_of(subst, node);
+          const auto concrete = strip_refs(substitute_type(handle, subst));
+          if (auto step = resolve_handle_step(*clone, concrete, span,
+                                              deref_mut_method_of(concrete))) {
+            session_.deref_mut_adjustments_[clone] = {std::move(*step)};
+          }
+        });
+  } else {
+    auto step = resolve_handle_step(*node, handle, span, method);
+    if (!step.has_value()) {
+      return false;
+    }
+    session_.deref_mut_adjustments_[node] = {std::move(*step)};
   }
-  session_.deref_mut_adjustments_[node] = {std::move(*step)};
   if (const auto *ident = ast::as<const ast::ident_expr>(node)) {
     if (const auto *binding = lookup_value(ident->name);
         binding != nullptr &&
@@ -1804,7 +1878,7 @@ auto checker::record_write_through_deref_mut(const ast::expr &target,
          binding->origin == binding_origin::pattern_binding ||
          binding->origin == binding_origin::pattern_alias)) {
       error_with_help(
-          target.span,
+          span,
           std::format("cannot {} a value reached through `{}`", what,
                       ident->name),
           std::format("`deref_mut` borrows `{}` mutably, but it is {}",
@@ -1823,18 +1897,17 @@ auto checker::record_write_through_deref_mut(const ast::expr &target,
 /// instead. A path through more than one handle is left to be reported.
 auto checker::record_path_write_through_deref_mut(
     const ast::module_path_expr &path, std::string_view what) -> bool {
-  const auto found = session_.path_deref_adjustments_.find(&path);
+  const auto counts = path_deref_step_counts(path);
   const auto types = session_.value_path_types_.find(&path);
-  if (found == session_.path_deref_adjustments_.end() ||
-      types == session_.value_path_types_.end()) {
+  if (counts.empty() || types == session_.value_path_types_.end()) {
     return false;
   }
   auto segment = std::size_t{0};
-  for (std::size_t i = 1; i < found->second.size(); ++i) {
-    if (found->second[i].empty()) {
+  for (std::size_t i = 1; i < counts.size(); ++i) {
+    if (counts[i] == 0) {
       continue;
     }
-    if (segment != 0 || found->second[i].size() != 1) {
+    if (segment != 0 || counts[i] != 1) {
       return false;
     }
     segment = i;
@@ -1847,13 +1920,29 @@ auto checker::record_path_write_through_deref_mut(
   if (method == nullptr) {
     return false;
   }
-  auto step = resolve_handle_step(path, handle, path.span, method);
-  if (!step.has_value()) {
-    return false;
+  if (function_.current_template_ != nullptr) {
+    // Each instance resolves the step against its own handle type.
+    defer_to_instances(path, [this, path = &path, handle, segment,
+                              size = counts.size()](
+                                 instance_subst &subst) -> void {
+      const auto *clone = clone_of(subst, path);
+      const auto concrete = strip_refs(substitute_type(handle, subst));
+      if (auto step = resolve_handle_step(*clone, concrete, clone->span,
+                                          deref_mut_method_of(concrete))) {
+        auto segments = std::vector<std::vector<deref_step>>(size);
+        segments[segment] = {std::move(*step)};
+        session_.path_deref_mut_adjustments_[clone] = std::move(segments);
+      }
+    });
+  } else {
+    auto step = resolve_handle_step(path, handle, path.span, method);
+    if (!step.has_value()) {
+      return false;
+    }
+    auto segments = std::vector<std::vector<deref_step>>(counts.size());
+    segments[segment] = {std::move(*step)};
+    session_.path_deref_mut_adjustments_[&path] = std::move(segments);
   }
-  auto segments = std::vector<std::vector<deref_step>>(found->second.size());
-  segments[segment] = {std::move(*step)};
-  session_.path_deref_mut_adjustments_[&path] = std::move(segments);
   if (segment == 1) {
     const auto &root = path.segments.front();
     if (const auto *binding = lookup_value(root);
@@ -1919,6 +2008,13 @@ auto checker::method_callable_through_deref(const ast::call_expr &call,
   const auto mutates = binding != nullptr && binding->is_mut;
   const auto consumes = method.trait_name == "into_iterator";
   if (!mutates && !consumes) {
+    return true;
+  }
+  // A handle with `deref_mut` lends the receiver mutably.
+  if (mutates && field.object != nullptr &&
+      record_handle_deref_mut(
+          *field.object, call.span,
+          std::format("call `{}` on", field.field_name))) {
     return true;
   }
   const auto shown = session_.types_.display(handle);
