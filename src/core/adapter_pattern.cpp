@@ -369,33 +369,15 @@ auto body_builder::test_of(const ast::node &pattern, type_id type,
     }
     return test;
   }
-  case ast::node_kind::constructor_pattern:
-  case ast::node_kind::option_pattern:
-  case ast::node_kind::result_pattern: {
-    auto name = std::string{};
+  case ast::node_kind::constructor_pattern: {
+    const auto &ctor = ast::cast<const ast::constructor_pattern>(pattern);
+    const auto &name = ctor.name;
     auto args = std::vector<const ast::node *>{};
-    if (pattern.kind == ast::node_kind::constructor_pattern) {
-      const auto &ctor = ast::cast<const ast::constructor_pattern>(pattern);
-      name = ctor.name;
-      for (const auto &arg : ctor.args) {
-        if (arg == nullptr) {
-          return fail("constructor_pattern", "a missing payload",
-                      pattern.span);
-        }
-        args.push_back(arg.get());
+    for (const auto &arg : ctor.args) {
+      if (arg == nullptr) {
+        return fail("constructor_pattern", "a missing payload", pattern.span);
       }
-    } else if (pattern.kind == ast::node_kind::option_pattern) {
-      const auto &option = ast::cast<const ast::option_pattern>(pattern);
-      name = "some";
-      if (option.inner != nullptr) {
-        args.push_back(option.inner.get());
-      }
-    } else {
-      const auto &wrapped = ast::cast<const ast::result_pattern>(pattern);
-      name = wrapped.result_kind == ast::option_result_kind::err ? "err" : "ok";
-      if (wrapped.inner != nullptr) {
-        args.push_back(wrapped.inner.get());
-      }
+      args.push_back(arg.get());
     }
     CORE_TRY(index, variant_index(type, name, pattern.span));
     test.kind = pattern_test::form::variant;

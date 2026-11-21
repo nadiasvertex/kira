@@ -1,0 +1,34 @@
+module codegen_stress.user_ok_none_variants
+
+# A user sum type may name its variants `@ok` and `@none` (todo item 35).
+# Construction and patterns look a variant up the same way: the expected
+# type's variants first, then this module's sum types, then the prelude's.
+# So an unannotated `@ok(7)` here is a `shape`, and `@ok` where a `result`
+# is expected is still `result`'s.
+
+# expect: 7342
+
+type shape = @ok(int32) | @none
+
+extend shape:
+    def value(self) -> int32:
+        return match self:
+            @ok(v) => v
+            @none => 0
+
+def half(n: int32) -> result[int32, str]:
+    if n % 2 == 0:
+        return @ok(n / 2)
+    return @err("odd")
+
+def main() -> int32:
+    let a: shape = @ok(7)
+    let b = @ok(3)
+    let c: shape = @none
+    let even = match half(8):
+        @ok(v) => v * 10
+        @err(_) => 1
+    let odd = match half(3):
+        @ok(_) => 5
+        @err(_) => 2
+    return a.value() * 1000 + b.value() * 100 + c.value() + even + odd

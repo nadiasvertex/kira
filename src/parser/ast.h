@@ -141,8 +141,6 @@ struct tuple_pattern;
 struct struct_pattern;
 struct array_pattern;
 struct range_pattern;
-struct option_pattern;
-struct result_pattern;
 struct ref_pattern;
 struct or_pattern;
 struct group_pattern;
@@ -302,8 +300,6 @@ enum class node_kind : uint8_t {
   struct_pattern,      ///< Struct destructuring pattern.
   array_pattern,       ///< Array or slice destructuring pattern.
   range_pattern,       ///< Range-matching pattern.
-  option_pattern,      ///< `some(...)` option pattern.
-  result_pattern,      ///< `ok(...)` or `err(...)` result pattern.
   ref_pattern,         ///< Reference pattern.
   or_pattern,          ///< Alternative pattern.
   group_pattern,       ///< Parenthesized pattern grouping.
@@ -1384,30 +1380,6 @@ struct range_pattern : pattern {
   bool inclusive = false; ///< Whether the upper bound is included.
 
   range_pattern() : pattern(node_kind::range_pattern) {}
-};
-
-/// `some(pattern)`, `ok(pattern)`, `err(pattern)`
-/// @brief Shared discriminator for option/result wrapper patterns.
-enum class option_result_kind : uint8_t {
-  some, ///< Option success/presence wrapper.
-  ok,   ///< Result success wrapper.
-  err,  ///< Result failure wrapper.
-};
-
-/// @brief Pattern matching the option `some(...)` wrapper form.
-struct option_pattern : pattern {
-  option_result_kind option_kind; ///< Which wrapper keyword was parsed.
-  ptr<pattern> inner;             ///< Inner payload pattern.
-
-  option_pattern() : pattern(node_kind::option_pattern) {}
-};
-
-/// Result pattern — reuses option_pattern but with different kind.
-struct result_pattern : pattern {
-  option_result_kind result_kind; ///< Distinguishes `ok(...)` from `err(...)`.
-  ptr<pattern> inner;             ///< Inner payload pattern.
-
-  result_pattern() : pattern(node_kind::result_pattern) {}
 };
 
 /// `&pattern`

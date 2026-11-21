@@ -256,34 +256,6 @@ auto checker::check_pattern_node(const ast::pattern &pattern,
     check_constructor_pattern(ctor, stripped);
     return;
   }
-  case ast::node_kind::option_pattern: {
-    const auto &option = ast::cast<const ast::option_pattern>(pattern);
-    auto inner = k_unknown_type;
-    if (entry.kind == type_kind::builtin_generic_kind &&
-        entry.name == "option" && !entry.args.empty()) {
-      inner = entry.args[0];
-    }
-    if (option.inner != nullptr) {
-      check_pattern(*option.inner, inner);
-    }
-    return;
-  }
-  case ast::node_kind::result_pattern: {
-    const auto &result = ast::cast<const ast::result_pattern>(pattern);
-    auto inner = k_unknown_type;
-    if (entry.kind == type_kind::builtin_generic_kind &&
-        entry.name == "result") {
-      const auto slot =
-          result.result_kind == ast::option_result_kind::err ? 1u : 0u;
-      if (slot < entry.args.size()) {
-        inner = entry.args[slot];
-      }
-    }
-    if (result.inner != nullptr) {
-      check_pattern(*result.inner, inner);
-    }
-    return;
-  }
   case ast::node_kind::struct_pattern: {
     const auto &struct_pattern = ast::cast<const ast::struct_pattern>(pattern);
     for (const auto &field : struct_pattern.fields) {
@@ -379,9 +351,12 @@ auto checker::check_constructor_pattern(const ast::constructor_pattern &ctor,
                                         type_id subject) -> void {
   const auto &entry = session_.types_.entry(subject);
 
-  // Prelude option/result variants in pattern position.
-  if (ctor.name == "some" || ctor.name == "none" || ctor.name == "ok" ||
-      ctor.name == "err") {
+  // `option` and `result` variants. A sum type's own variants are looked up
+  // on it below, so a user sum type may name its variants `@ok` or `@none`
+  // (todo 35).
+  if (entry.kind != type_kind::sum_kind &&
+      (ctor.name == "some" || ctor.name == "none" || ctor.name == "ok" ||
+       ctor.name == "err")) {
     auto inner = k_unknown_type;
     if (entry.kind == type_kind::builtin_generic_kind) {
       if (entry.name == "option" && !entry.args.empty()) {
@@ -495,18 +470,6 @@ auto checker::collect_covered_names(const ast::pattern &pattern,
   switch (pattern.kind) {
   case ast::node_kind::constructor_pattern:
     covered.insert(ast::cast<const ast::constructor_pattern>(pattern).name);
-    return;
-  case ast::node_kind::option_pattern:
-    covered.insert(ast::cast<const ast::option_pattern>(pattern).option_kind ==
-                           ast::option_result_kind::some
-                       ? "some"
-                       : "none");
-    return;
-  case ast::node_kind::result_pattern:
-    covered.insert(ast::cast<const ast::result_pattern>(pattern).result_kind ==
-                           ast::option_result_kind::err
-                       ? "err"
-                       : "ok");
     return;
   case ast::node_kind::literal_pattern: {
     const auto &literal = ast::cast<const ast::literal_pattern>(pattern);

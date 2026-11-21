@@ -2372,7 +2372,8 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     if (splice.operand == nullptr) {
       return k_unknown_type;
     }
-    const auto operand_type = infer_expr(*splice.operand, k_unknown_type);
+    const auto operand_type = as_comptime_expr(
+        [&] { return infer_expr(*splice.operand, k_unknown_type); });
     require_quote_value(operand_type, splice.operand->span,
                         "a spliced expression");
     // Reification: evaluate the operand at compile time and, if it

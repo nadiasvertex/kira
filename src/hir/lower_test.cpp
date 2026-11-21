@@ -733,9 +733,8 @@ auto test_lowers_option_and_result_pattern_sugar() -> void {
       dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
   const auto &match = dynamic_cast<const hir::hir_match &>(*ret.value);
 
-  // `@some(v)` parses as a plain constructor pattern (not the dedicated
-  // `ast::option_pattern` sugar node, which is only for bare `some(...)`
-  // without `@`) — still lowers to the same hir_constructor_pattern shape.
+  // `@some(v)` parses as a plain constructor pattern and lowers to a
+  // hir_constructor_pattern.
   const auto &some_pat = dynamic_cast<const hir::hir_constructor_pattern &>(
       *match.arms[0].pattern);
   expect(some_pat.variant_name == "some",

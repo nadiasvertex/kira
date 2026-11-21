@@ -2864,6 +2864,49 @@ auto test_rejects_mut_methods_through_deref_handles() -> void {
                     "expected the `shared` call to be reported");
 }
 
+auto test_call_forms_share_checks() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_call_forms_share_checks.cn");
+  expect(analyzed.error_count == 7,
+         "expected one error for each bad call, on every call form");
+  const auto count = [&](std::string_view needle) -> int {
+    auto found = 0;
+    for (auto at = analyzed.diagnostics.find(needle);
+         at != std::string::npos;
+         at = analyzed.diagnostics.find(needle, at + needle.size())) {
+      ++found;
+    }
+    return found;
+  };
+  const auto bound_errors =
+      count("error: `max` needs `T: numeric`, and `str` does not satisfy it");
+  const auto arity_errors = count(
+      "error: `max` takes 1 compile-time argument(s), and this call gives 2");
+  expect(bound_errors == 2,
+         "expected the bound error on both `limits.max[str]` and `max[str]`");
+  expect(arity_errors == 2,
+         "expected the arity error on both the qualified and the bare call");
+  expect_diagnostic(analyzed, "`counter` has no static function `nope`",
+                    "expected a missing static on a user type");
+  expect_diagnostic(analyzed, "`int64` has no static function `nope`",
+                    "expected a missing static on a builtin type");
+  expect_diagnostic(analyzed,
+                    "`get` takes `self`, so it is called on a value of "
+                    "`counter`",
+                    "expected a `self` method called on a type name");
+}
+
+auto test_rejects_static_def_call_with_run_time_argument() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_static_def_with_run_time_argument.cn");
+  expect(analyzed.error_count == 2,
+         "expected the plain call and the `static for` call to be rejected");
+  expect_diagnostic(analyzed,
+                    "this call to the `static def` `score` cannot run at "
+                    "compile time",
+                    "expected the unfoldable `static def` call to be named");
+}
+
 auto test_dispatches_index_mut_borrow() -> void {
   // Not `analyze_test_data_file`: a bare error-count/diagnostic check here
   // could not fail on a broken dispatch. If `&mut w[0]` never reached
@@ -4359,6 +4402,8 @@ auto main() -> int {
       {"test_rejects_weakened_type_argument", test_rejects_weakened_type_argument},
       {"test_rejects_writes_through_deref_handles", test_rejects_writes_through_deref_handles},
       {"test_rejects_mut_methods_through_deref_handles", test_rejects_mut_methods_through_deref_handles},
+      {"test_call_forms_share_checks", test_call_forms_share_checks},
+      {"test_rejects_static_def_call_with_run_time_argument", test_rejects_static_def_call_with_run_time_argument},
       {"test_dispatches_index_mut_borrow", test_dispatches_index_mut_borrow},
       {"test_accepts_intrinsic_decl", test_accepts_intrinsic_decl},
       {"test_accepts_string_interpolation", test_accepts_string_interpolation},

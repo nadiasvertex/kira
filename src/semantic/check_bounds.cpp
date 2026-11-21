@@ -1918,13 +1918,9 @@ auto checker::instantiate_solved_call(const ast::call_expr &call,
   // function's own body (already handled directly by the evaluator when
   // *that* function runs), fold the whole call to a literal now instead of
   // recording it as an ordinary callee.
-  if (!function_.in_comptime_only_function_ &&
-      session_.comptime_only_functions_.contains(instance)) {
-    if (const auto *lit = try_fold_comptime_only_call(call, decl, result,
-                                                      solution->type_slots)) {
-      session_.folded_comptime_calls_[&call] = lit;
-      return record_expr_type(call, result);
-    }
+  if (session_.comptime_only_functions_.contains(instance) &&
+      fold_static_call(call, decl, result, solution->type_slots)) {
+    return record_expr_type(call, result);
   }
   // Deliberately last: a module-qualified call (`app.lib.at(v, i)`) already
   // recorded the *template* as its callee on the way in

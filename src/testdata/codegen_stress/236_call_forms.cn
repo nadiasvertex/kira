@@ -1,0 +1,39 @@
+module codegen_stress.call_forms
+
+# Bare, module-qualified, type-static and trait-static calls, each with and
+# without bracketed type arguments, go through one function lookup and one
+# argument check (todo items 8 and 9): `limits.max[int8]()` binds `T` the
+# way `ident[int32](3)` does, and `int64.one()` finds the trait impl the way
+# `T.one()` does through a bound.
+
+# expect: 11172
+
+use std.limits
+use std.traits.one
+use std.traits.zero
+
+type counter = { pub n: int32 }
+
+extend counter:
+    static def start() -> counter:
+        return counter { n: 40 }
+
+    static def wrap[T](v: T) -> option[T]:
+        return @some(v)
+
+def ident[T](v: T) -> T:
+    return v
+
+def unit_of[T: one]() -> T:
+    return T.one()
+
+def main() -> int32:
+    let a = ident[int32](3)
+    let b = limits.max[int8]() as int32
+    let c = int64.one() + int64.zero()
+    let d = unit_of[int64]()
+    let e = counter.start().n
+    let f = match counter.wrap[int32](2):
+        @some(v) => v
+        @none => 0
+    return a + b + (c as int32) * 1000 + (d as int32) * 10000 + e + f

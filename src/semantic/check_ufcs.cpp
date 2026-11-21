@@ -571,17 +571,22 @@ auto checker::infer_method_call(const ast::call_expr &call,
   }
 
   // `int32.max`-style access on a type name never reaches method lookup.
-  if (const auto type_constant = infer_type_name_member(field)) {
+  const auto type_constant = infer_type_name_member(field);
+  if (type_constant.has_value() && *type_constant != k_unknown_type) {
     infer_call_args_loosely(call);
     return *type_constant;
   }
 
   // A module- or type-qualified call (`std.io.open(...)`,
-  // `console.println(...)`, `io_error.from(...)`) — see
+  // `console.println(...)`, `io_error.from(...)`, `int64.zero()`) — see
   // `infer_qualified_call`'s doc comment for why this is checked here
   // rather than dispatched on `call.callee`'s own kind.
   if (const auto qualified = infer_qualified_call(call, field)) {
     return *qualified;
+  }
+  if (type_constant.has_value()) {
+    infer_call_args_loosely(call);
+    return *type_constant;
   }
 
   // Deliberately *not* a point of demand. A receiver still open here is
@@ -1400,24 +1405,8 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
     -> std::optional<type_id> {
   const auto &object = *field.object;
   const auto fn_name = field.field_name;
-  auto root = std::vector<std::string>{};
-  if (object.kind == ast::node_kind::ident_expr) {
-    const auto &ident = ast::cast<const ast::ident_expr>(object);
-    if (dotted_root_is_value(ident.name)) {
-      return std::nullopt; // a real value, not a module/type reference
-    }
-    root = {ident.name};
-  } else if (object.kind == ast::node_kind::module_path_expr) {
-    const auto &path = ast::cast<const ast::module_path_expr>(object);
-    if (path.segments.empty()) {
-      return std::nullopt;
-    }
-    if (dotted_root_is_value(path.segments.front())) {
-      return std::nullopt; // a value-rooted field chain, not a module path
-    }
-    root = path.segments;
-  } else if (object.kind == ast::node_kind::index_expr ||
-             object.kind == ast::node_kind::call_expr) {
+  if (object.kind == ast::node_kind::index_expr ||
+      object.kind == ast::node_kind::call_expr) {
     // A static call on a generic *application*: `list[int32].from_iter(it)`,
     // `example_type[int32].make(9)`. Resolved to the concrete target and then
     // dispatched by exactly the machinery a solved type parameter uses, so
@@ -1428,8 +1417,22 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
       return std::nullopt;
     }
     return resolve_type_param_static(call, field, *target, fn_name);
-  } else {
+  }
+  const auto root_path = qualified_call_root(object);
+  if (!root_path.has_value()) {
     return std::nullopt;
+  }
+  const auto &root = *root_path;
+
+  if (const auto found = find_path_function(root, fn_name)) {
+    // `limits.max[int32]()` carries its brackets on the field (todo 8).
+    const auto explicit_args = method_explicit_generic_args(field);
+    if (!check_method_accepts_generic_args(field, *found->decl,
+                                           explicit_args)) {
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
+    return check_function_call(call, field, *found, explicit_args);
   }
 
   const auto resolve_against =
@@ -1444,47 +1447,7 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
                                    /*skip_self=*/false);
   };
 
-  // Fully module-qualified: `std.io.open(...)`.
-  if (const auto *owner = find_visible_module_of_path(root)) {
-    if (const auto it = owner->functions.find(fn_name);
-        it != owner->functions.end()) {
-      return resolve_against(*it->second.decl, owner, it->second.file_id, "");
-    }
-  }
-
-  // Relative to the module being checked: `inner.val()` inside `module
-  // main` is `main.inner`'s `val`. An import and a declared child can't
-  // share a name (`validate_module_name_conflicts`), so skipping an
-  // imported root here only keeps the two lookups from overlapping. This
-  // needs the whole path plus `fn_name` as the module member, which is
-  // what appending the name to `root` asks for.
-  if (find_import(root.front()) == nullptr) {
-    auto member_path = root;
-    member_path.push_back(fn_name);
-    if (const auto *owner = find_submodule_of_current_module(member_path)) {
-      if (const auto it = owner->functions.find(fn_name);
-          it != owner->functions.end()) {
-        return resolve_against(*it->second.decl, owner, it->second.file_id, "");
-      }
-    }
-  }
-
   if (root.size() == 1) {
-    // A single-segment root naming an imported module (`use std.console`,
-    // then `console.println(...)`).
-    if (const auto *binding = find_import(root.front());
-        binding != nullptr && binding->leaf_name.empty() &&
-        session_owns_path_root(binding->path)) {
-      if (const auto *owner =
-              index_.find_module(join_strings(binding->path, "."))) {
-        if (const auto it = owner->functions.find(fn_name);
-            it != owner->functions.end()) {
-          return resolve_against(*it->second.decl, owner, it->second.file_id,
-                                 "");
-        }
-      }
-    }
-
     // A single-segment root naming a prelude constructor
     // (`option.pure(...)`) — an associated function provided by an impl
     // of a higher-kinded trait for that constructor. The callee's type
@@ -1592,6 +1555,16 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
       return k_error_type;
     }
 
+    // A single-segment root naming a builtin scalar type (`int64.zero()`):
+    // its static members come from `extend` blocks and trait impls, found
+    // the same way a type parameter solved to it finds them (todo 9).
+    if (is_builtin_scalar_name(root.front())) {
+      if (const auto result = resolve_type_param_static(
+              call, field, session_.types_.builtin(root.front()), fn_name)) {
+        return result;
+      }
+    }
+
     // A single-segment root naming a type (`io_error.from(...)`) —
     // resolve an associated (non-`self`) function the same way a method
     // call resolves an instance method.
@@ -1617,13 +1590,53 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
         }
       }
     }
+
+    // A type name with no static function by this name. Answering nothing
+    // here let the call through with no type, and lowering then called the
+    // program valid but unbuildable.
+    if (is_builtin_scalar_name(root.front()) ||
+        find_type_decl_by_name(root.front()).has_value()) {
+      report_missing_type_static(field, root.front());
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
   }
 
   return std::nullopt;
 }
 
-/// Finds the function `name` refers to here: a declaration of the current
-/// module, or one an import brings in under that name.
+auto checker::report_missing_type_static(const ast::field_expr &field,
+                                         const std::string &type_name)
+    -> void {
+  auto type = k_unknown_type;
+  if (is_builtin_scalar_name(type_name)) {
+    type = session_.types_.builtin(type_name);
+  } else if (const auto found = find_type_decl_by_name(type_name)) {
+    type = make_user_type(*found->first, found->second, {});
+  }
+  const auto &entry = session_.types_.entry(type);
+  const auto *method = resolve_method(entry, type, field.field_name).method;
+  if (method != nullptr) {
+    error_with_help(
+        field.span,
+        std::format("`{}` takes `self`, so it is called on a value of `{}`",
+                    field.field_name, type_name),
+        std::format("called on the type `{}`", type_name),
+        std::format("Call it on a value instead: `value.{}(...)`.",
+                    field.field_name));
+    return;
+  }
+  error_with_help(
+      field.span,
+      std::format("`{}` has no static function `{}`", type_name,
+                  field.field_name),
+      "no such static function",
+      std::format("A function called on a type name is a `static def` "
+                  "declared in an `extend {}` block or in an impl of a trait "
+                  "for `{}`.",
+                  type_name, type_name));
+}
+
 auto checker::find_callable_decl(std::string_view name)
     -> std::optional<callable_lookup> {
   if (file_.module_ != nullptr) {
@@ -1631,10 +1644,13 @@ auto checker::find_callable_decl(std::string_view name)
         it != file_.module_->functions.end()) {
       return callable_lookup{.decl = it->second.decl,
                              .owner = file_.module_,
-                             .file_id = it->second.file_id};
+                             .file_id = it->second.file_id,
+                             .record = false};
     }
   }
   if (const auto *import = find_import(name)) {
+    // An import that binds a *module* (`use std.iter`) has no source member;
+    // a module is not callable, so the search goes on to the prelude.
     if (const auto *source = import_source_module(*import)) {
       const auto member = imported_member_name(*import);
       if (const auto it = source->functions.find(member);
@@ -1643,9 +1659,137 @@ auto checker::find_callable_decl(std::string_view name)
                                .owner = source,
                                .file_id = it->second.file_id};
       }
+      return std::nullopt;
+    }
+  }
+  for (const auto *source : wildcard_import_sources()) {
+    if (const auto it = source->functions.find(std::string(name));
+        it != source->functions.end()) {
+      return callable_lookup{.decl = it->second.decl,
+                             .owner = source,
+                             .file_id = it->second.file_id};
+    }
+  }
+  if (const auto found = find_prelude_function(name)) {
+    const auto &[fn, owner] = *found;
+    return callable_lookup{
+        .decl = fn.decl, .owner = owner, .file_id = fn.file_id};
+  }
+  return std::nullopt;
+}
+
+auto checker::qualified_call_root(const ast::expr &object)
+    -> std::optional<std::vector<std::string>> {
+  if (object.kind == ast::node_kind::ident_expr) {
+    const auto &ident = ast::cast<const ast::ident_expr>(object);
+    if (dotted_root_is_value(ident.name)) {
+      return std::nullopt; // a real value, not a module/type reference
+    }
+    return std::vector<std::string>{ident.name};
+  }
+  if (object.kind == ast::node_kind::module_path_expr) {
+    const auto &path = ast::cast<const ast::module_path_expr>(object);
+    if (path.segments.empty() || dotted_root_is_value(path.segments.front())) {
+      return std::nullopt; // a value-rooted field chain, not a module path
+    }
+    return path.segments;
+  }
+  return std::nullopt;
+}
+
+auto checker::find_path_function(const std::vector<std::string> &root,
+                                 const std::string &fn_name)
+    -> std::optional<callable_lookup> {
+  const auto member_of =
+      [&](const module_members *owner) -> std::optional<callable_lookup> {
+    if (const auto it = owner->functions.find(fn_name);
+        it != owner->functions.end()) {
+      return callable_lookup{.decl = it->second.decl,
+                             .owner = owner,
+                             .file_id = it->second.file_id};
+    }
+    return std::nullopt;
+  };
+
+  // Fully module-qualified: `std.io.open(...)`.
+  if (const auto *owner = find_visible_module_of_path(root)) {
+    if (const auto found = member_of(owner)) {
+      return found;
+    }
+  }
+
+  // Relative to the module being checked: `inner.val()` inside `module
+  // main` is `main.inner`'s `val`. An import and a declared child can't
+  // share a name (`validate_module_name_conflicts`), so skipping an
+  // imported root here only keeps the two lookups from overlapping. This
+  // needs the whole path plus `fn_name` as the module member, which is
+  // what appending the name to `root` asks for.
+  if (find_import(root.front()) == nullptr) {
+    auto member_path = root;
+    member_path.push_back(fn_name);
+    if (const auto *owner = find_submodule_of_current_module(member_path)) {
+      if (const auto found = member_of(owner)) {
+        return found;
+      }
+    }
+  }
+
+  // A single-segment root naming an imported module (`use std.console`,
+  // then `console.println(...)`).
+  if (root.size() == 1) {
+    if (const auto *binding = find_import(root.front());
+        binding != nullptr && binding->leaf_name.empty() &&
+        session_owns_path_root(binding->path)) {
+      if (const auto *owner =
+              index_.find_module(join_strings(binding->path, "."))) {
+        if (const auto found = member_of(owner)) {
+          return found;
+        }
+      }
     }
   }
   return std::nullopt;
+}
+
+auto checker::find_function_callee(const ast::expr &callee)
+    -> std::optional<callable_lookup> {
+  if (callee.kind == ast::node_kind::ident_expr) {
+    const auto &name = ast::cast<const ast::ident_expr>(callee).name;
+    // A local value shadowing the name is what the call calls.
+    if (lookup_value(name) != nullptr) {
+      return std::nullopt;
+    }
+    return find_callable_decl(name);
+  }
+  if (callee.kind == ast::node_kind::field_expr) {
+    const auto &field = ast::cast<const ast::field_expr>(callee);
+    if (field.object == nullptr) {
+      return std::nullopt;
+    }
+    if (const auto root = qualified_call_root(*field.object)) {
+      return find_path_function(*root, field.field_name);
+    }
+  }
+  return std::nullopt;
+}
+
+auto checker::check_function_call(const ast::call_expr &call,
+                                  const ast::expr &callee_node,
+                                  const callable_lookup &found,
+                                  const explicit_generic_args &explicit_args)
+    -> type_id {
+  record_expr_type(callee_node, explicit_args.empty()
+                                    ? fn_type_of(*found.decl, found.owner)
+                                    : k_unknown_type);
+  // Lowering needs the owning module to rebuild a cross-module call.
+  if (found.record) {
+    session_.resolved_callees_[&call] =
+        resolved_callee{.decl = found.decl,
+                        .owner_module = found.owner->module_name,
+                        .impl_target_type = ""};
+  }
+  return check_call_against_decl(call, *found.decl, found.owner, found.file_id,
+                                 /*skip_self=*/false, explicit_args);
 }
 
 /// Recognizes an explicitly instantiated call — `zeros[8]()`,
@@ -1663,24 +1807,16 @@ auto checker::infer_explicit_generic_call(const ast::call_expr &call)
     -> std::optional<type_id> {
   auto explicit_args = explicit_generic_args{};
   const auto *base = explicit_generic_callee(*call.callee, explicit_args);
-  if (base == nullptr || explicit_args.empty() ||
-      base->kind != ast::node_kind::ident_expr) {
+  if (base == nullptr || explicit_args.empty()) {
     return std::nullopt;
   }
-  // A local value shadowing the name means the brackets are indexing it,
-  // not instantiating anything.
-  const auto &name = ast::cast<const ast::ident_expr>(*base).name;
-  if (lookup_value(name) != nullptr) {
-    return std::nullopt;
-  }
-  const auto found = find_callable_decl(name);
+  // A base that names no generic function means the brackets are indexing a
+  // value, not instantiating anything.
+  const auto found = find_function_callee(*base);
   if (!found.has_value() || !is_generic_template(*found->decl)) {
     return std::nullopt;
   }
-  record_expr_type(*base, k_unknown_type);
-  return check_call_against_decl(call, *found->decl, found->owner,
-                                 found->file_id, /*skip_self=*/false,
-                                 explicit_args);
+  return check_function_call(call, *base, *found, explicit_args);
 }
 
 /// Recognizes `size_of[T]()`, `align_of[T]()` and `needs_drop[T]()`, the
@@ -2315,86 +2451,17 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
     return k_error_type;
   }
 
-  if (file_.module_ != nullptr) {
-    if (const auto it = file_.module_->functions.find(name);
-        it != file_.module_->functions.end()) {
-      record_expr_type(ident, fn_type_of(*it->second.decl, file_.module_));
-      return check_call_against_decl(call, *it->second.decl, file_.module_,
-                                     it->second.file_id,
-                                     /*skip_self=*/false);
-    }
+  if (const auto found = find_callable_decl(name)) {
+    return check_function_call(call, ident, *found, /*explicit_args=*/{});
+  }
+  // An import of a module member that is not a function (a type, say): the
+  // call is not this checker's to type.
+  if (const auto *import = find_import(name);
+      import != nullptr && import_source_module(*import) != nullptr) {
+    infer_call_args_loosely(call);
+    return k_unknown_type;
   }
 
-  if (const auto *import = find_import(name)) {
-    if (const auto *source = import_source_module(*import)) {
-      const auto member = imported_member_name(*import);
-      if (const auto it = source->functions.find(member);
-          it != source->functions.end()) {
-        record_expr_type(ident, fn_type_of(*it->second.decl, source));
-        // Same persistence as the prelude branch below: lowering needs
-        // the owning module to rebuild this cross-module call.
-        session_.resolved_callees_[&call] =
-            resolved_callee{.decl = it->second.decl,
-                            .owner_module = source->module_name,
-                            .impl_target_type = ""};
-        return check_call_against_decl(call, *it->second.decl, source,
-                                       it->second.file_id,
-                                       /*skip_self=*/false);
-      }
-      if (const auto it = source->types.find(member);
-          it != source->types.end()) {
-        infer_call_args_loosely(call);
-        return k_unknown_type;
-      }
-      infer_call_args_loosely(call);
-      return k_unknown_type;
-    }
-    // The import binds a *module* rather than a member — `use std.iter`
-    // makes `iter` name the module, and `import_source_module` says so by
-    // returning null. A module is not callable, so this name is not this
-    // branch's to answer, and falling through lets prelude and builtin
-    // resolution have it.
-    //
-    // Returning `k_unknown_type` here instead made a module import shadow
-    // every same-named function: a file that wrote `use std.iter` lost the
-    // `iter` free function to the module binding, type-checked anyway
-    // because unknown unifies with everything, and then failed in lowering
-    // with "no concrete checked type is available for this node" — the
-    // silent-acceptance shape the unknown type exists to avoid, not cause.
-  }
-
-  // Functions re-exported by a session-owned wildcard import
-  // (`use a.b.*`) — same resolution and persistence as the explicit
-  // import branch above.
-  for (const auto *source : wildcard_import_sources()) {
-    if (const auto it = source->functions.find(name);
-        it != source->functions.end()) {
-      record_expr_type(ident, fn_type_of(*it->second.decl, source));
-      session_.resolved_callees_[&call] =
-          resolved_callee{.decl = it->second.decl,
-                          .owner_module = source->module_name,
-                          .impl_target_type = ""};
-      return check_call_against_decl(call, *it->second.decl, source,
-                                     it->second.file_id,
-                                     /*skip_self=*/false);
-    }
-  }
-
-  // Prelude functions — `println`/`print`/`eprintln`/`eprint` resolve
-  // here to their real `std.console` declarations (auto-injected into
-  // every session, `inject_stdlib_prelude`), exactly like the module-
-  // local-function branch a few lines above, just against a module found
-  // through prelude reachability instead of `file_.module_`/an explicit `use`.
-  if (const auto found = find_prelude_function(name)) {
-    const auto &[fn, owner] = *found;
-    record_expr_type(ident, fn_type_of(*fn.decl, owner));
-    session_.resolved_callees_[&call] =
-        resolved_callee{.decl = fn.decl,
-                        .owner_module = owner->module_name,
-                        .impl_target_type = ""};
-    return check_call_against_decl(call, *fn.decl, owner, fn.file_id,
-                                   /*skip_self=*/false);
-  }
   if (name == "panic") {
     infer_call_args_loosely(call);
     return session_.types_.builtin("never");

@@ -1,0 +1,23 @@
+module semantic_check_test.reject_call_forms_share_checks
+
+# Every call form that names a function binds bracketed type arguments the
+# same way, so a bad argument gets the same error on each.
+
+use std.limits
+use std.limits.max
+
+type counter = { pub n: int32 }
+
+extend counter:
+    def get(self) -> int32:
+        return self.n
+
+def main() -> int32:
+    let a = limits.max[str]()
+    let b = max[str]()
+    let c = limits.max[int32, int32]()
+    let d = max[int32, int32]()
+    let e = counter.nope()
+    let f = int64.nope()
+    let g = counter.get()
+    return 0

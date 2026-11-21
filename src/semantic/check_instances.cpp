@@ -1815,12 +1815,18 @@ auto checker::resolve_variant_value(std::string_view name,
                                     const ast::call_expr *call,
                                     source_span span, type_id expected)
     -> std::optional<type_id> {
-  if (name == "some" || name == "none" || name == "ok" || name == "err") {
+  // One lookup, in this order: a variant of the expected type (`option` and
+  // `result` included), then a variant a sum type of this module declares,
+  // then the prelude's. A user's `@ok` therefore shadows `result`'s wherever
+  // the expected type does not ask for a `result` (todo 35).
+  const auto is_prelude_name =
+      name == "some" || name == "none" || name == "ok" || name == "err";
+  const auto expected_entry = session_.types_.entry(strip_refs(expected));
+  if (is_prelude_name && expected_entry.kind == type_kind::builtin_generic_kind &&
+      ((expected_entry.name == "option" && (name == "some" || name == "none")) ||
+       (expected_entry.name == "result" && (name == "ok" || name == "err")))) {
     return check_prelude_variant(name, call, span, expected);
   }
-
-  // Prefer a variant of the expected sum type, then module-level sums.
-  const auto expected_entry = session_.types_.entry(strip_refs(expected));
   if (expected_entry.kind == type_kind::sum_kind) {
     if (const auto *variant = find_variant(expected_entry, name)) {
       if (call != nullptr) {
@@ -1857,6 +1863,10 @@ auto checker::resolve_variant_value(std::string_view name,
             "missing constructor values");
     }
     return open_constructor_params(instance_id, expected, span);
+  }
+
+  if (is_prelude_name) {
+    return check_prelude_variant(name, call, span, expected);
   }
 
   // A variant of a prelude-re-exported sum type (`@less` of `ordering`),

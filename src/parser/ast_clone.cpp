@@ -369,30 +369,6 @@ template <typename T>
     cloned->inclusive = range.inclusive;
     return ptr<pattern>(std::move(cloned));
   }
-  case node_kind::option_pattern: {
-    const auto &option = cast<option_pattern>(p);
-    auto inner = clone_optional(option.inner);
-    if (!inner.has_value()) {
-      return std::unexpected(inner.error());
-    }
-    auto cloned = make<option_pattern>();
-    cloned->span = option.span;
-    cloned->option_kind = option.option_kind;
-    cloned->inner = std::move(*inner);
-    return ptr<pattern>(std::move(cloned));
-  }
-  case node_kind::result_pattern: {
-    const auto &result = cast<result_pattern>(p);
-    auto inner = clone_optional(result.inner);
-    if (!inner.has_value()) {
-      return std::unexpected(inner.error());
-    }
-    auto cloned = make<result_pattern>();
-    cloned->span = result.span;
-    cloned->result_kind = result.result_kind;
-    cloned->inner = std::move(*inner);
-    return ptr<pattern>(std::move(cloned));
-  }
   case node_kind::ref_pattern: {
     const auto &ref = cast<ref_pattern>(p);
     auto inner = clone_optional(ref.inner);

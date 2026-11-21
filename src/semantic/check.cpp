@@ -777,7 +777,8 @@ auto checker::resolve_item_splices(
     if (splice.expr == nullptr) {
       continue;
     }
-    const auto operand_type = infer_expr(*splice.expr, k_unknown_type);
+    const auto operand_type = as_comptime_expr(
+        [&] { return infer_expr(*splice.expr, k_unknown_type); });
     require_quote_value(operand_type, splice.expr->span,
                         "an item-level splice");
     const auto fragment_value = comptime_eval_.evaluate(*splice.expr);

@@ -424,11 +424,13 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
            "expected aliased pattern alias name");
   }
 
-  auto *option_pattern = expect_pattern<cinder::ast::option_pattern>(
-      aliased_pattern->inner.get(), cinder::ast::node_kind::option_pattern,
-      "expected inner pattern to remain the original option pattern");
-  expect(option_pattern->option_kind == cinder::ast::option_result_kind::some,
-         "expected some-pattern to preserve its kind");
+  auto *some_pattern = expect_pattern<cinder::ast::constructor_pattern>(
+      aliased_pattern->inner.get(), cinder::ast::node_kind::constructor_pattern,
+      "expected `@some(...)` to parse as a constructor pattern");
+  expect(some_pattern->name == "some",
+         "expected the constructor pattern to name `some`");
+  expect(some_pattern->args.size() == 1,
+         "expected `@some(...)` to carry one payload pattern");
 
   auto *return_stmt = expect_node<cinder::ast::return_stmt>(
       func_decl->body_stmts[2].get(), cinder::ast::node_kind::return_stmt,

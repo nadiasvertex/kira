@@ -370,3 +370,12 @@ These were agreed on 2026-11-15.
    which is the one that awaits it, not `ctx`: with `C` = `ctx`, the existing context
    check would reject `await on(cpu): ...` in every `async def`. Like any task it starts
    when it is first awaited.
+
+## Phase 5 progress
+
+Items 8, 9, 27 and 35 are closed, each with a corpus program checked with `# expect:` (235 to 237). Phase 5 is not done: the debts below and the entry points remain.
+
+- **One variant lookup.** `@some`, `@ok` and `@err` patterns parse as ordinary constructor patterns; the `option_pattern` and `result_pattern` AST nodes are gone. Construction and patterns look a variant up in one order: the expected or subject type's variants, then the module's sum types, then the prelude's. A user sum type may name its variants `@ok` or `@none` (item 35). Chapter 10 states the rule.
+- **One free-function lookup.** `find_function_callee` finds the function a bare name or a module path names (module, import, wildcard import, prelude; full path, child module, imported module), and `check_function_call` records it and checks the call, binding bracketed type arguments the same way on every form (item 8). Explicit-generic calls to an imported function now get a callee record, as other imported calls do.
+- **Static calls on a builtin type.** `int64.zero()` resolves through `resolve_type_param_static`, as `T.zero()` does once `T` is solved (item 9). A missing static on a type name, and a `self` method called on a type name, are errors; before, they reached lowering.
+- **Run-time calls of a `static def`.** Both call paths fold through `fold_static_call`, so `score(3)` in ordinary code is its value, and a call in a block `static for` that reads the loop binding is folded per iteration (item 27). A call whose arguments are unknown at compile time is an error. Calls inside compile-time expressions (`comptime_expr_depth_`) are left to the evaluator. Chapter 31 states the rule.

@@ -1160,6 +1160,17 @@ private:
     std::unordered_map<const ast::static_decl *, static_for_reads>
         static_for_reads_;
 
+    /// A call to a `static def` in a block `static for`'s body that reads the
+    /// loop bindings, so it is folded once per iteration
+    /// (`static_for_block_iterations`) rather than once.
+    struct static_for_call {
+      const ast::func_decl *decl = nullptr;
+      type_id result_type = k_unknown_type;
+      type_scope type_slots;
+    };
+    std::unordered_map<const ast::call_expr *, static_for_call>
+        static_for_calls_;
+
     /// The inline `static for`s whose yield is being checked, innermost last,
     /// each with the index of the scope holding its loop bindings.
     std::vector<std::pair<const ast::static_decl *, size_t>> static_for_yields_;
@@ -1238,6 +1249,28 @@ private:
   /// Every error `emit_diag` has let through, so a pass can tell whether it
   /// reported anything.
   size_t errors_emitted_ = 0;
+
+  /// How many compile-time expressions enclose the one being checked: a
+  /// `static let` initializer, a `static if`/`static assert` condition, a
+  /// `static for` iterable or guard, a splice's operand. A call to a
+  /// `static def` there is run by the evaluator, not folded for run-time
+  /// code (`fold_static_call`).
+  int comptime_expr_depth_ = 0;
+
+  /// `errors_emitted_` when each call to a declared function now being
+  /// checked began, innermost last. A call that already has an error is not
+  /// folded (`fold_static_call`), so it gets no second one.
+  std::vector<size_t> call_error_floors_;
+
+  /// Checks `body` as a compile-time expression (`comptime_expr_depth_`).
+  template <typename Body> auto as_comptime_expr(Body body) {
+    ++comptime_expr_depth_;
+    struct restore {
+      int &depth;
+      ~restore() { --depth; }
+    } const guard{comptime_expr_depth_};
+    return body();
+  }
 
   auto with_instantiation_notes(const diagnostic &diag) -> diagnostic;
 
@@ -3450,17 +3483,69 @@ private:
   /// prelude forms with their own hard-coded signature (`panic`, `assert`,
   /// ...), a builtin conversion call, a bare variant spelling, or an
   /// undefined-name error.
-  /// A function reachable from the current module by bare name, together with
-  /// where it came from — the module that owns it (its own or the one an
-  /// import points at) and the file it was declared in.
+  /// A free function a callee names, together with where it came from: the
+  /// module that owns it and the file it was declared in. `record` is false
+  /// only for a bare call to a function of the current module, which has no
+  /// callee record yet (a phase 5 debt in spec/unified-checker-plan.md).
   struct callable_lookup {
     const ast::func_decl *decl = nullptr;
     const module_members *owner = nullptr;
     file_id_type file_id{};
+    bool record = true;
   };
 
+  /// The free function a bare name calls: one of the current module's, then
+  /// one an import brings in under that name, then one a wildcard import
+  /// re-exports, then a prelude function. An import that names a module
+  /// member other than a function stops the search.
   auto find_callable_decl(std::string_view name)
       -> std::optional<callable_lookup>;
+
+  /// Folds `call`, a call to the `static def` `decl` from run-time code, to
+  /// the literal its result is (`folded_comptime_calls_`), and reports an
+  /// error when the call cannot run at compile time. False when the call is
+  /// not this (compile-time code, a template) or could not be folded.
+  auto fold_static_call(const ast::call_expr &call, const ast::func_decl &decl,
+                        type_id result_type, const type_scope &type_slots)
+      -> bool;
+
+  /// Reports a call to the `static def` `decl` that cannot run at compile
+  /// time.
+  auto report_unfoldable_static_call(const ast::call_expr &call,
+                                     const ast::func_decl &decl) -> void;
+
+  /// Reports `T.name(...)` where the type `type_name` has no static function
+  /// `name`, saying so differently when `name` is a method taking `self`.
+  auto report_missing_type_static(const ast::field_expr &field,
+                                  const std::string &type_name) -> void;
+
+  /// The module path `object` spells when it is the left side of a
+  /// qualified call (`limits` in `limits.max()`, `std.io` in
+  /// `std.io.open()`), or nullopt when it is rooted at a value.
+  auto qualified_call_root(const ast::expr &object)
+      -> std::optional<std::vector<std::string>>;
+
+  /// The free function `root.fn_name` calls: a member of a visible module
+  /// spelled in full, of a child of the current module, or of a module a
+  /// single-segment import binds.
+  auto find_path_function(const std::vector<std::string> &root,
+                          const std::string &fn_name)
+      -> std::optional<callable_lookup>;
+
+  /// The free function `callee` names, written bare or module-qualified,
+  /// with any bracketed type arguments already taken off.
+  auto find_function_callee(const ast::expr &callee)
+      -> std::optional<callable_lookup>;
+
+  /// Checks a call to the free function `found`, which every callee form
+  /// that names one (bare, imported, qualified, explicitly instantiated)
+  /// goes through: it records the callee's type on `callee_node` and the
+  /// callee record, then checks the arguments and binds `explicit_args`.
+  auto check_function_call(const ast::call_expr &call,
+                           const ast::expr &callee_node,
+                           const callable_lookup &found,
+                           const explicit_generic_args &explicit_args)
+      -> type_id;
 
   auto infer_explicit_generic_call(const ast::call_expr &call)
       -> std::optional<type_id>;

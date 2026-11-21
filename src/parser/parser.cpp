@@ -6271,19 +6271,10 @@ auto parser::parse_variant_pattern() -> ast::ptr<ast::pattern> {
   auto at_start = peek().span;
   advance(); // consume `@`
 
-  // `@some(...)`, `@ok(...)`, `@err(...)` reuse the dedicated option/result
-  // pattern nodes; parse_option_result_pattern expects to see the keyword
-  // token as the current token, which is now guaranteed by the `@` we just
-  // consumed.
-  if (at_any(token_kind::kw_some, token_kind::kw_ok, token_kind::kw_err)) {
-    auto pat = parse_option_result_pattern();
-    if (pat) {
-      pat->span = at_start.merge(pat->span);
-    }
-    return pat;
-  }
-
-  if (!at(token_kind::ident)) {
+  // `@some`, `@ok` and `@err` lex as keywords but are variant names like any
+  // other here: which sum type they belong to is the checker's question,
+  // answered from the subject's type, so a user sum type may declare them.
+  if (!can_start_sum_variant(peek().kind)) {
     emit_unexpected("a variant name after `@`");
     return make_error_pattern(at_start);
   }
@@ -6425,34 +6416,6 @@ auto parser::parse_bracket_pattern() -> ast::ptr<ast::pattern> {
   expect(token_kind::rbracket);
   apat->span.extend_to(previous_span());
   return apat;
-}
-
-auto parser::parse_option_result_pattern() -> ast::ptr<ast::pattern> {
-  auto start = peek().span;
-  auto kw = advance();
-
-  expect(token_kind::lparen);
-  auto inner = parse_pattern();
-  if (!inner) {
-    inner = make_error_pattern(peek().span);
-  }
-  expect(token_kind::rparen);
-
-  if (kw.kind == token_kind::kw_some) {
-    auto pat = ast::make<ast::option_pattern>();
-    pat->span = start.merge(previous_span());
-    pat->option_kind = ast::option_result_kind::some;
-    pat->inner = std::move(inner);
-    return pat;
-  }
-
-  auto pat = ast::make<ast::result_pattern>();
-  pat->span = start.merge(previous_span());
-  pat->result_kind = (kw.kind == token_kind::kw_ok)
-                         ? ast::option_result_kind::ok
-                         : ast::option_result_kind::err;
-  pat->inner = std::move(inner);
-  return pat;
 }
 
 auto parser::parse_ref_pattern() -> ast::ptr<ast::pattern> {

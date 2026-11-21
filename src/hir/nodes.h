@@ -872,11 +872,8 @@ struct hir_struct_pattern : hir_pattern {
 
 /// `@variant(args...)` — matches if the subject's runtime tag is
 /// `variant_name`; `args` destructure its payload slots (empty for a unit
-/// variant, e.g. `none`). Also used to lower the `some(...)`/`ok(...)`/
-/// `err(...)` sugar forms (`ast::option_pattern`/`ast::result_pattern`),
-/// which are just single-payload constructor patterns against the
-/// prelude's option/result sum types — there's no separate HIR pattern
-/// kind for those.
+/// variant, e.g. `none`). `@some(...)`, `@ok(...)` and `@err(...)` against
+/// `option` and `result` use it too.
 struct hir_constructor_pattern : hir_pattern {
   std::string variant_name;
   ptr_vec<hir_pattern> args;

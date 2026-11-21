@@ -194,10 +194,6 @@ auto node_kind_name(ast::node_kind kind) -> std::string_view {
     return "array_pat";
   case ast::node_kind::range_pattern:
     return "range_pat";
-  case ast::node_kind::option_pattern:
-    return "option_pat";
-  case ast::node_kind::result_pattern:
-    return "result_pat";
   case ast::node_kind::ref_pattern:
     return "ref_pat";
   case ast::node_kind::or_pattern:

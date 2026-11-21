@@ -102,8 +102,6 @@ auto kind_name(ast::node_kind kind) -> std::string {
   case k::struct_pattern: return "struct_pattern";
   case k::array_pattern: return "array_pattern";
   case k::range_pattern: return "range_pattern";
-  case k::option_pattern: return "option_pattern";
-  case k::result_pattern: return "result_pattern";
   case k::ref_pattern: return "ref_pattern";
   case k::or_pattern: return "or_pattern";
   case k::group_pattern: return "group_pattern";
@@ -2210,6 +2208,10 @@ auto body_builder::call_of(const ast::call_expr &call) -> result<ptr<expr>> {
   if (const auto folded = lowering.folded_comptime_calls.find(&call);
       folded != lowering.folded_comptime_calls.end()) {
     return literal_of(*folded->second);
+  }
+  // A `static def` call in a block `static for`, folded in each iteration.
+  if (const auto *folded = static_fold(call)) {
+    return value_of(*folded);
   }
   if (lowering.stack_buffers.contains(&call)) {
     return intrinsic_call("stack_buffer", type, {}, {type}, call.span);

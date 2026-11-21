@@ -189,7 +189,7 @@
 027_dependent_and_refinement_types.cn:93:11 [if] option[int32]
 027_dependent_and_refinement_types.cn:93:29 [ident] int32
 027_dependent_and_refinement_types.cn:93:29 [ident] int32
-027_dependent_and_refinement_types.cn:94:9 [option_pat] option[int32]
+027_dependent_and_refinement_types.cn:94:9 [ctor_pat] option[int32]
 027_dependent_and_refinement_types.cn:94:15 [binding_pat] int32
 027_dependent_and_refinement_types.cn:94:21 [ident] fn(int32) -> int32
 027_dependent_and_refinement_types.cn:94:21 [call] int32
@@ -208,7 +208,7 @@
 027_dependent_and_refinement_types.cn:98:11 [if] option[usize]
 027_dependent_and_refinement_types.cn:98:29 [ident] usize
 027_dependent_and_refinement_types.cn:98:29 [ident] usize
-027_dependent_and_refinement_types.cn:99:9 [option_pat] option[usize]
+027_dependent_and_refinement_types.cn:99:9 [ctor_pat] option[usize]
 027_dependent_and_refinement_types.cn:99:15 [binding_pat] usize
 027_dependent_and_refinement_types.cn:99:21 [ident] fn(array[int32, 8], usize) -> int32
 027_dependent_and_refinement_types.cn:99:21 [call] int32
@@ -307,9 +307,9 @@
 033_const_generic_monomorphization.cn:12:63 [named_type] int32
 033_const_generic_monomorphization.cn:12:63 [named_type] int32
 033_const_generic_monomorphization.cn:12:63 [named_type] int32
-033_const_generic_monomorphization.cn:13:12 [option_pat] option[usize]
-033_const_generic_monomorphization.cn:13:12 [option_pat] option[usize]
-033_const_generic_monomorphization.cn:13:12 [option_pat] option[usize]
+033_const_generic_monomorphization.cn:13:12 [ctor_pat] option[usize]
+033_const_generic_monomorphization.cn:13:12 [ctor_pat] option[usize]
+033_const_generic_monomorphization.cn:13:12 [ctor_pat] option[usize]
 033_const_generic_monomorphization.cn:13:18 [binding_pat] usize
 033_const_generic_monomorphization.cn:13:18 [binding_pat] usize
 033_const_generic_monomorphization.cn:13:18 [binding_pat] usize
@@ -606,7 +606,7 @@
 034_higher_kinded_trait_dispatch.cn:17:34 [binding_pat] fn(A) -> B
 034_higher_kinded_trait_dispatch.cn:17:52 [named_type] option[B]
 034_higher_kinded_trait_dispatch.cn:18:15 [ident] option[A]
-034_higher_kinded_trait_dispatch.cn:19:13 [option_pat] option[A]
+034_higher_kinded_trait_dispatch.cn:19:13 [ctor_pat] option[A]
 034_higher_kinded_trait_dispatch.cn:19:19 [binding_pat] A
 034_higher_kinded_trait_dispatch.cn:19:25 [call] option[B]
 034_higher_kinded_trait_dispatch.cn:19:31 [ident] fn(A) -> B
@@ -630,8 +630,8 @@
 034_higher_kinded_trait_dispatch.cn:24:61 [named_type] option[int32]
 034_higher_kinded_trait_dispatch.cn:25:15 [ident] option[A]
 034_higher_kinded_trait_dispatch.cn:25:15 [ident] option[int32]
-034_higher_kinded_trait_dispatch.cn:26:13 [option_pat] option[A]
-034_higher_kinded_trait_dispatch.cn:26:13 [option_pat] option[int32]
+034_higher_kinded_trait_dispatch.cn:26:13 [ctor_pat] option[A]
+034_higher_kinded_trait_dispatch.cn:26:13 [ctor_pat] option[int32]
 034_higher_kinded_trait_dispatch.cn:26:19 [binding_pat] A
 034_higher_kinded_trait_dispatch.cn:26:19 [binding_pat] int32
 034_higher_kinded_trait_dispatch.cn:26:25 [ident] fn(A) -> option[B]
@@ -648,7 +648,7 @@
 034_higher_kinded_trait_dispatch.cn:29:33 [binding_pat] int32
 034_higher_kinded_trait_dispatch.cn:29:53 [named_type] int32
 034_higher_kinded_trait_dispatch.cn:30:11 [ident] option[int32]
-034_higher_kinded_trait_dispatch.cn:31:9 [option_pat] option[int32]
+034_higher_kinded_trait_dispatch.cn:31:9 [ctor_pat] option[int32]
 034_higher_kinded_trait_dispatch.cn:31:15 [binding_pat] int32
 034_higher_kinded_trait_dispatch.cn:31:21 [ident] int32
 034_higher_kinded_trait_dispatch.cn:32:9 [ctor_pat] option[int32]
@@ -999,8 +999,8 @@
 049_generic_impl_iterator_adapter.cn:51:15 [field] fn() -> option[int32]
 049_generic_impl_iterator_adapter.cn:51:15 [call] option[T]
 049_generic_impl_iterator_adapter.cn:51:15 [call] option[int32]
-049_generic_impl_iterator_adapter.cn:52:13 [option_pat] option[T]
-049_generic_impl_iterator_adapter.cn:52:13 [option_pat] option[int32]
+049_generic_impl_iterator_adapter.cn:52:13 [ctor_pat] option[T]
+049_generic_impl_iterator_adapter.cn:52:13 [ctor_pat] option[int32]
 049_generic_impl_iterator_adapter.cn:52:19 [binding_pat] T
 049_generic_impl_iterator_adapter.cn:52:19 [binding_pat] int32
 049_generic_impl_iterator_adapter.cn:52:32 [call] option[U]
@@ -1039,8 +1039,8 @@
 049_generic_impl_iterator_adapter.cn:64:15 [field] fn() -> option[int32]
 049_generic_impl_iterator_adapter.cn:64:15 [call] option[int32]
 049_generic_impl_iterator_adapter.cn:64:15 [call] option[int32]
-049_generic_impl_iterator_adapter.cn:65:13 [option_pat] option[int32]
-049_generic_impl_iterator_adapter.cn:65:13 [option_pat] option[int32]
+049_generic_impl_iterator_adapter.cn:65:13 [ctor_pat] option[int32]
+049_generic_impl_iterator_adapter.cn:65:13 [ctor_pat] option[int32]
 049_generic_impl_iterator_adapter.cn:65:19 [binding_pat] int32
 049_generic_impl_iterator_adapter.cn:65:19 [binding_pat] int32
 049_generic_impl_iterator_adapter.cn:65:32 [call] option[int32]
@@ -1136,8 +1136,8 @@
 050_bound_driven_inference.cn:50:15 [field] fn() -> option[int32]
 050_bound_driven_inference.cn:50:15 [call] option[T]
 050_bound_driven_inference.cn:50:15 [call] option[int32]
-050_bound_driven_inference.cn:51:13 [option_pat] option[T]
-050_bound_driven_inference.cn:51:13 [option_pat] option[int32]
+050_bound_driven_inference.cn:51:13 [ctor_pat] option[T]
+050_bound_driven_inference.cn:51:13 [ctor_pat] option[int32]
 050_bound_driven_inference.cn:51:19 [binding_pat] T
 050_bound_driven_inference.cn:51:19 [binding_pat] int32
 050_bound_driven_inference.cn:51:32 [call] option[U]
@@ -1158,8 +1158,8 @@
 050_bound_driven_inference.cn:59:14 [binding_pat] &mut filter_iter[counter, int32]
 050_bound_driven_inference.cn:59:27 [named_type] option[T]
 050_bound_driven_inference.cn:59:27 [named_type] option[int32]
-050_bound_driven_inference.cn:60:19 [option_pat] option[T]
-050_bound_driven_inference.cn:60:19 [option_pat] option[int32]
+050_bound_driven_inference.cn:60:19 [ctor_pat] option[T]
+050_bound_driven_inference.cn:60:19 [ctor_pat] option[int32]
 050_bound_driven_inference.cn:60:25 [binding_pat] T
 050_bound_driven_inference.cn:60:25 [binding_pat] int32
 050_bound_driven_inference.cn:60:30 [module_path] I
@@ -1218,8 +1218,8 @@
 050_bound_driven_inference.cn:75:5 [var_stmt] int32
 050_bound_driven_inference.cn:75:20 [literal] T
 050_bound_driven_inference.cn:75:20 [literal] int32
-050_bound_driven_inference.cn:76:15 [option_pat] option[T]
-050_bound_driven_inference.cn:76:15 [option_pat] option[int32]
+050_bound_driven_inference.cn:76:15 [ctor_pat] option[T]
+050_bound_driven_inference.cn:76:15 [ctor_pat] option[int32]
 050_bound_driven_inference.cn:76:21 [binding_pat] T
 050_bound_driven_inference.cn:76:21 [binding_pat] int32
 050_bound_driven_inference.cn:76:26 [ident] I
@@ -1250,8 +1250,8 @@
 050_bound_driven_inference.cn:83:5 [var_stmt] int32
 050_bound_driven_inference.cn:83:20 [literal] T
 050_bound_driven_inference.cn:83:20 [literal] int32
-050_bound_driven_inference.cn:84:15 [option_pat] option[T]
-050_bound_driven_inference.cn:84:15 [option_pat] option[int32]
+050_bound_driven_inference.cn:84:15 [ctor_pat] option[T]
+050_bound_driven_inference.cn:84:15 [ctor_pat] option[int32]
 050_bound_driven_inference.cn:84:21 [binding_pat] T
 050_bound_driven_inference.cn:84:21 [binding_pat] int32
 050_bound_driven_inference.cn:84:26 [ident] I
@@ -1467,8 +1467,8 @@
 054_static_dispatch_on_generic_types.cn:70:9 [var_stmt] upto
 054_static_dispatch_on_generic_types.cn:70:22 [ident] I
 054_static_dispatch_on_generic_types.cn:70:22 [ident] upto
-054_static_dispatch_on_generic_types.cn:71:19 [option_pat] option[int32]
-054_static_dispatch_on_generic_types.cn:71:19 [option_pat] option[int32]
+054_static_dispatch_on_generic_types.cn:71:19 [ctor_pat] option[int32]
+054_static_dispatch_on_generic_types.cn:71:19 [ctor_pat] option[int32]
 054_static_dispatch_on_generic_types.cn:71:25 [binding_pat] int32
 054_static_dispatch_on_generic_types.cn:71:25 [binding_pat] int32
 054_static_dispatch_on_generic_types.cn:71:30 [ident] I
@@ -1499,8 +1499,8 @@
 054_static_dispatch_on_generic_types.cn:83:9 [var_stmt] int32
 054_static_dispatch_on_generic_types.cn:83:17 [literal] int32
 054_static_dispatch_on_generic_types.cn:83:17 [literal] int32
-054_static_dispatch_on_generic_types.cn:84:19 [option_pat] option[int32]
-054_static_dispatch_on_generic_types.cn:84:19 [option_pat] option[int32]
+054_static_dispatch_on_generic_types.cn:84:19 [ctor_pat] option[int32]
+054_static_dispatch_on_generic_types.cn:84:19 [ctor_pat] option[int32]
 054_static_dispatch_on_generic_types.cn:84:25 [binding_pat] int32
 054_static_dispatch_on_generic_types.cn:84:25 [binding_pat] int32
 054_static_dispatch_on_generic_types.cn:84:30 [ident] I
@@ -1533,8 +1533,8 @@
 054_static_dispatch_on_generic_types.cn:93:9 [var_stmt] int32
 054_static_dispatch_on_generic_types.cn:93:19 [literal] int32
 054_static_dispatch_on_generic_types.cn:93:19 [literal] int32
-054_static_dispatch_on_generic_types.cn:94:19 [option_pat] option[int32]
-054_static_dispatch_on_generic_types.cn:94:19 [option_pat] option[int32]
+054_static_dispatch_on_generic_types.cn:94:19 [ctor_pat] option[int32]
+054_static_dispatch_on_generic_types.cn:94:19 [ctor_pat] option[int32]
 054_static_dispatch_on_generic_types.cn:94:25 [binding_pat] int32
 054_static_dispatch_on_generic_types.cn:94:25 [binding_pat] int32
 054_static_dispatch_on_generic_types.cn:94:30 [ident] I
@@ -1680,7 +1680,7 @@
 057_lambda_solves_under_constructor.cn:24:62 [binary] int32
 057_lambda_solves_under_constructor.cn:24:66 [literal] int32
 057_lambda_solves_under_constructor.cn:24:76 [ident] option[int32]
-057_lambda_solves_under_constructor.cn:25:13 [option_pat] option[int32]
+057_lambda_solves_under_constructor.cn:25:13 [ctor_pat] option[int32]
 057_lambda_solves_under_constructor.cn:25:19 [binding_pat] int32
 057_lambda_solves_under_constructor.cn:25:25 [ident] int32
 057_lambda_solves_under_constructor.cn:26:13 [ctor_pat] option[int32]
@@ -1925,7 +1925,7 @@
 087_list_element_references.cn:12:15 [binding_pat] &mut list[int32]
 087_list_element_references.cn:12:37 [binding_pat] usize
 087_list_element_references.cn:12:50 [named_type] bool
-087_list_element_references.cn:13:12 [option_pat] option[&mut int32]
+087_list_element_references.cn:13:12 [ctor_pat] option[&mut int32]
 087_list_element_references.cn:13:18 [binding_pat] &mut int32
 087_list_element_references.cn:13:23 [ident] &mut list[int32]
 087_list_element_references.cn:13:23 [field] fn(_, usize) -> option[&mut _]
@@ -2144,10 +2144,10 @@
 089_elaboration_snapshot_gaps.cn:118:27 [ident] fn(int32) -> result[int32, app_error]
 089_elaboration_snapshot_gaps.cn:118:27 [call] result[int32, app_error]
 089_elaboration_snapshot_gaps.cn:118:35 [literal] int32
-089_elaboration_snapshot_gaps.cn:119:9 [result_pat] result[int32, app_error]
+089_elaboration_snapshot_gaps.cn:119:9 [ctor_pat] result[int32, app_error]
 089_elaboration_snapshot_gaps.cn:119:13 [binding_pat] int32
 089_elaboration_snapshot_gaps.cn:119:20 [ident] int32
-089_elaboration_snapshot_gaps.cn:120:9 [result_pat] result[int32, app_error]
+089_elaboration_snapshot_gaps.cn:120:9 [ctor_pat] result[int32, app_error]
 089_elaboration_snapshot_gaps.cn:120:14 [wildcard_pat] app_error
 089_elaboration_snapshot_gaps.cn:120:20 [literal] int32
 089_elaboration_snapshot_gaps.cn:122:5 [ident] int32
@@ -2158,14 +2158,14 @@
 089_elaboration_snapshot_gaps.cn:122:27 [call] result[int32, app_error]
 089_elaboration_snapshot_gaps.cn:122:35 [unary] int32
 089_elaboration_snapshot_gaps.cn:122:36 [literal] int32
-089_elaboration_snapshot_gaps.cn:123:9 [result_pat] result[int32, app_error]
+089_elaboration_snapshot_gaps.cn:123:9 [ctor_pat] result[int32, app_error]
 089_elaboration_snapshot_gaps.cn:123:13 [wildcard_pat] int32
 089_elaboration_snapshot_gaps.cn:123:28 [literal] int32
-089_elaboration_snapshot_gaps.cn:124:9 [result_pat] result[int32, app_error]
+089_elaboration_snapshot_gaps.cn:124:9 [ctor_pat] result[int32, app_error]
 089_elaboration_snapshot_gaps.cn:124:14 [ctor_pat] app_error
 089_elaboration_snapshot_gaps.cn:124:21 [binding_pat] int32
 089_elaboration_snapshot_gaps.cn:124:28 [ident] int32
-089_elaboration_snapshot_gaps.cn:125:9 [result_pat] result[int32, app_error]
+089_elaboration_snapshot_gaps.cn:125:9 [ctor_pat] result[int32, app_error]
 089_elaboration_snapshot_gaps.cn:125:14 [ctor_pat] app_error
 089_elaboration_snapshot_gaps.cn:125:28 [literal] int32
 089_elaboration_snapshot_gaps.cn:127:5 [ident] int32
@@ -2478,9 +2478,9 @@
 110_instances_by_substitution.cn:35:15 [ident] option[A]
 110_instances_by_substitution.cn:35:15 [ident] option[int32]
 110_instances_by_substitution.cn:35:15 [ident] option[int64]
-110_instances_by_substitution.cn:36:13 [option_pat] option[A]
-110_instances_by_substitution.cn:36:13 [option_pat] option[int32]
-110_instances_by_substitution.cn:36:13 [option_pat] option[int64]
+110_instances_by_substitution.cn:36:13 [ctor_pat] option[A]
+110_instances_by_substitution.cn:36:13 [ctor_pat] option[int32]
+110_instances_by_substitution.cn:36:13 [ctor_pat] option[int64]
 110_instances_by_substitution.cn:36:19 [binding_pat] A
 110_instances_by_substitution.cn:36:19 [binding_pat] int32
 110_instances_by_substitution.cn:36:19 [binding_pat] int64
@@ -2751,9 +2751,9 @@
 110_instances_by_substitution.cn:78:11 [ident] option[T]
 110_instances_by_substitution.cn:78:11 [ident] option[int32]
 110_instances_by_substitution.cn:78:11 [ident] option[int64]
-110_instances_by_substitution.cn:79:9 [option_pat] option[T]
-110_instances_by_substitution.cn:79:9 [option_pat] option[int32]
-110_instances_by_substitution.cn:79:9 [option_pat] option[int64]
+110_instances_by_substitution.cn:79:9 [ctor_pat] option[T]
+110_instances_by_substitution.cn:79:9 [ctor_pat] option[int32]
+110_instances_by_substitution.cn:79:9 [ctor_pat] option[int64]
 110_instances_by_substitution.cn:79:15 [binding_pat] T
 110_instances_by_substitution.cn:79:15 [binding_pat] int32
 110_instances_by_substitution.cn:79:15 [binding_pat] int64
@@ -3735,7 +3735,7 @@ std/algo.cn:42:27 [named_type] option[U]
 std/algo.cn:43:15 [module_path] I
 std/algo.cn:43:15 [field] fn() -> option[T]
 std/algo.cn:43:15 [call] option[T]
-std/algo.cn:44:13 [option_pat] option[T]
+std/algo.cn:44:13 [ctor_pat] option[T]
 std/algo.cn:44:19 [binding_pat] T
 std/algo.cn:44:32 [call] option[U]
 std/algo.cn:44:38 [group] fn(T) -> U
@@ -3751,7 +3751,7 @@ std/algo.cn:54:16 [field] fn() -> usize
 std/algo.cn:54:16 [call] usize
 std/algo.cn:74:14 [binding_pat] &mut filter_iter[I, T]
 std/algo.cn:74:27 [named_type] option[T]
-std/algo.cn:75:19 [option_pat] option[T]
+std/algo.cn:75:19 [ctor_pat] option[T]
 std/algo.cn:75:25 [binding_pat] T
 std/algo.cn:75:30 [module_path] I
 std/algo.cn:75:30 [field] fn() -> option[T]
@@ -3812,7 +3812,7 @@ std/algo.cn:170:37 [literal] usize
 std/algo.cn:171:19 [module_path] I
 std/algo.cn:171:19 [field] fn() -> option[T]
 std/algo.cn:171:19 [call] option[T]
-std/algo.cn:172:17 [option_pat] option[T]
+std/algo.cn:172:17 [ctor_pat] option[T]
 std/algo.cn:172:23 [binding_pat] T
 std/algo.cn:172:29 [ident] T
 std/algo.cn:173:17 [ctor_pat] option[T]
@@ -3837,7 +3837,7 @@ std/algo.cn:212:14 [binding_pat] &mut take_while_iter[I, T]
 std/algo.cn:212:27 [named_type] option[T]
 std/algo.cn:213:12 [module_path] bool
 std/algo.cn:214:20 [ident] option[T]
-std/algo.cn:215:19 [option_pat] option[T]
+std/algo.cn:215:19 [ctor_pat] option[T]
 std/algo.cn:215:25 [binding_pat] T
 std/algo.cn:215:30 [module_path] I
 std/algo.cn:215:30 [field] fn() -> option[T]
@@ -3857,7 +3857,7 @@ std/algo.cn:220:21 [literal] bool
 std/algo.cn:221:16 [ident] option[T]
 std/algo.cn:246:14 [binding_pat] &mut skip_while_iter[I, T]
 std/algo.cn:246:27 [named_type] option[T]
-std/algo.cn:247:19 [option_pat] option[T]
+std/algo.cn:247:19 [ctor_pat] option[T]
 std/algo.cn:247:25 [binding_pat] T
 std/algo.cn:247:30 [module_path] I
 std/algo.cn:247:30 [field] fn() -> option[T]
@@ -3898,7 +3898,7 @@ std/algo.cn:280:27 [literal] usize
 std/algo.cn:281:19 [module_path] I
 std/algo.cn:281:19 [field] fn() -> option[T]
 std/algo.cn:281:19 [call] option[T]
-std/algo.cn:282:17 [option_pat] option[T]
+std/algo.cn:282:17 [ctor_pat] option[T]
 std/algo.cn:282:23 [binding_pat] T
 std/algo.cn:282:29 [ident] T
 std/algo.cn:283:17 [ctor_pat] option[T]
@@ -3908,12 +3908,12 @@ std/algo.cn:284:16 [field] fn() -> option[T]
 std/algo.cn:284:16 [call] option[T]
 std/algo.cn:305:14 [binding_pat] &mut filter_map_iter[I, T, U]
 std/algo.cn:305:27 [named_type] option[U]
-std/algo.cn:306:19 [option_pat] option[T]
+std/algo.cn:306:19 [ctor_pat] option[T]
 std/algo.cn:306:25 [binding_pat] T
 std/algo.cn:306:30 [module_path] I
 std/algo.cn:306:30 [field] fn() -> option[T]
 std/algo.cn:306:30 [call] option[T]
-std/algo.cn:307:20 [option_pat] option[U]
+std/algo.cn:307:20 [ctor_pat] option[U]
 std/algo.cn:307:26 [binding_pat] U
 std/algo.cn:307:31 [group] fn(T) -> option[U]
 std/algo.cn:307:31 [call] option[U]
@@ -3965,7 +3965,7 @@ std/algo.cn:386:44 [ident] fn(T) -> option[U]
 std/algo.cn:411:14 [binding_pat] &mut chain_iter[I, J, T]
 std/algo.cn:411:27 [named_type] option[T]
 std/algo.cn:412:12 [module_path] bool
-std/algo.cn:413:23 [option_pat] option[T]
+std/algo.cn:413:23 [ctor_pat] option[T]
 std/algo.cn:413:29 [binding_pat] T
 std/algo.cn:413:34 [module_path] I
 std/algo.cn:413:34 [field] fn() -> option[T]
@@ -4016,7 +4016,7 @@ std/algo.cn:484:16 [field] fn() -> usize
 std/algo.cn:484:16 [call] usize
 std/algo.cn:506:14 [binding_pat] &mut scan_iter[I, T, S]
 std/algo.cn:506:27 [named_type] option[S]
-std/algo.cn:507:19 [option_pat] option[T]
+std/algo.cn:507:19 [ctor_pat] option[T]
 std/algo.cn:507:25 [binding_pat] T
 std/algo.cn:507:30 [module_path] I
 std/algo.cn:507:30 [field] fn() -> option[T]
@@ -4032,7 +4032,7 @@ std/algo.cn:509:26 [module_path] S
 std/algo.cn:510:16 [ident] option[S]
 std/algo.cn:529:14 [binding_pat] &mut inspect_iter[I, T]
 std/algo.cn:529:27 [named_type] option[T]
-std/algo.cn:530:19 [option_pat] option[T]
+std/algo.cn:530:19 [ctor_pat] option[T]
 std/algo.cn:530:25 [binding_pat] T
 std/algo.cn:530:30 [module_path] I
 std/algo.cn:530:30 [field] fn() -> option[T]
@@ -4077,7 +4077,7 @@ std/algo.cn:600:19 [field] fn() -> option[T]
 std/algo.cn:600:19 [call] option[T]
 std/algo.cn:601:9 [module_path] bool
 std/algo.cn:601:21 [literal] bool
-std/algo.cn:602:12 [option_pat] option[T]
+std/algo.cn:602:12 [ctor_pat] option[T]
 std/algo.cn:602:18 [binding_pat] T
 std/algo.cn:602:23 [unary] &option[T]
 std/algo.cn:602:24 [module_path] option[T]
@@ -4101,12 +4101,12 @@ std/algo.cn:640:34 [ident] I
 std/algo.cn:640:41 [ident] fn(&T) -> unit
 std/algo.cn:662:14 [binding_pat] &mut zip_iter[I, J, T, U]
 std/algo.cn:662:27 [named_type] option[(T, U)]
-std/algo.cn:663:19 [option_pat] option[T]
+std/algo.cn:663:19 [ctor_pat] option[T]
 std/algo.cn:663:25 [binding_pat] T
 std/algo.cn:663:30 [module_path] I
 std/algo.cn:663:30 [field] fn() -> option[T]
 std/algo.cn:663:30 [call] option[T]
-std/algo.cn:664:23 [option_pat] option[U]
+std/algo.cn:664:23 [ctor_pat] option[U]
 std/algo.cn:664:29 [binding_pat] U
 std/algo.cn:664:34 [module_path] J
 std/algo.cn:664:34 [field] fn() -> option[U]
@@ -4134,7 +4134,7 @@ std/algo.cn:679:20 [ident] usize
 std/algo.cn:680:16 [ident] usize
 std/algo.cn:697:14 [binding_pat] &mut enumerate_iter[I, T]
 std/algo.cn:697:27 [named_type] option[(usize, T)]
-std/algo.cn:698:19 [option_pat] option[T]
+std/algo.cn:698:19 [ctor_pat] option[T]
 std/algo.cn:698:25 [binding_pat] T
 std/algo.cn:698:30 [module_path] I
 std/algo.cn:698:30 [field] fn() -> option[T]
@@ -4169,12 +4169,12 @@ std/algo.cn:748:44 [literal] usize
 std/algo.cn:787:14 [binding_pat] &mut flatten_iter[I, J, T]
 std/algo.cn:787:27 [named_type] option[T]
 std/algo.cn:788:15 [literal] bool
-std/algo.cn:789:20 [option_pat] option[J]
+std/algo.cn:789:20 [ctor_pat] option[J]
 std/algo.cn:789:26 [binding_pat] J
 std/algo.cn:789:35 [unary] &mut option[J]
 std/algo.cn:789:40 [module_path] option[J]
 std/algo.cn:789:45 [ident] _
-std/algo.cn:790:24 [option_pat] option[T]
+std/algo.cn:790:24 [ctor_pat] option[T]
 std/algo.cn:790:30 [binding_pat] T
 std/algo.cn:790:35 [ident] J
 std/algo.cn:790:35 [field] fn() -> option[T]
@@ -4184,7 +4184,7 @@ std/algo.cn:791:28 [call] option[T]
 std/algo.cn:791:34 [ident] T
 std/algo.cn:792:13 [module_path] option[J]
 std/algo.cn:792:24 [ident] option[J]
-std/algo.cn:793:20 [option_pat] option[J]
+std/algo.cn:793:20 [ctor_pat] option[J]
 std/algo.cn:793:26 [binding_pat] J
 std/algo.cn:793:40 [module_path] I
 std/algo.cn:793:40 [field] fn() -> option[J]
@@ -4198,12 +4198,12 @@ std/algo.cn:797:16 [ident] option[T]
 std/algo.cn:823:14 [binding_pat] &mut flat_map_iter[I, T, J, U]
 std/algo.cn:823:27 [named_type] option[U]
 std/algo.cn:824:15 [literal] bool
-std/algo.cn:825:20 [option_pat] option[J]
+std/algo.cn:825:20 [ctor_pat] option[J]
 std/algo.cn:825:26 [binding_pat] J
 std/algo.cn:825:35 [unary] &mut option[J]
 std/algo.cn:825:40 [module_path] option[J]
 std/algo.cn:825:45 [ident] _
-std/algo.cn:826:24 [option_pat] option[U]
+std/algo.cn:826:24 [ctor_pat] option[U]
 std/algo.cn:826:30 [binding_pat] U
 std/algo.cn:826:35 [ident] J
 std/algo.cn:826:35 [field] fn() -> option[U]
@@ -4213,7 +4213,7 @@ std/algo.cn:827:28 [call] option[U]
 std/algo.cn:827:34 [ident] U
 std/algo.cn:828:13 [module_path] option[J]
 std/algo.cn:828:24 [ident] option[J]
-std/algo.cn:829:20 [option_pat] option[T]
+std/algo.cn:829:20 [ctor_pat] option[T]
 std/algo.cn:829:26 [binding_pat] T
 std/algo.cn:829:31 [module_path] I
 std/algo.cn:829:31 [field] fn() -> option[T]
@@ -4245,7 +4245,7 @@ std/algo.cn:902:5 [var_stmt] I
 std/algo.cn:902:18 [ident] I
 std/algo.cn:903:5 [var_stmt] usize
 std/algo.cn:903:20 [literal] usize
-std/algo.cn:904:15 [option_pat] option[T]
+std/algo.cn:904:15 [ctor_pat] option[T]
 std/algo.cn:904:21 [wildcard_pat] T
 std/algo.cn:904:26 [ident] I
 std/algo.cn:904:26 [field] fn() -> option[T]
@@ -4263,7 +4263,7 @@ std/algo.cn:925:5 [var_stmt] I
 std/algo.cn:925:18 [ident] I
 std/algo.cn:926:5 [var_stmt] A
 std/algo.cn:926:15 [ident] A
-std/algo.cn:927:15 [option_pat] option[T]
+std/algo.cn:927:15 [ctor_pat] option[T]
 std/algo.cn:927:21 [binding_pat] T
 std/algo.cn:927:26 [ident] I
 std/algo.cn:927:26 [field] fn() -> option[T]
@@ -4283,7 +4283,7 @@ std/algo.cn:946:5 [var_stmt] option[T]
 std/algo.cn:946:15 [ident] I
 std/algo.cn:946:15 [field] fn() -> option[T]
 std/algo.cn:946:15 [call] option[T]
-std/algo.cn:947:15 [option_pat] option[T]
+std/algo.cn:947:15 [ctor_pat] option[T]
 std/algo.cn:947:21 [binding_pat] T
 std/algo.cn:947:26 [ident] I
 std/algo.cn:947:26 [field] fn() -> option[T]
@@ -4291,7 +4291,7 @@ std/algo.cn:947:26 [call] option[T]
 std/algo.cn:948:9 [ident] option[T]
 std/algo.cn:948:15 [match] option[T]
 std/algo.cn:948:21 [ident] option[T]
-std/algo.cn:949:13 [option_pat] option[T]
+std/algo.cn:949:13 [ctor_pat] option[T]
 std/algo.cn:949:19 [binding_pat] T
 std/algo.cn:949:25 [call] option[T]
 std/algo.cn:949:31 [ident] fn(T, T) -> T
@@ -4307,7 +4307,7 @@ std/algo.cn:962:31 [binding_pat] fn(T) -> unit
 std/algo.cn:962:52 [named_type] unit
 std/algo.cn:963:5 [var_stmt] I
 std/algo.cn:963:18 [ident] I
-std/algo.cn:964:15 [option_pat] option[T]
+std/algo.cn:964:15 [ctor_pat] option[T]
 std/algo.cn:964:21 [binding_pat] T
 std/algo.cn:964:26 [ident] I
 std/algo.cn:964:26 [field] fn() -> option[T]
@@ -4320,7 +4320,7 @@ std/algo.cn:979:26 [binding_pat] fn(&T) -> bool
 std/algo.cn:979:51 [named_type] bool
 std/algo.cn:980:5 [var_stmt] I
 std/algo.cn:980:18 [ident] I
-std/algo.cn:981:15 [option_pat] option[T]
+std/algo.cn:981:15 [ctor_pat] option[T]
 std/algo.cn:981:21 [binding_pat] T
 std/algo.cn:981:26 [ident] I
 std/algo.cn:981:26 [field] fn() -> option[T]
@@ -4336,7 +4336,7 @@ std/algo.cn:998:26 [binding_pat] fn(&T) -> bool
 std/algo.cn:998:51 [named_type] bool
 std/algo.cn:999:5 [var_stmt] I
 std/algo.cn:999:18 [ident] I
-std/algo.cn:1000:15 [option_pat] option[T]
+std/algo.cn:1000:15 [ctor_pat] option[T]
 std/algo.cn:1000:21 [binding_pat] T
 std/algo.cn:1000:26 [ident] I
 std/algo.cn:1000:26 [field] fn() -> option[T]
@@ -4353,7 +4353,7 @@ std/algo.cn:1014:27 [binding_pat] fn(&T) -> bool
 std/algo.cn:1014:52 [named_type] option[T]
 std/algo.cn:1015:5 [var_stmt] I
 std/algo.cn:1015:18 [ident] I
-std/algo.cn:1016:15 [option_pat] option[T]
+std/algo.cn:1016:15 [ctor_pat] option[T]
 std/algo.cn:1016:21 [binding_pat] T
 std/algo.cn:1016:26 [ident] I
 std/algo.cn:1016:26 [field] fn() -> option[T]
@@ -4370,12 +4370,12 @@ std/algo.cn:1036:34 [binding_pat] fn(T) -> option[U]
 std/algo.cn:1036:60 [named_type] option[U]
 std/algo.cn:1037:5 [var_stmt] I
 std/algo.cn:1037:18 [ident] I
-std/algo.cn:1038:15 [option_pat] option[T]
+std/algo.cn:1038:15 [ctor_pat] option[T]
 std/algo.cn:1038:21 [binding_pat] T
 std/algo.cn:1038:26 [ident] I
 std/algo.cn:1038:26 [field] fn() -> option[T]
 std/algo.cn:1038:26 [call] option[T]
-std/algo.cn:1039:16 [option_pat] option[U]
+std/algo.cn:1039:16 [ctor_pat] option[U]
 std/algo.cn:1039:22 [binding_pat] U
 std/algo.cn:1039:27 [ident] fn(T) -> option[U]
 std/algo.cn:1039:27 [call] option[U]
@@ -4391,7 +4391,7 @@ std/algo.cn:1057:5 [var_stmt] I
 std/algo.cn:1057:18 [ident] I
 std/algo.cn:1058:5 [var_stmt] usize
 std/algo.cn:1058:21 [literal] usize
-std/algo.cn:1059:15 [option_pat] option[T]
+std/algo.cn:1059:15 [ctor_pat] option[T]
 std/algo.cn:1059:21 [binding_pat] T
 std/algo.cn:1059:26 [ident] I
 std/algo.cn:1059:26 [field] fn() -> option[T]
@@ -4413,7 +4413,7 @@ std/algo.cn:1078:5 [var_stmt] I
 std/algo.cn:1078:18 [ident] I
 std/algo.cn:1079:5 [var_stmt] option[T]
 std/algo.cn:1079:27 [ident] option[T]
-std/algo.cn:1080:15 [option_pat] option[T]
+std/algo.cn:1080:15 [ctor_pat] option[T]
 std/algo.cn:1080:21 [binding_pat] T
 std/algo.cn:1080:26 [ident] I
 std/algo.cn:1080:26 [field] fn() -> option[T]
@@ -4429,7 +4429,7 @@ std/algo.cn:1097:5 [var_stmt] I
 std/algo.cn:1097:18 [ident] I
 std/algo.cn:1098:5 [var_stmt] usize
 std/algo.cn:1098:16 [ident] usize
-std/algo.cn:1099:15 [option_pat] option[T]
+std/algo.cn:1099:15 [ctor_pat] option[T]
 std/algo.cn:1099:21 [binding_pat] T
 std/algo.cn:1099:26 [ident] I
 std/algo.cn:1099:26 [field] fn() -> option[T]
@@ -4450,7 +4450,7 @@ std/algo.cn:1116:5 [var_stmt] I
 std/algo.cn:1116:18 [ident] I
 std/algo.cn:1117:5 [var_stmt] option[T]
 std/algo.cn:1117:27 [ident] option[T]
-std/algo.cn:1118:15 [option_pat] option[T]
+std/algo.cn:1118:15 [ctor_pat] option[T]
 std/algo.cn:1118:21 [binding_pat] T
 std/algo.cn:1118:26 [ident] I
 std/algo.cn:1118:26 [field] fn() -> option[T]
@@ -4458,7 +4458,7 @@ std/algo.cn:1118:26 [call] option[T]
 std/algo.cn:1119:9 [ident] option[T]
 std/algo.cn:1119:16 [match] option[T]
 std/algo.cn:1119:22 [ident] option[T]
-std/algo.cn:1120:13 [option_pat] option[T]
+std/algo.cn:1120:13 [ctor_pat] option[T]
 std/algo.cn:1120:19 [binding_pat] T
 std/algo.cn:1120:25 [if] option[T]
 std/algo.cn:1120:28 [ident] T
@@ -4478,7 +4478,7 @@ std/algo.cn:1135:5 [var_stmt] I
 std/algo.cn:1135:18 [ident] I
 std/algo.cn:1136:5 [var_stmt] option[T]
 std/algo.cn:1136:27 [ident] option[T]
-std/algo.cn:1137:15 [option_pat] option[T]
+std/algo.cn:1137:15 [ctor_pat] option[T]
 std/algo.cn:1137:21 [binding_pat] T
 std/algo.cn:1137:26 [ident] I
 std/algo.cn:1137:26 [field] fn() -> option[T]
@@ -4486,7 +4486,7 @@ std/algo.cn:1137:26 [call] option[T]
 std/algo.cn:1138:9 [ident] option[T]
 std/algo.cn:1138:16 [match] option[T]
 std/algo.cn:1138:22 [ident] option[T]
-std/algo.cn:1139:13 [option_pat] option[T]
+std/algo.cn:1139:13 [ctor_pat] option[T]
 std/algo.cn:1139:19 [binding_pat] T
 std/algo.cn:1139:25 [if] option[T]
 std/algo.cn:1139:28 [ident] T
@@ -4507,14 +4507,14 @@ std/algo.cn:1160:5 [var_stmt] I
 std/algo.cn:1160:18 [ident] I
 std/algo.cn:1161:5 [var_stmt] option[T]
 std/algo.cn:1161:27 [ident] option[T]
-std/algo.cn:1162:15 [option_pat] option[T]
+std/algo.cn:1162:15 [ctor_pat] option[T]
 std/algo.cn:1162:21 [binding_pat] T
 std/algo.cn:1162:26 [ident] I
 std/algo.cn:1162:26 [field] fn() -> option[T]
 std/algo.cn:1162:26 [call] option[T]
 std/algo.cn:1163:9 [var_stmt] bool
 std/algo.cn:1163:22 [literal] bool
-std/algo.cn:1164:16 [option_pat] option[T]
+std/algo.cn:1164:16 [ctor_pat] option[T]
 std/algo.cn:1164:22 [binding_pat] T
 std/algo.cn:1164:27 [unary] &option[T]
 std/algo.cn:1164:28 [ident] _
@@ -4545,14 +4545,14 @@ std/algo.cn:1187:5 [var_stmt] I
 std/algo.cn:1187:18 [ident] I
 std/algo.cn:1188:5 [var_stmt] option[T]
 std/algo.cn:1188:27 [ident] option[T]
-std/algo.cn:1189:15 [option_pat] option[T]
+std/algo.cn:1189:15 [ctor_pat] option[T]
 std/algo.cn:1189:21 [binding_pat] T
 std/algo.cn:1189:26 [ident] I
 std/algo.cn:1189:26 [field] fn() -> option[T]
 std/algo.cn:1189:26 [call] option[T]
 std/algo.cn:1190:9 [var_stmt] bool
 std/algo.cn:1190:22 [literal] bool
-std/algo.cn:1191:16 [option_pat] option[T]
+std/algo.cn:1191:16 [ctor_pat] option[T]
 std/algo.cn:1191:22 [binding_pat] T
 std/algo.cn:1191:27 [unary] &option[T]
 std/algo.cn:1191:28 [ident] _
@@ -4587,7 +4587,7 @@ std/algo.cn:1215:5 [var_stmt] list[T]
 std/algo.cn:1215:15 [array] list[T]
 std/algo.cn:1216:5 [var_stmt] list[T]
 std/algo.cn:1216:14 [array] list[T]
-std/algo.cn:1217:15 [option_pat] option[T]
+std/algo.cn:1217:15 [ctor_pat] option[T]
 std/algo.cn:1217:21 [binding_pat] T
 std/algo.cn:1217:26 [ident] I
 std/algo.cn:1217:26 [field] fn() -> option[T]
@@ -4696,14 +4696,14 @@ std/algo.cn:1312:5 [var_stmt] I
 std/algo.cn:1312:18 [ident] I
 std/algo.cn:1313:5 [var_stmt] option[T]
 std/algo.cn:1313:27 [ident] option[T]
-std/algo.cn:1314:15 [option_pat] option[T]
+std/algo.cn:1314:15 [ctor_pat] option[T]
 std/algo.cn:1314:21 [binding_pat] T
 std/algo.cn:1314:26 [ident] I
 std/algo.cn:1314:26 [field] fn() -> option[T]
 std/algo.cn:1314:26 [call] option[T]
 std/algo.cn:1315:9 [var_stmt] bool
 std/algo.cn:1315:22 [literal] bool
-std/algo.cn:1316:16 [option_pat] option[T]
+std/algo.cn:1316:16 [ctor_pat] option[T]
 std/algo.cn:1316:22 [binding_pat] T
 std/algo.cn:1316:27 [unary] &option[T]
 std/algo.cn:1316:28 [ident] _
@@ -4730,14 +4730,14 @@ std/algo.cn:1334:5 [var_stmt] I
 std/algo.cn:1334:18 [ident] I
 std/algo.cn:1335:5 [var_stmt] option[T]
 std/algo.cn:1335:27 [ident] option[T]
-std/algo.cn:1336:15 [option_pat] option[T]
+std/algo.cn:1336:15 [ctor_pat] option[T]
 std/algo.cn:1336:21 [binding_pat] T
 std/algo.cn:1336:26 [ident] I
 std/algo.cn:1336:26 [field] fn() -> option[T]
 std/algo.cn:1336:26 [call] option[T]
 std/algo.cn:1337:9 [var_stmt] bool
 std/algo.cn:1337:22 [literal] bool
-std/algo.cn:1338:16 [option_pat] option[T]
+std/algo.cn:1338:16 [ctor_pat] option[T]
 std/algo.cn:1338:22 [binding_pat] T
 std/algo.cn:1338:27 [unary] &option[T]
 std/algo.cn:1338:28 [ident] _
@@ -4821,7 +4821,7 @@ std/algo.cn:1391:18 [ident] I
 std/algo.cn:1392:5 [var_stmt] T
 std/algo.cn:1392:17 [field] fn() -> T
 std/algo.cn:1392:17 [call] T
-std/algo.cn:1393:15 [option_pat] option[T]
+std/algo.cn:1393:15 [ctor_pat] option[T]
 std/algo.cn:1393:21 [binding_pat] T
 std/algo.cn:1393:26 [ident] I
 std/algo.cn:1393:26 [field] fn() -> option[T]
@@ -4838,7 +4838,7 @@ std/algo.cn:1409:18 [ident] I
 std/algo.cn:1410:5 [var_stmt] T
 std/algo.cn:1410:17 [field] fn() -> T
 std/algo.cn:1410:17 [call] T
-std/algo.cn:1411:15 [option_pat] option[T]
+std/algo.cn:1411:15 [ctor_pat] option[T]
 std/algo.cn:1411:21 [binding_pat] T
 std/algo.cn:1411:26 [ident] I
 std/algo.cn:1411:26 [field] fn() -> option[T]
@@ -7056,7 +7056,7 @@ std/fmt.cn:35:44 [ident] usize
 std/fmt.cn:37:19 [binding_pat] option[usize]
 std/fmt.cn:37:44 [named_type] usize
 std/fmt.cn:38:11 [ident] option[usize]
-std/fmt.cn:39:9 [option_pat] option[usize]
+std/fmt.cn:39:9 [ctor_pat] option[usize]
 std/fmt.cn:39:15 [binding_pat] usize
 std/fmt.cn:39:21 [ident] usize
 std/fmt.cn:40:9 [ctor_pat] option[usize]
@@ -7065,7 +7065,7 @@ std/fmt.cn:42:14 [binding_pat] option[align_mode]
 std/fmt.cn:42:41 [binding_pat] align_mode
 std/fmt.cn:42:71 [named_type] align_mode
 std/fmt.cn:43:11 [ident] option[align_mode]
-std/fmt.cn:44:9 [option_pat] option[align_mode]
+std/fmt.cn:44:9 [ctor_pat] option[align_mode]
 std/fmt.cn:44:15 [binding_pat] align_mode
 std/fmt.cn:44:21 [ident] align_mode
 std/fmt.cn:45:9 [ctor_pat] option[align_mode]
@@ -7073,7 +7073,7 @@ std/fmt.cn:45:18 [ident] align_mode
 std/fmt.cn:47:15 [binding_pat] option[align_mode]
 std/fmt.cn:47:45 [named_type] bool
 std/fmt.cn:48:11 [ident] option[align_mode]
-std/fmt.cn:49:9 [option_pat] option[align_mode]
+std/fmt.cn:49:9 [ctor_pat] option[align_mode]
 std/fmt.cn:49:15 [binding_pat] align_mode
 std/fmt.cn:49:21 [literal] bool
 std/fmt.cn:50:9 [ctor_pat] option[align_mode]
@@ -7111,7 +7111,7 @@ std/fmt.cn:85:47 [named_type] str
 std/fmt.cn:86:9 [binding_pat] str
 std/fmt.cn:86:21 [match] str
 std/fmt.cn:86:27 [module_path] option[usize]
-std/fmt.cn:87:9 [option_pat] option[usize]
+std/fmt.cn:87:9 [ctor_pat] option[usize]
 std/fmt.cn:87:15 [binding_pat] usize
 std/fmt.cn:87:24 [ident] fn(str, usize) -> str
 std/fmt.cn:87:24 [call] str
@@ -8000,13 +8000,13 @@ std/io.cn:129:11 [ident] fn(str, open_options) -> result[raw_fd, io_errno]
 std/io.cn:129:11 [call] result[raw_fd, io_errno]
 std/io.cn:129:19 [ident] str
 std/io.cn:129:25 [ident] open_options
-std/io.cn:130:9 [result_pat] result[raw_fd, io_errno]
+std/io.cn:130:9 [ctor_pat] result[raw_fd, io_errno]
 std/io.cn:130:13 [binding_pat] raw_fd
 std/io.cn:130:20 [call] result[file_handle, io_error]
 std/io.cn:130:24 [struct_literal] file_handle
 std/io.cn:130:42 [ident] raw_fd
 std/io.cn:130:52 [literal] bool
-std/io.cn:131:9 [result_pat] result[raw_fd, io_errno]
+std/io.cn:131:9 [ctor_pat] result[raw_fd, io_errno]
 std/io.cn:131:14 [binding_pat] io_errno
 std/io.cn:131:20 [call] result[file_handle, io_error]
 std/io.cn:131:25 [field] fn(io_errno) -> io_error
@@ -8040,11 +8040,11 @@ std/io.cn:159:23 [ident] &mut file_handle
 std/io.cn:159:23 [field] fn(_) -> raw_fd
 std/io.cn:159:23 [call] raw_fd
 std/io.cn:159:38 [ident] &mut slice_mut[byte]
-std/io.cn:160:13 [result_pat] result[usize, io_errno]
+std/io.cn:160:13 [ctor_pat] result[usize, io_errno]
 std/io.cn:160:17 [binding_pat] usize
 std/io.cn:160:23 [call] result[usize, io_error]
 std/io.cn:160:27 [ident] usize
-std/io.cn:161:13 [result_pat] result[usize, io_errno]
+std/io.cn:161:13 [ctor_pat] result[usize, io_errno]
 std/io.cn:161:18 [binding_pat] io_errno
 std/io.cn:161:24 [call] result[usize, io_error]
 std/io.cn:161:29 [field] fn(io_errno) -> io_error
@@ -8059,11 +8059,11 @@ std/io.cn:165:24 [ident] &mut file_handle
 std/io.cn:165:24 [field] fn(_) -> raw_fd
 std/io.cn:165:24 [call] raw_fd
 std/io.cn:165:39 [ident] &slice[byte]
-std/io.cn:166:13 [result_pat] result[usize, io_errno]
+std/io.cn:166:13 [ctor_pat] result[usize, io_errno]
 std/io.cn:166:17 [binding_pat] usize
 std/io.cn:166:23 [call] result[usize, io_error]
 std/io.cn:166:27 [ident] usize
-std/io.cn:167:13 [result_pat] result[usize, io_errno]
+std/io.cn:167:13 [ctor_pat] result[usize, io_errno]
 std/io.cn:167:18 [binding_pat] io_errno
 std/io.cn:167:24 [call] result[usize, io_error]
 std/io.cn:167:29 [field] fn(io_errno) -> io_error
@@ -8076,11 +8076,11 @@ std/io.cn:169:15 [call] result[unit, io_errno]
 std/io.cn:169:24 [ident] &mut file_handle
 std/io.cn:169:24 [field] fn(_) -> raw_fd
 std/io.cn:169:24 [call] raw_fd
-std/io.cn:170:13 [result_pat] result[unit, io_errno]
+std/io.cn:170:13 [ctor_pat] result[unit, io_errno]
 std/io.cn:170:17 [binding_pat] unit
 std/io.cn:170:23 [call] result[unit, io_error]
 std/io.cn:170:27 [ident] unit
-std/io.cn:171:13 [result_pat] result[unit, io_errno]
+std/io.cn:171:13 [ctor_pat] result[unit, io_errno]
 std/io.cn:171:18 [binding_pat] io_errno
 std/io.cn:171:24 [call] result[unit, io_error]
 std/io.cn:171:29 [field] fn(io_errno) -> io_error
@@ -8110,11 +8110,11 @@ std/io.cn:187:36 [literal] int64
 std/io.cn:188:9 [module_path] bool
 std/io.cn:188:21 [literal] bool
 std/io.cn:189:15 [ident] result[unit, io_errno]
-std/io.cn:190:13 [result_pat] result[unit, io_errno]
+std/io.cn:190:13 [ctor_pat] result[unit, io_errno]
 std/io.cn:190:17 [binding_pat] unit
 std/io.cn:190:23 [call] result[unit, io_error]
 std/io.cn:190:27 [ident] unit
-std/io.cn:191:13 [result_pat] result[unit, io_errno]
+std/io.cn:191:13 [ctor_pat] result[unit, io_errno]
 std/io.cn:191:18 [binding_pat] io_errno
 std/io.cn:191:24 [call] result[unit, io_error]
 std/io.cn:191:29 [field] fn(io_errno) -> io_error
@@ -8123,7 +8123,7 @@ std/io.cn:191:43 [ident] io_errno
 std/io.cn:199:19 [named_type] result[pipe_ends, io_error]
 std/io.cn:200:11 [ident] fn() -> result[raw_pipe, io_errno]
 std/io.cn:200:11 [call] result[raw_pipe, io_errno]
-std/io.cn:201:9 [result_pat] result[raw_pipe, io_errno]
+std/io.cn:201:9 [ctor_pat] result[raw_pipe, io_errno]
 std/io.cn:201:13 [binding_pat] raw_pipe
 std/io.cn:201:19 [call] result[pipe_ends, io_error]
 std/io.cn:201:23 [struct_literal] pipe_ends
@@ -8135,7 +8135,7 @@ std/io.cn:203:21 [struct_literal] file_handle
 std/io.cn:203:39 [struct_literal] raw_fd
 std/io.cn:203:55 [module_path] int64
 std/io.cn:203:72 [literal] bool
-std/io.cn:204:9 [result_pat] result[raw_pipe, io_errno]
+std/io.cn:204:9 [ctor_pat] result[raw_pipe, io_errno]
 std/io.cn:204:14 [binding_pat] io_errno
 std/io.cn:204:20 [call] result[pipe_ends, io_error]
 std/io.cn:204:25 [field] fn(io_errno) -> io_error
@@ -8407,11 +8407,11 @@ std/io.cn:319:11 [call] result[unit, io_errno]
 std/io.cn:319:30 [ident] async_file
 std/io.cn:319:30 [field] fn(_) -> raw_fd
 std/io.cn:319:30 [call] raw_fd
-std/io.cn:320:9 [result_pat] result[unit, io_errno]
+std/io.cn:320:9 [ctor_pat] result[unit, io_errno]
 std/io.cn:320:13 [wildcard_pat] unit
 std/io.cn:320:19 [call] result[async_file, io_error]
 std/io.cn:320:23 [ident] async_file
-std/io.cn:321:9 [result_pat] result[unit, io_errno]
+std/io.cn:321:9 [ctor_pat] result[unit, io_errno]
 std/io.cn:321:14 [binding_pat] io_errno
 std/io.cn:321:20 [call] result[async_file, io_error]
 std/io.cn:321:25 [field] fn(io_errno) -> io_error
@@ -8424,13 +8424,13 @@ std/io.cn:333:11 [ident] fn(str, open_options) -> result[raw_fd, io_errno]
 std/io.cn:333:11 [call] result[raw_fd, io_errno]
 std/io.cn:333:19 [ident] str
 std/io.cn:333:25 [ident] open_options
-std/io.cn:334:9 [result_pat] result[raw_fd, io_errno]
+std/io.cn:334:9 [ctor_pat] result[raw_fd, io_errno]
 std/io.cn:334:13 [binding_pat] raw_fd
 std/io.cn:334:20 [ident] fn(raw_fd, bool) -> result[async_file, io_error]
 std/io.cn:334:20 [call] result[async_file, io_error]
 std/io.cn:334:31 [ident] raw_fd
 std/io.cn:334:35 [literal] bool
-std/io.cn:335:9 [result_pat] result[raw_fd, io_errno]
+std/io.cn:335:9 [ctor_pat] result[raw_fd, io_errno]
 std/io.cn:335:14 [binding_pat] io_errno
 std/io.cn:335:20 [call] result[async_file, io_error]
 std/io.cn:335:25 [field] fn(io_errno) -> io_error
@@ -8451,7 +8451,7 @@ std/io.cn:348:35 [ident] bool
 std/io.cn:357:25 [named_type] result[async_pipe_ends, io_error]
 std/io.cn:358:11 [ident] fn() -> result[raw_pipe, io_errno]
 std/io.cn:358:11 [call] result[raw_pipe, io_errno]
-std/io.cn:359:9 [result_pat] result[raw_pipe, io_errno]
+std/io.cn:359:9 [ctor_pat] result[raw_pipe, io_errno]
 std/io.cn:359:13 [binding_pat] raw_pipe
 std/io.cn:360:17 [binding_pat] async_file
 std/io.cn:360:21 [ident] fn(raw_fd, bool) -> result[async_file, io_error]
@@ -8471,7 +8471,7 @@ std/io.cn:362:20 [call] result[async_pipe_ends, io_error]
 std/io.cn:362:24 [struct_literal] async_pipe_ends
 std/io.cn:362:50 [ident] async_file
 std/io.cn:362:61 [ident] async_file
-std/io.cn:363:9 [result_pat] result[raw_pipe, io_errno]
+std/io.cn:363:9 [ctor_pat] result[raw_pipe, io_errno]
 std/io.cn:363:14 [binding_pat] io_errno
 std/io.cn:363:27 [call] result[async_pipe_ends, io_error]
 std/io.cn:363:32 [field] fn(io_errno) -> io_error
@@ -8496,11 +8496,11 @@ std/io.cn:375:36 [literal] int64
 std/io.cn:376:9 [module_path] bool
 std/io.cn:376:21 [literal] bool
 std/io.cn:377:15 [ident] result[unit, io_errno]
-std/io.cn:378:13 [result_pat] result[unit, io_errno]
+std/io.cn:378:13 [ctor_pat] result[unit, io_errno]
 std/io.cn:378:17 [binding_pat] unit
 std/io.cn:378:23 [call] result[unit, io_error]
 std/io.cn:378:27 [ident] unit
-std/io.cn:379:13 [result_pat] result[unit, io_errno]
+std/io.cn:379:13 [ctor_pat] result[unit, io_errno]
 std/io.cn:379:18 [binding_pat] io_errno
 std/io.cn:379:24 [call] result[unit, io_error]
 std/io.cn:379:29 [field] fn(io_errno) -> io_error
@@ -8516,11 +8516,11 @@ std/io.cn:384:27 [ident] &mut async_file
 std/io.cn:384:27 [field] fn(_) -> raw_fd
 std/io.cn:384:27 [call] raw_fd
 std/io.cn:384:42 [ident] &mut slice_mut[byte]
-std/io.cn:385:17 [result_pat] result[usize, io_errno]
+std/io.cn:385:17 [ctor_pat] result[usize, io_errno]
 std/io.cn:385:21 [binding_pat] usize
 std/io.cn:385:34 [call] result[usize, io_error]
 std/io.cn:385:38 [ident] usize
-std/io.cn:386:17 [result_pat] result[usize, io_errno]
+std/io.cn:386:17 [ctor_pat] result[usize, io_errno]
 std/io.cn:386:22 [binding_pat] io_errno
 std/io.cn:387:24 [module_path] int32
 std/io.cn:387:24 [binary] bool
@@ -8549,11 +8549,11 @@ std/io.cn:398:28 [ident] &mut async_file
 std/io.cn:398:28 [field] fn(_) -> raw_fd
 std/io.cn:398:28 [call] raw_fd
 std/io.cn:398:43 [ident] &slice[byte]
-std/io.cn:399:17 [result_pat] result[usize, io_errno]
+std/io.cn:399:17 [ctor_pat] result[usize, io_errno]
 std/io.cn:399:21 [binding_pat] usize
 std/io.cn:399:34 [call] result[usize, io_error]
 std/io.cn:399:38 [ident] usize
-std/io.cn:400:17 [result_pat] result[usize, io_errno]
+std/io.cn:400:17 [ctor_pat] result[usize, io_errno]
 std/io.cn:400:22 [binding_pat] io_errno
 std/io.cn:401:24 [module_path] int32
 std/io.cn:401:24 [binary] bool
@@ -8579,11 +8579,11 @@ std/io.cn:410:15 [call] result[unit, io_errno]
 std/io.cn:410:24 [ident] &mut async_file
 std/io.cn:410:24 [field] fn(_) -> raw_fd
 std/io.cn:410:24 [call] raw_fd
-std/io.cn:411:13 [result_pat] result[unit, io_errno]
+std/io.cn:411:13 [ctor_pat] result[unit, io_errno]
 std/io.cn:411:17 [binding_pat] unit
 std/io.cn:411:23 [call] result[unit, io_error]
 std/io.cn:411:27 [ident] unit
-std/io.cn:412:13 [result_pat] result[unit, io_errno]
+std/io.cn:412:13 [ctor_pat] result[unit, io_errno]
 std/io.cn:412:18 [binding_pat] io_errno
 std/io.cn:412:24 [call] result[unit, io_error]
 std/io.cn:412:29 [field] fn(io_errno) -> io_error
@@ -9003,7 +9003,7 @@ std/iter.cn:217:9 [var_stmt] list[T]
 std/iter.cn:217:19 [array] list[T]
 std/iter.cn:218:9 [var_stmt] I
 std/iter.cn:218:22 [ident] I
-std/iter.cn:219:19 [option_pat] option[T]
+std/iter.cn:219:19 [ctor_pat] option[T]
 std/iter.cn:219:25 [binding_pat] T
 std/iter.cn:219:30 [ident] I
 std/iter.cn:219:30 [field] fn() -> option[T]
@@ -12405,7 +12405,7 @@ std/option.cn:22:17 [binding_pat] &option[T]
 std/option.cn:22:26 [named_type] bool
 std/option.cn:23:16 [match] bool
 std/option.cn:23:22 [ident] &option[T]
-std/option.cn:24:13 [option_pat] option[T]
+std/option.cn:24:13 [ctor_pat] option[T]
 std/option.cn:24:19 [wildcard_pat] T
 std/option.cn:24:25 [literal] bool
 std/option.cn:25:13 [ctor_pat] option[T]
@@ -12414,7 +12414,7 @@ std/option.cn:28:17 [binding_pat] &option[T]
 std/option.cn:28:26 [named_type] bool
 std/option.cn:29:16 [match] bool
 std/option.cn:29:22 [ident] &option[T]
-std/option.cn:30:13 [option_pat] option[T]
+std/option.cn:30:13 [ctor_pat] option[T]
 std/option.cn:30:19 [wildcard_pat] T
 std/option.cn:30:25 [literal] bool
 std/option.cn:31:13 [ctor_pat] option[T]
@@ -12430,20 +12430,20 @@ std/result.cn:11:15 [binding_pat] &result[T, E]
 std/result.cn:11:24 [named_type] bool
 std/result.cn:12:16 [match] bool
 std/result.cn:12:22 [ident] &result[T, E]
-std/result.cn:13:13 [result_pat] result[T, E]
+std/result.cn:13:13 [ctor_pat] result[T, E]
 std/result.cn:13:17 [wildcard_pat] T
 std/result.cn:13:23 [literal] bool
-std/result.cn:14:13 [result_pat] result[T, E]
+std/result.cn:14:13 [ctor_pat] result[T, E]
 std/result.cn:14:18 [wildcard_pat] E
 std/result.cn:14:24 [literal] bool
 std/result.cn:17:16 [binding_pat] &result[T, E]
 std/result.cn:17:25 [named_type] bool
 std/result.cn:18:16 [match] bool
 std/result.cn:18:22 [ident] &result[T, E]
-std/result.cn:19:13 [result_pat] result[T, E]
+std/result.cn:19:13 [ctor_pat] result[T, E]
 std/result.cn:19:17 [wildcard_pat] T
 std/result.cn:19:23 [literal] bool
-std/result.cn:20:13 [result_pat] result[T, E]
+std/result.cn:20:13 [ctor_pat] result[T, E]
 std/result.cn:20:18 [wildcard_pat] E
 std/result.cn:20:24 [literal] bool
 std/shared.cn:31:18 [binding_pat] T
@@ -14076,13 +14076,13 @@ std/test.cn:96:12 [binding_pat] str
 std/test.cn:96:23 [binding_pat] result[unit, test_failure]
 std/test.cn:96:63 [named_type] bool
 std/test.cn:97:11 [ident] result[unit, test_failure]
-std/test.cn:98:9 [result_pat] result[unit, test_failure]
+std/test.cn:98:9 [ctor_pat] result[unit, test_failure]
 std/test.cn:98:13 [wildcard_pat] unit
 std/test.cn:98:19 [ident] fn(str) -> unit
 std/test.cn:98:19 [call] unit
 std/test.cn:98:27 [interp_string] str
 std/test.cn:98:32 [ident] str
-std/test.cn:99:9 [result_pat] result[unit, test_failure]
+std/test.cn:99:9 [ctor_pat] result[unit, test_failure]
 std/test.cn:99:14 [binding_pat] test_failure
 std/test.cn:99:20 [ident] fn(str) -> unit
 std/test.cn:99:20 [call] unit
@@ -14093,10 +14093,10 @@ std/test.cn:99:45 [call] str
 std/test.cn:99:60 [ident] test_failure
 std/test.cn:100:12 [match] bool
 std/test.cn:100:18 [ident] result[unit, test_failure]
-std/test.cn:101:9 [result_pat] result[unit, test_failure]
+std/test.cn:101:9 [ctor_pat] result[unit, test_failure]
 std/test.cn:101:13 [wildcard_pat] unit
 std/test.cn:101:19 [literal] bool
-std/test.cn:102:9 [result_pat] result[unit, test_failure]
+std/test.cn:102:9 [ctor_pat] result[unit, test_failure]
 std/test.cn:102:14 [wildcard_pat] test_failure
 std/test.cn:102:20 [literal] bool
 std/test.cn:107:13 [binding_pat] list[test_case]
@@ -14122,16 +14122,16 @@ std/test.cn:118:9 [var_stmt] option[test_failure]
 std/test.cn:118:51 [ident] option[test_failure]
 std/test.cn:119:15 [unary] &option[fn() -> result[unit, test_failure]]
 std/test.cn:119:16 [module_path] option[fn() -> result[unit, test_failure]]
-std/test.cn:120:13 [option_pat] option[fn() -> result[unit, test_failure]]
+std/test.cn:120:13 [ctor_pat] option[fn() -> result[unit, test_failure]]
 std/test.cn:120:19 [binding_pat] fn() -> result[unit, test_failure]
 std/test.cn:121:21 [binding_pat] result[unit, test_failure]
 std/test.cn:121:31 [ident] fn() -> result[unit, test_failure]
 std/test.cn:121:31 [call] result[unit, test_failure]
 std/test.cn:122:23 [ident] result[unit, test_failure]
-std/test.cn:123:21 [result_pat] result[unit, test_failure]
+std/test.cn:123:21 [ctor_pat] result[unit, test_failure]
 std/test.cn:123:25 [wildcard_pat] unit
 std/test.cn:123:31 [literal] unit
-std/test.cn:124:21 [result_pat] result[unit, test_failure]
+std/test.cn:124:21 [ctor_pat] result[unit, test_failure]
 std/test.cn:124:26 [binding_pat] test_failure
 std/test.cn:125:25 [ident] option[test_failure]
 std/test.cn:125:41 [call] option[test_failure]
@@ -14164,7 +14164,7 @@ std/test.cn:135:33 [ident] int32
 std/test.cn:135:33 [binary] int32
 std/test.cn:135:49 [literal] int32
 std/test.cn:137:23 [ident] option[test_failure]
-std/test.cn:138:21 [option_pat] option[test_failure]
+std/test.cn:138:21 [ctor_pat] option[test_failure]
 std/test.cn:138:27 [binding_pat] test_failure
 std/test.cn:139:28 [ident] fn(str, result[unit, test_failure]) -> bool
 std/test.cn:139:28 [call] bool
@@ -14184,14 +14184,14 @@ std/test.cn:144:25 [var_stmt] option[test_failure]
 std/test.cn:144:66 [ident] option[test_failure]
 std/test.cn:145:31 [unary] &option[fn() -> result[unit, test_failure]]
 std/test.cn:145:32 [module_path] option[fn() -> result[unit, test_failure]]
-std/test.cn:146:29 [option_pat] option[fn() -> result[unit, test_failure]]
+std/test.cn:146:29 [ctor_pat] option[fn() -> result[unit, test_failure]]
 std/test.cn:146:35 [binding_pat] fn() -> result[unit, test_failure]
 std/test.cn:147:39 [ident] fn() -> result[unit, test_failure]
 std/test.cn:147:39 [call] result[unit, test_failure]
-std/test.cn:148:37 [result_pat] result[unit, test_failure]
+std/test.cn:148:37 [ctor_pat] result[unit, test_failure]
 std/test.cn:148:41 [wildcard_pat] unit
 std/test.cn:148:47 [literal] unit
-std/test.cn:149:37 [result_pat] result[unit, test_failure]
+std/test.cn:149:37 [ctor_pat] result[unit, test_failure]
 std/test.cn:149:42 [binding_pat] test_failure
 std/test.cn:150:41 [ident] option[test_failure]
 std/test.cn:150:56 [call] option[test_failure]
@@ -14199,7 +14199,7 @@ std/test.cn:150:62 [ident] test_failure
 std/test.cn:151:29 [ctor_pat] option[fn() -> result[unit, test_failure]]
 std/test.cn:151:38 [literal] unit
 std/test.cn:153:31 [ident] option[test_failure]
-std/test.cn:154:29 [option_pat] option[test_failure]
+std/test.cn:154:29 [ctor_pat] option[test_failure]
 std/test.cn:154:35 [binding_pat] test_failure
 std/test.cn:155:36 [ident] fn(str, result[unit, test_failure]) -> bool
 std/test.cn:155:36 [call] bool
@@ -14231,7 +14231,7 @@ std/test.cn:163:46 [binary] int32
 std/test.cn:163:55 [literal] int32
 std/test.cn:165:31 [unary] &option[fn() -> result[unit, test_failure]]
 std/test.cn:165:32 [module_path] option[fn() -> result[unit, test_failure]]
-std/test.cn:166:29 [option_pat] option[fn() -> result[unit, test_failure]]
+std/test.cn:166:29 [ctor_pat] option[fn() -> result[unit, test_failure]]
 std/test.cn:166:35 [binding_pat] fn() -> result[unit, test_failure]
 std/test.cn:167:36 [ident] fn(str, result[unit, test_failure]) -> bool
 std/test.cn:167:36 [call] bool
@@ -14251,7 +14251,7 @@ std/test.cn:171:29 [ctor_pat] option[fn() -> result[unit, test_failure]]
 std/test.cn:171:38 [literal] unit
 std/test.cn:173:15 [unary] &option[fn() -> result[unit, test_failure]]
 std/test.cn:173:16 [module_path] option[fn() -> result[unit, test_failure]]
-std/test.cn:174:13 [option_pat] option[fn() -> result[unit, test_failure]]
+std/test.cn:174:13 [ctor_pat] option[fn() -> result[unit, test_failure]]
 std/test.cn:174:19 [binding_pat] fn() -> result[unit, test_failure]
 std/test.cn:175:20 [ident] fn(str, result[unit, test_failure]) -> bool
 std/test.cn:175:20 [call] bool
@@ -16089,11 +16089,11 @@ std/traits.structural.cn:8:18 [binding_pat] &option[T]
 std/traits.structural.cn:8:40 [named_type] bool
 std/traits.structural.cn:9:16 [match] bool
 std/traits.structural.cn:9:22 [ident] &option[T]
-std/traits.structural.cn:10:13 [option_pat] option[T]
+std/traits.structural.cn:10:13 [ctor_pat] option[T]
 std/traits.structural.cn:10:19 [binding_pat] T
 std/traits.structural.cn:10:25 [match] bool
 std/traits.structural.cn:10:31 [ident] &option[T]
-std/traits.structural.cn:11:17 [option_pat] option[T]
+std/traits.structural.cn:11:17 [ctor_pat] option[T]
 std/traits.structural.cn:11:23 [binding_pat] T
 std/traits.structural.cn:11:29 [ident] T
 std/traits.structural.cn:11:29 [binary] bool
@@ -16103,7 +16103,7 @@ std/traits.structural.cn:12:26 [literal] bool
 std/traits.structural.cn:13:13 [ctor_pat] option[T]
 std/traits.structural.cn:13:22 [match] bool
 std/traits.structural.cn:13:28 [ident] &option[T]
-std/traits.structural.cn:14:17 [option_pat] option[T]
+std/traits.structural.cn:14:17 [ctor_pat] option[T]
 std/traits.structural.cn:14:23 [wildcard_pat] T
 std/traits.structural.cn:14:29 [literal] bool
 std/traits.structural.cn:15:17 [ctor_pat] option[T]
@@ -16113,26 +16113,26 @@ std/traits.structural.cn:18:18 [binding_pat] &result[T, E]
 std/traits.structural.cn:18:43 [named_type] bool
 std/traits.structural.cn:19:16 [match] bool
 std/traits.structural.cn:19:22 [ident] &result[T, E]
-std/traits.structural.cn:20:13 [result_pat] result[T, E]
+std/traits.structural.cn:20:13 [ctor_pat] result[T, E]
 std/traits.structural.cn:20:17 [binding_pat] T
 std/traits.structural.cn:20:23 [match] bool
 std/traits.structural.cn:20:29 [ident] &result[T, E]
-std/traits.structural.cn:21:17 [result_pat] result[T, E]
+std/traits.structural.cn:21:17 [ctor_pat] result[T, E]
 std/traits.structural.cn:21:21 [binding_pat] T
 std/traits.structural.cn:21:27 [ident] T
 std/traits.structural.cn:21:27 [binary] bool
 std/traits.structural.cn:21:32 [ident] T
-std/traits.structural.cn:22:17 [result_pat] result[T, E]
+std/traits.structural.cn:22:17 [ctor_pat] result[T, E]
 std/traits.structural.cn:22:22 [wildcard_pat] E
 std/traits.structural.cn:22:28 [literal] bool
-std/traits.structural.cn:23:13 [result_pat] result[T, E]
+std/traits.structural.cn:23:13 [ctor_pat] result[T, E]
 std/traits.structural.cn:23:18 [binding_pat] E
 std/traits.structural.cn:23:24 [match] bool
 std/traits.structural.cn:23:30 [ident] &result[T, E]
-std/traits.structural.cn:24:17 [result_pat] result[T, E]
+std/traits.structural.cn:24:17 [ctor_pat] result[T, E]
 std/traits.structural.cn:24:21 [wildcard_pat] T
 std/traits.structural.cn:24:27 [literal] bool
-std/traits.structural.cn:25:17 [result_pat] result[T, E]
+std/traits.structural.cn:25:17 [ctor_pat] result[T, E]
 std/traits.structural.cn:25:22 [binding_pat] E
 std/traits.structural.cn:25:28 [ident] E
 std/traits.structural.cn:25:28 [binary] bool
@@ -16812,7 +16812,7 @@ std/unicode.cn:92:11 [ident] fn(&slice[uint32], uint32) -> option[usize]
 std/unicode.cn:92:11 [call] option[usize]
 std/unicode.cn:92:25 [ident] &slice[uint32]
 std/unicode.cn:92:31 [ident] uint32
-std/unicode.cn:93:9 [option_pat] option[usize]
+std/unicode.cn:93:9 [ctor_pat] option[usize]
 std/unicode.cn:93:15 [binding_pat] usize
 std/unicode.cn:93:21 [call] option[uint32]
 std/unicode.cn:93:27 [ident] &slice[uint32]
@@ -16834,7 +16834,7 @@ std/unicode.cn:113:25 [ident] &slice[uint32]
 std/unicode.cn:113:31 [ident] uint32
 std/unicode.cn:114:9 [ctor_pat] option[usize]
 std/unicode.cn:114:18 [ident] option[str]
-std/unicode.cn:115:9 [option_pat] option[usize]
+std/unicode.cn:115:9 [ctor_pat] option[usize]
 std/unicode.cn:115:15 [binding_pat] usize
 std/unicode.cn:116:17 [binding_pat] uint8
 std/unicode.cn:116:21 [ident] &slice[uint8]
@@ -17044,7 +17044,7 @@ std/unicode.cn:203:65 [binary] range[usize]
 std/unicode.cn:203:68 [ident] usize
 std/unicode.cn:203:68 [literal] usize
 std/unicode.cn:203:85 [ident] uint32
-std/unicode.cn:204:9 [option_pat] option[str]
+std/unicode.cn:204:9 [ctor_pat] option[str]
 std/unicode.cn:204:15 [binding_pat] str
 std/unicode.cn:204:28 [ident] str
 std/unicode.cn:205:9 [ctor_pat] option[str]
@@ -17065,7 +17065,7 @@ std/unicode.cn:206:95 [binary] range[usize]
 std/unicode.cn:206:98 [ident] usize
 std/unicode.cn:206:98 [literal] usize
 std/unicode.cn:206:117 [ident] uint32
-std/unicode.cn:207:17 [option_pat] option[uint32]
+std/unicode.cn:207:17 [ctor_pat] option[uint32]
 std/unicode.cn:207:23 [binding_pat] uint32
 std/unicode.cn:207:36 [ident] fn(uint32) -> str
 std/unicode.cn:207:36 [call] str
@@ -17121,7 +17121,7 @@ std/unicode.cn:220:65 [binary] range[usize]
 std/unicode.cn:220:68 [ident] usize
 std/unicode.cn:220:68 [literal] usize
 std/unicode.cn:220:85 [ident] uint32
-std/unicode.cn:221:9 [option_pat] option[str]
+std/unicode.cn:221:9 [ctor_pat] option[str]
 std/unicode.cn:221:15 [binding_pat] str
 std/unicode.cn:221:28 [ident] str
 std/unicode.cn:222:9 [ctor_pat] option[str]
@@ -17142,7 +17142,7 @@ std/unicode.cn:223:95 [binary] range[usize]
 std/unicode.cn:223:98 [ident] usize
 std/unicode.cn:223:98 [literal] usize
 std/unicode.cn:223:117 [ident] uint32
-std/unicode.cn:224:17 [option_pat] option[uint32]
+std/unicode.cn:224:17 [ctor_pat] option[uint32]
 std/unicode.cn:224:23 [binding_pat] uint32
 std/unicode.cn:224:36 [ident] fn(uint32) -> str
 std/unicode.cn:224:36 [call] str
@@ -17302,7 +17302,7 @@ std/unicode.cn:284:51 [binary] range[usize]
 std/unicode.cn:284:54 [ident] usize
 std/unicode.cn:284:54 [literal] usize
 std/unicode.cn:284:65 [ident] uint32
-std/unicode.cn:285:13 [option_pat] option[str]
+std/unicode.cn:285:13 [ctor_pat] option[str]
 std/unicode.cn:285:19 [binding_pat] str
 std/unicode.cn:286:17 [ident] str
 std/unicode.cn:286:23 [ident] str
@@ -35843,7 +35843,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (598)
+## resolved_callees (607)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -36004,6 +36004,7 @@ std/algo.cn:1374:71 [call] std.panic::panic
 std/algo.cn:1741:9 [call] std.list::list::push recv
 std/algo.cn:1746:9 [call] std.list::list::push recv
 std/algo.cn:1849:9 [call] std.list::list::push recv
+std/algo.cn:1903:16 [call] std.mem::alloc
 std/algo.cn:1924:5 [call] std.mem::free
 std/algo.cn:1952:9 [call] std.list::list::push$list__usize__usize__ recv
 std/algo.cn:1955:11 [call] std.list::list::len$list__usize__usize__ recv
@@ -36127,6 +36128,7 @@ std/iter.cn:189:9 [call] std.mem::drop_range$money
 std/iter.cn:189:9 [call] std.mem::drop_range$test_suite
 std/iter.cn:204:22 [call] std.list::list::as_ptr recv
 std/iter.cn:220:13 [call] std.list::list::push recv
+std/list.cn:39:48 [call] std.mem::alloc
 std/list.cn:39:48 [call] std.mem::alloc$_int64__int32_
 std/list.cn:39:48 [call] std.mem::alloc$_usize__usize_
 std/list.cn:39:48 [call] std.mem::alloc$field_info
@@ -36165,6 +36167,7 @@ std/list.cn:118:9 [call] std.mem::drop_in_place
 std/list.cn:129:9 [call] std.mem::drop_range
 std/list.cn:141:9 [call] std.mem::drop_range
 std/list.cn:142:9 [call] std.mem::free
+std/list.cn:145:21 [call] std.mem::alloc
 std/list.cn:175:9 [call] std.mem::drop_range
 std/list.cn:175:9 [call] std.mem::drop_range$_int64__int32_
 std/list.cn:175:9 [call] std.mem::drop_range$_usize__usize_
@@ -36358,6 +36361,7 @@ std/mem.cn:103:13 [call] std.mem::drop_in_place$variant_info
 std/mem.cn:116:12 [call] std.intrinsics::rt_atomic_fetch_add
 std/mem.cn:124:12 [call] std.intrinsics::rt_atomic_fetch_sub
 std/shared.cn:32:12 [call] std.shared::shared[T]::new
+std/shared.cn:37:21 [call] std.mem::alloc
 std/shared.cn:48:9 [call] std.mem::atomic_fetch_add
 std/shared.cn:59:22 [call] std.mem::atomic_fetch_sub
 std/shared.cn:61:13 [call] std.mem::drop_in_place
@@ -36381,6 +36385,7 @@ std/sync.cn:69:16 [call] std.intrinsics::rt_atomic_compare_exchange
 std/sync.cn:77:26 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:79:16 [call] std.intrinsics::rt_atomic_compare_exchange
 std/sync.cn:85:9 [call] std.mem::free$usize
+std/sync.cn:113:21 [call] std.mem::alloc
 std/sync.cn:120:15 [call] std.intrinsics::rt_atomic_compare_exchange
 std/sync.cn:121:13 [call] std.intrinsics::rt_word_wait
 std/sync.cn:127:12 [call] std.intrinsics::rt_atomic_compare_exchange
@@ -36389,6 +36394,7 @@ std/sync.cn:159:9 [call] std.intrinsics::rt_atomic_store
 std/sync.cn:160:9 [call] std.intrinsics::rt_word_wake
 std/sync.cn:164:9 [call] std.mem::drop_in_place
 std/sync.cn:165:9 [call] std.mem::free
+std/sync.cn:202:21 [call] std.mem::alloc
 std/sync.cn:211:25 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:213:17 [call] std.intrinsics::rt_word_wait
 std/sync.cn:214:18 [call] std.intrinsics::rt_atomic_compare_exchange
@@ -36409,6 +36415,8 @@ std/sync.cn:300:5 [call] std.intrinsics::rt_word_wake
 std/sync.cn:304:5 [call] std.intrinsics::rt_atomic_store
 std/sync.cn:304:27 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:305:5 [call] std.intrinsics::rt_word_wake
+std/sync.cn:348:17 [call] std.mem::alloc
+std/sync.cn:355:16 [call] std.mem::alloc
 std/sync.cn:377:13 [call] std.mem::drop_in_place
 std/sync.cn:379:9 [call] std.mem::free
 std/sync.cn:380:9 [call] std.mem::free
@@ -36416,6 +36424,7 @@ std/sync.cn:400:24 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:402:19 [call] std.intrinsics::rt_word_waiter
 std/sync.cn:450:24 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:452:19 [call] std.intrinsics::rt_word_waiter
+std/sync.cn:490:17 [call] std.mem::alloc
 std/sync.cn:502:9 [call] std.mem::drop_in_place
 std/sync.cn:503:9 [call] std.mem::free
 std/sync.cn:510:9 [call] std.mem::drop_in_place

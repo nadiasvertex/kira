@@ -945,7 +945,6 @@ private:
   /// Parses array and slice patterns.
   [[nodiscard]] auto parse_bracket_pattern() -> ast::ptr<ast::pattern>;
   /// Parses `@some(...)`, `@ok(...)`, and `@err(...)` wrapper patterns.
-  [[nodiscard]] auto parse_option_result_pattern() -> ast::ptr<ast::pattern>;
   /// Parses reference patterns.
   [[nodiscard]] auto parse_ref_pattern() -> ast::ptr<ast::pattern>;
   /// Heuristic for deciding whether a bare name should parse as a constructor.

@@ -1,0 +1,10 @@
+module semantic_check_test.reject_static_def_with_run_time_argument
+
+static def score(n: int32) -> int32:
+    return n * 2
+
+def total(n: int32) -> int32:
+    var sum: int32 = score(n)
+    static for it in 1..3:
+        sum = sum + score(it + n)
+    return sum

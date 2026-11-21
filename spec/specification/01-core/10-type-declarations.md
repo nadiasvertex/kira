@@ -30,6 +30,8 @@ type shape =
 
 Constructors are lowercase. A sum type is inspected with `match` (see [Pattern Matching](09-pattern-matching.md)); the checker enforces exhaustiveness over its variants.
 
+A variant name is looked up the same way when it builds a value and when it is a pattern: first among the variants of the type the context expects (a pattern's subject, an annotation, a parameter), then among the sum types the module declares or imports, then in the prelude. A sum type may therefore name its variants `@ok`, `@none`, `@some` or `@err`. Where the context expects an `option` or a `result`, those names mean the prelude's variants; elsewhere in the module they mean the user's.
+
 ## Struct layout: padding and `packed`
 
 By default a struct's fields are laid out as in a systems language's C struct: each field sits at its own natural alignment (padding inserted before it as needed), and the whole struct's size rounds up to its widest field's alignment.

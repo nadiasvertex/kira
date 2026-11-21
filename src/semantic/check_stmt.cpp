@@ -683,7 +683,8 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     if (stmt.expr == nullptr) {
       return unit;
     }
-    const auto operand_type = infer_expr(*stmt.expr, k_unknown_type);
+    const auto operand_type = as_comptime_expr(
+        [&] { return infer_expr(*stmt.expr, k_unknown_type); });
     require_quote_value(operand_type, stmt.expr->span, "a spliced statement");
     // Reification, mirroring `splice_expr` above: a quoted statement
     // fragment is checked and grafted in directly; a quoted expression

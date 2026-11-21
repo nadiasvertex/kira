@@ -48,8 +48,6 @@ namespace cinder::ast {
   case node_kind::struct_pattern:
   case node_kind::array_pattern:
   case node_kind::range_pattern:
-  case node_kind::option_pattern:
-  case node_kind::result_pattern:
   case node_kind::ref_pattern:
   case node_kind::or_pattern:
   case node_kind::group_pattern:
@@ -719,16 +717,6 @@ auto for_each_child(N &n, F &&f) -> void
     if (const auto *t = as<range_pattern>(&n)) {
       one(t->start);
       one(t->end);
-    }
-    return;
-  case node_kind::option_pattern:
-    if (const auto *t = as<option_pattern>(&n)) {
-      one(t->inner);
-    }
-    return;
-  case node_kind::result_pattern:
-    if (const auto *t = as<result_pattern>(&n)) {
-      one(t->inner);
     }
     return;
   case node_kind::ref_pattern:

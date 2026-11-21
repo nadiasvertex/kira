@@ -1,0 +1,20 @@
+module codegen_stress.static_def_called_at_run_time
+
+# A call to a `static def` from run-time code runs while compiling, and the
+# program holds its result (todo item 27). In a block `static for` it runs
+# once per iteration, with that iteration's binding.
+
+# expect: 1213
+
+static def score(n: int32) -> int32:
+    return n * 2
+
+static def scaled[T](n: int32) -> int32:
+    return n * 100
+
+def main() -> int32:
+    let x = score(3)
+    var total: int32 = 0
+    static for it in 1..4:
+        total = total + score(it)
+    return scaled[int64](12) + x + total - 5

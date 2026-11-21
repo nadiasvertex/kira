@@ -313,6 +313,11 @@ auto checker::check_call_against_decl(
     const module_members *owner, file_id_type decl_file, bool skip_self,
     const explicit_generic_args &explicit_args,
     const method_call_site *method_site) -> type_id {
+  call_error_floors_.push_back(errors_emitted_);
+  struct pop_floor {
+    std::vector<size_t> &floors;
+    ~pop_floor() { floors.pop_back(); }
+  } const floor_guard{call_error_floors_};
   if (function_.in_contract_ && !decl.modifiers.is_pure) {
     error_with_help(
         call.span,
@@ -411,6 +416,9 @@ auto checker::check_call_against_decl(
   // the caller as a second, confusing mismatch against `T`.
   const auto result = open_foreign_params(signature_return_type(decl, owner));
   file_.file_id_ = saved_signature_file;
+  if (fold_static_call(call, decl, result, /*type_slots=*/{})) {
+    return record_expr_type(call, result);
+  }
   return open_call_result(call, result);
 }
 

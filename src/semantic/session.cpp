@@ -1079,8 +1079,6 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   case ast::node_kind::struct_pattern:
   case ast::node_kind::array_pattern:
   case ast::node_kind::range_pattern:
-  case ast::node_kind::option_pattern:
-  case ast::node_kind::result_pattern:
   case ast::node_kind::ref_pattern:
   case ast::node_kind::or_pattern:
   case ast::node_kind::group_pattern:

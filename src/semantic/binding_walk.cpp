@@ -83,10 +83,6 @@ auto disjoint(const ast::node *node) -> bool {
       return f.is_rest || disjoint(f.pattern.get());
     });
   }
-  case ast::node_kind::option_pattern:
-    return disjoint(ast::cast<const ast::option_pattern>(*node).inner.get());
-  case ast::node_kind::result_pattern:
-    return disjoint(ast::cast<const ast::result_pattern>(*node).inner.get());
   case ast::node_kind::group_pattern: {
     const auto &group = ast::cast<const ast::group_pattern>(*node);
     return !group.alias.has_value() && disjoint(group.inner.get());

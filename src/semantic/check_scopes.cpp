@@ -1418,4 +1418,54 @@ auto checker::try_fold_comptime_only_call(const ast::call_expr &call,
   return materialize_const_literal(*result, call.span, result_type);
 }
 
+auto checker::fold_static_call(const ast::call_expr &call,
+                               const ast::func_decl &decl, type_id result_type,
+                               const type_scope &type_slots) -> bool {
+  // Compile-time code runs the call itself when it runs (see
+  // `check_function`), and a template's own copy of the call is folded by
+  // each of its instances.
+  if (function_.in_comptime_only_function_ || comptime_expr_depth_ > 0 ||
+      !session_.comptime_only_functions_.contains(&decl) ||
+      function_.current_template_ != nullptr) {
+    return false;
+  }
+  if (!call_error_floors_.empty() &&
+      errors_emitted_ > call_error_floors_.back()) {
+    return false;
+  }
+  if (const auto *lit =
+          try_fold_comptime_only_call(call, decl, result_type, type_slots)) {
+    session_.folded_comptime_calls_[&call] = lit;
+    return true;
+  }
+  // In a block `static for`, an argument may read a loop binding, which has
+  // a value only in each iteration: the call is folded there.
+  if (function_.static_for_block_depth_ > 0) {
+    cache_.static_for_calls_.insert_or_assign(
+        &call, cache_state::static_for_call{.decl = &decl,
+                                      .result_type = result_type,
+                                      .type_slots = type_slots});
+    return false;
+  }
+  report_unfoldable_static_call(call, decl);
+  return false;
+}
+
+auto checker::report_unfoldable_static_call(const ast::call_expr &call,
+                                            const ast::func_decl &decl)
+    -> void {
+  error_with_help(
+      call.span,
+      std::format("this call to the `static def` `{}` cannot run at compile "
+                  "time",
+                  decl.name),
+      "evaluated while compiling",
+      std::format("A `static def` runs only while the program is compiled, so "
+                  "every argument of a call to it must be known then (a "
+                  "literal, a `static`, or a `static for` binder), and its "
+                  "result must be a scalar or a `str`. To call `{}` at run "
+                  "time, drop `static` from its declaration.",
+                  decl.name));
+}
+
 } // namespace cinder::semantic::detail

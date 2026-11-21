@@ -498,7 +498,8 @@ auto checker::resolve_static_if_branch(const ast::static_decl &decl)
   if (decl.if_condition == nullptr || decl.if_condition->has_error) {
     return std::nullopt;
   }
-  require_bool(*decl.if_condition, "a `static if` condition");
+  as_comptime_expr(
+      [&] { require_bool(*decl.if_condition, "a `static if` condition"); });
   if (inside_unbound_generic_scope()) {
     return std::nullopt;
   }
@@ -678,6 +679,7 @@ auto checker::static_for_block_iterations(const ast::static_decl &decl,
   }
   auto inner = std::vector<const ast::static_decl *>{};
   auto static_ifs = std::vector<const ast::static_decl *>{};
+  auto static_calls = std::vector<const ast::call_expr *>{};
   for (const auto &node : decl.for_body) {
     if (node == nullptr) {
       continue;
@@ -697,6 +699,10 @@ auto checker::static_for_block_iterations(const ast::static_decl &decl,
             nested->if_condition != nullptr) {
           static_ifs.push_back(nested);
         }
+      }
+      if (const auto *call = ast::as<const ast::call_expr>(&child);
+          call != nullptr && cache_.static_for_calls_.contains(call)) {
+        static_calls.push_back(call);
       }
       return true;
     });
@@ -729,6 +735,20 @@ auto checker::static_for_block_iterations(const ast::static_decl &decl,
       if (condition.has_value() &&
           condition->kind == comptime::value_kind::boolean) {
         iteration.static_ifs.emplace(nested, condition->boolean);
+      }
+    }
+    // A `static def` call reading the loop bindings runs in each iteration.
+    for (const auto *call : static_calls) {
+      const auto &pending = cache_.static_for_calls_.at(call);
+      if (const auto *lit = try_fold_comptime_only_call(
+              *call, *pending.decl, pending.result_type, pending.type_slots)) {
+        iteration.folded.insert_or_assign(call, lit);
+      } else {
+        if (!silent) {
+          report_unfoldable_static_call(*call, *pending.decl);
+        }
+        comptime_eval_.pop_locals();
+        return std::nullopt;
       }
     }
     for (const auto *nested : inner) {
@@ -764,7 +784,8 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
       // A reference to this binding from its own initializer is a cycle,
       // not a reason to check it again on demand.
       cache_.statics_in_progress_.insert(&decl);
-      found = infer_expr(*decl.initializer, declared);
+      found = as_comptime_expr(
+          [&] { return infer_expr(*decl.initializer, declared); });
       cache_.statics_in_progress_.erase(&decl);
       // An unannotated binding's type is whatever its initializer settles
       // to, and every reader needs that type rather than the initializer's
@@ -789,7 +810,9 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
   }
   case ast::static_decl_kind::assertion:
     if (decl.assert_condition != nullptr && !decl.assert_condition->has_error) {
-      require_bool(*decl.assert_condition, "a `static assert` condition");
+      as_comptime_expr([&] {
+        require_bool(*decl.assert_condition, "a `static assert` condition");
+      });
       const auto evaluated = comptime_eval_.evaluate(*decl.assert_condition);
       // Skip the "condition was false" diagnostic (but not evaluation
       // itself, which still surfaces a genuine problem like an undefined
@@ -841,7 +864,8 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
     push_scope();
     auto element = k_unknown_type;
     if (decl.for_iterable != nullptr) {
-      element = static_for_element_type(*decl.for_iterable);
+      element = as_comptime_expr(
+          [&] { return static_for_element_type(*decl.for_iterable); });
     }
     for (const auto &pattern : decl.for_patterns) {
       if (pattern != nullptr) {
@@ -853,7 +877,8 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
       }
     }
     if (decl.for_guard != nullptr) {
-      require_bool(*decl.for_guard, "a `static for` guard");
+      as_comptime_expr(
+          [&] { require_bool(*decl.for_guard, "a `static for` guard"); });
     }
     if (decl.for_yield != nullptr) {
       const auto expected_element =

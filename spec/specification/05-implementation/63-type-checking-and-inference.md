@@ -17,6 +17,8 @@ A session runs in this order:
 5. Check functor bodies, then each file in turn. After each file, the generic instances that file asked for are made, so their diagnostics appear next to the code that caused them.
 6. Make any remaining instances and settle any results still open.
 
+A call is checked by finding its callee, then checking the arguments against that callee's signature. A free function written bare or module-qualified is found by `find_function_callee` and checked by `check_function_call`, which records the callee and binds any bracketed type arguments; a static on a type (a user type, a builtin scalar, an applied type such as `list[int32]`, or a solved type parameter) goes through `resolve_type_param_static` or the user-type path in `infer_qualified_call`. A call to a `static def` from run-time code is run while checking and recorded as the literal it returned (`fold_static_call`, `folded_comptime_calls`); inside a block `static for` it is folded per iteration. A variant is looked up by `resolve_variant_value` for construction and by `check_constructor_pattern` for patterns, in the same order: the expected or subject type, the module's sum types, the prelude.
+
 ## The inference engine
 
 Inference lives in `src/semantic/infer/` as a set of small, separately tested parts.

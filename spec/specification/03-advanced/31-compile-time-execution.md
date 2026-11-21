@@ -98,6 +98,7 @@ pure def clamp(x: float64, lo: float64, hi: float64) -> float64:
 ```
 
 - `pure` and `static` are independent modifiers (two separate axes — see [Compile-Time Semantics](32-compile-time-semantics.md#two-axes-phase-and-effect)). A function may be `pure` only, `static` only, or `static pure`.
+- A call to a `static def` from run-time code runs while compiling, and the program holds its result in place of the call: `let x = score(3)` is `let x = 6`. In a block `static for` the call runs once per iteration, with that iteration's bindings, so `total = total + score(it)` adds a different constant in each copy of the body. Every argument must be known at compile time and the result must be a scalar or a `str`; otherwise the call is an error (`checker::fold_static_call`). Inside a `static def`, a call to another runs when the caller runs.
 - Only calls to `pure` functions are legal inside `pre`/`post`/`invariant` conditions (`check.cpp:4430` rejects a non-pure call `in_contract_`). See [Contracts](34-contracts.md).
 - A `pure` lambda uses `pure` before the arrow: `let square = pure x => x * x`.
 
