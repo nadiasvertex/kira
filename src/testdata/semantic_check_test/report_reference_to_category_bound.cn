@@ -1,0 +1,15 @@
+module report_reference_to_category_bound
+
+# A category (`numeric`) names builtin scalars, never a reference to one. A
+# parameter bounded by a category is taken to copy and to carry no borrow,
+# so `T = &int32` here would let `pick` return a borrow of its own local.
+def same(p: &int32) -> &int32:
+    return p
+
+def pick[T: numeric](f: fn(&int32) -> T) -> T:
+    let a = 41
+    return f(&a)
+
+def main() -> int32:
+    let r = pick(same)
+    return *r + 1

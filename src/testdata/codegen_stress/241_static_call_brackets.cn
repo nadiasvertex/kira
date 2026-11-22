@@ -1,0 +1,57 @@
+module codegen_stress.static_call_brackets
+
+# Brackets on every static call form bind the static's own type parameter:
+# a type static, a builtin static, a static on an applied generic type, a
+# static on a bare generic type (its block parameter solved from the
+# arguments), and a prelude-constructor static. No argument mentions the
+# bracketed parameter, so each call compiles only if its brackets were
+# bound, and `size_of` of the bracketed type gives each form its own number.
+#
+# Both backends resolve calls from the same checker output and would agree
+# on a wrongly bound bracket, so `# expect:` is computed by hand.
+#
+# point.width[int8](1)          1 * 1          =      1
+# int64.width[int16](10)        2 * 10         =     20
+# wrap[int32].width[int64](100) 8 * 100        =    800
+# wrap.tag[pair](n, 1000)       16 * 1000      =  16000
+# option.width[bool](100000)    1 * 100000     = 100000
+# total                                          116821
+
+# expect: 116821
+
+type pair = { a: int32, b: int64 }
+
+type point = { pub x: int32 }
+
+type wrap[T] = { pub v: T }
+
+extend point:
+    static def width[T](scale: usize) -> usize:
+        return size_of[T]() * scale
+
+extend int64:
+    static def width[T](scale: usize) -> usize:
+        return size_of[T]() * scale
+
+extend[T] wrap[T]:
+    static def width[U](scale: usize) -> usize:
+        return size_of[U]() * scale
+
+    static def tag[U](w: T, scale: usize) -> usize:
+        return size_of[U]() * scale
+
+trait sized_kind[F[_]]:
+    def width[A](scale: usize) -> usize
+
+impl sized_kind for option:
+    def width[A](scale: usize) -> usize:
+        return size_of[A]() * scale
+
+def main() -> int32:
+    let n: int32 = 5
+    let a = point.width[int8](1)
+    let b = int64.width[int16](10)
+    let c = wrap[int32].width[int64](100)
+    let d = wrap.tag[pair](n, 1000)
+    let e = option.width[bool](100000)
+    return int32(a + b + c + d + e)

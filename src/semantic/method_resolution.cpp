@@ -29,7 +29,7 @@ auto method_resolver::target_pattern_matches(type_id pattern,
     // as a placeholder the receiver is free to instantiate however it
     // likes. This is only a candidate filter; whether the receiver's
     // actual value is one `match_value_params` can pin down
-    // is decided afterward, by `check_impl_generic_method_call`.
+    // is decided afterward, by the call pipeline (`solve_call_callee`).
     return true;
   }
   const auto concrete_entry = types_->entry(concrete);

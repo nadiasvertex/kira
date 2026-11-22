@@ -709,11 +709,11 @@ private:
             auto store = ptr_vec<hir_node>{};
             store.push_back(ptr<hir_node>(hir::make<hir_let>(
                 span, symbol, std::string("<discarded>"), std::move(expr))));
-            auto block = hir::make<hir_block>(span, semantic::k_unknown_type,
-                                              std::move(store));
-            auto *creation = block.get();
+            auto held = hir::make<hir_block>(span, semantic::k_unknown_type,
+                                             std::move(store));
+            auto *creation = held.get();
             stmt = ptr<hir_node>(hir::make<hir_expr_stmt>(
-                span, ptr<hir_expr>(std::move(block))));
+                span, ptr<hir_expr>(std::move(held))));
             note_temporary(symbol, type, creation, value);
           }
           after[k - i] = std::move(after_statement_);

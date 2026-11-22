@@ -185,29 +185,12 @@ auto walk_children(const std::vector<ast::ptr<NodeType>> &children,
   }
 }
 
-/// Walks the argument payloads of a type/functor application (a value
-/// argument is an expression; a type argument is a type).
-auto walk_type_args(const std::vector<ast::type_arg> &args, scope_id scope,
-                    const scope_build_context &context) -> void {
-  for (const auto &arg : args) {
-    walk_child(arg.value, scope, context);
-  }
-}
-
 /// Walks the bound or value type of each generic parameter.
 auto walk_type_param_bounds(const std::vector<ast::type_param> &params,
                             scope_id scope, const scope_build_context &context)
     -> void {
   for (const auto &param : params) {
     walk_child(param.bound_or_type, scope, context);
-  }
-}
-
-/// Walks every term of a `+`-joined bound.
-auto walk_bound(const ast::bound &bound, scope_id scope,
-                const scope_build_context &context) -> void {
-  for (const auto &term : bound.terms) {
-    walk_child(term.type, scope, context);
   }
 }
 

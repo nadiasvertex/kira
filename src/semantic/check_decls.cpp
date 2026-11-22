@@ -1451,8 +1451,9 @@ auto checker::check_trait_decl(const ast::trait_decl &decl) -> void {
       continue;
     }
     if (item->kind == ast::node_kind::func_decl) {
-      check_function(ast::cast<const ast::func_decl>(*item),
-                     /*at_module_scope=*/false);
+      const auto &method = ast::cast<const ast::func_decl>(*item);
+      record_trait_method_signature(decl, method);
+      check_function(method, /*at_module_scope=*/false);
     }
   }
   session_.enclosing_block_type_params_ = saved_block_type_params;
@@ -1461,6 +1462,116 @@ auto checker::check_trait_decl(const ast::trait_decl &decl) -> void {
   function_.self_type_ = saved_self;
   function_.self_assoc_types_ = saved_assoc;
   pop_type_params();
+}
+
+auto checker::is_settled_type(type_id id) -> bool {
+  const auto entry = session_.types_.entry(id); // copy: callers may intern
+  switch (entry.kind) {
+  case type_kind::unknown_kind:
+  case type_kind::error_kind:
+  case type_kind::type_var_kind:
+    return false;
+  default:
+    break;
+  }
+  const auto has_result =
+      entry.kind == type_kind::fn_kind || entry.kind == type_kind::ref_kind ||
+      entry.kind == type_kind::ptr_kind ||
+      entry.kind == type_kind::array_kind ||
+      entry.kind == type_kind::param_app_kind;
+  return (!has_result || is_settled_type(entry.result)) &&
+         std::ranges::all_of(entry.args, [this](type_id arg) -> bool {
+           return is_settled_type(arg);
+         });
+}
+
+auto checker::record_trait_method_signature_early(
+    const ast::trait_decl &trait, const ast::func_decl &method,
+    const module_members *owner, file_id_type file) -> void {
+  const auto saved_module = file_.module_;
+  const auto saved_file = file_.file_id_;
+  const auto saved_self = function_.self_type_;
+  const auto saved_block_type_params = session_.enclosing_block_type_params_;
+  file_.module_ = owner;
+  file_.file_id_ = file;
+  function_.self_type_ = session_.types_.type_param("self");
+  session_.enclosing_block_type_params_ = &trait.type_params;
+  push_type_params(trait.type_params);
+  record_trait_method_signature(trait, method);
+  pop_type_params();
+  session_.enclosing_block_type_params_ = saved_block_type_params;
+  function_.self_type_ = saved_self;
+  file_.file_id_ = saved_file;
+  file_.module_ = saved_module;
+}
+
+auto checker::record_trait_method_signature(const ast::trait_decl &trait,
+                                            const ast::func_decl &method)
+    -> void {
+  auto &types = session_.types_;
+  const auto self = function_.self_type_;
+  const auto saved_assoc = std::exchange(function_.self_assoc_types_, {});
+  const auto has_self = !method.params.empty() &&
+                        param_name_of(method.params.front()) == "self";
+  auto params = signature_params(method, file_.module_, /*skip_self=*/has_self,
+                                 &trait.type_params);
+  // A default body with no written result type is inferred when the body is
+  // checked; such a method gets no entry. Without a body it returns `unit`.
+  const auto has_body =
+      method.body_expr != nullptr || !method.body_stmts.empty();
+  const auto result =
+      method.return_type != nullptr
+          ? signature_return_type(method, file_.module_, &trait.type_params)
+      : has_body ? k_unknown_type
+                 : types.builtin("unit");
+  function_.self_assoc_types_ = saved_assoc;
+
+  if (!is_settled_type(result)) {
+    return;
+  }
+  auto receiver = trait_receiver::none;
+  auto param_types = std::vector<type_id>{};
+  if (has_self) {
+    const auto &self_param = method.params.front();
+    if (self_param.type_annotation != nullptr) {
+      // A `self` written with a type has no receiver rule to read here.
+      return;
+    }
+    // The same rule that fills `consuming_receivers_` for each impl.
+    if (trait.name == "into_iterator" && method.name == "into_iter") {
+      receiver = trait_receiver::consuming;
+      param_types.push_back(self);
+    } else {
+      const auto *binding =
+          ast::as<const ast::binding_pattern>(self_param.pattern.get());
+      const auto is_mut = binding != nullptr && binding->is_mut;
+      receiver = is_mut ? trait_receiver::exclusive : trait_receiver::shared;
+      param_types.push_back(types.ref_to(self, is_mut));
+    }
+  }
+  for (const auto &param : params) {
+    if (!is_settled_type(param.type)) {
+      return;
+    }
+    param_types.push_back(param.type);
+  }
+  auto generic_params = std::vector<type_id>{self};
+  for (const auto &param : trait.type_params) {
+    generic_params.push_back(param_id(param));
+  }
+  for (const auto &param : method.type_params) {
+    generic_params.push_back(param_id(param));
+  }
+  trait_method_signatures_.insert_or_assign(
+      &method,
+      trait_method_signature{
+          .trait = &trait,
+          .trait_name = trait.name,
+          .owner_module =
+              file_.module_ != nullptr ? file_.module_->module_name : "",
+          .generic_params = std::move(generic_params),
+          .signature = types.fn_of(std::move(param_types), result),
+          .receiver = receiver});
 }
 
 /// Checks a `concept` declaration: binds its parameters as generic type

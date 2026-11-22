@@ -35,12 +35,12 @@ namespace cinder::semantic::detail {
 /// diagnostic raised inside a monomorphized body points back at the call that
 /// asked for that body.
 struct instantiation_frame {
-  source_span call_span;      ///< The call that demanded this instance.
+  source_span call_span{};      ///< The call that demanded this instance.
   file_id_type call_file = 0; ///< File that call was written in.
-  std::string instance_name;  ///< e.g. `collect$list_iter_int32_$int32`.
+  std::string instance_name{};  ///< e.g. `collect$list_iter_int32_$int32`.
   /// One line per parameter solved from the expected type rather than from
   /// an argument.
-  std::vector<std::string> context_solutions;
+  std::vector<std::string> context_solutions{};
   /// The frame is a use of the generic lambda `instance_name`, which checks
   /// its own copy of the lambda (`instantiate_generic_lambda`).
   bool lambda_use = false;

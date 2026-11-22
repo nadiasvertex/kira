@@ -3413,7 +3413,7 @@ auto test_run_reports_exit_code_and_silent_summary() -> void {
 /// the function itself is written, but every external call site used to
 /// re-resolve that same return-type AST node from scratch under its *own*
 /// module's imports (`signature_return_type` inside
-/// `check_call_against_decl`'s non-generic path never swapped `file_id_` to
+/// `check_call`'s non-generic path never swapped `file_id_` to
 /// the callee's declaring file). A return type naming a type the callee's
 /// module only reached via `use` (`def make() -> option[foo]` over `use
 /// other.foo`) then resolved to `option[_]` for every caller outside that
@@ -3854,7 +3854,7 @@ auto test_run_for_loop_over_user_std_iterator() -> void {
 /// A free function generic over *types* is monomorphized once per concrete
 /// type its call sites solve for (`identity$int32`, `choose$int32`) and then
 /// runs — the template that used to fail lowering wholesale now reaches a
-/// backend through its instances (`instantiate_generic_function`).
+/// backend through its instances (`name_generic_call`).
 auto test_run_type_generic_free_function() -> void {
   auto temp = make_temp_dir();
   auto source_path = temp.path / "sample_type_generic.cn";

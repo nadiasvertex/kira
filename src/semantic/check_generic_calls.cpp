@@ -1213,25 +1213,33 @@ auto checker::name_impl_method_instance(const ast::call_expr &call,
   // The settled receiver's own entry and method, not the open one's:
   // `list[?a]` and `list[int32]` are different entries with different
   // method tables.
-  if (mentions_type_param(settled)) {
-    defer_impl_method_call(call, settled);
-    return;
-  }
-  const auto &entry = session_.types_.entry(settled);
   const auto *found = resolve_method(settled, method_name).method;
   if (found == nullptr) {
     return;
   }
-  auto bindings = param_subst{};
-  match_params(found->impl_target_pattern, settled, bindings);
-  solve_impl_value_params(*found, settled, bindings);
-  auto scoped = found->fixed_type_params;
-  scoped.merge(bindings_by_name(bindings));
-  auto solution = generic_solution{};
-  carry_impl_value_slots(*found, bindings, solution);
-  solution.suffix = std::format("${}", mangle_type_for_instance(settled));
-  (void)finish_impl_generic_method_call(call, *found, entry.name, receiver,
-                                        settled, bindings, scoped, solution);
+  const auto *field = call.callee != nullptr &&
+                              call.callee->kind == ast::node_kind::field_expr
+                          ? call.callee.get()
+                          : nullptr;
+  const auto callee = call_callee{
+      .form = callee_form::member,
+      .decl = found->decl,
+      .owner = found->owner,
+      .decl_file = found->file_id,
+      .method = found,
+      .receiver = receiver_use::self_param,
+      .receiver_expr = &receiver,
+      .self_type = settled,
+      .target_name = std::string(session_.types_.entry(settled).name),
+      .callee_node = field,
+      .display_name = found->decl->name};
+  auto block = param_subst{};
+  if (found->block_type_params != nullptr) {
+    match_params(found->impl_target_pattern, settled, block);
+    solve_impl_value_params(*found, settled, block);
+  }
+  (void)name_member_instance(call, callee, settled, block, generic_solution{},
+                             /*check_bounds=*/true);
 }
 
 /// Queues a call to a function with an unannotated parameter.
@@ -1418,14 +1426,6 @@ auto checker::finish_open_results(bool last) -> void {
   file_.file_id_ = saved_file;
 }
 
-/// One annotated parameter's declared type, resolved as `signature_params`
-/// would.
-auto checker::signature_param_type(const ast::func_decl &decl,
-                                   const module_members *owner, size_t index)
-    -> type_id {
-  return signature_params(decl, owner, /*skip_self=*/false)[index].type;
-}
-
 /// Drains both deferred queues until neither has anything left.
 ///
 /// They feed each other, so neither can be drained once. Wiring a leaf
@@ -1601,6 +1601,26 @@ auto checker::record_instance(const pending_instance &item) -> void {
   session_.const_generic_instances_.push_back(const_generic_instance{
       .decl = item.instance, .owner_module = item.owner->module_name});
   instance_templates_[item.instance] = item.tmpl;
+  // In the order the template lists its parameters, which is the order of
+  // its core function's `generic_params`.
+  auto args = std::vector<type_id>{};
+  const auto add = [&](const std::vector<ast::type_param> &params) -> bool {
+    for (const auto &param : params) {
+      if (param.name.empty()) {
+        continue;
+      }
+      const auto answer = instance_answer(item, param.name);
+      if (!answer.has_value()) {
+        return false;
+      }
+      args.push_back(settle(*answer));
+    }
+    return true;
+  };
+  if ((item.block_type_params == nullptr || add(*item.block_type_params)) &&
+      add(item.tmpl->type_params)) {
+    instance_generic_args_[item.instance] = std::move(args);
+  }
 }
 
 auto checker::instance_answers_are_concrete(const pending_instance &item)

@@ -275,7 +275,7 @@ private:
   /// A resolved call target, in the shape lowering will mangle it into:
   /// `owner.module::target::name`, plus the trait it went through and
   /// whether a receiver is passed.
-  [[nodiscard]] static auto callee_text(const resolved_callee &callee)
+  [[nodiscard]] auto callee_text(const resolved_callee &callee) const
       -> std::string {
     auto text = std::string{};
     if (!callee.owner_module.empty()) {
@@ -292,6 +292,20 @@ private:
     }
     if (callee.receiver != nullptr) {
       text += " recv";
+    }
+    if (!callee.template_args.empty()) {
+      auto args = std::string{};
+      for (const auto arg : callee.template_args) {
+        args += (args.empty() ? "" : ", ") + ty(arg);
+      }
+      text += std::format(" args=[{}]", args);
+    }
+    if (callee.bound.has_value()) {
+      auto args = std::string{};
+      for (const auto arg : callee.bound->trait_args) {
+        args += (args.empty() ? "" : ", ") + ty(arg);
+      }
+      text += std::format(" bound={}[{}]", ty(callee.bound->self_type), args);
     }
     return text;
   }
@@ -430,7 +444,7 @@ auto renderer::run() -> std::string {
                  return std::format("({})", text);
                });
 
-  const auto callee = [](const auto &item) -> auto {
+  const auto callee = [this](const auto &item) -> auto {
     return callee_text(item.second);
   };
   node_section("resolved_callees", checked_.resolved_callees, callee);

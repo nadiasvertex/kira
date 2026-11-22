@@ -81,6 +81,9 @@ auto checker::take_checked_types() -> checked_types {
   // itself a walk: it records types of its own, and any leaf it mints has
   // to be settled by the same pass that settles every other.
   flush_deferred();
+  // That flush replays template calls too (`list[T]::drop` calling
+  // `mem::free[T]`), after `run_impl`'s own check ran.
+  check_replayed_template_args();
   // Refinements have done their work by now — every obligation is raised
   // and discharged during checking, and a predicate has no runtime
   // existence. Erase them here, once, at the boundary, so no downstream
@@ -283,6 +286,7 @@ auto checker::take_checked_types() -> checked_types {
       .generic_lambda_uses = std::move(generic_lambda_uses_),
       .implicit_signatures = std::move(implicit_signatures_),
       .instance_templates = std::move(instance_templates_),
+      .instance_generic_args = std::move(instance_generic_args_),
       .consuming_receivers = std::move(consuming_receivers_),
       .borrow_bearing_types = std::move(borrow_bearing),
       .own_borrow_bearing_types = std::move(own_borrow_bearing),
@@ -291,6 +295,7 @@ auto checker::take_checked_types() -> checked_types {
   result.drop = drop_results{.drop_plans = std::move(session_.drop_plans_)};
   result.shapes = std::move(shapes);
   result.open_shapes = std::move(open_shapes);
+  result.trait_method_signatures = std::move(trait_method_signatures_);
   return result;
 }
 
@@ -599,7 +604,7 @@ auto checker::derive_trait_for_method(std::string_view name)
 /// fragments from separate `evaluate_derive_call`s, registered against
 /// separate target types. Everything downstream is then the ordinary
 /// concrete path: a method whose `impl_target_pattern` is an applied type
-/// satisfies `impl_needs_instance`, so `check_impl_generic_method_call`
+/// satisfies `impl_needs_instance`, so the call pipeline (`member_instance`)
 /// monomorphizes it through `find_or_check_generic_instance` — which
 /// checks the body with `function_.self_type_` bound to the instantiation,
 /// names it per instance, and records it in `session_.const_generic_instances_`
@@ -1014,6 +1019,7 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
   flush_deferred();
   finish_open_results(/*last=*/true);
   finish_pending_interp_segments();
+  check_replayed_template_args();
 }
 
 } // namespace detail

@@ -3664,8 +3664,8 @@ auto test_verifier_checks_generators() -> void {
   auto reread = f->function("count$step");
   const auto suspend = step_index(reread, hir::op_kind::coroutine_suspend);
   auto copy = hir::storage_op{.kind = hir::op_kind::compute,
-                              .computation = hir::compute_kind::copy,
-                              .dest = reread.ops[suspend].source};
+                              .dest = reread.ops[suspend].source,
+                              .computation = hir::compute_kind::copy};
   copy.operands.push_back(
       hir::operand{.kind = hir::operand_kind::read,
                    .where = reread.ops[suspend].source,
@@ -4114,11 +4114,13 @@ auto test_a_crew_waits_for_its_tasks() -> void {
   // The wait reads a crew that has a value.
   auto unset = f->function("in_task$step");
   unset.slots.push_back(unset.slots[4]);
-  unset.slots.back().id = unset.slots.size() - 1;
+  unset.slots.back().id =
+      static_cast<hir::storage_id>(unset.slots.size() - 1);
   unset.slots.back().owner = unset.slots.back().id;
   unset.slots.back().env_offset = 1000;
   unset.ops[find_op(unset, hir::op_kind::coroutine_await)].source =
-      place_at(unset.slots.size() - 1, unset.slots[4].type);
+      place_at(static_cast<hir::storage_id>(unset.slots.size() - 1),
+               unset.slots[4].type);
   expect_rejects(*f, unset, hir::verify_error_kind::uninitialized,
                  "a wait on a crew slot nothing wrote");
   // The tasks the block hands back are released if it is cancelled first.

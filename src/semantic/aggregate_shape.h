@@ -28,8 +28,8 @@ struct field_shape {
 /// One sum variant of a concrete instance: its name and payload types, in
 /// declaration order. A unit variant has an empty payload.
 struct variant_shape {
-  std::string name;
-  std::vector<type_id> payload;
+  std::string name{};
+  std::vector<type_id> payload{};
 };
 
 /// The members of one struct or sum instance.
@@ -37,10 +37,10 @@ struct aggregate_shape {
   /// Struct instances only: the declaration carries the `packed` modifier.
   bool packed = false;
   /// Struct instances only: fields in declaration order.
-  std::vector<field_shape> fields;
+  std::vector<field_shape> fields{};
   /// Sum instances (user sums, `option`, `result`) only: variants in
   /// declaration order. The index of a variant is its tag.
-  std::vector<variant_shape> variants;
+  std::vector<variant_shape> variants{};
 };
 
 /// The shape of every settled, closed struct and sum instance the checker

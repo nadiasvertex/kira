@@ -300,9 +300,9 @@ enum class qualified_path_status : uint8_t {
 struct qualified_path_resolution {
   qualified_path_status status =
       qualified_path_status::unresolved; ///< Overall outcome.
-  std::string absolute_path; ///< Absolute path text that was checked.
+  std::string absolute_path{}; ///< Absolute path text that was checked.
   std::string
-      containing_module_name; ///< Longest module-path prefix that resolved.
+      containing_module_name{}; ///< Longest module-path prefix that resolved.
   size_t resolved_module_prefix =
       0; ///< Segment count consumed by that module prefix.
   const module_scope_symbol_record *symbol =
@@ -311,7 +311,7 @@ struct qualified_path_resolution {
   /// declares but the referring module cannot see — see
   /// `root_visible_without_import`. The diagnostic then points at the
   /// missing `use` instead of at the path's contents.
-  std::string invisible_root;
+  std::string invisible_root{};
 };
 
 /// Ambient state threaded through the qualified-path validation walk: the

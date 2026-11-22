@@ -1,0 +1,47 @@
+module codegen_stress.bracket_types_literal_argument
+
+# A bracketed type argument gives a literal argument its type, on the bare
+# form and on every static form. `3000000000` does not fit the `int32` a
+# literal defaults to, so each call compiles only if the literal was typed
+# against the bracketed `int64`; `2000000000` fits `int32`, and was once
+# accepted as one and then refused by lowering ("implicit conversion").
+#
+# Both backends type literals from the same checker output, so `# expect:`
+# is computed by hand.
+#
+# ident[int64](3000000000) - 2999999999          =    1
+# point.ident[int64](2000000000) - 1999999990    =   10
+# wrap[int32].ident[int64](2000000000) - 1999999900 = 100
+# option.ident[int64](2000000000) - 1999999000   = 1000
+# total                                            1111
+
+# expect: 1111
+
+type point = { pub x: int32 }
+
+type wrap[T] = { pub v: T }
+
+def ident[T](v: T) -> T:
+    return v
+
+extend point:
+    static def ident[T](v: T) -> T:
+        return v
+
+extend[T] wrap[T]:
+    static def ident[U](v: U) -> U:
+        return v
+
+trait ident_kind[F[_]]:
+    def ident[A](v: A) -> A
+
+impl ident_kind for option:
+    def ident[A](v: A) -> A:
+        return v
+
+def main() -> int32:
+    let a = ident[int64](3000000000) - 2999999999
+    let b = point.ident[int64](2000000000) - 1999999990
+    let c = wrap[int32].ident[int64](2000000000) - 1999999900
+    let d = option.ident[int64](2000000000) - 1999999000
+    return int32(a + b + c + d)

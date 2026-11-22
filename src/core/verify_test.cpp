@@ -2014,6 +2014,337 @@ auto test_c8_generic_argument_count() -> void {
   }
 }
 
+/// A template `name[params...](args...) -> ret` whose body is its first
+/// parameter, or a unit literal for `ret == unit`.
+auto make_template(world &w, std::string name, const ast::func_decl *decl,
+                   std::vector<tid> generic_params, std::vector<tid> param_types, tid ret)
+    -> ptr<function> {
+  auto params = std::vector<param>{};
+  for (const auto t : param_types) {
+    params.push_back(prm(w.fresh(), t));
+  }
+  auto result = ret == w.unit || params.empty() ? ptr<expr>{}
+                                                : use_of(w, pl(params.front().symbol, ret));
+  auto f = make_fn(std::move(name), std::move(params), ret, blk(ret, {}, std::move(result)));
+  f->decl = decl;
+  f->generic_params = std::move(generic_params);
+  return f;
+}
+
+auto test_c2_template_callees() -> void {
+  begin("C2");
+  auto w = world{};
+  auto &t = w.checked.types;
+  const auto T = w.typ_t;
+  const auto U = t.type_param("U");
+  const auto A = t.type_param("A");
+  const auto B = t.type_param("B");
+  const auto V = t.type_param("V");
+  ast::func_decl g_decl;
+  ast::func_decl h_decl;
+  ast::func_decl unit_decl;
+  // g[U](u: U) -> U,  h[A, B](a: A, b: B) -> A,  none[U]() -> unit.
+  const auto g = [&] { return make_template(w, "g", &g_decl, {U}, {U}, U); };
+  const auto h = [&] { return make_template(w, "h", &h_decl, {A, B}, {A, B}, A); };
+  const auto none = [&] { return make_template(w, "none", &unit_decl, {U}, {}, w.unit); };
+  // A caller over `t: T, u: U2`, which makes one call.
+  const auto U2 = t.type_param("U2");
+  const auto t_sym = w.fresh();
+  const auto u_sym = w.fresh();
+  const auto caller = [&](std::vector<tid> generic_params, callee target, ptr_vec<expr> args,
+                          tid result) {
+    auto f = make_fn("f", {prm(t_sym, T), prm(u_sym, U2)}, w.unit,
+                     blk(w.unit, S(ex(call_of(result, std::move(target), std::move(args))))));
+    f->generic_params = std::move(generic_params);
+    return f;
+  };
+  const auto targ = [&] { return use_of(w, pl(t_sym, T)); };
+  const auto uarg = [&] { return use_of(w, pl(u_sym, U2)); };
+  const auto with_args = [](callee c, std::vector<tid> args) {
+    c.generic_args = std::move(args);
+    return c;
+  };
+  const auto run2 = [&](ptr<function> callee_fn, ptr<function> caller_fn) {
+    auto fs = std::vector<ptr<function>>{};
+    fs.push_back(std::move(callee_fn));
+    fs.push_back(std::move(caller_fn));
+    return verify_all(w, std::move(fs));
+  };
+
+  ok(run2(g(), caller({T, U2}, with_args(fn_callee(&g_decl, sig_of(w, {T}, T), "g"), {T}),
+                      E(targ()), T)),
+     "a template calling a template: its signature under the caller's arguments");
+  bad(run2(g(), caller({T, U2},
+                       with_args(fn_callee(&g_decl, sig_of(w, {w.i32}, w.i32), "g"), {T}),
+                       E(num(w)), w.i32)),
+      "C2", "a template callee whose signature is not the template's under its arguments");
+  ok(run2(h(), caller({T, U2},
+                      with_args(fn_callee(&h_decl, sig_of(w, {U2, T}, U2), "h"), {U2, T}),
+                      E(uarg(), targ()), U2)),
+     "a two-parameter template callee with its arguments in the caller's order");
+  bad(run2(h(), caller({T, U2},
+                       with_args(fn_callee(&h_decl, sig_of(w, {T, U2}, T), "h"), {U2, T}),
+                       E(targ(), uarg()), T)),
+      "C2", "a two-parameter template callee whose arguments are swapped");
+  // C8 counts a template callee's arguments against the template it names.
+  {
+    begin("C8");
+    bad(run2(h(), caller({T, U2},
+                         with_args(fn_callee(&h_decl, sig_of(w, {T, U2}, T), "h"), {T}),
+                         E(targ(), uarg()), T)),
+        "C8", "a template callee with one argument for two parameters");
+  }
+  {
+    begin("C10");
+    ok(run2(g(), caller({T, U2}, with_args(fn_callee(&g_decl, sig_of(w, {w.i32}, w.i32), "g"),
+                                           {w.i32}),
+                        E(num(w)), w.i32)),
+       "a template callee with concrete arguments inside a template");
+    auto concrete = make_fn("concrete", w.std_params(), w.unit,
+                            blk(w.unit, S(ex(call_of(w.i32,
+                                                     with_args(fn_callee(&g_decl,
+                                                                         sig_of(w, {w.i32}, w.i32),
+                                                                         "g"),
+                                                               {w.i32}),
+                                                     E(num(w)))))));
+    bad(run2(g(), std::move(concrete)), "C10",
+        "a function with no generic parameters calling a template");
+  }
+  {
+    begin("C6");
+    ok(run2(none(), caller({T, U2}, with_args(fn_callee(&unit_decl, sig_of(w, {}, w.unit),
+                                                        "none"),
+                                              {T}),
+                           E(), w.unit)),
+       "a template argument the caller lists");
+    bad(run2(none(), caller({T, U2}, with_args(fn_callee(&unit_decl, sig_of(w, {}, w.unit),
+                                                         "none"),
+                                               {V}),
+                            E(), w.unit)),
+        "C6", "a template argument naming a parameter the caller does not list");
+  }
+}
+
+auto test_c9_trait_method_callee() -> void {
+  begin("C9");
+  auto w = world{};
+  auto &t = w.checked.types;
+  const auto self = t.type_param("self");
+  // trait iterator[Ti]: def next(mut self) -> option[Ti]
+  ast::trait_decl iterator;
+  iterator.name = "iterator";
+  iterator.type_params.emplace_back();
+  iterator.type_params.back().name = "Ti";
+  ast::func_decl next_decl;
+  ast::func_decl other_decl;
+  const auto Ti = t.type_param("Ti");
+  const auto mut_self = t.ref_to(self, true);
+  w.checked.trait_method_signatures[&next_decl] = sem::trait_method_signature{
+      .trait = &iterator,
+      .trait_name = "iterator",
+      .owner_module = "m",
+      .generic_params = {self, Ti},
+      .signature = t.fn_of({mut_self}, t.builtin_generic("option", {Ti})),
+      .receiver = sem::trait_receiver::exclusive};
+
+  const auto I = t.type_param("I");
+  const auto T = w.typ_t;
+  const auto mut_i = t.ref_to(I, true);
+  const auto option_t = t.builtin_generic("option", {T});
+  const auto next_callee = [&](tid self_type, std::vector<tid> trait_args, tid signature) {
+    auto c = callee{};
+    c.kind = callee::form::trait_method;
+    c.decl = &next_decl;
+    c.name = "next";
+    c.owner_module = "m";
+    c.trait_name = "iterator";
+    c.self_type = self_type;
+    c.trait_args = std::move(trait_args);
+    c.signature = signature;
+    c.receiver = receiver_mode::exclusive;
+    return c;
+  };
+  // def f[I, T](it: I) { it.next() }  with `I: iterator[T]`
+  const auto run_next = [&](callee c, std::vector<tid> generic_params = {}) {
+    if (generic_params.empty()) {
+      generic_params = {I, T};
+    }
+    const auto it = w.fresh();
+    const auto result = t.entry(c.signature).result;
+    auto f = make_fn("f", {prm(it, I)}, w.unit,
+                     blk(w.unit, S(ex(call_of(result, std::move(c),
+                                              E(borrow_of(w, pl(it, I), true, true, true)))))));
+    f->generic_params = std::move(generic_params);
+    return verify_one(w, std::move(f));
+  };
+  const auto good_sig = t.fn_of({mut_i}, option_t);
+
+  ok(run_next(next_callee(I, {T}, good_sig)), "a call through a bound with the trait's signature");
+  {
+    auto c = next_callee(I, {T}, good_sig);
+    c.decl = &other_decl;
+    bad(run_next(std::move(c)), "C9", "1: a declaration with no trait method signature");
+  }
+  {
+    auto c = next_callee(I, {T}, good_sig);
+    c.trait_name = "into_iterator";
+    bad(run_next(std::move(c)), "C9", "1: a trait name that is not the method's trait");
+  }
+  {
+    auto c = next_callee(I, {T}, good_sig);
+    c.instance_of = &other_decl;
+    bad(run_next(std::move(c)), "C9", "2: an instance");
+  }
+  {
+    auto c = next_callee(I, {T}, good_sig);
+    c.value = use_of(w, loc(w, sym::fnv));
+    bad(run_next(std::move(c)), "C9", "2: a value");
+  }
+  {
+    // The same call on concrete types, in a function with no parameters.
+    const auto p = w.fresh();
+    auto c = next_callee(w.pair, {w.i32}, t.fn_of({w.mut_ref_pair}, w.option_i32));
+    auto f = make_fn("concrete", {prm(p, w.pair)}, w.unit,
+                     blk(w.unit, S(ex(call_of(w.option_i32, std::move(c),
+                                              E(borrow_of(w, pl(p, w.pair), true, true,
+                                                          true)))))));
+    bad(verify_one(w, std::move(f)), "C9", "3: a call through a bound outside a template");
+  }
+  bad(run_next(next_callee(I, {}, good_sig)), "C9", "4: too few trait arguments");
+  {
+    auto c = next_callee(I, {T}, good_sig);
+    c.generic_args = {T};
+    bad(run_next(std::move(c)), "C9", "4: own arguments for a method with none");
+  }
+  bad(run_next(next_callee(I, {T}, t.fn_of({mut_i}, t.builtin_generic("option", {I})))), "C9",
+      "5: a result that is not the trait's under the arguments");
+  bad(run_next(next_callee(T, {I}, good_sig)), "C9", "5: `Self` and the trait argument swapped");
+  {
+    auto c = next_callee(I, {T}, good_sig);
+    c.receiver = receiver_mode::none;
+    bad(run_next(std::move(c)), "C9", "6: a receiver mode the trait does not declare");
+  }
+  {
+    begin("C6");
+    const auto V = t.type_param("V");
+    bad(run_next(next_callee(I, {V}, t.fn_of({mut_i}, t.builtin_generic("option", {V})))),
+        {"C6", "T3"}, "a trait argument the caller does not list");
+    bad(run_next(next_callee(sem::k_unknown_type, {T}, good_sig)), {"C6", "C9"},
+        "an unsettled `Self`, which no signature matches");
+    begin("C9");
+  }
+
+  // trait maker: def make[n: usize]() -> array[int32, n + 1]   (no receiver)
+  ast::trait_decl maker;
+  maker.name = "maker";
+  ast::func_decl make_decl;
+  const auto n = t.type_param("n");
+  const auto array_of_poly = [&](tid underlying, sem::linear_poly poly) {
+    return t.array_of(w.i32, std::nullopt, t.symbolic_value(underlying, std::move(poly)));
+  };
+  const auto n_plus_1 =
+      sem::poly_add(sem::poly_variable(sem::poly_param_var("n", n)), sem::poly_constant(1));
+  w.checked.trait_method_signatures[&make_decl] =
+      sem::trait_method_signature{.trait = &maker,
+                                  .trait_name = "maker",
+                                  .owner_module = "m",
+                                  .generic_params = {self, n},
+                                  .signature = t.fn_of({}, array_of_poly(w.usize, n_plus_1)),
+                                  .receiver = sem::trait_receiver::none};
+  const auto S_ = t.type_param("S");
+  const auto m = t.type_param("m");
+  const auto m_var = sem::poly_variable(sem::poly_param_var("m", m));
+  const auto make_callee = [&](tid arg, tid signature) {
+    auto c = callee{};
+    c.kind = callee::form::trait_method;
+    c.decl = &make_decl;
+    c.name = "make";
+    c.trait_name = "maker";
+    c.self_type = S_;
+    c.generic_args = {arg};
+    c.signature = signature;
+    return c;
+  };
+  const auto run_make = [&](callee c) {
+    const auto result = t.entry(c.signature).result;
+    auto f = make_fn("g", {}, w.unit, blk(w.unit, S(ex(call_of(result, std::move(c), E())))));
+    f->generic_params = {S_, m};
+    return verify_one(w, std::move(f));
+  };
+  const auto m_value = t.symbolic_value(w.usize, m_var);
+  ok(run_make(make_callee(m_value, t.fn_of({}, array_of_poly(w.usize, sem::poly_add(
+                                                                 m_var, sem::poly_constant(1)))))),
+     "5: a value parameter answered by the caller's `m` (`n + 1` is `m + 1`)");
+  ok(run_make(make_callee(t.const_value(w.usize, 3),
+                          t.fn_of({}, t.array_of(w.i32, 4, t.const_value(w.usize, 4))))),
+     "5: a value parameter answered by a constant (`n + 1` is 4)");
+  bad(run_make(make_callee(m_value, t.fn_of({}, array_of_poly(w.usize, sem::poly_add(
+                                                                  m_var, sem::poly_constant(2)))))),
+      "C9", "5: `m + 2` where the trait's `n + 1` gives `m + 1`");
+  bad(run_make(make_callee(t.const_value(w.usize, 3),
+                           t.fn_of({}, t.array_of(w.i32, 3, t.const_value(w.usize, 3))))),
+      "C9", "5: a length of 3 where `n + 1` with `n := 3` gives 4");
+
+  // trait lift[F[_]]: def lift() -> F[int32]
+  ast::trait_decl lift;
+  lift.name = "lift";
+  lift.type_params.emplace_back();
+  lift.type_params.back().name = "F";
+  lift.type_params.back().higher_kinded_arity = 1;
+  ast::func_decl lift_decl;
+  const auto F = t.type_param("F", 1);
+  w.checked.trait_method_signatures[&lift_decl] =
+      sem::trait_method_signature{.trait = &lift,
+                                  .trait_name = "lift",
+                                  .owner_module = "m",
+                                  .generic_params = {self, F},
+                                  .signature = t.fn_of({}, t.param_app(F, {w.i32})),
+                                  .receiver = sem::trait_receiver::none};
+  const auto G = t.type_param("G", 1);
+  const auto H = t.type_param("H", 1);
+  const auto lift_callee = [&](tid trait_arg, tid signature) {
+    auto c = callee{};
+    c.kind = callee::form::trait_method;
+    c.decl = &lift_decl;
+    c.name = "lift";
+    c.trait_name = "lift";
+    c.self_type = S_;
+    c.trait_args = {trait_arg};
+    c.signature = signature;
+    return c;
+  };
+  const auto run_lift = [&](callee c) {
+    const auto result = t.entry(c.signature).result;
+    auto f = make_fn("h", {}, w.unit, blk(w.unit, S(ex(call_of(result, std::move(c), E())))));
+    f->generic_params = {S_, G, H};
+    return verify_one(w, std::move(f));
+  };
+  ok(run_lift(lift_callee(G, t.fn_of({}, t.param_app(G, {w.i32})))),
+     "5: a constructor parameter answered by the caller's `G` (`F[int32]` is `G[int32]`)");
+  bad(run_lift(lift_callee(G, t.fn_of({}, t.param_app(G, {w.i64})))), "C9",
+      "5: `G[int64]` where `F[int32]` gives `G[int32]`");
+  bad(run_lift(lift_callee(G, t.fn_of({}, t.param_app(H, {w.i32})))), "C9",
+      "5: `H[int32]` where `F := G` gives `G[int32]`");
+  bad(run_lift(lift_callee(G, t.fn_of({}, w.option_i32))), "C9",
+      "5: `option[int32]` where `F := G` gives `G[int32]`");
+  // A constructor as an argument is still refused by T2 (through C6), but
+  // the signature it gives is compared as the applied type.
+  const auto option_ctor = t.ctor_ref("option", "", nullptr, 1);
+  bad(run_lift(lift_callee(option_ctor, t.fn_of({}, w.option_i32))), "C6",
+      "5: `F := option` gives `option[int32]` (T2 refuses the constructor argument)");
+  bad(run_lift(lift_callee(option_ctor, t.fn_of({}, t.builtin_generic("list", {w.i32})))),
+      {"C6", "C9"}, "5: `F := option` does not give `list[int32]`");
+
+  {
+    begin("C7");
+    auto c = next_callee(I, {T}, good_sig);
+    auto f = make_fn("f", {}, w.unit,
+                     blk(w.unit, S(ex(fnref_of(good_sig, std::move(c))))));
+    f->generic_params = {I, T};
+    bad(verify_one(w, std::move(f)), "C7", "a function_ref of a trait method");
+  }
+}
+
 auto test_c7_function_ref() -> void {
   begin("C7");
   auto w = world{};
@@ -3041,6 +3372,8 @@ auto main() -> int {
   test_c6_generic_arguments();
   test_c7_function_ref();
   test_c8_generic_argument_count();
+  test_c2_template_callees();
+  test_c9_trait_method_callee();
   test_e1_literals();
   test_e2_primitives();
   test_e3_casts();

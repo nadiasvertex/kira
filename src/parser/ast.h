@@ -740,14 +740,14 @@ struct format_spec {
 /// optional self-documenting `=` and/or format spec.
 struct interp_segment {
   bool is_literal = true;   ///< Whether this segment is plain literal text.
-  std::string literal_text; ///< Escape-decoded text, valid when `is_literal`.
+  std::string literal_text{}; ///< Escape-decoded text, valid when `is_literal`.
 
-  ptr<expr> value;       ///< Embedded expression, valid when `!is_literal`.
+  ptr<expr> value{};       ///< Embedded expression, valid when `!is_literal`.
   bool self_doc = false; ///< Whether a trailing `=` was written.
   std::string
-      source_text;       ///< Exact source spelling of `value`, for `self_doc`.
+      source_text{};       ///< Exact source spelling of `value`, for `self_doc`.
   bool has_spec = false; ///< Whether a `:format_spec` was written.
-  format_spec spec;      ///< Parsed format spec, valid when `has_spec`.
+  format_spec spec{};      ///< Parsed format spec, valid when `has_spec`.
 };
 
 /// @brief A string literal containing one or more `{expr}` interpolations,
@@ -947,9 +947,9 @@ struct index_expr : expr {
 
 /// Function/method call: `expr(args...)`
 struct call_arg {
-  source_span span;                ///< Full source range of the argument.
-  std::optional<std::string> name; ///< Named-argument label when present.
-  ptr<expr> value;                 ///< Argument value expression.
+  source_span span{};                ///< Full source range of the argument.
+  std::optional<std::string> name{}; ///< Named-argument label when present.
+  ptr<expr> value{};                 ///< Argument value expression.
 };
 
 /// @brief Function or method invocation.
@@ -1826,10 +1826,10 @@ struct contract_clause {
 
 /// Parameter in a function signature.
 struct param {
-  source_span span;     ///< Full source range of the parameter.
-  ptr<pattern> pattern; ///< Binding pattern introduced by the parameter.
-  ptr<type_expr> type_annotation; ///< Optional explicit parameter type.
-  ptr<expr> default_value;        ///< Optional default argument expression.
+  source_span span{};     ///< Full source range of the parameter.
+  ptr<pattern> pattern{}; ///< Binding pattern introduced by the parameter.
+  ptr<type_expr> type_annotation{}; ///< Optional explicit parameter type.
+  ptr<expr> default_value{};        ///< Optional default argument expression.
 };
 
 /// Function declaration.

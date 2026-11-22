@@ -317,6 +317,11 @@ auto core_lowerer::call(const core::call &source)
   switch (target.kind) {
   case core::callee::form::function:
     break;
+  case core::callee::form::trait_method:
+    // Only templates call through a bound, and no template is lowered; the
+    // verifier rejects one anywhere else (C9, C10).
+    return refuse("a call through a bound in a lowered function (C9)",
+                  source.span);
   case core::callee::form::intrinsic:
     if (core::is_compiler_operation(target.name)) {
       return intrinsic_call(source);

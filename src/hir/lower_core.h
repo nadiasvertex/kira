@@ -37,12 +37,12 @@ namespace cinder::hir {
 /// A core construct lowering refused: the core node kind (or a narrower
 /// description, such as "intrinsic len"), and where it is.
 struct unsupported {
-  std::string kind;
+  std::string kind{};
   source_span span = source_span::dummy();
   /// The message the user sees when the program uses a feature the
   /// compiler does not build yet. Empty when the refusal is an internal
   /// compiler error: a verified core tree the lowering should handle.
-  std::string message;
+  std::string message{};
 };
 
 /// Lowers a function the adapter built on demand for compile-time code

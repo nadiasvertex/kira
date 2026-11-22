@@ -1,0 +1,40 @@
+module ownership.bound_receiver_calls
+
+# Calls through a bound lend their receiver as the trait declares: a
+# `mut self` call on a field of a `mut self` receiver, on a by-value
+# parameter and on a `var`, and a `self` call whose `int64` result does not
+# keep the receiver borrowed.
+trait counter:
+    def bump(mut self) -> int64
+    def peek(self) -> int64
+
+type wrap[C] = { inner: C }
+
+extend[C: counter] wrap[C]:
+    def step(mut self) -> int64:
+        return self.inner.bump()
+
+def on_param[C](c: C) -> int64 where C: counter:
+    return c.bump() + c.peek()
+
+def on_var[C](c: C) -> int64 where C: counter:
+    var k = c
+    let a = k.peek()
+    let b = k.bump()
+    return a + b + k.bump()
+
+type tally = { n: int64 }
+
+impl counter for tally:
+    def bump(mut self) -> int64:
+        self.n = self.n + 1
+        return self.n
+    def peek(self) -> int64:
+        return self.n
+
+# on_param: 11 + 11 = 22; on_var: 20 + 21 + 22 = 63; step twice: 31 + 32.
+# 22 + 63 + 63 = 148.
+def main() -> int32:
+    var w = wrap[tally] { inner: tally { n: 30 } }
+    let s = w.step() + w.step()
+    return int32(on_param(tally { n: 10 }) + on_var(tally { n: 20 }) + s)

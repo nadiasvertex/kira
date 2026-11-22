@@ -22,8 +22,8 @@ struct frame_request {
 struct frame_contributor {
   storage_id slot = k_invalid_storage;
   /// The source name, empty for a temporary.
-  std::string name;
-  source_span span;
+  std::string name{};
+  source_span span{};
   /// The slot's size, without alignment padding.
   uint64_t bytes = 0;
 };
@@ -36,10 +36,10 @@ struct frame_contributor {
 /// live in storage somebody else owns and add nothing. No two slots share
 /// bytes, so a loop cannot grow its function's frame.
 struct frame_plan {
-  std::string function;
+  std::string function{};
   /// Total bytes with alignment padding; `UINT64_MAX` when the sum overflowed.
   uint64_t bytes = 0;
-  std::vector<frame_contributor> contributors;
+  std::vector<frame_contributor> contributors{};
 
   [[nodiscard]] auto within(uint64_t limit) const -> bool {
     return bytes <= limit;

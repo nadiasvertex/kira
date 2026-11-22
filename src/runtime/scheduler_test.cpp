@@ -30,7 +30,7 @@ struct fake_task {
   uint64_t (*body)(fake_task &) = nullptr;
   uint64_t input = 0;
   fake_task *other = nullptr;
-  std::vector<fake_task *> many;
+  std::vector<fake_task *> many{};
   /// Which of the awaits in `body` is next.
   size_t cursor = 0;
 

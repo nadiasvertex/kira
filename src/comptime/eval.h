@@ -67,9 +67,9 @@ public:
       failed,
     };
     kind outcome = kind::not_run;
-    value result;
-    std::string message;
-    std::vector<diagnostic> notes;
+    value result{};
+    std::string message{};
+    std::vector<diagnostic> notes{};
   };
 
   /// Runs a call to `fn` with `args` (in parameter order, every parameter
@@ -152,11 +152,12 @@ public:
   /// silently: its arguments and then the call. `nullopt` when an argument
   /// is not a compile-time value or the call cannot run, so the caller can
   /// leave it as an ordinary call. `type_args` binds `fn`'s type
-  /// parameters to the types this call solved them to.
+  /// parameters to the types this call solved them to. `receiver` is the
+  /// receiver of a UFCS call (`k.double()`), `fn`'s first argument.
   [[nodiscard]] auto try_eval_ordinary_call(
       const ast::func_decl &fn, const ast::call_expr &call,
-      std::vector<std::pair<std::string, value>> type_args = {})
-      -> std::optional<value>;
+      std::vector<std::pair<std::string, value>> type_args = {},
+      const ast::expr *receiver = nullptr) -> std::optional<value>;
 
   /// The values a `static for` iterates over: an integer range (`a..b`,
   /// `a..=b`) or a list.

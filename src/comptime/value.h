@@ -68,22 +68,22 @@ struct value {
   bool boolean = false;
   __int128 integer = 0;
   double floating = 0.0;
-  std::string string;
+  std::string string{};
 
   /// Elements for `list`.
-  std::vector<value> elements;
+  std::vector<value> elements{};
 
   /// Declared/inferred type name for `struct_instance` (empty if the
   /// literal had no explicit type head), and the type's name for
   /// `type_value`.
-  std::string type_name;
+  std::string type_name{};
 
   /// Field values for `struct_instance`.
-  std::unordered_map<std::string, value> fields;
+  std::unordered_map<std::string, value> fields{};
 
   /// Variant tag for `variant_instance` (e.g. `"unix"`, `"x86_64"`,
   /// `"other"`); `type_name` (above) holds the sum type's own name.
-  std::string variant_tag;
+  std::string variant_tag{};
 
   /// Bound type declaration for `type_value`; never owning — declarations
   /// live for the whole checking session.

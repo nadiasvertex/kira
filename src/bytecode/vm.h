@@ -55,9 +55,9 @@ struct vm_failure {
   panic_reason reason = panic_reason::explicit_panic;
   /// The panic's own message (`panic("...")`'s text, what was refused), or
   /// the reason's description.
-  std::string message;
+  std::string message{};
   /// The calls active at the failure, innermost first.
-  std::vector<vm_frame_location> frames;
+  std::vector<vm_frame_location> frames{};
 };
 
 /// The bytecode VM, the reference execution tier. Dispatches one

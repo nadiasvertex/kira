@@ -1,0 +1,37 @@
+module codegen_stress.borrow_iter_instance_name
+
+# A `for x in &b` loop names its `iter[T]` instance the way a written call
+# does, by `T`. `iter(&outer)` solves `T := bag[int32]`, and the loop over
+# `&inner` solves `T := int32` for an operand of type `bag[int32]`. When the
+# loop named its instance by the operand, both were `iter$bag_int32_`, and
+# one call ran the other's body (todo 72).
+#
+# `iter` gives one tick per character of `T`'s name: 3 for `bag[int32]`
+# (`name()` is the head's name), 5 for `int32`. The written call adds its 3
+# ticks; the loop over `&inner` adds 100 for each of its 5 ticks.
+
+# expect: 503
+
+type bag[T] = { a: T, b: T }
+
+type ticks = { left: int32 }
+
+def iter[T](xs: &bag[T]) -> ticks:
+    return ticks { left: int32(T.name().len()) }
+
+extend ticks:
+    def next(mut self) -> option[int32]:
+        if self.left == 0:
+            return @none
+        self.left = self.left - 1
+        return @some(1)
+
+def main() -> int32:
+    let inner = bag { a: 1, b: 2 }
+    let outer = bag { a: bag { a: 10, b: 20 }, b: bag { a: 30, b: 40 } }
+    var total = 0
+    for t in iter(&outer):
+        total = total + t
+    for x in &inner:
+        total = total + x * 100
+    return total

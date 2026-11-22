@@ -1,0 +1,16 @@
+module ownership.bound_consuming_call_twice
+
+# A call through a bound to a consuming `self` (`into_iter`) moves its
+# receiver, so a second call uses a moved value. The trait is named like
+# std.iter's, whose consuming rule goes by that name; this one returns a
+# plain `list[T]`, so the call has a signature the template can read.
+trait into_iterator[T]:
+    def into_iter(self) -> list[T]
+
+def both[C](c: C) -> usize where C: into_iterator[int64]:
+    let a = c.into_iter()
+    let b = c.into_iter()
+    return a.len() + b.len()
+
+def main() -> int32:
+    return 0

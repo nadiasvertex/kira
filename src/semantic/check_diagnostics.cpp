@@ -24,7 +24,7 @@ auto checker::mark_error() -> void {
 ///
 /// One piece of source can be checked several times: a const-generic
 /// template's body is checked once as itself and again inside every
-/// instance made of it (`instantiate_generic_function`), and a trait-default
+/// instance made of it (`name_generic_call`), and a trait-default
 /// body once per implementing type (`monomorphize_trait_default`). A
 /// mistake in that source is *one* mistake — reporting it once per copy
 /// would tell the user, three times over, about a line they wrote once.

@@ -64,7 +64,7 @@ enum class local_role : std::uint8_t {
 };
 
 struct local_info {
-  std::string name; ///< The user's spelling; for a temporary, a description.
+  std::string name{}; ///< The user's spelling; for a temporary, a description.
   local_role role = local_role::binding;
   type_id type = k_unknown_type;
   source_span span = source_span::dummy();
@@ -80,7 +80,7 @@ struct local_info {
   /// otherwise.
   local_id parent = k_no_local;
   /// The `field_path` locals one field below this one.
-  std::vector<local_id> children;
+  std::vector<local_id> children{};
   /// Bound whole — by a plain `let`/`var name`, or a parameter that is a
   /// single name — so it owns its value outright. A pattern binding may
   /// instead alias part of its subject (partial moves are not tracked), so

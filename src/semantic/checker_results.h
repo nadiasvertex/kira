@@ -18,6 +18,31 @@ namespace cinder::semantic {
 //  Checker results — what the checker hands to later stages.
 // ==========================================================================
 
+/// How a trait method takes its receiver, as the trait declares it.
+enum class trait_receiver : std::uint8_t {
+  none,      ///< A static: no `self`.
+  shared,    ///< `self`, lent as `&self`.
+  exclusive, ///< `mut self`, lent as `&mut self`.
+  consuming, ///< A `self` the method consumes (`into_iterator::into_iter`).
+};
+
+/// A trait method's signature as its trait declares it, in the trait's own
+/// terms. A call through a bound is this signature with `generic_params`
+/// replaced by `Self`, the bound's trait arguments and the call's own
+/// arguments, in that order.
+struct trait_method_signature {
+  const ast::trait_decl *trait = nullptr;
+  std::string trait_name;
+  std::string owner_module;
+  /// The trait's `self` (`type_param("self")`), then the trait's
+  /// parameters, then the method's own.
+  std::vector<type_id> generic_params;
+  /// The `fn` type, receiver first: `&self` for `self`, `&mut self` for
+  /// `mut self`, `self` for a consuming receiver.
+  type_id signature = k_unknown_type;
+  trait_receiver receiver = trait_receiver::none;
+};
+
 /// The persisted result of type-checking one session: the interned
 /// `type_table` every `type_id` below indexes into, plus the resolved type
 /// of every expression node the checker actually visited. Several
@@ -43,11 +68,10 @@ namespace cinder::semantic {
 /// never checked) has no entry in any of these maps — look it up with
 /// `.find`, not `.at`. This is what a later typed-lowering pass reads
 /// instead of re-deriving types from the AST a second time.
-/// Per-call-site argument-to-parameter mapping for a call resolved against
-/// a real `ast::func_decl` (a free function, a method, or a trait default
-/// body) via `check_call_against_decl` — the only call form that supports
-/// named arguments and defaults, since a bare `fn(...)`-typed callee has no
-/// parameter names to resolve a named argument against.
+/// Per-call-site argument-to-parameter mapping, written by `check_call`
+/// for every call it checks. Only a call to a declaration (a free function,
+/// a method, or a trait default body) can use named arguments and
+/// defaults, since a bare `fn(...)`-typed callee has no parameter names.
 /// `args_by_param[i]` is the AST expression supplying the i-th declared
 /// parameter (in the same order `signature_params` produces, i.e. with
 /// `self` already skipped for a method call) — whichever call argument
@@ -102,10 +126,19 @@ struct implicit_signature {
 /// method was called on (`field.object`) for a real instance-method call —
 /// lowering evaluates it and passes it as the callee's hidden first (`self`)
 /// argument; null for every other call shape (there is no receiver to pass).
+/// A call through a bound, as the template sees it: the trait, the type the
+/// bound is on (`Self`), and the bound's trait arguments, all in the
+/// template's own parameters.
+struct bound_call {
+  const ast::trait_decl *trait = nullptr;
+  type_id self_type = k_unknown_type; ///< The bound's subject, e.g. `I`.
+  std::vector<type_id> trait_args;    ///< The fact's arguments, e.g. `[T]`.
+};
+
 struct resolved_callee {
   const ast::func_decl *decl = nullptr;
-  std::string owner_module;
-  std::string impl_target_type;
+  std::string owner_module{};
+  std::string impl_target_type{};
   const ast::expr *receiver = nullptr;
   /// The trait this call's method implements, if resolution went through a
   /// trait impl (`method_entry::trait_name`); empty for an inherent/`extend`
@@ -113,7 +146,19 @@ struct resolved_callee {
   /// identify a specific, known-consuming trait method
   /// (`into_iterator::into_iter`) without a general by-value-`self`
   /// convention to key off — see `receiver_mode` in `ownership_cfg.cpp`.
-  std::string trait_name;
+  std::string trait_name{};
+  /// Inside a template, for a callee that is itself a template: its generic
+  /// arguments in its template parameter order (the enclosing block's, then
+  /// its own), written in the caller's parameters. Empty everywhere else,
+  /// including every instance: there the callee is an instance, whose
+  /// arguments are `instance_generic_args`.
+  std::vector<type_id> template_args{};
+  /// A call through a bound (`x.next()` with `I: iterator[T]`, `T.zero()`):
+  /// `decl` is the trait's method, `template_args` the method's own
+  /// arguments, and the trait's signature for it is in
+  /// `checked_types::trait_method_signatures`. Only inside a template;
+  /// each instance's record names the impl's method instead.
+  std::optional<bound_call> bound{};
 };
 
 /// One implicit `deref()` call that member lookup inserted: a field or method
@@ -166,9 +211,9 @@ struct reified_value {
   };
   shape kind = shape::scalar;
   type_id type = 0;
-  comptime::value leaf;
-  std::vector<std::string> names;
-  std::vector<reified_value> parts;
+  comptime::value leaf{};
+  std::vector<std::string> names{};
+  std::vector<reified_value> parts{};
   const ast::array_expr *conversion = nullptr;
 };
 
@@ -185,18 +230,18 @@ struct reified_value {
 /// `checked_types::drop_plans` is not droppable at all; that absence is the
 /// scope-exit drop pass's only "should I even look at this local" test.
 struct variant_drop {
-  std::string variant;
+  std::string variant{};
   size_t arity = 0; ///< Total payload slots, droppable or not.
-  std::vector<std::pair<size_t, type_id>> droppable_payloads;
+  std::vector<std::pair<size_t, type_id>> droppable_payloads{};
 };
 
 struct drop_plan {
-  std::optional<resolved_callee> own_drop;
+  std::optional<resolved_callee> own_drop{};
   /// With `own_drop`: the name lowering calls it by, `impl_target_type::drop`
   /// or, for a monomorphized instance, the instance's own mangled name.
-  std::string own_drop_name;
-  std::vector<std::pair<std::string, type_id>> droppable_fields;
-  std::vector<variant_drop> variant_drops; ///< Sum types only.
+  std::string own_drop_name{};
+  std::vector<std::pair<std::string, type_id>> droppable_fields{};
+  std::vector<variant_drop> variant_drops{}; ///< Sum types only.
   /// A `generator[T]`: dropping one that has not finished resumes it once to
   /// return, which drops what its body still owns. The coroutine is then
   /// freed (`scheduler::release`).
@@ -204,11 +249,11 @@ struct drop_plan {
   /// A `fn` value: what its closure environment owns depends on which lambda
   /// made it, so dropping one runs the drop glue the closure carries, if any.
   /// The glue is a `fn() -> unit` of this type over the same environment.
-  std::optional<type_id> closure_glue;
+  std::optional<type_id> closure_glue{};
   /// An `array[T, n]` whose elements need a drop: `T`. Dropping the array
   /// drops each element in index order, through `element_pointer` (`*mut T`).
   /// `length` is `n`.
-  std::optional<type_id> element;
+  std::optional<type_id> element{};
   type_id element_pointer = k_unknown_type;
   std::uint64_t length = 0;
 };
@@ -238,7 +283,7 @@ struct static_for_iteration {
   /// this iteration's bindings in place.
   std::vector<
       std::pair<const ast::static_decl *, std::vector<static_for_iteration>>>
-      nested;
+      nested{};
   /// The branch each `static if` in this one's body takes in this
   /// iteration, when its condition reads the loop bindings. A nested block
   /// `static for`'s iterations hold the decisions for its own body.
@@ -247,8 +292,8 @@ struct static_for_iteration {
 
 struct iterator_loop_dispatch {
   const ast::func_decl *decl = nullptr;
-  std::string owner_module;
-  std::string impl_target_type;
+  std::string owner_module{};
+  std::string impl_target_type{};
   type_id element_type = 0;
   /// Set when the loop's iterable is not itself an iterator but implements
   /// `std.iter.into_iterator[T]` — the `into_iter` method to call *once*,
@@ -260,8 +305,8 @@ struct iterator_loop_dispatch {
   /// iterator: `for x in v` over a `vector[T]` has nowhere to put a `next`,
   /// because the collection is not consumed by iterating it.
   const ast::func_decl *adapter_decl = nullptr;
-  std::string adapter_owner_module;
-  std::string adapter_impl_target_type;
+  std::string adapter_owner_module{};
+  std::string adapter_impl_target_type{};
   /// The iterator type `adapter_decl` returns — the type of the loop's
   /// internal handle once the adapter has run. Meaningless when
   /// `adapter_decl` is null.
@@ -270,6 +315,11 @@ struct iterator_loop_dispatch {
   /// `for x in &mut v` reaches: it borrows the collection rather than
   /// consuming it, so the loop moves nothing out of a reference.
   bool adapter_borrows = false;
+  /// Inside a template, when `decl` or `adapter_decl` is itself a template:
+  /// its arguments in the template's parameters
+  /// (`resolved_callee::template_args`). Empty everywhere else.
+  std::vector<type_id> template_args{};
+  std::vector<type_id> adapter_template_args{};
 };
 
 /// How one interpolation segment's embedded expression
@@ -361,7 +411,7 @@ struct synthesized_item_splice {
 
 /// One monomorphized instance of a function generic over compile-time *value*
 /// parameters only (`def get[n: usize](v: array[int32, n], i: index[n])`) —
-/// see `checker::instantiate_generic_function` (`check.cpp`), the only place
+/// see `checker::find_or_check_generic_instance`, the only place
 /// these are created.
 ///
 /// A value parameter has no runtime existence: `n` is not passed, and code
@@ -393,13 +443,13 @@ struct const_generic_instance {
 /// `checked_types::synthesized_functor_nodes`.
 struct functor_instance {
   const ast::func_decl *decl = nullptr;
-  std::string owner_module;
+  std::string owner_module{};
   /// Non-empty when `decl` is a method of a functor-body `impl`/`extend`
   /// block: the bare name of the target type, so `lower_functor_modules`
   /// emits the method as `impl_target::decl->name` — the same key a
   /// `receiver.method()` call site records for it — instead of a bare
   /// free-function name. Empty for an ordinary functor-body `def`.
-  std::string impl_target;
+  std::string impl_target{};
 };
 
 /// Type ids for `std.fmt`'s runtime-support types (`src/std/fmt.cn`),
@@ -488,15 +538,15 @@ struct stack_buffer_request {
 /// records, and compile-time-folded values. Read by `hir::lower*`.
 struct lowering_results {
   std::unordered_map<const ast::field_pattern *, type_id>
-      struct_pattern_field_types;
+      struct_pattern_field_types{};
   std::unordered_map<const ast::struct_field_init *, type_id>
-      struct_literal_field_types;
+      struct_literal_field_types{};
   /// Each struct literal field's *declared* type, as the literal's struct
   /// instance spells it (`list[int32]` for `list_into_iter[int32]`'s `src`).
   /// Lowering reads it to make a borrow or deref between the value and the
   /// field explicit (`hir::make_references_explicit`).
   std::unordered_map<const ast::struct_field_init *, type_id>
-      struct_literal_field_expected;
+      struct_literal_field_expected{};
   /// Every `ident_expr` that names a module-level function in *value*
   /// position — bound to a `let`, passed as an argument, returned — rather
   /// than being called. `checker::resolve_ident` records the declaration and
@@ -516,7 +566,7 @@ struct lowering_results {
   /// operator or one whose operand trait requirement failed to resolve to a
   /// real method (e.g. a missing impl, already diagnosed separately).
   std::unordered_map<const ast::binary_expr *, resolved_callee>
-      operator_dispatches;
+      operator_dispatches{};
   /// For every `<`/`<=`/`>`/`>=` entry in `operator_dispatches` (`ord`'s
   /// `cmp` method, not called through directly the way `eq`'s same-named
   /// method is), the resolved return type (`ordering`) of that `cmp` call —
@@ -524,7 +574,7 @@ struct lowering_results {
   /// type the intermediate `cmp(...)` call it synthesizes before matching
   /// the result down to `bool`.
   std::unordered_map<const ast::binary_expr *, type_id>
-      ord_dispatch_result_types;
+      ord_dispatch_result_types{};
   /// Every `v[i]` *read* resolved against a user type's `std.traits.index`
   /// impl — see `checker::require_index_trait` (`check.cpp`). `receiver` is
   /// the `index_expr::object`; the subscript becomes `at`'s sole explicit
@@ -546,7 +596,7 @@ struct lowering_results {
   /// `receiver` is that expression's `object`; `set_at` takes the subscript
   /// and the assigned value as its two explicit arguments.
   std::unordered_map<const ast::index_expr *, resolved_callee>
-      index_set_dispatches;
+      index_set_dispatches{};
   /// Every `&mut v[i]` resolved against a user type's `std.traits.index_mut`
   /// impl, keyed by the `index_expr` the `&mut` wraps. `receiver` is that
   /// expression's `object`; `at_mut` takes the subscript as its sole
@@ -556,7 +606,7 @@ struct lowering_results {
   /// read-only `at`, so this dispatch is never reached through
   /// `hir::lower_index` the way the other two are.
   std::unordered_map<const ast::index_expr *, resolved_callee>
-      index_mut_dispatches;
+      index_mut_dispatches{};
   /// Every `&v[i]` resolved against a user type's `std.traits.index_ref`
   /// impl, keyed by the `index_expr` the `&` wraps. `receiver` is that
   /// expression's `object`; `at_ref` takes the subscript as its sole
@@ -565,7 +615,7 @@ struct lowering_results {
   /// way `index_mut_dispatches` is: the enclosing `&` is what selects
   /// `at_ref` over `index_dispatches`' read-only `at`.
   std::unordered_map<const ast::index_expr *, resolved_callee>
-      index_ref_dispatches;
+      index_ref_dispatches{};
   /// Every sequence literal (`[a, b, c]`, `[v; n]`) written where a user
   /// type implementing `std.traits.from_array` was expected — see
   /// `checker::try_wire_from_array`. The literal itself still lowers to the
@@ -574,7 +624,7 @@ struct lowering_results {
   /// collection that says what a literal of it means rather than only the
   /// compiler-known `list`.
   std::unordered_map<const ast::array_expr *, array_literal_conversion>
-      array_literal_conversions;
+      array_literal_conversions{};
   /// Every interpolation segment's resolved rendering dispatch — see
   /// `interp_dispatch`'s doc comment. Keyed by the segment's `value`
   /// expression pointer (`ast::interp_segment::value.get()`).
@@ -584,7 +634,7 @@ struct lowering_results {
   /// node itself. Absent for a reflection call over a real declared type,
   /// which stays unsupported outside `static` contexts as before.
   std::unordered_map<const ast::call_expr *, type_param_reflection>
-      type_param_reflections;
+      type_param_reflections{};
   /// Every reflection call on a concrete type or module (`T.fields()`,
   /// `T.kind()`, `M.functions()`, ...), mapped to its answer. Reflection
   /// is a constant once the type is known, so lowering emits the value in
@@ -594,7 +644,7 @@ struct lowering_results {
   /// `list[T]::push` calls — see `comprehension_dispatch`'s doc comment.
   /// Keyed by the `ast::for_expr` node.
   std::unordered_map<const ast::for_expr *, comprehension_dispatch>
-      comprehension_dispatches;
+      comprehension_dispatches{};
   /// Every fill literal whose repeat count is only known at runtime
   /// (`[v; n]` for a non-constant `n`), with the same `list[T]::new`/
   /// `list[T]::push` pair a comprehension uses. A constant count builds an
@@ -603,13 +653,13 @@ struct lowering_results {
   /// compile-time-sized array to hand it, so it is filled by a counting loop
   /// — see `hir::lower_array`. Keyed by the `ast::array_expr` node.
   std::unordered_map<const ast::array_expr *, comprehension_dispatch>
-      runtime_fill_dispatches;
+      runtime_fill_dispatches{};
   /// Every `c.errors()` on a `crew` that collects errors: the `list[E]`
   /// `new`/`push` pair that builds its result, and the type of the tasks
   /// spawned into the crew (all one `task[T, E, C]`), which the lowering
   /// reads each finished task back as. Keyed by the call node.
   std::unordered_map<const ast::call_expr *, comprehension_dispatch>
-      crew_error_dispatches;
+      crew_error_dispatches{};
   std::unordered_map<const ast::call_expr *, type_id> crew_error_task_types;
   /// Every inline `static for pat in xs => e` in a function body, unrolled:
   /// the values it yields, computed at compile time and embedded as
@@ -618,9 +668,9 @@ struct lowering_results {
   /// `hir::lower_stmt` builds that list from them. A generic function's are
   /// recorded per instance, on the instance's clone of the declaration.
   std::unordered_map<const ast::static_decl *, std::vector<const ast::expr *>>
-      static_for_elements;
+      static_for_elements{};
   std::unordered_map<const ast::static_decl *, comprehension_dispatch>
-      static_for_dispatches;
+      static_for_dispatches{};
   /// Every inline `static for` whose yield runs when the program runs (it
   /// reads a runtime value such as a parameter, or yields something with no
   /// literal form), unrolled to one copy of the yield per iteration instead
@@ -629,7 +679,7 @@ struct lowering_results {
   /// builds the list with the decl's `static_for_dispatches` pair.
   std::unordered_map<const ast::static_decl *,
                      std::vector<static_for_iteration>>
-      static_for_iterations;
+      static_for_iterations{};
   /// Every `?` (`try_expr`) whose operand's `result[_, E1]` error type
   /// differs from the enclosing function's declared `result[_, E2]` error
   /// type and resolved against a real `impl from[E1] for E2` — see
@@ -717,7 +767,7 @@ struct lowering_results {
   /// is no HIR/bytecode notion of "load global constant", only locals and
   /// (indirectly, via splicing) quoted fragments.
   std::unordered_map<const ast::node *, const ast::literal_expr *>
-      static_const_values;
+      static_const_values{};
   /// Every ordinary-code call to a comptime-only `static def` instance
   /// (`comptime_only_functions`) that `checker::try_fold_comptime_only_call`
   /// evaluated outright, mapped to the literal node embedding its result —
@@ -725,7 +775,7 @@ struct lowering_results {
   /// present, lowers the literal in its place instead of emitting a call to
   /// a function `hir::lower_module` deliberately never lowers.
   std::unordered_map<const ast::call_expr *, const ast::literal_expr *>
-      folded_comptime_calls;
+      folded_comptime_calls{};
   /// Every `size_of[T]()` / `align_of[T]()` call, mapped to the type it
   /// asks about. The *answer* is deliberately not stored here: a type's
   /// size and alignment are `runtime::value_layouts`' to define — the
@@ -759,7 +809,7 @@ struct lowering_results {
   /// `uninit[T, N]` type by `runtime::value_layouts`, so its stride can
   /// never disagree with the stride a `*mut T` through it uses.
   std::unordered_map<const ast::call_expr *, stack_buffer_request>
-      stack_buffers;
+      stack_buffers{};
   /// One top-level `static let` reified as real backing data — an array,
   /// list, tuple, variant, or struct holding one of those, which
   /// `checker::materialize_const_literal` cannot inline the way it does a
@@ -776,7 +826,7 @@ struct lowering_results {
     reified_value value;
   };
   std::unordered_map<const ast::static_decl *, static_global_def>
-      static_global_defs;
+      static_global_defs{};
   /// Every function-body-scope `static if`/`static if`-`else` (`decl_kind ==
   /// conditional_compilation`) whose condition `checker::resolve_static_if_
   /// branch` resolved to a concrete boolean, mapped to which side was taken
@@ -807,7 +857,7 @@ struct lowering_results {
   /// holding quoted syntax, mapped to the static. Compile-time code asks the
   /// compiler for its value (`hir_host_call` `static`).
   std::unordered_map<const ast::node *, const ast::static_decl *>
-      static_fragment_refs;
+      static_fragment_refs{};
   /// Reified global name -> the module whose `static_decl` it was reified
   /// from (`reify_static_global`'s `owner` parameter). `hir::lower_ident`/
   /// `lower_module_path` consult this to fill in `hir_global_ref::
@@ -851,11 +901,11 @@ struct ownership_results {
   /// none at all for a lambda that is never used.
   std::unordered_map<const ast::lambda_expr *,
                      std::vector<const ast::lambda_expr *>>
-      generic_lambda_instances;
+      generic_lambda_instances{};
   /// Each use of a generic lambda's name, to the copy it was checked against.
   /// A use is an `ast::ident_expr` or a shorthand `ast::struct_field_init`.
   std::unordered_map<const void *, const ast::lambda_expr *>
-      generic_lambda_refs;
+      generic_lambda_refs{};
   /// Where a copy in `generic_lambda_instances` was asked for: the name of
   /// the generic lambda and the use that needed the copy. Read by the
   /// ownership checker to explain a capture each copy moves.
@@ -864,15 +914,21 @@ struct ownership_results {
     source_span span;
   };
   std::unordered_map<const ast::lambda_expr *, generic_lambda_use>
-      generic_lambda_uses;
+      generic_lambda_uses{};
   /// Each `open_param_templates` entry's signature.
   std::unordered_map<const ast::func_decl *, implicit_signature>
-      implicit_signatures;
+      implicit_signatures{};
   /// Each `const_generic_instances` entry's template: the generic
   /// declaration it was made from, whose signature still names the type
   /// parameters the instance's has substituted away.
   std::unordered_map<const ast::func_decl *, const ast::func_decl *>
-      instance_templates;
+      instance_templates{};
+  /// Each `instance_templates` entry's generic arguments, one per template
+  /// parameter in declaration order: the enclosing block's parameters, then
+  /// the function's own. A value parameter's argument is its constant
+  /// (`const_value_kind`).
+  std::unordered_map<const ast::func_decl *, std::vector<type_id>>
+      instance_generic_args{};
   /// The methods that own the value their `self` refers to: each
   /// `into_iterator` impl's `into_iter`, the one consuming `self`. An
   /// instance of one is found through `instance_templates`.
@@ -920,8 +976,8 @@ struct drop_results {
 };
 
 struct checked_types {
-  type_table types;
-  std::unordered_map<const ast::node *, type_id> node_types;
+  type_table types{};
+  std::unordered_map<const ast::node *, type_id> node_types{};
   /// The file each node in `node_types` was checked under, recorded at the
   /// same moment and from the same `file_id_` the checker was standing in.
   ///
@@ -939,20 +995,20 @@ struct checked_types {
   /// recorded for an expression the checker also typed), so those maps
   /// resolve their file by looking the node up here; a key that isn't
   /// present renders with its offset alone rather than a guess.
-  std::unordered_map<const ast::node *, file_id_type> node_files;
+  std::unordered_map<const ast::node *, file_id_type> node_files{};
   std::unordered_map<const ast::call_expr *, call_argument_mapping>
-      call_argument_mappings;
+      call_argument_mappings{};
   /// Every call resolved by `infer_qualified_call` — see `resolved_callee`'s
   /// doc comment. A node absent here was either resolved some other way
   /// (a plain same-module/imported bare-name call, a method call) or never
   /// resolved at all.
-  std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees;
+  std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees{};
   /// Every `for` loop whose iterable is a user type implementing
   /// `std.iter.iterator[T]` — see `iterator_loop_dispatch`'s doc comment.
   /// Keyed by the `ast::for_stmt` node. Absent for range/option/generator/
   /// indexable iterables, which lower through their own dedicated shapes.
   std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
-      for_iterator_dispatches;
+      for_iterator_dispatches{};
   /// The same, for a `for ... => yield` comprehension's iteration clauses.
   /// A clause reaches the identical loop lowerers a statement `for` does, so
   /// it needs the identical dispatch record — without one, `for (k, v) in
@@ -961,11 +1017,11 @@ struct checked_types {
   /// Keyed by the clause's own `iterable` expression node, which is unique
   /// per clause. Absent for range/option/indexable iterables.
   std::unordered_map<const ast::node *, iterator_loop_dispatch>
-      comprehension_iterator_dispatches;
+      comprehension_iterator_dispatches{};
   /// The return type the checker inferred from the body of each function
   /// declared without one. Lowering reads it where it would read the
   /// annotation.
-  std::unordered_map<const ast::func_decl *, type_id> inferred_return_types;
+  std::unordered_map<const ast::func_decl *, type_id> inferred_return_types{};
   /// Every `splice_expr`/`splice_stmt` node resolved (via compile-time
   /// evaluation of its operand) to the exact AST fragment it should be
   /// lowered as, keyed by the splice node itself. `hir::lower` looks a
@@ -973,25 +1029,25 @@ struct checked_types {
   /// see `checker::infer_expr`'s `splice_expr` case and
   /// `checker::check_body_node`'s `splice_stmt` case. Absent entries mean
   /// the splice never resolved to usable syntax (already diagnosed).
-  std::unordered_map<const ast::node *, const ast::node *> spliced_fragments;
+  std::unordered_map<const ast::node *, const ast::node *> spliced_fragments{};
   /// Every `ident_expr`/`module_path_expr` that resolved to a reified static
   /// global (see `static_global_defs`), mapped to that global's `name` —
   /// `hir::lower_ident`/`lower_module_path` look this up before falling back
   /// to `hir_local_ref`, mirroring `static_const_values` but for the
   /// aggregate case that can't be inlined at each reference site.
-  std::unordered_map<const ast::node *, std::string> static_global_refs;
+  std::unordered_map<const ast::node *, std::string> static_global_refs{};
   /// Every `ident_expr`/`module_path_expr` that names a `static` binding,
   /// however its value is lowered, mapped to the static's name. The
   /// ownership checker reads it to reject a write, `&mut`, or move through a
   /// static: statics are frozen data shared by every function and task.
-  std::unordered_map<const ast::node *, std::string> static_refs;
+  std::unordered_map<const ast::node *, std::string> static_refs{};
   /// The pattern bindings that own what they bind and cannot change —
   /// those of a destructuring `let`, `match`, `if let`, `while let` and
   /// `for`, when no pattern above them reached their value through a
   /// reference — keyed by `pattern_binding::key()`, mapped to whether a
   /// `let` made them (ch. 3). The ownership checker rejects a `&mut` of one
   /// or a `mut self` call on one.
-  std::unordered_map<const void *, bool> immutable_pattern_bindings;
+  std::unordered_map<const void *, bool> immutable_pattern_bindings{};
   /// Every `module_path_expr` the checker classified as *field access on a
   /// value* (`s.cases`, `self.value.inner`) rather than a module reference —
   /// see `checker::dotted_root_is_value` — mapped to the type after each
@@ -1000,47 +1056,53 @@ struct checked_types {
   /// never re-decides what the path means; a `module_path_expr` absent from
   /// this map is a module reference.
   std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
-      value_path_types;
+      value_path_types{};
   /// Every receiver of a field access or method call (`field_expr::object`)
   /// whose member was found only through `deref` — see `deref_step`. The
   /// steps run in order on the receiver's value before the member is
   /// reached: `h.x` lowers as `h.deref().x`. A receiver absent here is used
   /// as it is.
   std::unordered_map<const ast::expr *, std::vector<deref_step>>
-      deref_adjustments;
+      deref_adjustments{};
   /// The receivers in `deref_adjustments` whose place is written (`*g = v`,
   /// `*g += 1`, `g.x = v`, `&mut *g`): the same handle reached through
   /// `std.traits.deref_mut` instead, one step, `deref_mut(&mut g)`.
   std::unordered_map<const ast::expr *, std::vector<deref_step>>
-      deref_mut_adjustments;
+      deref_mut_adjustments{};
   /// `deref_adjustments` for a value-rooted dotted path (`value_path_types`): for each
   /// segment index `i`, the steps applied to the value of the first `i`
   /// segments before segment `i` is selected. Empty where a segment needs
   /// none; a path absent here needs none at all.
   std::unordered_map<const ast::module_path_expr *,
                      std::vector<std::vector<deref_step>>>
-      path_deref_adjustments;
+      path_deref_adjustments{};
   /// `deref_mut_adjustments` for a dotted path written through a handle
   /// (`g.x = v`): the segment whose `path_deref_adjustments` entry is
   /// replaced by one `deref_mut` step. Other segments are empty.
   std::unordered_map<const ast::module_path_expr *,
                      std::vector<std::vector<deref_step>>>
-      path_deref_mut_adjustments;
+      path_deref_mut_adjustments{};
 
   /// Lowering decisions; see `lowering_results`.
-  lowering_results lowering;
+  lowering_results lowering{};
   /// Ownership facts; see `ownership_results`.
-  ownership_results ownership;
+  ownership_results ownership{};
   /// Drop plans; see `drop_results`.
-  drop_results drop;
+  drop_results drop{};
   /// Concrete struct fields and sum payloads of every settled instance, for
   /// `runtime::value_layouts`; see `aggregate_shape.h`.
-  aggregate_shapes shapes;
+  aggregate_shapes shapes{};
   /// Member types of struct and sum types that mention a generic parameter
   /// (`pair[T]` inside a generic body), in terms of those parameters. Kept
   /// apart from `shapes` because no layout exists for them. Read only by the
   /// typed core (`src/core`), to check generic templates.
-  aggregate_shapes open_shapes;
+  aggregate_shapes open_shapes{};
+  /// Each trait method whose declared signature settles in the trait's own
+  /// terms; see `trait_method_signature`. A method whose parameters or
+  /// result name an associated type (`self.item`) has no entry. Read by the
+  /// typed core to build and verify calls through a bound (rule C9).
+  std::unordered_map<const ast::func_decl *, trait_method_signature>
+      trait_method_signatures{};
 
   /// Whether a value of `id` copies rather than moves: `type_table::is_copy`,
   /// a type parameter bounded by `copy`, or a `copy` sum.

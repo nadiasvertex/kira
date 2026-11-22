@@ -1,0 +1,95 @@
+module codegen_stress.bound_call_forms
+
+# Calls through a bound on a type parameter, in every form: a bound method
+# and a bound static, each with and without a type parameter of its own, the
+# own parameter inferred and given in brackets, and a trait with an argument
+# of its own. `run` is instantiated at `int32` and at `int64`, whose impls
+# return different values, so a call that keeps the template's answer, or
+# takes one instance's, gives a different total.
+#
+# `conv[U]` is todo 71: a trait static with its own type parameter, called
+# through a bound, once returned an unsubstituted `U`.
+#
+# Both backends read the same instance names, so `# expect:` is computed by
+# hand.
+#
+# run(3) at int32 (twice doubles, base is 1, scale adds 10):
+#   a = twice(3)              =  6
+#   b = pick(3)               =  3
+#   c = pick[int64](5000000000) - 4999999990 = 10
+#   d = base()                =  1
+#   e = conv(3)               =  3
+#   f = conv[int64](7000000000) - 6999999000 = 1000
+#   g = scaled(3, 2)          =  3 * 2 + 10 = 16
+#   h = lift[int64](2, 9000000000) - 8999990000 = 10000
+#   total                       11039
+# run(4) at int64 (twice triples, base is 100, scale adds 20):
+#   a = 12, b = 4, c = 10, d = 100, e = 4, f = 1000,
+#   g = 4 * 2 + 20 = 28, h = 10000
+#   total                       11158
+# 11039 + 11158 = 22197
+
+# expect: 22197
+
+trait shape:
+    def twice(self) -> self
+    def wide(self) -> int64
+    def pick[U](self, u: U) -> U
+    static def base() -> self
+    static def conv[U](v: U) -> U
+
+trait scale[K]:
+    def scaled(self, k: K) -> int64
+    static def lift[U](k: K, u: U) -> U
+
+impl shape for int32:
+    def twice(self) -> int32:
+        return self * 2
+    def wide(self) -> int64:
+        return int64(self)
+    def pick[U](self, u: U) -> U:
+        return u
+    static def base() -> int32:
+        return 1
+    static def conv[U](v: U) -> U:
+        return v
+
+impl shape for int64:
+    def twice(self) -> int64:
+        return self * 3
+    def wide(self) -> int64:
+        return self
+    def pick[U](self, u: U) -> U:
+        return u
+    static def base() -> int64:
+        return 100
+    static def conv[U](v: U) -> U:
+        return v
+
+impl scale[int32] for int32:
+    def scaled(self, k: int32) -> int64:
+        return int64(self * k + 10)
+    static def lift[U](k: int32, u: U) -> U:
+        return u
+
+impl scale[int32] for int64:
+    def scaled(self, k: int32) -> int64:
+        return self * int64(k) + 20
+    static def lift[U](k: int32, u: U) -> U:
+        return u
+
+def run[T: shape + scale[int32] + copy](x: T) -> int64:
+    let a = x.twice().wide()
+    let b = x.pick(x).wide()
+    let c = x.pick[int64](5000000000) - 4999999990
+    let d = T.base().wide()
+    let e = T.conv(x).wide()
+    let f = T.conv[int64](7000000000) - 6999999000
+    let g = x.scaled(2)
+    let h = T.lift[int64](2, 9000000000) - 8999990000
+    return a + b + c + d + e + f + g + h
+
+def main() -> int32:
+    let narrow: int32 = 3
+    let wide: int64 = 4
+    return int32(run(narrow) + run(wide))

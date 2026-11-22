@@ -157,6 +157,9 @@ auto copy_template_records(const template_record_tables &tables,
   };
   const auto callee = [&](resolved_callee record) -> resolved_callee {
     record.receiver = clone_of(subst, record.receiver);
+    // The template's arguments are in its own parameters; the instance's
+    // replay writes its record, naming an instance.
+    record.template_args.clear();
     return record;
   };
   const auto same = [](const auto &value) -> auto { return value; };
@@ -174,6 +177,18 @@ auto copy_template_records(const template_record_tables &tables,
              return mapping;
            });
   copy_map(tables.resolved_callees, subst, callee);
+  // A call through a bound names the trait's method, which no instance
+  // calls: the instance's replay records the impl's method, and a replay
+  // that names none leaves the call with no record, as it had before the
+  // template recorded one.
+  for (const auto &[original, clone] : *subst.pairs) {
+    const auto *call = static_cast<const ast::call_expr *>(original);
+    if (const auto found = tables.resolved_callees.find(call);
+        found != tables.resolved_callees.end() &&
+        found->second.bound.has_value()) {
+      tables.resolved_callees.erase(static_cast<const ast::call_expr *>(clone));
+    }
+  }
   copy_map(tables.resolved_fn_values, subst, callee);
   copy_map(tables.operator_dispatches, subst, callee);
   copy_map(tables.ord_dispatch_result_types, subst, type);
@@ -200,6 +215,8 @@ auto copy_template_records(const template_record_tables &tables,
       [&](iterator_loop_dispatch dispatch) -> iterator_loop_dispatch {
     dispatch.element_type = type(dispatch.element_type);
     dispatch.adapter_result_type = type(dispatch.adapter_result_type);
+    dispatch.template_args.clear();
+    dispatch.adapter_template_args.clear();
     return dispatch;
   };
   copy_map(tables.for_iterator_dispatches, subst, loop);

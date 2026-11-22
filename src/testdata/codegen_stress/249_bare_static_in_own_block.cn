@@ -1,0 +1,33 @@
+module codegen_stress.bare_static_in_own_block
+
+# A static called by its type's bare name from inside its own generic
+# block (`bag.width[int64]()` in `extend[T] bag[T]`) reads the block's `T`
+# as the body's own. Each instance must name the static at its own `T`.
+# Before, the instances kept the template's callee record and lowering
+# failed with "`bag::width` is not a function of this program".
+#
+# `size_of[T]()` differs between the two instances, so a decision that
+# leaks from one instance into the other gives a wrong total:
+#   bag[int32].w()   8 + 4 * 10 = 48
+#   bag[int64].w()   8 + 8 * 10 = 88
+#   bag[int64].m(7)  7 + 8      = 15  (block `T` solved from the argument)
+
+# expect: 151
+
+type bag[T] = { v: T }
+
+extend[T: copy] bag[T]:
+    static def width[U]() -> usize:
+        return size_of[U]() + size_of[T]() * 10
+    static def make(v: T) -> bag[T]:
+        return bag[T] { v: v }
+    def w(self) -> usize:
+        return bag.width[int64]()
+    def m(self, x: T) -> bag[T]:
+        return bag.make(x)
+
+def main() -> int32:
+    let b = bag[int32] { v: 1 }
+    let c = bag[int64] { v: 1 }
+    let d = c.m(7)
+    return int32(b.w() + c.w() + usize(d.v) + size_of[int64]())

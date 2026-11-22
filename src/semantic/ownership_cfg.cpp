@@ -200,7 +200,7 @@ struct place_step {
   /// spelled as written.
   enum class kind : std::uint8_t { field, index, deref, through_deref };
   kind step = kind::field;
-  std::string field; ///< For a field step.
+  std::string field{}; ///< For a field step.
   type_id type = k_unknown_type;
 };
 
@@ -401,8 +401,8 @@ private:
     /// `scope_exit_event::key`; null for a scope with no statements of its
     /// own (a comprehension clause); a `where` is keyed by its expression.
     const void *key = nullptr;
-    std::vector<std::pair<std::string, local_id>> names;
-    std::vector<local_id> owned; ///< Locals whose storage ends with the scope.
+    std::vector<std::pair<std::string, local_id>> names{};
+    std::vector<local_id> owned{}; ///< Locals whose storage ends with the scope.
     bool is_loop = false;
     block_id continue_target = 0;
     block_id break_target = 0;
@@ -1950,6 +1950,24 @@ private:
     if (callee.decl == nullptr || callee.decl->params.empty()) {
       return receiver_passing::read;
     }
+    // A call through a bound: the mode the trait declares for its method.
+    if (callee.bound.has_value()) {
+      const auto entry = checked_.trait_method_signatures.find(callee.decl);
+      if (entry == checked_.trait_method_signatures.end()) {
+        return receiver_passing::read;
+      }
+      switch (entry->second.receiver) {
+      case trait_receiver::none:
+        return receiver_passing::read;
+      case trait_receiver::shared:
+        return receiver_passing::shared;
+      case trait_receiver::exclusive:
+        return receiver_passing::mut;
+      case trait_receiver::consuming:
+        return receiver_passing::move;
+      }
+      return receiver_passing::read;
+    }
     const auto &front = callee.decl->params.front();
     const auto *binding =
         front.pattern != nullptr &&
@@ -2028,10 +2046,13 @@ private:
   /// typed `T` can only return a borrow that arrived in a value mentioning
   /// `T`. `nullopt` when any input's borrows may reach the result — the
   /// result carries a borrow of its own (`&T`, a view, a closure, an
-  /// existential), or the signature is not known.
+  /// existential), or the signature is not known. A call to an `async def`
+  /// or a `generator def` returns a task or a generator whose frame holds
+  /// every argument, whatever the declared result type says.
   [[nodiscard]] auto result_borrow_params(const ast::func_decl *decl) const
       -> std::optional<std::unordered_set<type_id>> {
-    if (decl == nullptr) {
+    if (decl == nullptr || decl->modifiers.is_async ||
+        decl->modifiers.is_generator) {
       return std::nullopt;
     }
     auto result = k_unknown_type;

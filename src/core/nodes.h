@@ -249,6 +249,16 @@ struct callee {
                ///< closure, so one held in a place is called through an
                ///< inserted borrow of that place.
     intrinsic, ///< A compiler intrinsic or host call named by `name`.
+    /// A trait method reached through a bound on a parameter of the
+    /// enclosing template (`x.next()` with `I: iterator[T]`, `T.zero()`).
+    /// `decl` is the trait's method declaration; there is no core function
+    /// for it, and each instance calls the impl the bound stands for.
+    /// `generic_args` are the method's own arguments, and `signature` is the
+    /// trait's signature for it (`checked_types::trait_method_signatures`)
+    /// with `Self`, the trait's parameters and the method's own replaced by
+    /// `self_type`, `trait_args` and `generic_args`. Appears only in a
+    /// function with `generic_params` (verifier rule C9).
+    trait_method,
   };
   form kind = form::function;
   /// `function`: the declaration, and the template it was instantiated from
@@ -263,11 +273,17 @@ struct callee {
   /// The trait whose method this implements; empty otherwise.
   std::string trait_name;
   /// The type and value arguments the call was solved with, in the
-  /// template's parameter order. Empty for a non-generic callee.
+  /// template's parameter order. Empty for a non-generic callee. Inside a
+  /// template, a callee that is itself a template (`instance_of` null) has
+  /// them written in the caller's own parameters.
   std::vector<type_id> generic_args;
   type_id signature = k_unknown_type; ///< The callee's `fn` type, substituted.
   receiver_mode receiver = receiver_mode::none;
   ptr<expr> value;
+  /// `trait_method` only: the type the bound is on (`Self`).
+  type_id self_type = k_unknown_type;
+  /// `trait_method` only: the trait's arguments, from the bound.
+  std::vector<type_id> trait_args;
 };
 
 /// A call. `args` has one entry per parameter, in parameter order, with the
@@ -334,13 +350,13 @@ struct block : expr {
 /// One parameter of a function or lambda.
 struct param {
   symbol_id symbol = semantic::k_invalid_symbol_id;
-  std::string name;
+  std::string name{};
   type_id type = k_unknown_type;
   /// The AST pattern that binds the parameter: the drop schedule's key for
   /// it (`pending_drop::node`, drop flags), as `node::origin` is for a node.
   const void *origin = nullptr;
   /// Where the parameter is written; the function's span when synthesized.
-  source_span span;
+  source_span span{};
 };
 
 /// How a closure holds one value from its environment. A `copy` or `move`

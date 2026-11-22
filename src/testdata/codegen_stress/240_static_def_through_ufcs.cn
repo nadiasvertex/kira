@@ -1,0 +1,19 @@
+module codegen_stress.static_def_through_ufcs
+
+# A `static def` called through UFCS from run-time code runs while compiling
+# like the bare call does, with the receiver as its first argument.
+#
+# 21 * 2 + (21 + 100) * 1000 = 121042
+
+# expect: 121042
+
+static let k: int32 = 21
+
+static def double(x: int32) -> int32:
+    return x * 2
+
+static def plus(x: int32, y: int32) -> int32:
+    return x + y
+
+def main() -> int32:
+    return k.double() + k.plus(100) * 1000

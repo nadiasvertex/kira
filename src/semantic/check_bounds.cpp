@@ -1395,6 +1395,13 @@ auto checker::satisfies_concept(type_id subject,
     return true;
   }
   if (const auto members = concept_category(concept_decl)) {
+    // A category names builtin scalars, never a reference to one: `&int32`
+    // is not `numeric`. A parameter bounded by a category is assumed to copy
+    // and to carry no borrow (ch. 14), so admitting a reference would let a
+    // `&mut` be duplicated or a borrow escape unseen.
+    if (stripped != subject) {
+      return false;
+    }
     if (is_rigid_param(stripped)) {
       const auto domain = domain_of(stripped);
       return domain.has_value() && std::ranges::includes(*members, *domain);
@@ -1632,18 +1639,15 @@ auto checker::check_call_bounds(const ast::call_expr &call,
   return false;
 }
 
-auto checker::instantiate_generic_function(
-    const ast::call_expr &call, const ast::func_decl &decl,
-    const module_members *owner, file_id_type decl_file,
-    const value_bindings &solved, const std::vector<fn_param_info> &params,
-    const explicit_generic_args &explicit_args, const ast::expr *ufcs_receiver)
+auto checker::name_generic_call(const ast::call_expr &call,
+                                const call_callee &callee,
+                                const generic_solution &solved_call)
     -> std::optional<type_id> {
-  const auto solution =
-      solve_generic_call(call, decl, owner, decl_file, solved, params,
-                         explicit_args, ufcs_receiver);
-  if (!solution.has_value()) {
-    return std::nullopt;
-  }
+  const auto &decl = *callee.decl;
+  const auto *owner = callee.owner;
+  const auto decl_file = callee.decl_file;
+  const auto *ufcs_receiver = callee.receiver_expr;
+  const auto *solution = &solved_call;
   // A solution written in this body's own type parameters is not a type an
   // instance can be compiled at — the body is itself generic (a method of
   // `extend[T] list[T]` calling `alloc[T]`), and its instances make this
@@ -1657,8 +1661,17 @@ auto checker::instantiate_generic_function(
                        session_.types_.fn_of(param_types, result));
     }
     if (solution->bounds_hold) {
-      defer_generic_call(call, decl, owner, decl_file, *solution,
-                         ufcs_receiver);
+      defer_call(call, callee, *solution);
+      // The finder recorded the template; inside a template its arguments
+      // are the solution, in this body's own parameters.
+      if (const auto found = session_.resolved_callees_.find(&call);
+          function_.current_template_ != nullptr &&
+          found != session_.resolved_callees_.end() &&
+          found->second.decl == &decl) {
+        if (auto args = template_call_args(callee, param_subst{}, *solution)) {
+          found->second.template_args = std::move(*args);
+        }
+      }
       // Compile-time code runs this template body, not its instances, and
       // reads these parameters through what its own call bound them to.
       if (session_.comptime_only_functions_.contains(&decl)) {
@@ -1744,28 +1757,6 @@ auto checker::when_solution_settles(
           name_instance(*settled);
         }
       });
-}
-
-/// A template's call to a generic function, made for each instance with
-/// the solution's parameters replaced by the instance's answers.
-auto checker::defer_generic_call(const ast::call_expr &call,
-                                 const ast::func_decl &decl,
-                                 const module_members *owner,
-                                 file_id_type decl_file,
-                                 const generic_solution &solution,
-                                 const ast::expr *ufcs_receiver) -> void {
-  defer_to_instances(call,
-                     [this, &call, &decl, owner, decl_file, solution,
-                      ufcs_receiver](instance_subst &subst) -> void {
-                       const auto concrete =
-                           substitute_solution(decl, solution, subst);
-                       if (!concrete.has_value()) {
-                         return;
-                       }
-                       (void)instantiate_solved_call(
-                           *clone_of(subst, &call), decl, owner, decl_file,
-                           *concrete, clone_of(subst, ufcs_receiver));
-                     });
 }
 
 /// `solution` with every answer substituted, re-bound in declaration order
@@ -2007,19 +1998,21 @@ auto checker::report_non_numeric_value_param(const ast::call_expr &call,
 /// A method call on a value whose type is a type parameter
 /// (ch. 19, Bounded Generics, rule 2).
 ///
-/// The method must belong to a trait among the parameter's facts, and the
-/// call is checked against that trait's signature with `self` standing for
-/// the receiver and the trait's parameters for the fact's arguments. What
-/// the parameter will be in some instance is not consulted: the body has
-/// to be right for every type the signature admits, and saying so here is
-/// the only place the message can point at the line that is wrong.
+/// The method must belong to a trait among the parameter's facts.
+/// `check_call` checks the call against that trait's signature, with `self`
+/// standing for the receiver and the trait's parameters for the fact's
+/// arguments, and each instance names the impl's method. What the parameter
+/// will be in some instance is not consulted: the body has to be right for
+/// every type the signature admits, and saying so here is the only place the
+/// message can point at the line that is wrong.
 ///
 /// `static_call` is `T.zero()`: a static member reached through the
 /// parameter itself, which the bound supplies the same way — only a method
 /// without `self` qualifies, and every argument is written.
-auto checker::check_bound_method_call(
-    const ast::call_expr &call, const ast::field_expr &field, type_id receiver,
-    const explicit_generic_args &explicit_args, bool static_call) -> type_id {
+auto checker::find_bound_callee(const ast::call_expr &call,
+                                const ast::field_expr &field, type_id receiver,
+                                bool static_call)
+    -> std::optional<call_callee> {
   struct provider {
     type_fact fact;
     const ast::trait_decl *trait = nullptr;
@@ -2049,7 +2042,7 @@ auto checker::check_bound_method_call(
   if (providers.empty()) {
     report_unbound_method(field, receiver_name, facts, static_call);
     infer_call_args_loosely(call);
-    return k_error_type;
+    return std::nullopt;
   }
   if (providers.size() > 1) {
     auto listed = std::string{};
@@ -2070,75 +2063,40 @@ auto checker::check_bound_method_call(
                     "need.",
                     listed, field.field_name, receiver_name));
     infer_call_args_loosely(call);
-    return k_error_type;
+    return std::nullopt;
   }
 
   const auto &chosen = providers.front();
   const auto [owner, owner_file] = trait_home(*chosen.trait);
-  const auto saved_self = function_.self_type_;
-  const auto saved_assoc = function_.self_assoc_types_;
-  function_.self_type_ = receiver;
-  function_.self_assoc_types_.clear();
-  auto params =
-      signature_params(*chosen.method, owner,
-                       /*skip_self=*/!static_call, &chosen.trait->type_params);
-  auto result =
-      signature_return_type(*chosen.method, owner, &chosen.trait->type_params);
-  function_.self_type_ = saved_self;
-  function_.self_assoc_types_ = saved_assoc;
-
-  auto subst = std::unordered_map<type_id, type_id>{};
+  // The brackets are read here, in the caller's scope: the later stages
+  // read the trait's signature with `self` as the bound's parameter, and a
+  // `self` written in the brackets is the caller's own type.
+  auto explicit_args = method_explicit_generic_args(field);
   for (size_t i = 0;
-       i < chosen.trait->type_params.size() && i < chosen.fact.args.size();
+       i < explicit_args.size() && i < chosen.method->type_params.size();
        ++i) {
-    const auto &param = chosen.trait->type_params[i];
-    subst.emplace(session_.types_.type_param(param.name,
-                                             param.higher_kinded_arity, &param),
-                  chosen.fact.args[i]);
+    if (explicit_args[i].type != nullptr &&
+        !chosen.method->type_params[i].is_value_param) {
+      explicit_args[i].resolved =
+          resolve_type(*explicit_args[i].type, current_resolve_ctx());
+    }
   }
-  auto param_types = std::vector<type_id>{};
-  for (auto &param : params) {
-    param.type = substitute_solved(param.type, subst);
-    param_types.push_back(param.type);
-  }
-  result = substitute_solved(result, subst);
-  record_expr_type(field,
-                   session_.types_.fn_of(std::move(param_types), result));
-  if (!check_method_accepts_generic_args(field, *chosen.method,
-                                         explicit_args)) {
-    infer_call_args_loosely(call);
-    return k_error_type;
-  }
-  auto solved = value_bindings{};
-  const auto generic = generic_call_context{.decl = chosen.method,
-                                            .owner = owner,
-                                            .explicit_args = &explicit_args,
-                                            .ufcs_receiver = nullptr};
-  check_call_args_against(
-      call, params, chosen.method->name,
-      source_location{.file_id = owner_file, .span = chosen.method->span},
-      &solved, is_generic_template(*chosen.method) ? &generic : nullptr);
-  // Which function this is depends on what the parameter turns out to be,
-  // so each instance decides for itself.
-  defer_to_instances(call,
-                     [this, &call, &field, receiver,
-                      static_call](instance_subst &subst) -> void {
-                       const auto &clone = *clone_of(subst, &call);
-                       auto clone_args = explicit_generic_args{};
-                       (void)method_field_of(clone, clone_args);
-                       replay_method_call(clone, *clone_of(subst, &field),
-                                          substitute_type(receiver, subst),
-                                          static_call, clone_args);
-                     });
-  return result;
-}
-
-/// The method `name` a call on a concrete `target` reaches, through the
-/// same tables an ordinary call consults: the type's own impls and
-/// extensions, then a builtin's constructor-keyed ones.
-auto checker::find_method_on(type_id target, std::string_view name)
-    -> const method_entry * {
-  return resolve_method(target, name).method;
+  return call_callee{
+      .form = callee_form::bound_member,
+      .decl = chosen.method,
+      .owner = owner,
+      .decl_file = owner_file,
+      .trait = chosen.trait,
+      .trait_args = chosen.fact.args,
+      .receiver = static_call ? receiver_use::none : receiver_use::self_param,
+      .receiver_expr = static_call ? nullptr : field.object.get(),
+      .self_type = receiver,
+      .target_name = receiver_name,
+      .explicit_args = std::move(explicit_args),
+      .callee_node = &field,
+      .display_name =
+          static_call ? std::format("{}.{}", receiver_name, field.field_name)
+                      : field.field_name};
 }
 
 /// Pins each value parameter the arguments' recorded types determine.
@@ -2159,152 +2117,6 @@ auto checker::solve_values_from_argument_types(
       match_value_params(params[i].type, settle(found->second), solved);
     }
   }
-}
-
-/// An instance's call to a generic block's method with an unannotated
-/// parameter: queued like the template's own call would have been, with
-/// the types the instance recorded for its arguments, so it names the
-/// instance for this receiver and these arguments.
-auto checker::replay_open_method_call(const ast::call_expr &call,
-                                      const method_entry &method,
-                                      std::string_view receiver_name,
-                                      const ast::expr &receiver, type_id target)
-    -> void {
-  const auto params = signature_params(*method.decl, method.owner,
-                                       /*skip_self=*/true);
-  auto call_params = std::vector<type_id>{k_unknown_type};
-  const auto mapping = session_.call_argument_mappings_.find(&call);
-  for (size_t i = 0; i < params.size(); ++i) {
-    auto type = k_unknown_type;
-    if (mapping != session_.call_argument_mappings_.end() &&
-        i < mapping->second.args_by_param.size() &&
-        mapping->second.args_by_param[i] != nullptr) {
-      if (const auto found =
-              session_.node_types_.find(mapping->second.args_by_param[i]);
-          found != session_.node_types_.end()) {
-        type = settle(found->second);
-      }
-    }
-    call_params.push_back(type);
-  }
-  pending_open_param_calls_.push_back(pending_open_param_call{
-      .call = &call,
-      .decl = method.decl,
-      .owner = method.owner,
-      .decl_file = method.file_id,
-      .call_params = std::move(call_params),
-      .file = file_.file_id_,
-      .module = file_.module_,
-      .receiver = &receiver,
-      .method = method,
-      .target_type_name = std::string(receiver_name),
-      .self_type = target,
-      .block_generic = true,
-      // The template already stated the call's types; this names only.
-      .typed = true});
-}
-
-/// Resolves a method call whose receiver was a type parameter in the
-/// template and is `target` in this instance, from the types the template
-/// recorded for its arguments — the elaboration half of a call, without
-/// checking anything again.
-auto checker::replay_method_call(const ast::call_expr &call,
-                                 const ast::field_expr &field, type_id target,
-                                 bool static_call,
-                                 const explicit_generic_args &explicit_args)
-    -> void {
-  target = strip_refs(target);
-  const auto *method = find_method_on(target, field.field_name);
-  if (method == nullptr || mentions_type_param(target)) {
-    return;
-  }
-  const auto entry = session_.types_.entry(target);
-  const auto generic_method = !method->decl->type_params.empty();
-  if (!static_call) {
-    if (field.object == nullptr) {
-      return;
-    }
-    const auto &receiver = *field.object;
-    if (generic_method) {
-      const auto params = signature_params(*method->decl, method->owner,
-                                           /*skip_self=*/true);
-      auto solved = value_bindings{};
-      solve_values_from_argument_types(call, params, solved);
-      auto bindings = param_subst{};
-      solve_from_argument_types(call, params, bindings);
-      auto impl_bindings = param_subst{};
-      if (method->block_type_params != nullptr) {
-        match_params(method->impl_target_pattern, target, impl_bindings);
-        solve_impl_value_params(*method, target, impl_bindings);
-      }
-      const auto impl_scope = bindings_by_name(impl_bindings);
-      (void)instantiate_hk_method(
-          call, *method, entry.name, bindings,
-          resolved_callee{.owner_module = method->owner->module_name,
-                          .impl_target_type = "",
-                          .receiver = &receiver,
-                          .trait_name = method->trait_name},
-          explicit_args, solved, target, &impl_scope);
-      return;
-    }
-    if (impl_needs_instance(*method, entry) &&
-        has_unannotated_params(*method->decl)) {
-      replay_open_method_call(call, *method, entry.name, receiver, target);
-      return;
-    }
-    if (impl_needs_instance(*method, entry)) {
-      auto bindings = param_subst{};
-      match_params(method->impl_target_pattern, target, bindings);
-      solve_impl_value_params(*method, target, bindings);
-      auto scoped = method->fixed_type_params;
-      scoped.merge(bindings_by_name(bindings));
-      auto solution = generic_solution{};
-      carry_impl_value_slots(*method, bindings, solution);
-      solution.suffix = std::format("${}", mangle_type_for_instance(target));
-      (void)finish_impl_generic_method_call(call, *method, entry.name, receiver,
-                                            target, bindings, scoped, solution);
-      return;
-    }
-    record_instance_method_callee(call, *method, entry.name, receiver);
-    return;
-  }
-
-  const auto target_name = session_.types_.display(target);
-  if (!generic_method && impl_needs_instance(*method, entry)) {
-    auto bindings = param_subst{};
-    if (const auto *instance =
-            check_impl_generic_static_call(call, *method, target, bindings)) {
-      session_.resolved_callees_[&call] =
-          resolved_callee{.decl = instance,
-                          .owner_module = method->owner->module_name,
-                          .impl_target_type = ""};
-    }
-    return;
-  }
-  if (!generic_method) {
-    session_.resolved_callees_[&call] =
-        resolved_callee{.decl = method->decl,
-                        .owner_module = method->owner->module_name,
-                        .impl_target_type = target_name};
-    return;
-  }
-  const auto params = signature_params(*method->decl, method->owner,
-                                       /*skip_self=*/false);
-  auto solved = value_bindings{};
-  solve_values_from_argument_types(call, params, solved);
-  auto bindings = param_subst{};
-  solve_from_argument_types(call, params, bindings);
-  auto impl_bindings = param_subst{};
-  if (method->block_type_params != nullptr) {
-    match_params(method->impl_target_pattern, target, impl_bindings);
-    bindings.insert(impl_bindings.begin(), impl_bindings.end());
-  }
-  const auto impl_scope = bindings_by_name(impl_bindings);
-  (void)instantiate_hk_method(
-      call, *method, target_name, bindings,
-      resolved_callee{.owner_module = method->owner->module_name,
-                      .impl_target_type = ""},
-      explicit_args, solved, k_unknown_type, &impl_scope);
 }
 
 /// "no method `m` on `T`", with what *is* known about `T` and — when some

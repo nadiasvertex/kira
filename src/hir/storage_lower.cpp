@@ -3555,7 +3555,7 @@ private:
   /// A part of the subject and the pattern it must satisfy.
   struct obligation {
     const hir_pattern *pattern = nullptr;
-    place where;
+    place where{};
   };
   using continuation = std::function<result()>;
 
@@ -4683,7 +4683,6 @@ private:
   }
 
   [[nodiscard]] auto lower_return(const hir_return &ret) -> result {
-    const auto &signature = out_.signature;
     // A return inside a value under construction (the failure arm of `?`)
     // drops what that value has built so far.
     if (!partials_.empty()) {

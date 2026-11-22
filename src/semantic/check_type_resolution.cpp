@@ -418,7 +418,8 @@ auto checker::variant_payload_types(const type_entry &instance,
 /// Whether values of `id` can carry a borrow — see `checked_types::
 /// borrow_bearing_types`: a view, a reference, a callable (a closure may
 /// hold `&`/`&mut` captures), a `task` (it holds its arguments' borrows until
-/// it finishes), or a type parameter, directly or through a
+/// it finishes), or a type parameter other than one a category bounds to
+/// builtin scalars (`T: numeric`), directly or through a
 /// pointer inner type, array/tuple element, generic argument, struct
 /// field, or sum-variant payload. `str` is deliberately not a view here.
 /// `visited` breaks recursive types (`type tree = { kids: list[tree] }`);
@@ -437,6 +438,14 @@ auto checker::type_carries_borrow(type_id id,
   }
   const auto &e = session_.types_.entry(id);
   if (e.kind == type_kind::type_param_kind) {
+    // A parameter bounded by a category (`T: numeric`) is one of the builtin
+    // scalars the category names, and those carry no borrow.
+    if (const auto domain = declared_domains_.find(id);
+        params_bear && domain != declared_domains_.end()) {
+      return std::ranges::any_of(domain->second, [&](type_id member) -> bool {
+        return type_carries_borrow(member, visited, params_bear);
+      });
+    }
     return params_bear;
   }
   if (session_.types_.is_view(id) || e.kind == type_kind::ref_kind ||
@@ -829,14 +838,14 @@ auto checker::add_aggregate_shapes(aggregate_shapes &shapes, bool settled_only,
       }
     }
     if (settled_only) {
-      const auto open = [&](type_id type) {
+      const auto is_open = [&](type_id type) {
         return session_.types_.is_unknown(type);
       };
       const auto open_field =
-          std::ranges::any_of(shape.fields, open, &field_shape::type);
+          std::ranges::any_of(shape.fields, is_open, &field_shape::type);
       const auto open_variant = std::ranges::any_of(
           shape.variants, [&](const variant_shape &variant) {
-            return std::ranges::any_of(variant.payload, open);
+            return std::ranges::any_of(variant.payload, is_open);
           });
       if (open_field || open_variant) {
         continue;

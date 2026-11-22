@@ -62,19 +62,13 @@ using wide_unsigned = unsigned __int128;
          entry.module_name == "std.list" && entry.args.size() == 1;
 }
 
-[[nodiscard]] auto is_sum(const semantic::type_entry &entry) -> bool {
-  return entry.kind == type_kind::sum_kind ||
-         (entry.kind == type_kind::builtin_generic_kind &&
-          (entry.name == "option" || entry.name == "result"));
-}
-
 class converter {
 public:
   /// `added` receives the values a write puts in the handle table; it is
   /// null for a converter that only reads.
   converter(semantic::comptime_program &program, const handle_table &handles,
             handle_table *added, runtime::value_layouts *layouts = nullptr)
-      : program_(program), types_(program.view().types), handles_(handles),
+      : types_(program.view().types), handles_(handles),
         added_(added), layouts_(layouts) {}
 
   // ------------------------------------------------------------------
@@ -528,7 +522,6 @@ private:
     return comptime::value::make_int(static_cast<__int128>(raw));
   }
 
-  semantic::comptime_program &program_;
   const semantic::type_table &types_;
   const handle_table &handles_;
   handle_table *added_;

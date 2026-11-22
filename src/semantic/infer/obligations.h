@@ -62,7 +62,7 @@ struct obligation {
   /// The types this obligation depends on. It is retried when any of them
   /// gains a solution, and never otherwise — this is what keeps the fixpoint
   /// from being a sweep over everything on every pass.
-  std::vector<type_id> watches;
+  std::vector<type_id> watches{};
   /// The types whose leaves discharging this obligation may solve, or
   /// `nullopt` when that is not known and any leaf may be.
   ///
@@ -70,10 +70,10 @@ struct obligation {
   /// actually waiting on: one whose discharge solves nothing it asks about
   /// (an index dispatch naming its instance, say) owes it nothing, so the
   /// leaves that decision watches are not defaulted on its behalf.
-  std::optional<std::vector<type_id>> binds;
+  std::optional<std::vector<type_id>> binds{};
   /// What is being required, phrased for a diagnostic: "`push` on `?a`",
   /// "`T: ord`", "`i < n`".
-  std::string goal;
+  std::string goal{};
   cause_id why = k_no_cause;
   /// An opaque handle for the resolver — an index into whatever table the
   /// caller assembles candidates from. The queue never interprets it, which
@@ -93,7 +93,7 @@ struct obligation_report {
   obligation_outcome outcome = obligation_outcome::waiting;
   /// For `failed`: why, phrased for a diagnostic. For `waiting`: what is
   /// missing, so a stall can say so.
-  std::string detail;
+  std::string detail{};
 };
 
 /// A resolver is handed the obligation and answers. It closes over whatever
@@ -105,9 +105,9 @@ using obligation_resolver =
 /// An obligation that could not be met.
 struct obligation_failure {
   obligation_id id = 0;
-  std::string detail;
+  std::string detail{};
   /// Set when the failure came from unification rather than a resolver.
-  std::optional<unify_error> unification;
+  std::optional<unify_error> unification{};
 };
 
 /// The queue, its wake index, and the fixpoint loop.
@@ -169,9 +169,9 @@ private:
   auto run_fixpoint() -> std::expected<void, obligation_failure>;
 
   struct record {
-    obligation goal;
+    obligation goal{};
     bool discharged = false;
-    std::string waiting_for;
+    std::string waiting_for{};
   };
 
   infer_ctxt *ctx_;

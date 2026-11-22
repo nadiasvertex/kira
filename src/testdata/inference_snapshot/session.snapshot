@@ -1,7 +1,7 @@
 # inference snapshot
-# 3006 interned types
+# 3055 interned types
 
-## node_types (34511)
+## node_types (34536)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -1568,9 +1568,9 @@
 054_static_dispatch_on_generic_types.cn:100:32 [named_type] doubler
 054_static_dispatch_on_generic_types.cn:100:32 [named_type] list[int32]
 054_static_dispatch_on_generic_types.cn:101:12 [field] fn(I) -> C
-054_static_dispatch_on_generic_types.cn:101:12 [field] fn(I) -> counter
-054_static_dispatch_on_generic_types.cn:101:12 [field] fn(I) -> doubler
-054_static_dispatch_on_generic_types.cn:101:12 [field] fn(I) -> list[int32]
+054_static_dispatch_on_generic_types.cn:101:12 [field] fn(upto) -> counter
+054_static_dispatch_on_generic_types.cn:101:12 [field] fn(upto) -> doubler
+054_static_dispatch_on_generic_types.cn:101:12 [field] fn(upto) -> list[int32]
 054_static_dispatch_on_generic_types.cn:101:12 [call] C
 054_static_dispatch_on_generic_types.cn:101:12 [call] counter
 054_static_dispatch_on_generic_types.cn:101:12 [call] doubler
@@ -5344,9 +5344,11 @@ std/algo.cn:1676:26 [ident] usize
 std/algo.cn:1676:30 [ident] usize
 std/algo.cn:1676:34 [ident] &fn(&T, &T) -> ordering
 std/algo.cn:1695:30 [named_type] bool
+std/algo.cn:1696:12 [ident] _
 std/algo.cn:1696:12 [index] fn() -> bool
 std/algo.cn:1696:12 [call] bool
 std/algo.cn:1696:12 [binary] bool
+std/algo.cn:1696:32 [ident] _
 std/algo.cn:1696:32 [index] fn() -> usize
 std/algo.cn:1696:32 [call] usize
 std/algo.cn:1696:32 [binary] bool
@@ -5534,9 +5536,11 @@ std/algo.cn:1779:13 [binary] usize
 std/algo.cn:1779:17 [literal] usize
 std/algo.cn:1792:17 [binding_pat] &mut slice_mut[T]
 std/algo.cn:1792:42 [named_type] unit
+std/algo.cn:1796:15 [ident] _
 std/algo.cn:1796:15 [index] fn() -> bool
 std/algo.cn:1796:15 [call] bool
 std/algo.cn:1796:15 [binary] bool
+std/algo.cn:1796:35 [ident] _
 std/algo.cn:1796:35 [index] fn() -> usize
 std/algo.cn:1796:35 [call] usize
 std/algo.cn:1796:35 [binary] bool
@@ -5544,6 +5548,7 @@ std/algo.cn:1796:48 [literal] usize
 std/algo.cn:1797:9 [ident] fn(&mut slice_mut[T], bool) -> unit
 std/algo.cn:1797:9 [call] unit
 std/algo.cn:1797:18 [ident] &mut slice_mut[T]
+std/algo.cn:1797:21 [ident] _
 std/algo.cn:1797:21 [index] fn() -> bool
 std/algo.cn:1797:21 [call] bool
 std/algo.cn:1799:9 [binding_pat] usize
@@ -9040,6 +9045,7 @@ std/limits.cn:24:7 [wildcard_pat] str
 std/limits.cn:24:20 [literal] usize
 std/limits.cn:29:39 [named_type] bool
 std/limits.cn:30:12 [match] bool
+std/limits.cn:30:18 [ident] _
 std/limits.cn:30:18 [index] fn() -> type_category
 std/limits.cn:30:18 [call] type_category
 std/limits.cn:31:9 [ctor_pat] type_category
@@ -9193,12 +9199,15 @@ std/limits.cn:98:8 [ident] str
 std/limits.cn:98:8 [binary] bool
 std/limits.cn:98:13 [literal] str
 std/limits.cn:99:16 [literal] usize
+std/limits.cn:100:8 [ident] _
 std/limits.cn:100:8 [index] fn() -> bool
 std/limits.cn:100:8 [call] bool
+std/limits.cn:101:16 [ident] _
 std/limits.cn:101:16 [index] fn() -> usize
 std/limits.cn:101:16 [call] usize
 std/limits.cn:101:16 [binary] usize
 std/limits.cn:101:28 [literal] usize
+std/limits.cn:102:12 [ident] _
 std/limits.cn:102:12 [index] fn() -> usize
 std/limits.cn:102:12 [call] usize
 std/list.cn:38:30 [named_type] list[(int64, int32)]
@@ -14439,9 +14448,11 @@ std/traits.category.cn:77:43 [ident] str
 std/traits.category.cn:77:43 [binary] bool
 std/traits.category.cn:77:48 [literal] str
 std/traits.category.cn:80:40 [named_type] bool
+std/traits.category.cn:81:12 [ident] _
 std/traits.category.cn:81:12 [index] fn() -> bool
 std/traits.category.cn:81:12 [call] bool
 std/traits.category.cn:81:12 [binary] bool
+std/traits.category.cn:81:38 [ident] _
 std/traits.category.cn:81:38 [index] fn() -> bool
 std/traits.category.cn:81:38 [call] bool
 std/traits.category.cn:84:38 [named_type] bool
@@ -14459,27 +14470,35 @@ std/traits.category.cn:86:48 [ident] str
 std/traits.category.cn:86:48 [binary] bool
 std/traits.category.cn:86:53 [literal] str
 std/traits.category.cn:89:40 [named_type] bool
+std/traits.category.cn:90:12 [ident] _
 std/traits.category.cn:90:12 [index] fn() -> bool
 std/traits.category.cn:90:12 [call] bool
 std/traits.category.cn:90:12 [binary] bool
+std/traits.category.cn:90:31 [ident] _
 std/traits.category.cn:90:31 [index] fn() -> bool
 std/traits.category.cn:90:31 [call] bool
+std/traits.category.cn:107:5 [ident] _
 std/traits.category.cn:107:5 [index] fn() -> bool
 std/traits.category.cn:107:5 [call] bool
+std/traits.category.cn:111:5 [ident] _
 std/traits.category.cn:111:5 [index] fn() -> bool
 std/traits.category.cn:111:5 [call] bool
+std/traits.category.cn:115:5 [ident] _
 std/traits.category.cn:115:5 [index] fn() -> bool
 std/traits.category.cn:115:5 [call] bool
+std/traits.category.cn:119:5 [ident] _
 std/traits.category.cn:119:5 [index] fn() -> bool
 std/traits.category.cn:119:5 [call] bool
 std/traits.category.cn:119:5 [binary] bool
 std/traits.category.cn:119:23 [call] str
 std/traits.category.cn:119:23 [binary] bool
 std/traits.category.cn:119:35 [literal] str
+std/traits.category.cn:124:5 [ident] _
 std/traits.category.cn:124:5 [index] fn() -> bool
 std/traits.category.cn:124:5 [call] bool
 std/traits.category.cn:124:5 [binary] bool
 std/traits.category.cn:124:24 [group] bool
+std/traits.category.cn:124:25 [ident] _
 std/traits.category.cn:124:25 [index] fn() -> bool
 std/traits.category.cn:124:25 [call] bool
 std/traits.category.cn:124:25 [binary] bool
@@ -14487,12 +14506,15 @@ std/traits.category.cn:124:43 [call] str
 std/traits.category.cn:124:43 [binary] bool
 std/traits.category.cn:124:55 [literal] str
 std/traits.category.cn:127:39 [named_type] bool
+std/traits.category.cn:128:12 [ident] _
 std/traits.category.cn:128:12 [index] fn() -> bool
 std/traits.category.cn:128:12 [call] bool
 std/traits.category.cn:128:12 [binary] bool
 std/traits.category.cn:128:12 [binary] bool
+std/traits.category.cn:128:31 [ident] _
 std/traits.category.cn:128:31 [index] fn() -> bool
 std/traits.category.cn:128:31 [call] bool
+std/traits.category.cn:128:47 [ident] _
 std/traits.category.cn:128:47 [index] fn() -> bool
 std/traits.category.cn:128:47 [call] bool
 std/traits.category.cn:131:36 [named_type] bool
@@ -14674,12 +14696,15 @@ std/traits.cn:54:15 [binding_pat] self
 std/traits.cn:54:24 [ref_type] &_
 std/traits.cn:67:19 [binding_pat] self
 std/traits.cn:67:32 [ref_type] &mut _
+std/traits.cn:78:5 [ident] _
 std/traits.cn:78:5 [index] fn() -> bool
 std/traits.cn:78:5 [call] bool
 std/traits.cn:78:5 [binary] bool
 std/traits.cn:78:5 [binary] bool
+std/traits.cn:78:23 [ident] _
 std/traits.cn:78:23 [index] fn() -> bool
 std/traits.cn:78:23 [call] bool
+std/traits.cn:78:38 [ident] _
 std/traits.cn:78:38 [index] fn() -> bool
 std/traits.cn:78:38 [call] bool
 std/traits.cn:87:17 [binding_pat] (int64, int32)
@@ -34780,7 +34805,8 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56596 inner I
 ?:56607 f fn(&T) -> T
 
-## call_argument_mappings (1061)
+## call_argument_mappings (1132)
+003_collections_lambdas.cn:11:19 [call] (=arg)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -34821,6 +34847,9 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 034_generic_monomorphization.cn:61:22 [call] (v=arg, i=arg)
 034_generic_monomorphization.cn:62:20 [call] (x=arg)
 034_generic_monomorphization.cn:63:21 [call] (v=arg, i=arg)
+034_higher_kinded_trait_dispatch.cn:19:31 [call] (=arg)
+034_higher_kinded_trait_dispatch.cn:26:25 [call] (=arg)
+034_higher_kinded_trait_dispatch.cn:26:25 [call] (=arg)
 034_higher_kinded_trait_dispatch.cn:35:17 [call] (a=arg)
 034_higher_kinded_trait_dispatch.cn:36:19 [call] (f=arg)
 034_higher_kinded_trait_dispatch.cn:37:21 [call] (f=arg)
@@ -34849,6 +34878,8 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 045_ufcs.cn:112:30 [call] ()
 049_generic_impl_iterator_adapter.cn:51:15 [call] ()
 049_generic_impl_iterator_adapter.cn:51:15 [call] ()
+049_generic_impl_iterator_adapter.cn:52:38 [call] (=arg)
+049_generic_impl_iterator_adapter.cn:52:38 [call] (=arg)
 049_generic_impl_iterator_adapter.cn:64:15 [call] ()
 049_generic_impl_iterator_adapter.cn:64:15 [call] ()
 049_generic_impl_iterator_adapter.cn:70:19 [call] (it=arg, f=arg)
@@ -34857,8 +34888,12 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 049_generic_impl_iterator_adapter.cn:86:28 [call] ()
 050_bound_driven_inference.cn:50:15 [call] ()
 050_bound_driven_inference.cn:50:15 [call] ()
+050_bound_driven_inference.cn:51:38 [call] (=arg)
+050_bound_driven_inference.cn:51:38 [call] (=arg)
 050_bound_driven_inference.cn:60:30 [call] ()
 050_bound_driven_inference.cn:60:30 [call] ()
+050_bound_driven_inference.cn:61:16 [call] (=arg)
+050_bound_driven_inference.cn:61:16 [call] (=arg)
 050_bound_driven_inference.cn:76:26 [call] ()
 050_bound_driven_inference.cn:76:26 [call] ()
 050_bound_driven_inference.cn:84:26 [call] ()
@@ -34889,6 +34924,8 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 054_static_dispatch_on_generic_types.cn:123:28 [call] (it=arg)
 054_static_dispatch_on_generic_types.cn:124:28 [call] (it=arg)
 054_static_dispatch_on_generic_types.cn:128:16 [call] (v=arg)
+057_lambda_solves_under_constructor.cn:18:12 [call] (=arg)
+057_lambda_solves_under_constructor.cn:18:12 [call] (=arg)
 057_lambda_solves_under_constructor.cn:24:27 [call] (x=arg, f=arg)
 057_lambda_solves_under_constructor.cn:31:12 [call] ()
 074_range_index_general_stride.cn:41:5 [call] (buf=arg)
@@ -34909,6 +34946,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 087_list_element_references.cn:21:19 [call] (xs=arg, i=arg)
 087_list_element_references.cn:22:15 [call] (xs=arg, i=arg)
 089_elaboration_snapshot_gaps.cn:52:13 [call] (raw=arg)
+089_elaboration_snapshot_gaps.cn:109:12 [call] (=arg)
 089_elaboration_snapshot_gaps.cn:113:12 [call] (f=arg, x=arg)
 089_elaboration_snapshot_gaps.cn:113:26 [call] (f=arg, x=arg)
 089_elaboration_snapshot_gaps.cn:118:27 [call] (raw=arg)
@@ -34923,6 +34961,9 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 091_unannotated_accumulator_in_generic.cn:28:9 [call] (value=arg)
 091_unannotated_accumulator_in_generic.cn:28:9 [call] (value=arg)
 091_unannotated_accumulator_in_generic.cn:28:9 [call] (value=arg)
+091_unannotated_accumulator_in_generic.cn:28:18 [call] (=arg)
+091_unannotated_accumulator_in_generic.cn:28:18 [call] (=arg)
+091_unannotated_accumulator_in_generic.cn:28:18 [call] (=arg)
 091_unannotated_accumulator_in_generic.cn:42:13 [call] (xs=arg, f=arg)
 091_unannotated_accumulator_in_generic.cn:43:13 [call] (xs=arg, f=arg)
 091_unannotated_accumulator_in_generic.cn:47:15 [call] ()
@@ -34934,6 +34975,9 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 093_index_settles_its_receiver.cn:36:5 [call] (value=arg)
 093_index_settles_its_receiver.cn:37:5 [call] (value=arg)
 093_index_settles_its_receiver.cn:42:15 [call] ()
+110_instances_by_substitution.cn:36:31 [call] (=arg)
+110_instances_by_substitution.cn:36:31 [call] (=arg)
+110_instances_by_substitution.cn:36:31 [call] (=arg)
 110_instances_by_substitution.cn:44:16 [call] ()
 110_instances_by_substitution.cn:44:16 [call] ()
 110_instances_by_substitution.cn:50:19 [call] ()
@@ -34942,6 +34986,12 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 110_instances_by_substitution.cn:51:13 [call] (value=arg)
 110_instances_by_substitution.cn:51:13 [call] (value=arg)
 110_instances_by_substitution.cn:51:13 [call] (value=arg)
+110_instances_by_substitution.cn:51:22 [call] (=arg)
+110_instances_by_substitution.cn:51:22 [call] (=arg)
+110_instances_by_substitution.cn:51:22 [call] (=arg)
+110_instances_by_substitution.cn:53:32 [call] (=arg)
+110_instances_by_substitution.cn:53:32 [call] (=arg)
+110_instances_by_substitution.cn:53:32 [call] (=arg)
 110_instances_by_substitution.cn:67:15 [call] ()
 110_instances_by_substitution.cn:67:15 [call] ()
 110_instances_by_substitution.cn:67:15 [call] ()
@@ -35046,19 +35096,24 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 176_or_else.cn:180:52 [call] ()
 176_or_else.cn:181:16 [call] ()
 std/algo.cn:43:15 [call] ()
+std/algo.cn:44:38 [call] (=arg)
 std/algo.cn:54:16 [call] ()
 std/algo.cn:75:30 [call] ()
+std/algo.cn:76:16 [call] (=arg)
 std/algo.cn:136:16 [call] ()
 std/algo.cn:146:21 [call] ()
 std/algo.cn:171:19 [call] ()
 std/algo.cn:174:16 [call] ()
 std/algo.cn:183:21 [call] ()
 std/algo.cn:215:30 [call] ()
+std/algo.cn:216:16 [call] (=arg)
 std/algo.cn:247:30 [call] ()
+std/algo.cn:249:24 [call] (=arg)
 std/algo.cn:277:20 [call] ()
 std/algo.cn:281:19 [call] ()
 std/algo.cn:284:16 [call] ()
 std/algo.cn:306:30 [call] ()
+std/algo.cn:307:31 [call] (=arg)
 std/algo.cn:413:34 [call] ()
 std/algo.cn:416:16 [call] ()
 std/algo.cn:424:16 [call] ()
@@ -35069,7 +35124,9 @@ std/algo.cn:475:20 [call] (dest=arg, value=arg)
 std/algo.cn:476:16 [call] ()
 std/algo.cn:484:16 [call] ()
 std/algo.cn:507:30 [call] ()
+std/algo.cn:508:26 [call] (=arg, =arg)
 std/algo.cn:530:30 [call] ()
+std/algo.cn:531:13 [call] (=arg)
 std/algo.cn:541:16 [call] ()
 std/algo.cn:600:19 [call] ()
 std/algo.cn:663:30 [call] ()
@@ -35082,23 +35139,37 @@ std/algo.cn:790:35 [call] ()
 std/algo.cn:793:40 [call] ()
 std/algo.cn:826:35 [call] ()
 std/algo.cn:829:31 [call] ()
+std/algo.cn:830:34 [call] (=arg)
 std/algo.cn:904:26 [call] ()
 std/algo.cn:927:26 [call] ()
+std/algo.cn:928:15 [call] (=arg, =arg)
 std/algo.cn:946:15 [call] ()
 std/algo.cn:947:26 [call] ()
+std/algo.cn:949:31 [call] (=arg, =arg)
 std/algo.cn:964:26 [call] ()
+std/algo.cn:965:9 [call] (=arg)
 std/algo.cn:981:26 [call] ()
+std/algo.cn:982:12 [call] (=arg)
 std/algo.cn:1000:26 [call] ()
+std/algo.cn:1001:16 [call] (=arg)
 std/algo.cn:1016:26 [call] ()
+std/algo.cn:1017:12 [call] (=arg)
 std/algo.cn:1038:26 [call] ()
+std/algo.cn:1039:27 [call] (=arg)
 std/algo.cn:1059:26 [call] ()
+std/algo.cn:1060:12 [call] (=arg)
 std/algo.cn:1080:26 [call] ()
 std/algo.cn:1099:26 [call] ()
 std/algo.cn:1118:26 [call] ()
 std/algo.cn:1137:26 [call] ()
 std/algo.cn:1162:26 [call] ()
+std/algo.cn:1165:21 [call] (=arg)
+std/algo.cn:1166:22 [call] (=arg)
 std/algo.cn:1189:26 [call] ()
+std/algo.cn:1192:21 [call] (=arg)
+std/algo.cn:1193:22 [call] (=arg)
 std/algo.cn:1217:26 [call] ()
+std/algo.cn:1218:12 [call] (=arg)
 std/algo.cn:1219:13 [call] (value=arg)
 std/algo.cn:1221:13 [call] (value=arg)
 std/algo.cn:1244:17 [call] ()
@@ -35107,18 +35178,22 @@ std/algo.cn:1246:12 [call] ()
 std/algo.cn:1246:28 [call] ()
 std/algo.cn:1248:12 [call] ()
 std/algo.cn:1248:27 [call] ()
+std/algo.cn:1250:16 [call] (=arg, =arg)
 std/algo.cn:1250:33 [call] (message=arg)
 std/algo.cn:1250:68 [call] (message=arg)
 std/algo.cn:1314:26 [call] ()
 std/algo.cn:1317:22 [call] (o=arg)
+std/algo.cn:1317:31 [call] (=arg, =arg)
 std/algo.cn:1336:26 [call] ()
 std/algo.cn:1339:22 [call] (o=arg)
+std/algo.cn:1339:43 [call] (=arg, =arg)
 std/algo.cn:1366:17 [call] ()
 std/algo.cn:1367:17 [call] ()
 std/algo.cn:1368:12 [call] ()
 std/algo.cn:1368:28 [call] ()
 std/algo.cn:1370:12 [call] ()
 std/algo.cn:1372:12 [call] ()
+std/algo.cn:1374:20 [call] (=arg, =arg)
 std/algo.cn:1374:36 [call] (message=arg)
 std/algo.cn:1374:71 [call] (message=arg)
 std/algo.cn:1375:16 [call] (o=arg)
@@ -35129,20 +35204,27 @@ std/algo.cn:1411:26 [call] ()
 std/algo.cn:1469:12 [call] (a=arg, b=arg)
 std/algo.cn:1502:9 [call] (s=arg, i=arg, j=arg)
 std/algo.cn:1529:26 [call] (o=arg)
+std/algo.cn:1529:38 [call] (=arg, =arg)
 std/algo.cn:1556:16 [call] (o=arg)
+std/algo.cn:1556:28 [call] (=arg, =arg)
 std/algo.cn:1559:30 [call] (o=arg)
+std/algo.cn:1559:42 [call] (=arg, =arg)
 std/algo.cn:1564:17 [call] (s=arg, i=arg, j=arg)
 std/algo.cn:1588:9 [call] (s=arg, lo=arg, start=arg, n=arg, cmp=arg)
 std/algo.cn:1591:9 [call] (s=arg, i=arg, j=arg)
 std/algo.cn:1592:9 [call] (s=arg, lo=arg, start=arg, n=arg, cmp=arg)
 std/algo.cn:1610:8 [call] (o=arg)
+std/algo.cn:1610:20 [call] (=arg, =arg)
 std/algo.cn:1611:9 [call] (s=arg, i=arg, j=arg)
 std/algo.cn:1612:8 [call] (o=arg)
+std/algo.cn:1612:20 [call] (=arg, =arg)
 std/algo.cn:1613:9 [call] (s=arg, i=arg, j=arg)
 std/algo.cn:1614:8 [call] (o=arg)
+std/algo.cn:1614:20 [call] (=arg, =arg)
 std/algo.cn:1615:9 [call] (s=arg, i=arg, j=arg)
 std/algo.cn:1616:5 [call] (s=arg, i=arg, j=arg)
 std/algo.cn:1622:16 [call] (o=arg)
+std/algo.cn:1622:28 [call] (=arg, =arg)
 std/algo.cn:1623:13 [call] (s=arg, i=arg, j=arg)
 std/algo.cn:1626:5 [call] (s=arg, i=arg, j=arg)
 std/algo.cn:1664:13 [call] (s=arg, lo=arg, hi=arg, cmp=arg)
@@ -35167,14 +35249,20 @@ std/algo.cn:1818:5 [call] (s=arg, lo0=arg, hi0=arg, depth0=arg, cmp=arg)
 std/algo.cn:1818:29 [call] (n=arg)
 std/algo.cn:1834:5 [call] (s=arg, cmp=arg)
 std/algo.cn:1834:34 [call] (a=arg, b=arg)
+std/algo.cn:1834:43 [call] (=arg)
+std/algo.cn:1834:51 [call] (=arg)
 std/algo.cn:1849:9 [call] (value=arg)
 std/algo.cn:1852:9 [call] (s=arg)
 std/algo.cn:1873:8 [call] (o=arg)
+std/algo.cn:1873:20 [call] (=arg, =arg)
 std/algo.cn:1874:27 [call] (o=arg)
+std/algo.cn:1874:39 [call] (=arg, =arg)
 std/algo.cn:1876:9 [call] (s=arg, lo=arg, hi=arg)
 std/algo.cn:1878:31 [call] (o=arg)
+std/algo.cn:1878:43 [call] (=arg, =arg)
 std/algo.cn:1903:16 [call] (count=arg)
 std/algo.cn:1913:16 [call] (o=arg)
+std/algo.cn:1913:28 [call] (=arg, =arg)
 std/algo.cn:1924:5 [call] (p=arg, count=arg)
 std/algo.cn:1942:33 [call] (a=arg, b=arg)
 std/algo.cn:1947:19 [call] (s=arg, start=arg, n=arg, cmp=arg)
@@ -35191,6 +35279,9 @@ std/algo.cn:1995:5 [call] (s=arg, lo=arg, hi=arg)
 std/algo.cn:1996:5 [call] (s=arg, lo=arg, hi=arg)
 std/algo.cn:1997:5 [call] (s=arg, lo=arg, hi=arg)
 std/algo.cn:2020:17 [call] (s=arg, i=arg, j=arg)
+std/algo.cn:2040:12 [call] (=arg)
+std/algo.cn:2040:12 [call] (=arg)
+std/algo.cn:2123:15 [call] (=arg)
 std/algo.cn:2148:9 [call] (value=arg)
 std/algo.cn:2169:9 [call] (value=arg)
 std/console.cn:7:12 [call] ()
@@ -35729,13 +35820,18 @@ std/test.cn:99:20 [call] (s=arg)
 std/test.cn:99:45 [call] (f=arg)
 std/test.cn:108:12 [call] (suites=arg)
 std/test.cn:108:24 [call] (name=arg, cases=arg, before_all=default, after_all=default, before_each=default, after_each=default)
+std/test.cn:121:31 [call] ()
 std/test.cn:126:20 [call] (name=arg, outcome=arg)
 std/test.cn:134:17 [call] (s=arg)
 std/test.cn:139:28 [call] (name=arg, outcome=arg)
+std/test.cn:147:39 [call] ()
 std/test.cn:155:36 [call] (name=arg, outcome=arg)
 std/test.cn:160:36 [call] (name=arg, outcome=arg)
+std/test.cn:160:51 [call] ()
 std/test.cn:167:36 [call] (name=arg, outcome=arg)
+std/test.cn:167:66 [call] ()
 std/test.cn:175:20 [call] (name=arg, outcome=arg)
+std/test.cn:175:49 [call] ()
 std/test.cn:181:5 [call] (s=arg)
 std/time.cn:52:29 [call] ()
 std/time.cn:63:23 [call] ()
@@ -35843,16 +35939,34 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (607)
+## resolved_callees (1061)
 003_collections_lambdas.cn:18:5 [call] std.console::println
+027_dependent_and_refinement_types.cn:22:5 [call] stress.dependent_types::concat args=[T, m, n]
+027_dependent_and_refinement_types.cn:26:5 [call] stress.dependent_types::concat args=[T, k + 1, 2]
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
+027_dependent_and_refinement_types.cn:45:5 [call] stress.dependent_types::needs_positive
+027_dependent_and_refinement_types.cn:45:25 [call] stress.dependent_types::needs_small
+027_dependent_and_refinement_types.cn:49:5 [call] stress.dependent_types::needs_positive
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
 027_dependent_and_refinement_types.cn:69:5 [call] stress.dependent_types::safe_get$int32$8
+027_dependent_and_refinement_types.cn:80:9 [call] stress.dependent_types::needs_positive
+027_dependent_and_refinement_types.cn:86:9 [call] stress.dependent_types::needs_positive
+027_dependent_and_refinement_types.cn:86:29 [call] stress.dependent_types::needs_small
+027_dependent_and_refinement_types.cn:94:21 [call] stress.dependent_types::needs_positive
 027_dependent_and_refinement_types.cn:99:21 [call] stress.dependent_types::safe_get$int32$8
+027_dependent_and_refinement_types.cn:110:5 [call] stress.dependent_types::reserve
+027_dependent_and_refinement_types.cn:115:3 [call] stress.dependent_types::needs_positive
+027_dependent_and_refinement_types.cn:121:5 [call] stress.dependent_types::needs_positive
+027_dependent_and_refinement_types.cn:148:13 [call] stress.dependent_types::connect
+027_dependent_and_refinement_types.cn:149:16 [call] stress.dependent_types::open_it
+027_dependent_and_refinement_types.cn:150:5 [call] stress.dependent_types::send
+033_const_generic_monomorphization.cn:14:16 [call] codegen_stress.const_generic_monomorphization::get args=[n]
 033_const_generic_monomorphization.cn:14:16 [call] codegen_stress.const_generic_monomorphization::get$3
 033_const_generic_monomorphization.cn:14:16 [call] codegen_stress.const_generic_monomorphization::get$5
+033_const_generic_monomorphization.cn:25:12 [call] codegen_stress.const_generic_monomorphization::checked_get args=[n]
 033_const_generic_monomorphization.cn:25:12 [call] codegen_stress.const_generic_monomorphization::checked_get$3
 033_const_generic_monomorphization.cn:25:12 [call] codegen_stress.const_generic_monomorphization::checked_get$5
+033_const_generic_monomorphization.cn:25:32 [call] codegen_stress.const_generic_monomorphization::total args=[n]
 033_const_generic_monomorphization.cn:25:32 [call] codegen_stress.const_generic_monomorphization::total$3
 033_const_generic_monomorphization.cn:25:32 [call] codegen_stress.const_generic_monomorphization::total$5
 033_const_generic_monomorphization.cn:31:21 [call] codegen_stress.const_generic_monomorphization::checked_get$3
@@ -35866,10 +35980,12 @@ std/unicode.cn:288:29 [call] (cp=arg)
 034_generic_monomorphization.cn:61:22 [call] codegen_stress.generic_monomorphization::holder::at$2 recv
 034_generic_monomorphization.cn:62:20 [call] codegen_stress.generic_monomorphization::holder::echo$int32 recv
 034_generic_monomorphization.cn:63:21 [call] codegen_stress.generic_monomorphization::holder::pick$4$int32 recv
-034_higher_kinded_trait_dispatch.cn:35:17 [call] codegen_stress.higher_kinded_trait_dispatch::option::pure$int32
-034_higher_kinded_trait_dispatch.cn:36:19 [call] codegen_stress.instances_by_substitution::option::map$int32$int32 recv
-034_higher_kinded_trait_dispatch.cn:37:21 [call] codegen_stress.higher_kinded_trait_dispatch::option::bind$int32$int32 recv
-034_higher_kinded_trait_dispatch.cn:39:23 [call] codegen_stress.instances_by_substitution::option::map$int32$int32 recv
+034_higher_kinded_trait_dispatch.cn:35:17 [call] codegen_stress.higher_kinded_trait_dispatch::option::pure$int32 trait=monad
+034_higher_kinded_trait_dispatch.cn:36:19 [call] codegen_stress.instances_by_substitution::option[int32]::map$int32$int32 trait=functor recv
+034_higher_kinded_trait_dispatch.cn:37:21 [call] codegen_stress.higher_kinded_trait_dispatch::option[int32]::bind$int32$int32 trait=monad recv
+034_higher_kinded_trait_dispatch.cn:39:23 [call] codegen_stress.instances_by_substitution::option[int32]::map$int32$int32 trait=functor recv
+034_higher_kinded_trait_dispatch.cn:41:12 [call] codegen_stress.higher_kinded_trait_dispatch::unwrap_or
+034_higher_kinded_trait_dispatch.cn:41:38 [call] codegen_stress.higher_kinded_trait_dispatch::unwrap_or
 043_impl_on_generic_target.cn:72:29 [call] codegen_stress.impl_on_generic_target::holder::get$holder_int32_ trait=get_it recv
 043_impl_on_generic_target.cn:73:34 [call] codegen_stress.impl_on_generic_target::holder::scale$holder_int64_ trait=scalable recv
 043_impl_on_generic_target.cn:74:27 [call] codegen_stress.impl_on_generic_target::boxed::get$boxed_int32_ trait=get_it recv
@@ -35884,41 +36000,86 @@ std/unicode.cn:288:29 [call] (cp=arg)
 045_ufcs.cn:92:13 [call] codegen_stress.ufcs::identity$int32 recv
 045_ufcs.cn:105:17 [call] codegen_stress.ufcs::total_of recv
 045_ufcs.cn:106:18 [call] codegen_stress.ufcs::total_of recv
+045_ufcs.cn:110:13 [call] codegen_stress.ufcs::scalar_form
+045_ufcs.cn:110:29 [call] codegen_stress.ufcs::method_wins
+045_ufcs.cn:111:13 [call] codegen_stress.ufcs::argument_order
+045_ufcs.cn:111:32 [call] codegen_stress.ufcs::mutating_form
+045_ufcs.cn:112:13 [call] codegen_stress.ufcs::generic_form
+045_ufcs.cn:112:30 [call] codegen_stress.ufcs::builtin_receiver_form
 049_generic_impl_iterator_adapter.cn:51:15 [call] codegen_stress.generic_impl_iterator_adapter::counter::next trait=iterator recv
+049_generic_impl_iterator_adapter.cn:51:15 [call] codegen_stress.generic_impl_iterator_adapter::next trait=iterator recv bound=I[T]
 049_generic_impl_iterator_adapter.cn:64:15 [call] codegen_stress.generic_impl_iterator_adapter::map_iter::next$map_iter_counter__int32__int32_ trait=iterator recv
+049_generic_impl_iterator_adapter.cn:64:15 [call] codegen_stress.generic_impl_iterator_adapter::next trait=iterator recv bound=I[int32]
 049_generic_impl_iterator_adapter.cn:70:19 [call] codegen_stress.generic_impl_iterator_adapter::map$counter$int32$int32
 049_generic_impl_iterator_adapter.cn:78:19 [call] codegen_stress.generic_impl_iterator_adapter::map$counter$int32$int32
+049_generic_impl_iterator_adapter.cn:86:12 [call] codegen_stress.generic_impl_iterator_adapter::sum_tripled
+049_generic_impl_iterator_adapter.cn:86:28 [call] codegen_stress.generic_impl_iterator_adapter::sum_nested
 050_bound_driven_inference.cn:50:15 [call] codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_ trait=iterator recv
+050_bound_driven_inference.cn:50:15 [call] codegen_stress.bound_driven_inference::next trait=iterator recv bound=I[T]
 050_bound_driven_inference.cn:60:30 [call] codegen_stress.bound_driven_inference::counter::next trait=iterator recv
+050_bound_driven_inference.cn:60:30 [call] codegen_stress.bound_driven_inference::next trait=iterator recv bound=I[T]
 050_bound_driven_inference.cn:76:26 [call] codegen_stress.bound_driven_inference::map_iter::next$map_iter_filter_iter_counter__int32___int32__int32_ trait=iterator recv
+050_bound_driven_inference.cn:76:26 [call] codegen_stress.bound_driven_inference::next trait=iterator recv bound=I[T]
 050_bound_driven_inference.cn:84:26 [call] codegen_stress.bound_driven_inference::counter::next trait=iterator recv
+050_bound_driven_inference.cn:84:26 [call] codegen_stress.bound_driven_inference::next trait=iterator recv bound=I[T]
 050_bound_driven_inference.cn:90:19 [call] codegen_stress.bound_driven_inference::filter$counter$int32 recv
 050_bound_driven_inference.cn:90:19 [call] codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32 recv
 050_bound_driven_inference.cn:90:19 [call] codegen_stress.bound_driven_inference::sum$map_iter_filter_iter_counter__int32___int32__int32_$int32 recv
 050_bound_driven_inference.cn:91:18 [call] codegen_stress.bound_driven_inference::tally$counter$int32
 052_element_assignment.cn:42:15 [call] std.list::list::len$list_int32_ recv
 052_element_assignment.cn:57:21 [call] std.list::list::len$list_int32_ recv
+052_element_assignment.cn:73:5 [call] codegen_stress.element_assignment::scale
+052_element_assignment.cn:74:18 [call] codegen_stress.element_assignment::total
+052_element_assignment.cn:78:5 [call] codegen_stress.element_assignment::reverse
+052_element_assignment.cn:83:17 [call] codegen_stress.element_assignment::total
+054_static_dispatch_on_generic_types.cn:71:30 [call] codegen_stress.static_dispatch_on_generic_types::next trait=iterator recv bound=I[int32]
 054_static_dispatch_on_generic_types.cn:71:30 [call] codegen_stress.static_dispatch_on_generic_types::upto::next trait=iterator recv
 054_static_dispatch_on_generic_types.cn:72:13 [call] std.list::list::push$list_int32_ recv
 054_static_dispatch_on_generic_types.cn:72:13 [call] std.list::list::push$list_int32_ recv
+054_static_dispatch_on_generic_types.cn:84:30 [call] codegen_stress.static_dispatch_on_generic_types::next trait=iterator recv bound=I[int32]
 054_static_dispatch_on_generic_types.cn:84:30 [call] codegen_stress.static_dispatch_on_generic_types::upto::next trait=iterator recv
+054_static_dispatch_on_generic_types.cn:94:30 [call] codegen_stress.static_dispatch_on_generic_types::next trait=iterator recv bound=I[int32]
 054_static_dispatch_on_generic_types.cn:94:30 [call] codegen_stress.static_dispatch_on_generic_types::upto::next trait=iterator recv
-054_static_dispatch_on_generic_types.cn:101:12 [call] codegen_stress.static_dispatch_on_generic_types::counter::from_iter$upto
-054_static_dispatch_on_generic_types.cn:101:12 [call] codegen_stress.static_dispatch_on_generic_types::doubler::from_iter$upto
-054_static_dispatch_on_generic_types.cn:101:12 [call] codegen_stress.static_dispatch_on_generic_types::list[int32]::from_iter$upto
+054_static_dispatch_on_generic_types.cn:101:12 [call] codegen_stress.static_dispatch_on_generic_types::counter::from_iter$upto trait=from_iter
+054_static_dispatch_on_generic_types.cn:101:12 [call] codegen_stress.static_dispatch_on_generic_types::doubler::from_iter$upto trait=from_iter
+054_static_dispatch_on_generic_types.cn:101:12 [call] codegen_stress.static_dispatch_on_generic_types::from_iter trait=from_iter args=[I] bound=C[T]
+054_static_dispatch_on_generic_types.cn:101:12 [call] codegen_stress.static_dispatch_on_generic_types::list[int32]::from_iter$upto trait=from_iter
 054_static_dispatch_on_generic_types.cn:116:27 [call] codegen_stress.static_dispatch_on_generic_types::collect$upto$list_int32_$int32
 054_static_dispatch_on_generic_types.cn:123:28 [call] codegen_stress.static_dispatch_on_generic_types::collect$upto$counter$int32
 054_static_dispatch_on_generic_types.cn:124:28 [call] codegen_stress.static_dispatch_on_generic_types::collect$upto$doubler$int32
-054_static_dispatch_on_generic_types.cn:128:16 [call] codegen_stress.static_dispatch_on_generic_types::example_type::make$example_type_int32_
+054_static_dispatch_on_generic_types.cn:128:16 [call] codegen_stress.static_dispatch_on_generic_types::example_type::make$example_type_int32_ trait=maker
 057_lambda_solves_under_constructor.cn:24:27 [call] main::apply$int32$int32
+057_lambda_solves_under_constructor.cn:31:12 [call] main::total
+074_range_index_general_stride.cn:41:5 [call] codegen_stress.range_index_general_stride::bump_all
+074_range_index_general_stride.cn:42:5 [call] codegen_stress.range_index_general_stride::bump_all
+074_range_index_general_stride.cn:45:5 [call] codegen_stress.range_index_general_stride::bump_all
+074_range_index_general_stride.cn:46:5 [call] codegen_stress.range_index_general_stride::bump_all
+074_range_index_general_stride.cn:48:20 [call] codegen_stress.range_index_general_stride::sum_view
 078_impl_const_generic_value_param.cn:32:12 [call] codegen_stress.impl_const_generic_value_param::buf::capacity$buf_4_ trait=sized recv
 078_impl_const_generic_value_param.cn:32:28 [call] codegen_stress.impl_const_generic_value_param::buf::capacity$buf_8_ trait=sized recv
+082_default_parameter_values.cn:19:60 [call] codegen_stress.default_parameter_values::seed
+082_default_parameter_values.cn:29:13 [call] codegen_stress.default_parameter_values::bump
+082_default_parameter_values.cn:30:13 [call] codegen_stress.default_parameter_values::bump
+082_default_parameter_values.cn:31:13 [call] codegen_stress.default_parameter_values::scaled
+082_default_parameter_values.cn:32:13 [call] codegen_stress.default_parameter_values::scaled
+082_default_parameter_values.cn:33:13 [call] codegen_stress.default_parameter_values::scaled
 082_default_parameter_values.cn:34:13 [call] codegen_stress.default_parameter_values::counter::bumped recv
 087_list_element_references.cn:13:23 [call] std.list::list::get_mut$list_int32_ recv
-091_unannotated_accumulator_in_generic.cn:27:15 [call] std.list::list::len recv
+087_list_element_references.cn:21:19 [call] main::double_at
+087_list_element_references.cn:22:15 [call] main::double_at
+089_elaboration_snapshot_gaps.cn:52:13 [call] codegen_stress.elaboration_snapshot_gaps::parse_num
+089_elaboration_snapshot_gaps.cn:113:12 [call] codegen_stress.elaboration_snapshot_gaps::apply
+089_elaboration_snapshot_gaps.cn:113:26 [call] codegen_stress.elaboration_snapshot_gaps::apply
+089_elaboration_snapshot_gaps.cn:118:27 [call] codegen_stress.elaboration_snapshot_gaps::convert
+089_elaboration_snapshot_gaps.cn:122:27 [call] codegen_stress.elaboration_snapshot_gaps::convert
+089_elaboration_snapshot_gaps.cn:127:21 [call] codegen_stress.elaboration_snapshot_gaps::lighter
+089_elaboration_snapshot_gaps.cn:128:21 [call] codegen_stress.elaboration_snapshot_gaps::comprehend
+089_elaboration_snapshot_gaps.cn:129:21 [call] codegen_stress.elaboration_snapshot_gaps::runtime_fill
+089_elaboration_snapshot_gaps.cn:130:21 [call] codegen_stress.elaboration_snapshot_gaps::through_value
+091_unannotated_accumulator_in_generic.cn:27:15 [call] std.list::list::len recv args=[T]
 091_unannotated_accumulator_in_generic.cn:27:15 [call] std.list::list::len$list_int32_ recv
 091_unannotated_accumulator_in_generic.cn:27:15 [call] std.list::list::len$list_int64_ recv
-091_unannotated_accumulator_in_generic.cn:28:9 [call] std.list::list::push recv
+091_unannotated_accumulator_in_generic.cn:28:9 [call] std.list::list::push recv args=[T]
 091_unannotated_accumulator_in_generic.cn:28:9 [call] std.list::list::push$list_int32_ recv
 091_unannotated_accumulator_in_generic.cn:28:9 [call] std.list::list::push$list_int64_ recv
 091_unannotated_accumulator_in_generic.cn:42:13 [call] codegen_stress.unannotated_accumulator_in_generic::doubled$int32
@@ -35932,34 +36093,36 @@ std/unicode.cn:288:29 [call] (cp=arg)
 093_index_settles_its_receiver.cn:36:5 [call] std.list::list::push$list_int32_ recv
 093_index_settles_its_receiver.cn:37:5 [call] std.list::list::push$list_int32_ recv
 093_index_settles_its_receiver.cn:42:15 [call] std.list::list::len$list_int32_ recv
-110_instances_by_substitution.cn:44:16 [call] std.list::list::len recv
+110_instances_by_substitution.cn:44:16 [call] std.list::list::len recv args=[T]
 110_instances_by_substitution.cn:44:16 [call] std.list::list::len$list_int32_ recv
-110_instances_by_substitution.cn:50:19 [call] std.list::list::len recv
+110_instances_by_substitution.cn:50:19 [call] std.list::list::len recv args=[T]
 110_instances_by_substitution.cn:50:19 [call] std.list::list::len$list_int32_ recv
 110_instances_by_substitution.cn:50:19 [call] std.list::list::len$list_int32_ recv
-110_instances_by_substitution.cn:51:13 [call] std.list::list::push recv
+110_instances_by_substitution.cn:51:13 [call] std.list::list::push recv args=[U]
 110_instances_by_substitution.cn:51:13 [call] std.list::list::push$list_int32_ recv
 110_instances_by_substitution.cn:51:13 [call] std.list::list::push$list_int64_ recv
-110_instances_by_substitution.cn:67:15 [call] std.list::list::len recv
+110_instances_by_substitution.cn:67:15 [call] std.list::list::len recv args=[T]
 110_instances_by_substitution.cn:67:15 [call] std.list::list::len$list_int32_ recv
 110_instances_by_substitution.cn:67:15 [call] std.list::list::len$list_money_ recv
-110_instances_by_substitution.cn:75:12 [call] codegen_stress.instances_by_substitution::option::map$int32$int32 recv
-110_instances_by_substitution.cn:75:12 [call] codegen_stress.instances_by_substitution::option::map$int64$int64 recv
+110_instances_by_substitution.cn:75:12 [call] codegen_stress.instances_by_substitution::option::map trait=functor recv args=[T, T]
+110_instances_by_substitution.cn:75:12 [call] codegen_stress.instances_by_substitution::option[int32]::map$int32$int32 trait=functor recv
+110_instances_by_substitution.cn:75:12 [call] codegen_stress.instances_by_substitution::option[int64]::map$int64$int64 trait=functor recv
 110_instances_by_substitution.cn:84:15 [call] std.list::list::new$list_int32_
 110_instances_by_substitution.cn:84:15 [call] std.list::list::new$list_int64_
-110_instances_by_substitution.cn:84:15 [call] std.list::list[T]::new
-110_instances_by_substitution.cn:85:5 [call] std.list::list::push recv
+110_instances_by_substitution.cn:84:15 [call] std.list::list[T]::new args=[T]
+110_instances_by_substitution.cn:85:5 [call] std.list::list::push recv args=[T]
 110_instances_by_substitution.cn:85:5 [call] std.list::list::push$list_int32_ recv
 110_instances_by_substitution.cn:85:5 [call] std.list::list::push$list_int64_ recv
-110_instances_by_substitution.cn:86:5 [call] std.list::list::push recv
+110_instances_by_substitution.cn:86:5 [call] std.list::list::push recv args=[T]
 110_instances_by_substitution.cn:86:5 [call] std.list::list::push$list_int32_ recv
 110_instances_by_substitution.cn:86:5 [call] std.list::list::push$list_int64_ recv
 110_instances_by_substitution.cn:91:13 [call] codegen_stress.instances_by_substitution::bag::map recv
-110_instances_by_substitution.cn:91:13 [call] codegen_stress.instances_by_substitution::bag::map$int32 recv
+110_instances_by_substitution.cn:91:13 [call] codegen_stress.instances_by_substitution::bag[int32]::map$int32 recv
 110_instances_by_substitution.cn:92:12 [call] codegen_stress.instances_by_substitution::bag::count$bag_int32_ recv
 110_instances_by_substitution.cn:92:12 [call] codegen_stress.instances_by_substitution::bag::count$bag_int32_ recv
-110_instances_by_substitution.cn:92:24 [call] codegen_stress.instances_by_substitution::bag::count recv
+110_instances_by_substitution.cn:92:24 [call] codegen_stress.instances_by_substitution::bag::count recv args=[T]
 110_instances_by_substitution.cn:92:24 [call] codegen_stress.instances_by_substitution::bag::count$bag_int32_ recv
+110_instances_by_substitution.cn:108:19 [call] codegen_stress.instances_by_substitution::count_down args=[n]
 110_instances_by_substitution.cn:108:19 [call] codegen_stress.instances_by_substitution::count_down$3
 110_instances_by_substitution.cn:118:26 [call] codegen_stress.instances_by_substitution::biggest$int32
 110_instances_by_substitution.cn:119:34 [call] codegen_stress.instances_by_substitution::biggest$money
@@ -35971,7 +36134,7 @@ std/unicode.cn:288:29 [call] (cp=arg)
 110_instances_by_substitution.cn:123:34 [call] codegen_stress.instances_by_substitution::bump$int64
 110_instances_by_substitution.cn:124:21 [call] codegen_stress.instances_by_substitution::pair_of$int32
 110_instances_by_substitution.cn:125:27 [call] codegen_stress.instances_by_substitution::pair_of$int64
-110_instances_by_substitution.cn:127:16 [call] codegen_stress.instances_by_substitution::bag::map$int64 recv
+110_instances_by_substitution.cn:127:16 [call] codegen_stress.instances_by_substitution::bag[int32]::map$int64 recv
 110_instances_by_substitution.cn:129:27 [call] codegen_stress.instances_by_substitution::mapped_count$int32
 110_instances_by_substitution.cn:130:21 [call] codegen_stress.instances_by_substitution::width_of$int8
 110_instances_by_substitution.cn:130:40 [call] codegen_stress.instances_by_substitution::width_of$int64
@@ -35984,151 +36147,387 @@ std/unicode.cn:288:29 [call] (cp=arg)
 110_instances_by_substitution.cn:135:16 [call] codegen_stress.instances_by_substitution::framed$int64
 111_method_on_literal_waits.cn:20:13 [call] codegen_stress.method_on_literal_waits::int64::twice recv
 111_method_on_literal_waits.cn:25:13 [call] std.traits::int64::cmp trait=ord recv
+176_or_else.cn:23:12 [call] codegen_stress.or_else::rt_panic
+176_or_else.cn:42:13 [call] codegen_stress.or_else::find
+176_or_else.cn:43:13 [call] codegen_stress.or_else::find
+176_or_else.cn:44:13 [call] codegen_stress.or_else::parse
+176_or_else.cn:45:13 [call] codegen_stress.or_else::parse
+176_or_else.cn:50:13 [call] codegen_stress.or_else::find
+176_or_else.cn:50:29 [call] codegen_stress.or_else::boom
+176_or_else.cn:51:13 [call] codegen_stress.or_else::parse
+176_or_else.cn:51:30 [call] codegen_stress.or_else::boom
+176_or_else.cn:56:13 [call] codegen_stress.or_else::find
+176_or_else.cn:65:17 [call] codegen_stress.or_else::find
+176_or_else.cn:75:17 [call] codegen_stress.or_else::find
+176_or_else.cn:80:12 [call] codegen_stress.or_else::with_return
+176_or_else.cn:80:29 [call] codegen_stress.or_else::with_return
+176_or_else.cn:80:46 [call] codegen_stress.or_else::with_break
+176_or_else.cn:80:62 [call] codegen_stress.or_else::with_continue
+176_or_else.cn:84:13 [call] codegen_stress.or_else::find
+176_or_else.cn:84:29 [call] codegen_stress.or_else::find
+176_or_else.cn:85:13 [call] codegen_stress.or_else::find
+176_or_else.cn:85:29 [call] codegen_stress.or_else::find
+176_or_else.cn:86:13 [call] codegen_stress.or_else::find
+176_or_else.cn:86:29 [call] codegen_stress.or_else::find
+176_or_else.cn:92:13 [call] codegen_stress.or_else::find64
 176_or_else.cn:100:12 [call] codegen_stress.or_else::pick$int32
+176_or_else.cn:100:17 [call] codegen_stress.or_else::find
 176_or_else.cn:100:31 [call] codegen_stress.or_else::pick$int32
-std/algo.cn:475:20 [call] std.traits::replace
-std/algo.cn:1219:13 [call] std.list::list::push recv
-std/algo.cn:1221:13 [call] std.list::list::push recv
-std/algo.cn:1246:12 [call] std.option::option::is_none recv
-std/algo.cn:1246:28 [call] std.option::option::is_none recv
-std/algo.cn:1248:12 [call] std.option::option::is_none recv
-std/algo.cn:1248:27 [call] std.option::option::is_none recv
+176_or_else.cn:100:36 [call] codegen_stress.or_else::find
+176_or_else.cn:109:13 [call] codegen_stress.or_else::find
+176_or_else.cn:109:29 [call] codegen_stress.or_else::count_call
+176_or_else.cn:110:13 [call] codegen_stress.or_else::find
+176_or_else.cn:110:29 [call] codegen_stress.or_else::count_call
+176_or_else.cn:120:13 [call] codegen_stress.or_else::next
+176_or_else.cn:133:28 [call] codegen_stress.or_else::double
+176_or_else.cn:137:20 [call] codegen_stress.or_else::fetch
+176_or_else.cn:138:18 [call] codegen_stress.or_else::double
+176_or_else.cn:143:19 [call] codegen_stress.or_else::double
+176_or_else.cn:149:25 [call] codegen_stress.or_else::double
+176_or_else.cn:156:19 [call] codegen_stress.or_else::fallback_awaits
+176_or_else.cn:157:19 [call] codegen_stress.or_else::fallback_awaits
+176_or_else.cn:158:19 [call] codegen_stress.or_else::operand_awaits
+176_or_else.cn:159:19 [call] codegen_stress.or_else::operand_awaits
+176_or_else.cn:160:19 [call] codegen_stress.or_else::returns_early
+176_or_else.cn:161:19 [call] codegen_stress.or_else::returns_early
+176_or_else.cn:162:19 [call] codegen_stress.or_else::in_branch
+176_or_else.cn:163:19 [call] codegen_stress.or_else::in_branch
+176_or_else.cn:172:12 [call] codegen_stress.or_else::lookup
+176_or_else.cn:174:27 [call] codegen_stress.or_else::at_compile_time
+176_or_else.cn:175:28 [call] codegen_stress.or_else::at_compile_time
+176_or_else.cn:178:29 [call] codegen_stress.or_else::async_cases
+176_or_else.cn:179:22 [call] codegen_stress.or_else::value_cases
+176_or_else.cn:179:38 [call] codegen_stress.or_else::panic_cases
+176_or_else.cn:179:54 [call] codegen_stress.or_else::jump_cases
+176_or_else.cn:179:69 [call] codegen_stress.or_else::chained
+176_or_else.cn:180:16 [call] codegen_stress.or_else::literal_width
+176_or_else.cn:180:34 [call] codegen_stress.or_else::generic_cases
+176_or_else.cn:180:52 [call] codegen_stress.or_else::lazy_fallback
+176_or_else.cn:181:16 [call] codegen_stress.or_else::operand_once
+std/algo.cn:43:15 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:54:16 [call] std.iter::size_hint trait=iterator recv bound=I[T]
+std/algo.cn:75:30 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:136:16 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:146:21 [call] std.iter::size_hint trait=iterator recv bound=I[T]
+std/algo.cn:171:19 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:174:16 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:183:21 [call] std.iter::size_hint trait=iterator recv bound=I[T]
+std/algo.cn:215:30 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:247:30 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:277:20 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:281:19 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:284:16 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:306:30 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:413:34 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:416:16 [call] std.iter::next trait=iterator recv bound=J[T]
+std/algo.cn:424:16 [call] std.iter::size_hint trait=iterator recv bound=I[T]
+std/algo.cn:424:41 [call] std.iter::size_hint trait=iterator recv bound=J[T]
+std/algo.cn:444:16 [call] std.iter::next_back trait=double_ended recv bound=I[T]
+std/algo.cn:452:16 [call] std.iter::size_hint trait=iterator recv bound=I[T]
+std/algo.cn:475:20 [call] std.traits::replace args=[option[T]]
+std/algo.cn:476:16 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:484:16 [call] std.iter::size_hint trait=iterator recv bound=I[T]
+std/algo.cn:507:30 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:530:30 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:541:16 [call] std.iter::size_hint trait=iterator recv bound=I[T]
+std/algo.cn:600:19 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:663:30 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:664:34 [call] std.iter::next trait=iterator recv bound=J[U]
+std/algo.cn:676:17 [call] std.iter::size_hint trait=iterator recv bound=I[T]
+std/algo.cn:677:17 [call] std.iter::size_hint trait=iterator recv bound=J[U]
+std/algo.cn:698:30 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:710:16 [call] std.iter::size_hint trait=iterator recv bound=I[T]
+std/algo.cn:790:35 [call] std.iter::next trait=iterator recv bound=J[T]
+std/algo.cn:793:40 [call] std.iter::next trait=iterator recv bound=I[J]
+std/algo.cn:826:35 [call] std.iter::next trait=iterator recv bound=J[U]
+std/algo.cn:829:31 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:904:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:927:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:946:15 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:947:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:964:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:981:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1000:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1016:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1038:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1059:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1080:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1099:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1118:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1137:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1162:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1189:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1217:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1219:13 [call] std.list::list::push recv args=[T]
+std/algo.cn:1221:13 [call] std.list::list::push recv args=[T]
+std/algo.cn:1244:17 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1245:17 [call] std.iter::next trait=iterator recv bound=J[U]
+std/algo.cn:1246:12 [call] std.option::option::is_none recv args=[T]
+std/algo.cn:1246:28 [call] std.option::option::is_none recv args=[U]
+std/algo.cn:1248:12 [call] std.option::option::is_none recv args=[T]
+std/algo.cn:1248:27 [call] std.option::option::is_none recv args=[U]
 std/algo.cn:1250:33 [call] std.panic::panic
 std/algo.cn:1250:68 [call] std.panic::panic
-std/algo.cn:1368:12 [call] std.option::option::is_none recv
-std/algo.cn:1368:28 [call] std.option::option::is_none recv
-std/algo.cn:1370:12 [call] std.option::option::is_none recv
-std/algo.cn:1372:12 [call] std.option::option::is_none recv
+std/algo.cn:1314:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1317:22 [call] std.algo::is_less
+std/algo.cn:1336:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1339:22 [call] std.algo::is_greater_or_equal
+std/algo.cn:1366:17 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1367:17 [call] std.iter::next trait=iterator recv bound=J[U]
+std/algo.cn:1368:12 [call] std.option::option::is_none recv args=[T]
+std/algo.cn:1368:28 [call] std.option::option::is_none recv args=[U]
+std/algo.cn:1370:12 [call] std.option::option::is_none recv args=[T]
+std/algo.cn:1372:12 [call] std.option::option::is_none recv args=[U]
 std/algo.cn:1374:36 [call] std.panic::panic
 std/algo.cn:1374:71 [call] std.panic::panic
-std/algo.cn:1741:9 [call] std.list::list::push recv
-std/algo.cn:1746:9 [call] std.list::list::push recv
-std/algo.cn:1849:9 [call] std.list::list::push recv
-std/algo.cn:1903:16 [call] std.mem::alloc
-std/algo.cn:1924:5 [call] std.mem::free
+std/algo.cn:1375:16 [call] std.algo::is_equal
+std/algo.cn:1392:17 [call] std.traits::zero trait=zero bound=T[]
+std/algo.cn:1393:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1410:17 [call] std.traits::one trait=one bound=T[]
+std/algo.cn:1411:26 [call] std.iter::next trait=iterator recv bound=I[T]
+std/algo.cn:1469:12 [call] std.algo::cmp_via_lt args=[K]
+std/algo.cn:1502:9 [call] std.algo::swap_elems args=[T]
+std/algo.cn:1529:26 [call] std.algo::is_greater
+std/algo.cn:1556:16 [call] std.algo::is_greater
+std/algo.cn:1559:30 [call] std.algo::is_greater
+std/algo.cn:1564:17 [call] std.algo::swap_elems args=[T]
+std/algo.cn:1588:9 [call] std.algo::sift_down args=[T]
+std/algo.cn:1591:9 [call] std.algo::swap_elems args=[T]
+std/algo.cn:1592:9 [call] std.algo::sift_down args=[T]
+std/algo.cn:1610:8 [call] std.algo::is_greater
+std/algo.cn:1611:9 [call] std.algo::swap_elems args=[T]
+std/algo.cn:1612:8 [call] std.algo::is_greater
+std/algo.cn:1613:9 [call] std.algo::swap_elems args=[T]
+std/algo.cn:1614:8 [call] std.algo::is_greater
+std/algo.cn:1615:9 [call] std.algo::swap_elems args=[T]
+std/algo.cn:1616:5 [call] std.algo::swap_elems args=[T]
+std/algo.cn:1622:16 [call] std.algo::is_greater
+std/algo.cn:1623:13 [call] std.algo::swap_elems args=[T]
+std/algo.cn:1626:5 [call] std.algo::swap_elems args=[T]
+std/algo.cn:1664:13 [call] std.algo::heapsort_by args=[T]
+std/algo.cn:1667:17 [call] std.algo::partition_by args=[T]
+std/algo.cn:1671:13 [call] std.algo::introsort_loop args=[T]
+std/algo.cn:1674:13 [call] std.algo::introsort_loop args=[T]
+std/algo.cn:1676:5 [call] std.algo::insertion_sort_by args=[T]
+std/algo.cn:1696:12 [call] std.traits::is_integer args=[T]
+std/algo.cn:1696:32 [call] std.limits::bits args=[T]
+std/algo.cn:1741:9 [call] std.list::list::push recv args=[T]
+std/algo.cn:1746:9 [call] std.list::list::push recv args=[T]
+std/algo.cn:1755:27 [call] std.algo::radix_key args=[T]
+std/algo.cn:1767:27 [call] std.algo::radix_key args=[T]
+std/algo.cn:1796:15 [call] std.traits::is_integer args=[T]
+std/algo.cn:1796:35 [call] std.limits::bits args=[T]
+std/algo.cn:1797:9 [call] std.algo::ska_sort args=[T]
+std/algo.cn:1797:21 [call] std.traits::is_signed_integer args=[T]
+std/algo.cn:1802:33 [call] std.algo::cmp_via_lt args=[T]
+std/algo.cn:1803:5 [call] std.algo::introsort_loop args=[T]
+std/algo.cn:1803:29 [call] std.algo::log2_floor
+std/algo.cn:1818:5 [call] std.algo::introsort_loop args=[T]
+std/algo.cn:1818:29 [call] std.algo::log2_floor
+std/algo.cn:1834:5 [call] std.algo::sort_by args=[T]
+std/algo.cn:1834:34 [call] std.algo::cmp_keys args=[K]
+std/algo.cn:1849:9 [call] std.list::list::push recv args=[T]
+std/algo.cn:1852:9 [call] std.algo::sort args=[T]
+std/algo.cn:1873:8 [call] std.algo::is_greater
+std/algo.cn:1874:27 [call] std.algo::is_greater
+std/algo.cn:1876:9 [call] std.algo::reverse_range args=[T]
+std/algo.cn:1878:31 [call] std.algo::is_greater
+std/algo.cn:1903:16 [call] std.mem::alloc args=[T]
+std/algo.cn:1913:16 [call] std.algo::is_greater
+std/algo.cn:1924:5 [call] std.mem::free args=[T]
+std/algo.cn:1942:33 [call] std.algo::cmp_via_lt args=[T]
+std/algo.cn:1947:19 [call] std.algo::find_run_end args=[T]
+std/algo.cn:1950:13 [call] std.algo::insertion_sort_by args=[T]
 std/algo.cn:1952:9 [call] std.list::list::push$list__usize__usize__ recv
 std/algo.cn:1955:11 [call] std.list::list::len$list__usize__usize__ recv
 std/algo.cn:1958:19 [call] std.list::list::len$list__usize__usize__ recv
 std/algo.cn:1959:24 [call] std.list::list::len$list__usize__usize__ recv
+std/algo.cn:1962:17 [call] std.algo::merge_by args=[T]
 std/algo.cn:1963:17 [call] std.list::list::push$list__usize__usize__ recv
 std/algo.cn:1967:17 [call] std.list::list::push$list__usize__usize__ recv
-std/algo.cn:2148:9 [call] std.list::list::push recv
-std/algo.cn:2169:9 [call] std.list::list::push recv
+std/algo.cn:1980:5 [call] std.algo::reverse_range args=[T]
+std/algo.cn:1995:5 [call] std.algo::reverse_range args=[T]
+std/algo.cn:1996:5 [call] std.algo::reverse_range args=[T]
+std/algo.cn:1997:5 [call] std.algo::reverse_range args=[T]
+std/algo.cn:2020:17 [call] std.algo::swap_elems args=[T]
+std/algo.cn:2148:9 [call] std.list::list::push recv args=[slice[T]]
+std/algo.cn:2169:9 [call] std.list::list::push recv args=[slice[T]]
 std/console.cn:7:12 [call] std.io::stdout_handle
 std/console.cn:13:12 [call] std.io::stderr_handle
 std/console.cn:19:12 [call] std.io::stdin_handle
+std/console.cn:27:5 [call] std.console::stdout
 std/console.cn:27:5 [call] std.io::file_handle::write_all trait=writer recv
+std/console.cn:34:5 [call] std.console::print
+std/console.cn:35:5 [call] std.console::print
+std/console.cn:43:5 [call] std.console::stderr
 std/console.cn:43:5 [call] std.io::file_handle::write_all trait=writer recv
+std/console.cn:50:5 [call] std.console::eprint
+std/console.cn:51:5 [call] std.console::eprint
 std/fmt.cn:32:12 [call] std.intrinsics::rt_str_len_scalars
 std/fmt.cn:35:12 [call] std.intrinsics::rt_str_repeat_char
 std/fmt.cn:87:24 [call] std.intrinsics::rt_str_truncate_scalars
+std/fmt.cn:90:20 [call] std.fmt::scalar_len
+std/fmt.cn:91:24 [call] std.fmt::width_or_zero
+std/fmt.cn:96:17 [call] std.fmt::align_or
 std/fmt.cn:99:18 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:99:43 [call] std.fmt::repeat_char
 std/fmt.cn:100:19 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:100:33 [call] std.fmt::repeat_char
 std/fmt.cn:104:13 [call] std.intrinsics::rt_str_concat
 std/fmt.cn:104:27 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:104:41 [call] std.fmt::repeat_char
+std/fmt.cn:104:87 [call] std.fmt::repeat_char
+std/fmt.cn:115:21 [call] std.fmt::sign_prefix_char
+std/fmt.cn:116:23 [call] std.fmt::alternate_prefix
 std/fmt.cn:117:16 [call] std.intrinsics::rt_str_concat
 std/fmt.cn:117:30 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:118:30 [call] std.fmt::has_align
+std/fmt.cn:121:31 [call] std.fmt::scalar_len
+std/fmt.cn:121:55 [call] std.fmt::scalar_len
+std/fmt.cn:122:26 [call] std.fmt::scalar_len
+std/fmt.cn:123:28 [call] std.fmt::width_or_zero
+std/fmt.cn:126:21 [call] std.fmt::repeat_char
 std/fmt.cn:127:16 [call] std.intrinsics::rt_str_concat
 std/fmt.cn:127:30 [call] std.intrinsics::rt_str_concat
 std/fmt.cn:127:44 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:131:22 [call] std.fmt::align_or
+std/fmt.cn:138:12 [call] std.fmt::pad_str
+std/fmt.cn:155:12 [call] std.fmt::pad_str
+std/fmt.cn:164:12 [call] std.fmt::pad_str
 std/fmt.cn:164:20 [call] std.intrinsics::rt_str_concat
 std/fmt.cn:164:34 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:173:12 [call] std.fmt::pad_str
+std/fmt.cn:173:20 [call] std.fmt::bool_text
+std/fmt.cn:182:12 [call] std.fmt::pad_str
 std/fmt.cn:182:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
+std/fmt.cn:191:12 [call] std.fmt::pad_str
 std/fmt.cn:191:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
+std/fmt.cn:200:12 [call] std.fmt::fmt_radix_i64
+std/fmt.cn:209:12 [call] std.fmt::fmt_radix_u64
 std/fmt.cn:224:18 [call] std.intrinsics::rt_fmt_radix_digits
+std/fmt.cn:225:12 [call] std.fmt::pad_integral
 std/fmt.cn:237:18 [call] std.intrinsics::rt_fmt_radix_digits
+std/fmt.cn:238:12 [call] std.fmt::pad_integral
 std/fmt.cn:253:16 [call] std.intrinsics::rt_fmt_radix_digits
+std/fmt.cn:260:16 [call] std.fmt::radix_digits_u128
 std/fmt.cn:261:15 [call] std.intrinsics::rt_fmt_radix_digits
+std/fmt.cn:262:17 [call] std.fmt::repeat_char
+std/fmt.cn:262:42 [call] std.fmt::scalar_len
 std/fmt.cn:263:12 [call] std.intrinsics::rt_str_concat
 std/fmt.cn:263:26 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:272:12 [call] std.fmt::fmt_radix_i128
+std/fmt.cn:281:12 [call] std.fmt::fmt_radix_u128
+std/fmt.cn:296:18 [call] std.fmt::radix_digits_u128
+std/fmt.cn:297:12 [call] std.fmt::pad_integral
+std/fmt.cn:309:18 [call] std.fmt::radix_digits_u128
+std/fmt.cn:310:12 [call] std.fmt::pad_integral
 std/fmt.cn:322:18 [call] std.intrinsics::rt_fmt_f64_fixed
+std/fmt.cn:323:12 [call] std.fmt::pad_integral
 std/fmt.cn:336:18 [call] std.intrinsics::rt_fmt_f64_sci
+std/fmt.cn:337:12 [call] std.fmt::pad_integral
 std/fmt.cn:349:18 [call] std.intrinsics::rt_fmt_f64_general
+std/fmt.cn:350:12 [call] std.fmt::pad_integral
 std/io.cn:26:22 [call] std.intrinsics::rt_errno_would_block
 std/io.cn:57:23 [call] std.io::file_handle::read trait=reader recv
+std/io.cn:57:23 [call] std.io::read trait=reader recv bound=self[]
 std/io.cn:62:17 [call] std.list::list::push$list_byte_ recv
 std/io.cn:62:17 [call] std.list::list::push$list_byte_ recv
 std/io.cn:77:23 [call] std.io::file_handle::read trait=reader recv
+std/io.cn:77:23 [call] std.io::read trait=reader recv bound=self[]
 std/io.cn:110:21 [call] std.io::file_handle::write trait=writer recv
+std/io.cn:110:21 [call] std.io::write trait=writer recv bound=self[]
 std/io.cn:129:11 [call] std.intrinsics::rt_open
-std/io.cn:131:25 [call] std.io::io_error::from
+std/io.cn:131:25 [call] std.io::io_error::from trait=from
 std/io.cn:137:30 [call] std.intrinsics::rt_stdin
 std/io.cn:143:30 [call] std.intrinsics::rt_stdout
 std/io.cn:149:30 [call] std.intrinsics::rt_stderr
 std/io.cn:159:15 [call] std.intrinsics::rt_read
 std/io.cn:159:23 [call] std.io::file_handle::fd_arg recv
-std/io.cn:161:29 [call] std.io::io_error::from
+std/io.cn:161:29 [call] std.io::io_error::from trait=from
 std/io.cn:165:15 [call] std.intrinsics::rt_write
 std/io.cn:165:24 [call] std.io::file_handle::fd_arg recv
-std/io.cn:167:29 [call] std.io::io_error::from
+std/io.cn:167:29 [call] std.io::io_error::from trait=from
 std/io.cn:169:15 [call] std.intrinsics::rt_flush
 std/io.cn:169:24 [call] std.io::file_handle::fd_arg recv
-std/io.cn:171:29 [call] std.io::io_error::from
+std/io.cn:171:29 [call] std.io::io_error::from trait=from
 std/io.cn:176:13 [call] std.intrinsics::rt_close
 std/io.cn:176:22 [call] std.io::file_handle::fd_arg recv
 std/io.cn:186:17 [call] std.intrinsics::rt_close
 std/io.cn:186:26 [call] std.io::file_handle::fd_arg recv
-std/io.cn:191:29 [call] std.io::io_error::from
+std/io.cn:191:29 [call] std.io::io_error::from trait=from
 std/io.cn:200:11 [call] std.intrinsics::rt_pipe
-std/io.cn:204:25 [call] std.io::io_error::from
+std/io.cn:204:25 [call] std.io::io_error::from trait=from
 std/io.cn:222:11 [call] std.intrinsics::rt_fd_readable
 std/io.cn:227:11 [call] std.intrinsics::rt_fd_writable
 std/io.cn:251:30 [call] std.io::async_file::read trait=async_reader recv
+std/io.cn:251:30 [call] std.io::read trait=async_reader recv bound=self[]
 std/io.cn:256:17 [call] std.list::list::push$list_byte_ recv
 std/io.cn:256:17 [call] std.list::list::push$list_byte_ recv
 std/io.cn:270:30 [call] std.io::async_file::read trait=async_reader recv
+std/io.cn:270:30 [call] std.io::read trait=async_reader recv bound=self[]
 std/io.cn:305:28 [call] std.io::async_file::write trait=async_writer recv
+std/io.cn:305:28 [call] std.io::write trait=async_writer recv bound=self[]
 std/io.cn:319:11 [call] std.intrinsics::rt_set_nonblocking
 std/io.cn:319:30 [call] std.io::async_file::fd_arg recv
-std/io.cn:321:25 [call] std.io::io_error::from
+std/io.cn:321:25 [call] std.io::io_error::from trait=from
 std/io.cn:333:11 [call] std.intrinsics::rt_open
-std/io.cn:335:25 [call] std.io::io_error::from
+std/io.cn:334:20 [call] std.io::wrap_async
+std/io.cn:335:25 [call] std.io::io_error::from trait=from
+std/io.cn:348:12 [call] std.io::wrap_async
 std/io.cn:348:23 [call] std.io::file_handle::fd_arg recv
 std/io.cn:358:11 [call] std.intrinsics::rt_pipe
-std/io.cn:363:32 [call] std.io::io_error::from
+std/io.cn:360:21 [call] std.io::wrap_async
+std/io.cn:361:21 [call] std.io::wrap_async
+std/io.cn:363:32 [call] std.io::io_error::from trait=from
 std/io.cn:374:17 [call] std.intrinsics::rt_close
 std/io.cn:374:26 [call] std.io::async_file::fd_arg recv
-std/io.cn:379:29 [call] std.io::io_error::from
+std/io.cn:379:29 [call] std.io::io_error::from trait=from
 std/io.cn:384:19 [call] std.intrinsics::rt_read
 std/io.cn:384:27 [call] std.io::async_file::fd_arg recv
 std/io.cn:387:34 [call] std.intrinsics::rt_errno_would_block
 std/io.cn:388:31 [call] std.intrinsics::rt_fd_readable
-std/io.cn:390:39 [call] std.io::io_error::from
+std/io.cn:390:39 [call] std.io::io_error::from trait=from
 std/io.cn:398:19 [call] std.intrinsics::rt_write
 std/io.cn:398:28 [call] std.io::async_file::fd_arg recv
 std/io.cn:401:34 [call] std.intrinsics::rt_errno_would_block
 std/io.cn:402:31 [call] std.intrinsics::rt_fd_writable
-std/io.cn:404:39 [call] std.io::io_error::from
+std/io.cn:404:39 [call] std.io::io_error::from trait=from
 std/io.cn:410:15 [call] std.intrinsics::rt_flush
 std/io.cn:410:24 [call] std.io::async_file::fd_arg recv
-std/io.cn:412:29 [call] std.io::io_error::from
+std/io.cn:412:29 [call] std.io::io_error::from trait=from
 std/io.cn:417:13 [call] std.intrinsics::rt_close
 std/io.cn:417:22 [call] std.io::async_file::fd_arg recv
-std/iter.cn:124:45 [call] std.list::list::len recv
+std/iter.cn:92:12 [call] std.iter::from_iter trait=from_iter args=[I] bound=C[T]
+std/iter.cn:124:45 [call] std.list::list::len recv args=[T]
 std/iter.cn:124:45 [call] std.list::list::len$list_test_case_ recv
-std/iter.cn:133:13 [call] std.list::list::len recv
-std/iter.cn:142:13 [call] std.list::list::len recv
-std/iter.cn:176:22 [call] std.list::list::as_ptr recv
+std/iter.cn:133:13 [call] std.list::list::len recv args=[T]
+std/iter.cn:142:13 [call] std.list::list::len recv args=[T]
+std/iter.cn:176:22 [call] std.list::list::as_ptr recv args=[T]
 std/iter.cn:176:22 [call] std.list::list::as_ptr$list__int64__int32__ recv
 std/iter.cn:176:22 [call] std.list::list::as_ptr$list_int32_ recv
 std/iter.cn:176:22 [call] std.list::list::as_ptr$list_int64_ recv
 std/iter.cn:176:22 [call] std.list::list::as_ptr$list_money_ recv
 std/iter.cn:176:22 [call] std.list::list::as_ptr$list_test_suite_ recv
-std/iter.cn:188:20 [call] std.list::list::as_mut_ptr recv
+std/iter.cn:188:20 [call] std.list::list::as_mut_ptr recv args=[T]
 std/iter.cn:188:20 [call] std.list::list::as_mut_ptr$list__int64__int32__ recv
 std/iter.cn:188:20 [call] std.list::list::as_mut_ptr$list_int32_ recv
 std/iter.cn:188:20 [call] std.list::list::as_mut_ptr$list_int64_ recv
 std/iter.cn:188:20 [call] std.list::list::as_mut_ptr$list_money_ recv
 std/iter.cn:188:20 [call] std.list::list::as_mut_ptr$list_test_suite_ recv
-std/iter.cn:189:9 [call] std.mem::drop_range
+std/iter.cn:189:9 [call] std.mem::drop_range args=[T]
 std/iter.cn:189:9 [call] std.mem::drop_range$_int64__int32_
 std/iter.cn:189:9 [call] std.mem::drop_range$int32
 std/iter.cn:189:9 [call] std.mem::drop_range$int64
 std/iter.cn:189:9 [call] std.mem::drop_range$money
 std/iter.cn:189:9 [call] std.mem::drop_range$test_suite
-std/iter.cn:204:22 [call] std.list::list::as_ptr recv
-std/iter.cn:220:13 [call] std.list::list::push recv
-std/list.cn:39:48 [call] std.mem::alloc
+std/iter.cn:204:22 [call] std.list::list::as_ptr recv args=[T]
+std/iter.cn:219:30 [call] std.iter::next trait=iterator recv bound=I[T]
+std/iter.cn:220:13 [call] std.list::list::push recv args=[T]
+std/limits.cn:30:18 [call] std.traits::type_category args=[T]
+std/limits.cn:100:8 [call] std.limits::is_signed args=[T]
+std/limits.cn:101:16 [call] std.limits::bits args=[T]
+std/limits.cn:102:12 [call] std.limits::bits args=[T]
+std/list.cn:39:48 [call] std.mem::alloc args=[T]
 std/list.cn:39:48 [call] std.mem::alloc$_int64__int32_
 std/list.cn:39:48 [call] std.mem::alloc$_usize__usize_
 std/list.cn:39:48 [call] std.mem::alloc$field_info
@@ -36139,7 +36538,7 @@ std/list.cn:39:48 [call] std.mem::alloc$str
 std/list.cn:39:48 [call] std.mem::alloc$test_suite
 std/list.cn:39:48 [call] std.mem::alloc$uint32
 std/list.cn:39:48 [call] std.mem::alloc$usize
-std/list.cn:80:21 [call] std.mem::resize
+std/list.cn:80:21 [call] std.mem::resize args=[T]
 std/list.cn:80:21 [call] std.mem::resize$_int64__int32_
 std/list.cn:80:21 [call] std.mem::resize$_usize__usize_
 std/list.cn:80:21 [call] std.mem::resize$byte
@@ -36151,7 +36550,7 @@ std/list.cn:80:21 [call] std.mem::resize$str
 std/list.cn:80:21 [call] std.mem::resize$test_suite
 std/list.cn:80:21 [call] std.mem::resize$uint32
 std/list.cn:80:21 [call] std.mem::resize$usize
-std/list.cn:93:13 [call] std.list::list::reserve recv
+std/list.cn:93:13 [call] std.list::list::reserve recv args=[T]
 std/list.cn:93:13 [call] std.list::list::reserve$list__int64__int32__ recv
 std/list.cn:93:13 [call] std.list::list::reserve$list__usize__usize__ recv
 std/list.cn:93:13 [call] std.list::list::reserve$list_byte_ recv
@@ -36163,12 +36562,12 @@ std/list.cn:93:13 [call] std.list::list::reserve$list_str_ recv
 std/list.cn:93:13 [call] std.list::list::reserve$list_test_suite_ recv
 std/list.cn:93:13 [call] std.list::list::reserve$list_uint32_ recv
 std/list.cn:93:13 [call] std.list::list::reserve$list_usize_ recv
-std/list.cn:118:9 [call] std.mem::drop_in_place
-std/list.cn:129:9 [call] std.mem::drop_range
-std/list.cn:141:9 [call] std.mem::drop_range
-std/list.cn:142:9 [call] std.mem::free
-std/list.cn:145:21 [call] std.mem::alloc
-std/list.cn:175:9 [call] std.mem::drop_range
+std/list.cn:118:9 [call] std.mem::drop_in_place args=[T]
+std/list.cn:129:9 [call] std.mem::drop_range args=[T]
+std/list.cn:141:9 [call] std.mem::drop_range args=[T]
+std/list.cn:142:9 [call] std.mem::free args=[T]
+std/list.cn:145:21 [call] std.mem::alloc args=[T]
+std/list.cn:175:9 [call] std.mem::drop_range args=[T]
 std/list.cn:175:9 [call] std.mem::drop_range$_int64__int32_
 std/list.cn:175:9 [call] std.mem::drop_range$_usize__usize_
 std/list.cn:175:9 [call] std.mem::drop_range$byte
@@ -36182,7 +36581,7 @@ std/list.cn:175:9 [call] std.mem::drop_range$test_suite
 std/list.cn:175:9 [call] std.mem::drop_range$uint32
 std/list.cn:175:9 [call] std.mem::drop_range$usize
 std/list.cn:175:9 [call] std.mem::drop_range$variant_info
-std/list.cn:176:9 [call] std.mem::free
+std/list.cn:176:9 [call] std.mem::free args=[T]
 std/list.cn:176:9 [call] std.mem::free$_int64__int32_
 std/list.cn:176:9 [call] std.mem::free$_usize__usize_
 std/list.cn:176:9 [call] std.mem::free$byte
@@ -36230,7 +36629,7 @@ std/list.cn:233:13 [call] std.panic::panic
 std/list.cn:233:13 [call] std.panic::panic
 std/list.cn:233:13 [call] std.panic::panic
 std/list.cn:233:13 [call] std.panic::panic
-std/list.cn:234:9 [call] std.mem::drop_in_place
+std/list.cn:234:9 [call] std.mem::drop_in_place args=[T]
 std/list.cn:234:9 [call] std.mem::drop_in_place$int32
 std/list.cn:234:9 [call] std.mem::drop_in_place$int64
 std/list.cn:234:9 [call] std.mem::drop_in_place$usize
@@ -36248,8 +36647,8 @@ std/list.cn:256:19 [call] std.list::list::new$list_str_
 std/list.cn:256:19 [call] std.list::list::new$list_test_suite_
 std/list.cn:256:19 [call] std.list::list::new$list_uint32_
 std/list.cn:256:19 [call] std.list::list::new$list_usize_
-std/list.cn:256:19 [call] std.list::list[T]::new
-std/list.cn:257:9 [call] std.list::list::reserve recv
+std/list.cn:256:19 [call] std.list::list[T]::new args=[T]
+std/list.cn:257:9 [call] std.list::list::reserve recv args=[T]
 std/list.cn:257:9 [call] std.list::list::reserve$list__int64__int32__ recv
 std/list.cn:257:9 [call] std.list::list::reserve$list__usize__usize__ recv
 std/list.cn:257:9 [call] std.list::list::reserve$list_field_info_ recv
@@ -36264,7 +36663,7 @@ std/list.cn:257:9 [call] std.list::list::reserve$list_str_ recv
 std/list.cn:257:9 [call] std.list::list::reserve$list_test_suite_ recv
 std/list.cn:257:9 [call] std.list::list::reserve$list_uint32_ recv
 std/list.cn:257:9 [call] std.list::list::reserve$list_usize_ recv
-std/list.cn:263:13 [call] std.list::list::push recv
+std/list.cn:263:13 [call] std.list::list::push recv args=[T]
 std/list.cn:263:13 [call] std.list::list::push$list__int64__int32__ recv
 std/list.cn:263:13 [call] std.list::list::push$list__usize__usize__ recv
 std/list.cn:263:13 [call] std.list::list::push$list_field_info_ recv
@@ -36279,7 +36678,7 @@ std/list.cn:263:13 [call] std.list::list::push$list_str_ recv
 std/list.cn:263:13 [call] std.list::list::push$list_test_suite_ recv
 std/list.cn:263:13 [call] std.list::list::push$list_uint32_ recv
 std/list.cn:263:13 [call] std.list::list::push$list_usize_ recv
-std/list.cn:265:9 [call] std.mem::forget
+std/list.cn:265:9 [call] std.mem::forget args=[array[T, n]]
 std/list.cn:265:9 [call] std.mem::forget$array__int64__int32___1_
 std/list.cn:265:9 [call] std.mem::forget$array__usize__usize___0_
 std/list.cn:265:9 [call] std.mem::forget$array_field_info__1_
@@ -36331,7 +36730,7 @@ std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
-std/mem.cn:79:9 [call] std.traits::drop
+std/mem.cn:79:9 [call] std.traits::drop args=[T]
 std/mem.cn:79:9 [call] std.traits::drop$_int64__int32_
 std/mem.cn:79:9 [call] std.traits::drop$_usize__usize_
 std/mem.cn:79:9 [call] std.traits::drop$byte
@@ -36345,6 +36744,7 @@ std/mem.cn:79:9 [call] std.traits::drop$test_suite
 std/mem.cn:79:9 [call] std.traits::drop$uint32
 std/mem.cn:79:9 [call] std.traits::drop$usize
 std/mem.cn:79:9 [call] std.traits::drop$variant_info
+std/mem.cn:103:13 [call] std.mem::drop_in_place args=[T]
 std/mem.cn:103:13 [call] std.mem::drop_in_place$_int64__int32_
 std/mem.cn:103:13 [call] std.mem::drop_in_place$_usize__usize_
 std/mem.cn:103:13 [call] std.mem::drop_in_place$byte
@@ -36360,20 +36760,36 @@ std/mem.cn:103:13 [call] std.mem::drop_in_place$usize
 std/mem.cn:103:13 [call] std.mem::drop_in_place$variant_info
 std/mem.cn:116:12 [call] std.intrinsics::rt_atomic_fetch_add
 std/mem.cn:124:12 [call] std.intrinsics::rt_atomic_fetch_sub
-std/shared.cn:32:12 [call] std.shared::shared[T]::new
-std/shared.cn:37:21 [call] std.mem::alloc
+std/panic.cn:24:12 [call] std.panic::rt_panic
+std/shared.cn:32:12 [call] std.shared::shared[T]::new args=[T]
+std/shared.cn:37:21 [call] std.mem::alloc args=[shared_block[T]]
 std/shared.cn:48:9 [call] std.mem::atomic_fetch_add
 std/shared.cn:59:22 [call] std.mem::atomic_fetch_sub
-std/shared.cn:61:13 [call] std.mem::drop_in_place
-std/shared.cn:62:13 [call] std.mem::free
+std/shared.cn:61:13 [call] std.mem::drop_in_place args=[T]
+std/shared.cn:62:13 [call] std.mem::free args=[shared_block[T]]
+std/string.cn:48:16 [call] std.string::rt_str_eq
+std/string.cn:61:17 [call] std.string::rt_str_cmp
+std/string.cn:78:16 [call] std.string::rt_str_eq
+std/string.cn:91:16 [call] std.string::rt_str_eq
+std/string.cn:100:16 [call] std.string::rt_str_find
+std/string.cn:110:17 [call] std.string::rt_str_find
+std/string.cn:123:17 [call] std.string::rt_str_rfind
+std/string.cn:132:16 [call] std.string::rt_str_trim
+std/string.cn:138:16 [call] std.string::rt_str_trim
+std/string.cn:144:16 [call] std.string::rt_str_trim
+std/string.cn:150:16 [call] std.string::rt_str_reverse
 std/string.cn:158:16 [call] std.unicode::to_uppercase
 std/string.cn:166:16 [call] std.unicode::to_lowercase
 std/string.cn:174:16 [call] std.unicode::fold_case
+std/string.cn:184:16 [call] std.string::rt_str_eq
 std/string.cn:184:26 [call] std.unicode::fold_case
 std/string.cn:184:43 [call] std.unicode::fold_case
+std/string.cn:194:16 [call] std.string::rt_str_replace
 std/string.cn:207:13 [call] std.list::list::push$list_str_ recv
+std/string.cn:212:21 [call] std.string::rt_str_find
 std/string.cn:214:17 [call] std.list::list::push$list_str_ recv
 std/string.cn:216:13 [call] std.list::list::push$list_str_ recv
+std/string.cn:230:16 [call] std.string::rt_str_concat
 std/sync.cn:35:20 [call] std.mem::alloc$usize
 std/sync.cn:41:16 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:45:9 [call] std.intrinsics::rt_atomic_store
@@ -36385,16 +36801,16 @@ std/sync.cn:69:16 [call] std.intrinsics::rt_atomic_compare_exchange
 std/sync.cn:77:26 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:79:16 [call] std.intrinsics::rt_atomic_compare_exchange
 std/sync.cn:85:9 [call] std.mem::free$usize
-std/sync.cn:113:21 [call] std.mem::alloc
+std/sync.cn:113:21 [call] std.mem::alloc args=[mutex_block[T]]
 std/sync.cn:120:15 [call] std.intrinsics::rt_atomic_compare_exchange
 std/sync.cn:121:13 [call] std.intrinsics::rt_word_wait
 std/sync.cn:127:12 [call] std.intrinsics::rt_atomic_compare_exchange
-std/sync.cn:142:9 [call] std.mem::drop_in_place
+std/sync.cn:142:9 [call] std.mem::drop_in_place args=[T]
 std/sync.cn:159:9 [call] std.intrinsics::rt_atomic_store
 std/sync.cn:160:9 [call] std.intrinsics::rt_word_wake
-std/sync.cn:164:9 [call] std.mem::drop_in_place
-std/sync.cn:165:9 [call] std.mem::free
-std/sync.cn:202:21 [call] std.mem::alloc
+std/sync.cn:164:9 [call] std.mem::drop_in_place args=[T]
+std/sync.cn:165:9 [call] std.mem::free args=[mutex_block[T]]
+std/sync.cn:202:21 [call] std.mem::alloc args=[rwlock_block[T]]
 std/sync.cn:211:25 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:213:17 [call] std.intrinsics::rt_word_wait
 std/sync.cn:214:18 [call] std.intrinsics::rt_atomic_compare_exchange
@@ -36403,11 +36819,11 @@ std/sync.cn:226:13 [call] std.intrinsics::rt_word_wait
 std/sync.cn:244:25 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:245:16 [call] std.intrinsics::rt_atomic_compare_exchange
 std/sync.cn:247:21 [call] std.intrinsics::rt_word_wake
-std/sync.cn:261:9 [call] std.mem::drop_in_place
+std/sync.cn:261:9 [call] std.mem::drop_in_place args=[T]
 std/sync.cn:278:9 [call] std.intrinsics::rt_atomic_store
 std/sync.cn:279:9 [call] std.intrinsics::rt_word_wake
-std/sync.cn:283:9 [call] std.mem::drop_in_place
-std/sync.cn:284:9 [call] std.mem::free
+std/sync.cn:283:9 [call] std.mem::drop_in_place args=[T]
+std/sync.cn:284:9 [call] std.mem::free args=[rwlock_block[T]]
 std/sync.cn:294:11 [call] std.intrinsics::rt_atomic_compare_exchange
 std/sync.cn:295:9 [call] std.intrinsics::rt_word_wait
 std/sync.cn:299:5 [call] std.intrinsics::rt_atomic_store
@@ -36415,42 +36831,176 @@ std/sync.cn:300:5 [call] std.intrinsics::rt_word_wake
 std/sync.cn:304:5 [call] std.intrinsics::rt_atomic_store
 std/sync.cn:304:27 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:305:5 [call] std.intrinsics::rt_word_wake
-std/sync.cn:348:17 [call] std.mem::alloc
-std/sync.cn:355:16 [call] std.mem::alloc
-std/sync.cn:377:13 [call] std.mem::drop_in_place
-std/sync.cn:379:9 [call] std.mem::free
-std/sync.cn:380:9 [call] std.mem::free
+std/sync.cn:348:17 [call] std.mem::alloc args=[channel_block[T]]
+std/sync.cn:355:16 [call] std.mem::alloc args=[T]
+std/sync.cn:366:9 [call] std.sync::bump
+std/sync.cn:373:5 [call] std.sync::release
+std/sync.cn:377:13 [call] std.mem::drop_in_place args=[T]
+std/sync.cn:379:9 [call] std.mem::free args=[T]
+std/sync.cn:380:9 [call] std.mem::free args=[channel_block[T]]
+std/sync.cn:390:13 [call] std.sync::acquire
+std/sync.cn:392:17 [call] std.sync::release
+std/sync.cn:397:17 [call] std.sync::bump
+std/sync.cn:398:17 [call] std.sync::release
 std/sync.cn:400:24 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:401:13 [call] std.sync::release
 std/sync.cn:402:19 [call] std.intrinsics::rt_word_waiter
+std/sync.cn:408:9 [call] std.sync::acquire
+std/sync.cn:409:9 [call] std.sync::close_locked args=[T]
+std/sync.cn:410:9 [call] std.sync::release
+std/sync.cn:416:9 [call] std.sync::acquire
+std/sync.cn:419:9 [call] std.sync::release
+std/sync.cn:425:9 [call] std.sync::acquire
+std/sync.cn:428:13 [call] std.sync::close_locked args=[T]
+std/sync.cn:429:9 [call] std.sync::release_handle args=[T]
+std/sync.cn:439:13 [call] std.sync::acquire
+std/sync.cn:444:17 [call] std.sync::bump
+std/sync.cn:445:17 [call] std.sync::release
+std/sync.cn:448:17 [call] std.sync::release
 std/sync.cn:450:24 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:451:13 [call] std.sync::release
 std/sync.cn:452:19 [call] std.intrinsics::rt_word_waiter
-std/sync.cn:490:17 [call] std.mem::alloc
-std/sync.cn:502:9 [call] std.mem::drop_in_place
-std/sync.cn:503:9 [call] std.mem::free
-std/sync.cn:510:9 [call] std.mem::drop_in_place
+std/sync.cn:458:9 [call] std.sync::acquire
+std/sync.cn:459:9 [call] std.sync::close_locked args=[T]
+std/sync.cn:460:9 [call] std.sync::release_handle args=[T]
+std/sync.cn:490:17 [call] std.mem::alloc args=[watch_block[T]]
+std/sync.cn:497:5 [call] std.sync::acquire
+std/sync.cn:500:5 [call] std.sync::release
+std/sync.cn:502:9 [call] std.mem::drop_in_place args=[T]
+std/sync.cn:503:9 [call] std.mem::free args=[watch_block[T]]
+std/sync.cn:509:9 [call] std.sync::acquire
+std/sync.cn:510:9 [call] std.mem::drop_in_place args=[T]
+std/sync.cn:512:9 [call] std.sync::bump
+std/sync.cn:513:9 [call] std.sync::release
+std/sync.cn:517:9 [call] std.sync::release_watch args=[T]
+std/sync.cn:523:9 [call] std.sync::acquire
+std/sync.cn:525:9 [call] std.sync::release
+std/sync.cn:531:9 [call] std.sync::acquire
+std/sync.cn:532:21 [call] std.traits::clone trait=clone recv bound=T[]
+std/sync.cn:533:9 [call] std.sync::release
 std/sync.cn:540:23 [call] std.intrinsics::rt_atomic_load
 std/sync.cn:544:19 [call] std.intrinsics::rt_word_waiter
+std/sync.cn:550:9 [call] std.sync::acquire
+std/sync.cn:552:9 [call] std.sync::release
+std/sync.cn:557:9 [call] std.sync::release_watch args=[T]
 std/test.cn:98:19 [call] std.console::println
 std/test.cn:99:20 [call] std.console::println
+std/test.cn:99:45 [call] std.test::render_failure
+std/test.cn:108:12 [call] std.test::run_suites
+std/test.cn:108:24 [call] std.test::suite
+std/test.cn:126:20 [call] std.test::report
 std/test.cn:134:17 [call] std.console::println
+std/test.cn:139:28 [call] std.test::report
+std/test.cn:155:36 [call] std.test::report
+std/test.cn:160:36 [call] std.test::report
+std/test.cn:167:36 [call] std.test::report
+std/test.cn:175:20 [call] std.test::report
 std/test.cn:181:5 [call] std.console::println
 std/time.cn:52:29 [call] std.intrinsics::rt_monotonic_now
 std/time.cn:63:23 [call] std.intrinsics::rt_monotonic_now
 std/time.cn:75:11 [call] std.intrinsics::rt_sleep_until
 std/time.cn:75:26 [call] std.intrinsics::rt_monotonic_now
 std/time.cn:80:11 [call] std.intrinsics::rt_sleep_until
+std/traits.category.cn:81:12 [call] std.traits::is_signed_integer args=[T]
+std/traits.category.cn:81:38 [call] std.traits::is_unsigned_integer args=[T]
+std/traits.category.cn:90:12 [call] std.traits::is_integer args=[T]
+std/traits.category.cn:90:31 [call] std.traits::is_float args=[T]
+std/traits.category.cn:107:5 [call] std.traits::is_signed_integer
+std/traits.category.cn:111:5 [call] std.traits::is_unsigned_integer
+std/traits.category.cn:115:5 [call] std.traits::is_integer
+std/traits.category.cn:119:5 [call] std.traits::is_float
+std/traits.category.cn:124:5 [call] std.traits::is_integer
+std/traits.category.cn:124:25 [call] std.traits::is_float
+std/traits.category.cn:128:12 [call] std.traits::is_numeric args=[T]
+std/traits.category.cn:128:31 [call] std.traits::is_bool args=[T]
+std/traits.category.cn:128:47 [call] std.traits::is_char args=[T]
+std/traits.category.cn:219:12 [call] std.traits::is_same args=[From, To]
+std/traits.cn:78:5 [call] std.traits::is_scalar
+std/traits.cn:78:23 [call] std.traits::is_str
+std/traits.cn:78:38 [call] std.traits::is_unit
+std/traits.hash.cn:68:12 [call] std.traits::hash trait=hash recv bound=T[]
+std/traits.hash.cn:81:12 [call] std.traits::hash_combine
+std/traits.hash.cn:81:25 [call] std.traits::hash_seed
 std/traits.hash.cn:111:12 [call] std.intrinsics::rt_bitcast_f64_to_u64
 std/traits.hash.cn:123:12 [call] std.intrinsics::rt_bitcast_f32_to_u32
+std/traits.hash.cn:127:16 [call] std.traits::hash_combine
+std/traits.hash.cn:127:29 [call] std.traits::hash_seed
+std/traits.hash.cn:131:16 [call] std.traits::hash_combine
+std/traits.hash.cn:131:29 [call] std.traits::hash_seed
+std/traits.hash.cn:135:16 [call] std.traits::hash_combine
+std/traits.hash.cn:135:29 [call] std.traits::hash_seed
+std/traits.hash.cn:139:16 [call] std.traits::hash_combine
+std/traits.hash.cn:139:29 [call] std.traits::hash_seed
+std/traits.hash.cn:143:16 [call] std.traits::hash_combine
+std/traits.hash.cn:143:29 [call] std.traits::hash_seed
+std/traits.hash.cn:147:16 [call] std.traits::hash_combine
+std/traits.hash.cn:147:29 [call] std.traits::hash_seed
+std/traits.hash.cn:151:16 [call] std.traits::hash_combine
+std/traits.hash.cn:151:29 [call] std.traits::hash_seed
+std/traits.hash.cn:156:16 [call] std.traits::hash_combine
+std/traits.hash.cn:156:29 [call] std.traits::hash_combine
+std/traits.hash.cn:156:42 [call] std.traits::hash_seed
+std/traits.hash.cn:160:16 [call] std.traits::hash_combine
+std/traits.hash.cn:160:29 [call] std.traits::hash_combine
+std/traits.hash.cn:160:42 [call] std.traits::hash_seed
+std/traits.hash.cn:164:16 [call] std.traits::hash_combine
+std/traits.hash.cn:164:29 [call] std.traits::hash_seed
+std/traits.hash.cn:168:16 [call] std.traits::hash_combine
+std/traits.hash.cn:168:29 [call] std.traits::hash_seed
+std/traits.hash.cn:172:16 [call] std.traits::hash_combine
+std/traits.hash.cn:172:29 [call] std.traits::hash_seed
+std/traits.hash.cn:176:16 [call] std.traits::hash_combine
+std/traits.hash.cn:176:29 [call] std.traits::hash_seed
+std/traits.hash.cn:180:16 [call] std.traits::hash_combine
+std/traits.hash.cn:180:29 [call] std.traits::hash_seed
+std/traits.hash.cn:184:16 [call] std.traits::hash_combine
+std/traits.hash.cn:184:29 [call] std.traits::hash_seed
+std/traits.hash.cn:188:16 [call] std.traits::hash_combine
+std/traits.hash.cn:188:29 [call] std.traits::hash_seed
+std/traits.hash.cn:188:42 [call] std.traits::canonical_f64_bits
+std/traits.hash.cn:192:16 [call] std.traits::hash_combine
+std/traits.hash.cn:192:29 [call] std.traits::hash_seed
+std/traits.hash.cn:192:42 [call] std.traits::canonical_f32_bits
+std/traits.hash.cn:200:25 [call] std.traits::hash_seed
+std/traits.hash.cn:203:17 [call] std.traits::hash_combine
+std/unicode.cn:48:12 [call] std.unicode::rt_fmt_char_from_codepoint
 std/unicode.cn:63:13 [call] std.list::list::push$list_uint32_ recv
 std/unicode.cn:67:13 [call] std.list::list::push$list_uint32_ recv
 std/unicode.cn:72:13 [call] std.list::list::push$list_uint32_ recv
 std/unicode.cn:78:13 [call] std.list::list::push$list_uint32_ recv
 std/unicode.cn:92:11 [call] std.algo::binary_search$uint32
 std/unicode.cn:113:11 [call] std.algo::binary_search$uint32
+std/unicode.cn:117:23 [call] std.unicode::encode_cp
+std/unicode.cn:119:29 [call] std.unicode::encode_cp
+std/unicode.cn:121:29 [call] std.unicode::encode_cp
+std/unicode.cn:123:29 [call] std.unicode::encode_cp
+std/unicode.cn:133:12 [call] std.unicode::in_ranges
+std/unicode.cn:143:12 [call] std.unicode::in_ranges
 std/unicode.cn:156:15 [call] std.algo::partition_point$uint32
+std/unicode.cn:176:12 [call] std.unicode::is_case_ignorable
+std/unicode.cn:178:29 [call] std.unicode::is_cased
+std/unicode.cn:187:12 [call] std.unicode::is_case_ignorable
+std/unicode.cn:190:20 [call] std.unicode::is_cased
+std/unicode.cn:201:11 [call] std.unicode::lookup_one_to_many
+std/unicode.cn:206:19 [call] std.unicode::lookup_one_to_one
+std/unicode.cn:207:36 [call] std.unicode::encode_cp
+std/unicode.cn:208:33 [call] std.unicode::encode_cp
+std/unicode.cn:218:11 [call] std.unicode::lookup_one_to_many
+std/unicode.cn:223:19 [call] std.unicode::lookup_one_to_one
+std/unicode.cn:224:36 [call] std.unicode::encode_cp
+std/unicode.cn:225:33 [call] std.unicode::encode_cp
+std/unicode.cn:238:22 [call] std.unicode::decode_utf8
 std/unicode.cn:239:13 [call] std.list::list::len$list_uint32_ recv
+std/unicode.cn:243:21 [call] std.unicode::map_upper
+std/unicode.cn:255:22 [call] std.unicode::decode_utf8
 std/unicode.cn:256:13 [call] std.list::list::len$list_uint32_ recv
+std/unicode.cn:261:42 [call] std.unicode::is_final_sigma
+std/unicode.cn:262:25 [call] std.unicode::encode_cp
+std/unicode.cn:264:25 [call] std.unicode::map_lower_simple
+std/unicode.cn:276:22 [call] std.unicode::decode_utf8
 std/unicode.cn:277:13 [call] std.list::list::len$list_uint32_ recv
+std/unicode.cn:282:15 [call] std.unicode::lookup_one_to_many
+std/unicode.cn:288:29 [call] std.unicode::encode_cp
 
 ## resolved_fn_values (4)
 089_elaboration_snapshot_gaps.cn:112:13 [ident] codegen_stress.elaboration_snapshot_gaps::triple
@@ -36587,20 +37137,20 @@ std/unicode.cn:288:23 [binary] std.string::str::add recv
 087_list_element_references.cn:27:31 [index] std.list::list::at$list_int32_$usize recv
 087_list_element_references.cn:27:39 [index] std.list::list::at$list_int32_$usize recv
 087_list_element_references.cn:27:47 [index] std.list::list::at$list_int32_$usize recv
-091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at recv
+091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at recv args=[T]
 091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at$list_int32_$usize recv
 091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at$list_int64_$usize recv
 091_unannotated_accumulator_in_generic.cn:48:25 [index] std.list::list::at$list_int32_$usize recv
 091_unannotated_accumulator_in_generic.cn:53:31 [index] std.list::list::at$list_int64_$usize recv
 093_index_settles_its_receiver.cn:43:25 [index] std.list::list::at$list_int32_$usize recv
 108_shape_demand_leaves_elements_open.cn:26:20 [index] std.list::list::at$list_int64_$usize recv
-110_instances_by_substitution.cn:51:24 [index] std.list::list::at recv
+110_instances_by_substitution.cn:51:24 [index] std.list::list::at recv args=[T]
 110_instances_by_substitution.cn:51:24 [index] std.list::list::at$list_int32_$usize recv
 110_instances_by_substitution.cn:51:24 [index] std.list::list::at$list_int32_$usize recv
-110_instances_by_substitution.cn:68:12 [index] std.list::list::at recv
+110_instances_by_substitution.cn:68:12 [index] std.list::list::at recv args=[T]
 110_instances_by_substitution.cn:68:12 [index] std.list::list::at$list_int32_$usize recv
 110_instances_by_substitution.cn:68:12 [index] std.list::list::at$list_money_$usize recv
-110_instances_by_substitution.cn:68:20 [index] std.list::list::at recv
+110_instances_by_substitution.cn:68:20 [index] std.list::list::at recv args=[T]
 110_instances_by_substitution.cn:68:20 [index] std.list::list::at$list_int32_$usize recv
 110_instances_by_substitution.cn:68:20 [index] std.list::list::at$list_money_$usize recv
 110_instances_by_substitution.cn:118:21 [index] std.list::list::at$list_int32_$usize recv
@@ -36615,24 +37165,24 @@ std/unicode.cn:288:23 [binary] std.string::str::add recv
 112_index_borrow_and_write_wait.cn:27:20 [index] std.list::list::at$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:29:21 [index] std.list::list::at$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:29:33 [index] std.list::list::at$list_int64_$usize recv
-std/algo.cn:1755:37 [index] std.list::list::at recv
+std/algo.cn:1755:37 [index] std.list::list::at recv args=[T]
 std/algo.cn:1756:30 [index] std.list::list::at$list_usize_$usize recv
 std/algo.cn:1761:21 [index] std.list::list::at$list_usize_$usize recv
-std/algo.cn:1767:37 [index] std.list::list::at recv
+std/algo.cn:1767:37 [index] std.list::list::at recv args=[T]
 std/algo.cn:1768:17 [index] std.list::list::at$list_usize_$usize recv
-std/algo.cn:1768:35 [index] std.list::list::at recv
+std/algo.cn:1768:35 [index] std.list::list::at recv args=[T]
 std/algo.cn:1769:30 [index] std.list::list::at$list_usize_$usize recv
-std/algo.cn:1778:16 [index] std.list::list::at recv
-std/algo.cn:1852:19 [index] std.list::list::at recv
+std/algo.cn:1778:16 [index] std.list::list::at recv args=[T]
+std/algo.cn:1852:19 [index] std.list::list::at recv args=[T]
 std/algo.cn:1960:40 [index] std.list::list::at$list__usize__usize__$usize recv
 std/algo.cn:1961:34 [index] std.list::list::at$list__usize__usize__$usize recv
 std/algo.cn:1966:40 [index] std.list::list::at$list__usize__usize__$usize recv
-std/iter.cn:151:23 [index] std.list::list::at recv
+std/iter.cn:151:23 [index] std.list::list::at recv args=[T]
 std/iter.cn:151:23 [index] std.list::list::at$list_test_case_$usize recv
-std/iter.cn:162:27 [index] std.list::list::at recv
-std/iter.cn:197:23 [index] std.list::list::at recv
-std/list.cn:57:22 [index] std.list::list::at recv
-std/list.cn:63:22 [index] std.list::list::at recv
+std/iter.cn:162:27 [index] std.list::list::at recv args=[T]
+std/iter.cn:197:23 [index] std.list::list::at recv args=[T]
+std/list.cn:57:22 [index] std.list::list::at recv args=[T]
+std/list.cn:63:22 [index] std.list::list::at recv args=[T]
 std/unicode.cn:243:31 [index] std.list::list::at$list_uint32_$usize recv
 std/unicode.cn:260:18 [index] std.list::list::at$list_uint32_$usize recv
 std/unicode.cn:261:58 [index] std.list::list::at$list_uint32_$range_usize_ recv
@@ -36646,7 +37196,7 @@ std/unicode.cn:281:18 [index] std.list::list::at$list_uint32_$usize recv
 112_index_borrow_and_write_wait.cn:26:5 [index] std.list::list::set_at$list_int64_$usize recv
 std/algo.cn:1756:13 [index] std.list::list::set_at$list_usize_$usize recv
 std/algo.cn:1762:13 [index] std.list::list::set_at$list_usize_$usize recv
-std/algo.cn:1768:13 [index] std.list::list::set_at recv
+std/algo.cn:1768:13 [index] std.list::list::set_at recv args=[T]
 std/algo.cn:1769:13 [index] std.list::list::set_at$list_usize_$usize recv
 
 ## index_mut_dispatches (72)
@@ -36672,20 +37222,20 @@ std/algo.cn:1769:13 [index] std.list::list::set_at$list_usize_$usize recv
 087_list_element_references.cn:27:31 [index] std.list::list::at_mut$list_int32_$usize recv
 087_list_element_references.cn:27:39 [index] std.list::list::at_mut$list_int32_$usize recv
 087_list_element_references.cn:27:47 [index] std.list::list::at_mut$list_int32_$usize recv
-091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at_mut recv
+091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at_mut recv args=[T]
 091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at_mut$list_int32_$usize recv
 091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at_mut$list_int64_$usize recv
 091_unannotated_accumulator_in_generic.cn:48:25 [index] std.list::list::at_mut$list_int32_$usize recv
 091_unannotated_accumulator_in_generic.cn:53:31 [index] std.list::list::at_mut$list_int64_$usize recv
 093_index_settles_its_receiver.cn:43:25 [index] std.list::list::at_mut$list_int32_$usize recv
 108_shape_demand_leaves_elements_open.cn:26:20 [index] std.list::list::at_mut$list_int64_$usize recv
-110_instances_by_substitution.cn:51:24 [index] std.list::list::at_mut recv
+110_instances_by_substitution.cn:51:24 [index] std.list::list::at_mut recv args=[T]
 110_instances_by_substitution.cn:51:24 [index] std.list::list::at_mut$list_int32_$usize recv
 110_instances_by_substitution.cn:51:24 [index] std.list::list::at_mut$list_int32_$usize recv
-110_instances_by_substitution.cn:68:12 [index] std.list::list::at_mut recv
+110_instances_by_substitution.cn:68:12 [index] std.list::list::at_mut recv args=[T]
 110_instances_by_substitution.cn:68:12 [index] std.list::list::at_mut$list_int32_$usize recv
 110_instances_by_substitution.cn:68:12 [index] std.list::list::at_mut$list_money_$usize recv
-110_instances_by_substitution.cn:68:20 [index] std.list::list::at_mut recv
+110_instances_by_substitution.cn:68:20 [index] std.list::list::at_mut recv args=[T]
 110_instances_by_substitution.cn:68:20 [index] std.list::list::at_mut$list_int32_$usize recv
 110_instances_by_substitution.cn:68:20 [index] std.list::list::at_mut$list_money_$usize recv
 110_instances_by_substitution.cn:118:21 [index] std.list::list::at_mut$list_int32_$usize recv
@@ -36700,24 +37250,24 @@ std/algo.cn:1769:13 [index] std.list::list::set_at$list_usize_$usize recv
 112_index_borrow_and_write_wait.cn:27:20 [index] std.list::list::at_mut$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:29:21 [index] std.list::list::at_mut$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:29:33 [index] std.list::list::at_mut$list_int64_$usize recv
-std/algo.cn:1755:37 [index] std.list::list::at_mut recv
+std/algo.cn:1755:37 [index] std.list::list::at_mut recv args=[T]
 std/algo.cn:1756:30 [index] std.list::list::at_mut$list_usize_$usize recv
 std/algo.cn:1761:21 [index] std.list::list::at_mut$list_usize_$usize recv
-std/algo.cn:1767:37 [index] std.list::list::at_mut recv
+std/algo.cn:1767:37 [index] std.list::list::at_mut recv args=[T]
 std/algo.cn:1768:17 [index] std.list::list::at_mut$list_usize_$usize recv
-std/algo.cn:1768:35 [index] std.list::list::at_mut recv
+std/algo.cn:1768:35 [index] std.list::list::at_mut recv args=[T]
 std/algo.cn:1769:30 [index] std.list::list::at_mut$list_usize_$usize recv
-std/algo.cn:1778:16 [index] std.list::list::at_mut recv
-std/algo.cn:1852:19 [index] std.list::list::at_mut recv
+std/algo.cn:1778:16 [index] std.list::list::at_mut recv args=[T]
+std/algo.cn:1852:19 [index] std.list::list::at_mut recv args=[T]
 std/algo.cn:1960:40 [index] std.list::list::at_mut$list__usize__usize__$usize recv
 std/algo.cn:1961:34 [index] std.list::list::at_mut$list__usize__usize__$usize recv
 std/algo.cn:1966:40 [index] std.list::list::at_mut$list__usize__usize__$usize recv
-std/iter.cn:151:23 [index] std.list::list::at_mut recv
+std/iter.cn:151:23 [index] std.list::list::at_mut recv args=[T]
 std/iter.cn:151:23 [index] std.list::list::at_mut$list_test_case_$usize recv
-std/iter.cn:162:27 [index] std.list::list::at_mut recv
-std/iter.cn:197:23 [index] std.list::list::at_mut recv
-std/list.cn:57:22 [index] std.list::list::at_mut recv
-std/list.cn:63:22 [index] std.list::list::at_mut recv
+std/iter.cn:162:27 [index] std.list::list::at_mut recv args=[T]
+std/iter.cn:197:23 [index] std.list::list::at_mut recv args=[T]
+std/list.cn:57:22 [index] std.list::list::at_mut recv args=[T]
+std/list.cn:63:22 [index] std.list::list::at_mut recv args=[T]
 std/unicode.cn:243:31 [index] std.list::list::at_mut$list_uint32_$usize recv
 std/unicode.cn:260:18 [index] std.list::list::at_mut$list_uint32_$usize recv
 std/unicode.cn:261:58 [index] std.list::list::at_mut$list_uint32_$range_usize_ recv
@@ -36743,20 +37293,20 @@ std/unicode.cn:281:18 [index] std.list::list::at_mut$list_uint32_$usize recv
 087_list_element_references.cn:27:31 [index] std.list::list::at_ref$list_int32_$usize recv
 087_list_element_references.cn:27:39 [index] std.list::list::at_ref$list_int32_$usize recv
 087_list_element_references.cn:27:47 [index] std.list::list::at_ref$list_int32_$usize recv
-091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at_ref recv
+091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at_ref recv args=[T]
 091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at_ref$list_int32_$usize recv
 091_unannotated_accumulator_in_generic.cn:28:20 [index] std.list::list::at_ref$list_int64_$usize recv
 091_unannotated_accumulator_in_generic.cn:48:25 [index] std.list::list::at_ref$list_int32_$usize recv
 091_unannotated_accumulator_in_generic.cn:53:31 [index] std.list::list::at_ref$list_int64_$usize recv
 093_index_settles_its_receiver.cn:43:25 [index] std.list::list::at_ref$list_int32_$usize recv
 108_shape_demand_leaves_elements_open.cn:26:20 [index] std.list::list::at_ref$list_int64_$usize recv
-110_instances_by_substitution.cn:51:24 [index] std.list::list::at_ref recv
+110_instances_by_substitution.cn:51:24 [index] std.list::list::at_ref recv args=[T]
 110_instances_by_substitution.cn:51:24 [index] std.list::list::at_ref$list_int32_$usize recv
 110_instances_by_substitution.cn:51:24 [index] std.list::list::at_ref$list_int32_$usize recv
-110_instances_by_substitution.cn:68:12 [index] std.list::list::at_ref recv
+110_instances_by_substitution.cn:68:12 [index] std.list::list::at_ref recv args=[T]
 110_instances_by_substitution.cn:68:12 [index] std.list::list::at_ref$list_int32_$usize recv
 110_instances_by_substitution.cn:68:12 [index] std.list::list::at_ref$list_money_$usize recv
-110_instances_by_substitution.cn:68:20 [index] std.list::list::at_ref recv
+110_instances_by_substitution.cn:68:20 [index] std.list::list::at_ref recv args=[T]
 110_instances_by_substitution.cn:68:20 [index] std.list::list::at_ref$list_int32_$usize recv
 110_instances_by_substitution.cn:68:20 [index] std.list::list::at_ref$list_money_$usize recv
 110_instances_by_substitution.cn:118:21 [index] std.list::list::at_ref$list_int32_$usize recv
@@ -36771,23 +37321,23 @@ std/unicode.cn:281:18 [index] std.list::list::at_mut$list_uint32_$usize recv
 112_index_borrow_and_write_wait.cn:27:20 [index] std.list::list::at_ref$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:29:21 [index] std.list::list::at_ref$list_int64_$usize recv
 112_index_borrow_and_write_wait.cn:29:33 [index] std.list::list::at_ref$list_int64_$usize recv
-std/algo.cn:1755:37 [index] std.list::list::at_ref recv
+std/algo.cn:1755:37 [index] std.list::list::at_ref recv args=[T]
 std/algo.cn:1756:30 [index] std.list::list::at_ref$list_usize_$usize recv
 std/algo.cn:1761:21 [index] std.list::list::at_ref$list_usize_$usize recv
-std/algo.cn:1767:37 [index] std.list::list::at_ref recv
+std/algo.cn:1767:37 [index] std.list::list::at_ref recv args=[T]
 std/algo.cn:1768:17 [index] std.list::list::at_ref$list_usize_$usize recv
-std/algo.cn:1768:35 [index] std.list::list::at_ref recv
+std/algo.cn:1768:35 [index] std.list::list::at_ref recv args=[T]
 std/algo.cn:1769:30 [index] std.list::list::at_ref$list_usize_$usize recv
-std/algo.cn:1778:16 [index] std.list::list::at_ref recv
+std/algo.cn:1778:16 [index] std.list::list::at_ref recv args=[T]
 std/algo.cn:1960:40 [index] std.list::list::at_ref$list__usize__usize__$usize recv
 std/algo.cn:1961:34 [index] std.list::list::at_ref$list__usize__usize__$usize recv
 std/algo.cn:1966:40 [index] std.list::list::at_ref$list__usize__usize__$usize recv
-std/iter.cn:151:23 [index] std.list::list::at_ref recv
+std/iter.cn:151:23 [index] std.list::list::at_ref recv args=[T]
 std/iter.cn:151:23 [index] std.list::list::at_ref$list_test_case_$usize recv
-std/iter.cn:162:27 [index] std.list::list::at_ref recv
-std/iter.cn:197:23 [index] std.list::list::at_ref recv
-std/list.cn:57:22 [index] std.list::list::at_ref recv
-std/list.cn:63:22 [index] std.list::list::at_ref recv
+std/iter.cn:162:27 [index] std.list::list::at_ref recv args=[T]
+std/iter.cn:197:23 [index] std.list::list::at_ref recv args=[T]
+std/list.cn:57:22 [index] std.list::list::at_ref recv args=[T]
+std/list.cn:63:22 [index] std.list::list::at_ref recv args=[T]
 std/unicode.cn:243:31 [index] std.list::list::at_ref$list_uint32_$usize recv
 std/unicode.cn:260:18 [index] std.list::list::at_ref$list_uint32_$usize recv
 std/unicode.cn:281:18 [index] std.list::list::at_ref$list_uint32_$usize recv
@@ -36808,7 +37358,7 @@ std/unicode.cn:281:18 [index] std.list::list::at_ref$list_uint32_$usize recv
 054_static_dispatch_on_generic_types.cn:69:32 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
 074_range_index_general_stride.cn:44:27 [array] std.list::list::from_array$4$list_int32_ from array[int32, 4]
 087_list_element_references.cn:19:14 [array] std.list::list::from_array$5$list_int32_ from array[int32, 5]
-091_unannotated_accumulator_in_generic.cn:25:15 [array] std.list::list::from_array from array[T, 0]
+091_unannotated_accumulator_in_generic.cn:25:15 [array] std.list::list::from_array args=[T, 0] from array[T, 0]
 091_unannotated_accumulator_in_generic.cn:25:15 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
 091_unannotated_accumulator_in_generic.cn:25:15 [array] std.list::list::from_array$0$list_int64_ from array[int64, 0]
 091_unannotated_accumulator_in_generic.cn:39:30 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
@@ -36817,7 +37367,7 @@ std/unicode.cn:281:18 [index] std.list::list::at_ref$list_uint32_$usize recv
 108_shape_demand_leaves_elements_open.cn:25:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
 108_shape_demand_leaves_elements_open.cn:29:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
 108_shape_demand_leaves_elements_open.cn:33:19 [array] std.list::list::from_array$1$list__int64__int32__ from array[(int64, int32), 1]
-110_instances_by_substitution.cn:48:28 [array] std.list::list::from_array from array[U, 0]
+110_instances_by_substitution.cn:48:28 [array] std.list::list::from_array args=[U, 0] from array[U, 0]
 110_instances_by_substitution.cn:48:28 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
 110_instances_by_substitution.cn:48:28 [array] std.list::list::from_array$0$list_int64_ from array[int64, 0]
 110_instances_by_substitution.cn:116:29 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
@@ -36828,17 +37378,17 @@ std/unicode.cn:281:18 [index] std.list::list::at_ref$list_uint32_$usize recv
 112_index_borrow_and_write_wait.cn:25:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
 ?:1699 [array] std.list::list::from_array$1$list_field_info_ from array[field_info, 1]
 ?:3965 [array] std.list::list::from_array$1$list_field_info_ from array[field_info, 1]
-std/algo.cn:1215:15 [array] std.list::list::from_array from array[T, 0]
-std/algo.cn:1216:14 [array] std.list::list::from_array from array[T, 0]
-std/algo.cn:1738:24 [array] std.list::list::from_array from array[T, 0]
-std/algo.cn:1743:24 [array] std.list::list::from_array from array[T, 0]
+std/algo.cn:1215:15 [array] std.list::list::from_array args=[T, 0] from array[T, 0]
+std/algo.cn:1216:14 [array] std.list::list::from_array args=[T, 0] from array[T, 0]
+std/algo.cn:1738:24 [array] std.list::list::from_array args=[T, 0] from array[T, 0]
+std/algo.cn:1743:24 [array] std.list::list::from_array args=[T, 0] from array[T, 0]
 std/algo.cn:1752:35 [array] std.list::list::from_array$256$list_usize_ from array[usize, 256]
-std/algo.cn:1845:24 [array] std.list::list::from_array from array[T, 0]
+std/algo.cn:1845:24 [array] std.list::list::from_array args=[T, 0] from array[T, 0]
 std/algo.cn:1944:38 [array] std.list::list::from_array$0$list__usize__usize__ from array[(usize, usize), 0]
 std/algo.cn:1956:47 [array] std.list::list::from_array$0$list__usize__usize__ from array[(usize, usize), 0]
-std/algo.cn:2142:31 [array] std.list::list::from_array from array[slice[T], 0]
-std/algo.cn:2162:31 [array] std.list::list::from_array from array[slice[T], 0]
-std/iter.cn:217:19 [array] std.list::list::from_array from array[T, 0]
+std/algo.cn:2142:31 [array] std.list::list::from_array args=[slice[T], 0] from array[slice[T], 0]
+std/algo.cn:2162:31 [array] std.list::list::from_array args=[slice[T], 0] from array[slice[T], 0]
+std/iter.cn:217:19 [array] std.list::list::from_array args=[T, 0] from array[T, 0]
 std/string.cn:205:33 [array] std.list::list::from_array$0$list_str_ from array[str, 0]
 std/test.cn:108:23 [array] std.list::list::from_array$1$list_test_suite_ from array[test_suite, 1]
 std/unicode.cn:58:29 [array] std.list::list::from_array$0$list_uint32_ from array[uint32, 0]
@@ -36932,7 +37482,7 @@ std/deriving.cn:93:39 [call] money
 ?:3276 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:3338 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:4426 [for_stmt] next=::list_into_iter::next$list_into_iter_test_suite_ elem=test_suite owner=std.iter adapter=::list::into_iter$list_test_suite_ -> list_into_iter[test_suite]
-?:4936 [for_stmt] next=::list_iter::next$list_iter_test_case_ elem=&test_case owner=std.iter adapter=::iter$list_test_case_ -> list_iter[test_case]
+?:4936 [for_stmt] next=::list_iter::next$list_iter_test_case_ elem=&test_case owner=std.iter adapter=::iter$test_case -> list_iter[test_case]
 ?:5195 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 
 ## comprehension_iterator_dispatches (1)
@@ -37305,8 +37855,10 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (860)
+## drop_plans (897)
+(bag[int32]) own=- fields=[0: bag[int32]]
 (list[T], list[T]) own=- fields=[0: list[T], 1: list[T]]
+(list[int32]) own=- fields=[0: list[int32]]
 (sender[T], receiver[T]) own=- fields=[0: sender[T], 1: receiver[T]]
 (watch_writer[T], watch_reader[T]) own=- fields=[0: watch_writer[T], 1: watch_reader[T]]
 array[test_suite, 1] own=- fields=[]
@@ -37408,6 +37960,25 @@ fn(&mut list[int32]) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut list[int32], int32) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut list[int32], usize) -> bool own=- fields=[] glue=fn() -> unit
 fn(&mut option[T], option[T]) -> option[T] own=- fields=[] glue=fn() -> unit
+fn(&mut self) -> option[T] own=- fields=[] glue=fn() -> unit
+fn(&mut self) -> option[T] own=- fields=[] glue=fn() -> unit
+fn(&mut self) -> option[T] own=- fields=[] glue=fn() -> unit
+fn(&mut self) -> option[T] own=- fields=[] glue=fn() -> unit
+fn(&mut self) -> option[T] own=- fields=[] glue=fn() -> unit
+fn(&mut self) -> option[T] own=- fields=[] glue=fn() -> unit
+fn(&mut self) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
+fn(&mut self) -> task[unit, io_error, io] own=- fields=[] glue=fn() -> unit
+fn(&mut self) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut self, &mut list[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(&mut self, &mut list[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() -> unit
+fn(&mut self, &mut slice_mut[byte]) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
+fn(&mut self, &mut slice_mut[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(&mut self, &mut slice_mut[byte]) -> task[unit, io_error, io] own=- fields=[] glue=fn() -> unit
+fn(&mut self, &mut slice_mut[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() -> unit
+fn(&mut self, &slice[byte]) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
+fn(&mut self, &slice[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(&mut self, &slice[byte]) -> task[unit, io_error, io] own=- fields=[] glue=fn() -> unit
+fn(&mut self, &slice[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() -> unit
 fn(&mut slice_mut[T]) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut slice_mut[T]) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut slice_mut[T], bool) -> unit own=- fields=[] glue=fn() -> unit
@@ -37443,6 +38014,16 @@ fn(&mut slice_mut[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() 
 fn(&mut slice_mut[int32]) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut uninit[array[field_info, 1], 1]) -> *mut array[field_info, 1] own=- fields=[] glue=fn() -> unit
 fn(&ordering) -> bool own=- fields=[] glue=fn() -> unit
+fn(&self) -> T own=- fields=[] glue=fn() -> unit
+fn(&self) -> T own=- fields=[] glue=fn() -> unit
+fn(&self) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&self) -> self own=- fields=[] glue=fn() -> unit
+fn(&self) -> str own=- fields=[] glue=fn() -> unit
+fn(&self) -> uint64 own=- fields=[] glue=fn() -> unit
+fn(&self) -> usize own=- fields=[] glue=fn() -> unit
+fn(&self, &self) -> bool own=- fields=[] glue=fn() -> unit
+fn(&self, &self) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&self, T) -> T own=- fields=[] glue=fn() -> unit
 fn(&slice[T], T) -> option[usize] own=- fields=[] glue=fn() -> unit
 fn(&slice[T], fn(&T) -> bool) -> usize own=- fields=[] glue=fn() -> unit
 fn(&slice[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
@@ -37623,23 +38204,22 @@ fn(A) -> B own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
+fn(A) -> M[A] own=- fields=[] glue=fn() -> unit
 fn(A) -> M[B] own=- fields=[] glue=fn() -> unit
 fn(A) -> _ own=- fields=[] glue=fn() -> unit
 fn(A) -> _ own=- fields=[] glue=fn() -> unit
 fn(A) -> option[A] own=- fields=[] glue=fn() -> unit
 fn(A) -> option[B] own=- fields=[] glue=fn() -> unit
 fn(A, T) -> A own=- fields=[] glue=fn() -> unit
-fn(I) -> C own=- fields=[] glue=fn() -> unit
+fn(F[A], fn(A) -> B) -> F[B] own=- fields=[] glue=fn() -> unit
+fn(F[A], fn(A) -> B) -> F[B] own=- fields=[] glue=fn() -> unit
 fn(I) -> C own=- fields=[] glue=fn() -> unit
 fn(I) -> C own=- fields=[] glue=fn() -> unit
 fn(I) -> T own=- fields=[] glue=fn() -> unit
 fn(I) -> T own=- fields=[] glue=fn() -> unit
 fn(I) -> counter own=- fields=[] glue=fn() -> unit
-fn(I) -> counter own=- fields=[] glue=fn() -> unit
-fn(I) -> doubler own=- fields=[] glue=fn() -> unit
 fn(I) -> doubler own=- fields=[] glue=fn() -> unit
 fn(I) -> list[_] own=- fields=[] glue=fn() -> unit
-fn(I) -> list[int32] own=- fields=[] glue=fn() -> unit
 fn(I) -> list[int32] own=- fields=[] glue=fn() -> unit
 fn(I) -> self own=- fields=[] glue=fn() -> unit
 fn(I) -> self own=- fields=[] glue=fn() -> unit
@@ -37647,6 +38227,7 @@ fn(I, fn(T) -> U) -> map_iter[I, T, U] own=- fields=[] glue=fn() -> unit
 fn(I, fn(T) -> bool) -> filter_iter[I, T] own=- fields=[] glue=fn() -> unit
 fn(K, K) -> ordering own=- fields=[] glue=fn() -> unit
 fn(K, K) -> ordering own=- fields=[] glue=fn() -> unit
+fn(M[A], fn(A) -> M[B]) -> M[B] own=- fields=[] glue=fn() -> unit
 fn(S, T) -> S own=- fields=[] glue=fn() -> unit
 fn(S, T) -> S own=- fields=[] glue=fn() -> unit
 fn(S, T) -> S own=- fields=[] glue=fn() -> unit
@@ -37667,6 +38248,8 @@ fn(T) -> U own=- fields=[] glue=fn() -> unit
 fn(T) -> U own=- fields=[] glue=fn() -> unit
 fn(T) -> U own=- fields=[] glue=fn() -> unit
 fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> _ own=- fields=[] glue=fn() -> unit
 fn(T) -> _ own=- fields=[] glue=fn() -> unit
 fn(T) -> bool own=- fields=[] glue=fn() -> unit
 fn(T) -> bool own=- fields=[] glue=fn() -> unit
@@ -37678,6 +38261,8 @@ fn(T) -> option[U] own=- fields=[] glue=fn() -> unit
 fn(T) -> option[U] own=- fields=[] glue=fn() -> unit
 fn(T) -> option[U] own=- fields=[] glue=fn() -> unit
 fn(T) -> option[U] own=- fields=[] glue=fn() -> unit
+fn(T) -> self own=- fields=[] glue=fn() -> unit
+fn(T) -> self own=- fields=[] glue=fn() -> unit
 fn(T) -> str own=- fields=[] glue=fn() -> unit
 fn(T) -> unit own=- fields=[] glue=fn() -> unit
 fn(T) -> unit own=- fields=[] glue=fn() -> unit
@@ -37848,6 +38433,7 @@ fn(_, usize, _) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, usize, _) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[(int64, int32), 1]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[(usize, usize), 0]) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[T, n]) -> self own=- fields=[] glue=fn() -> unit
 fn(array[T, n]) -> unit own=- fields=[] glue=fn() -> unit
 fn(array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
 fn(array[_, n]) -> list[_] own=- fields=[] glue=fn() -> unit
@@ -37891,6 +38477,7 @@ fn(float64, usize, bool) -> str own=- fields=[] glue=fn() -> unit
 fn(fn(int32) -> int32, int32) -> int32 own=- fields=[] glue=fn() -> unit
 fn(int128, uint8, bool, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
 fn(int32) -> B own=- fields=[] glue=fn() -> unit
+fn(int32) -> U own=- fields=[] glue=fn() -> unit
 fn(int32) -> U own=- fields=[] glue=fn() -> unit
 fn(int32) -> _ own=- fields=[] glue=fn() -> unit
 fn(int32) -> array[int32, 4] own=- fields=[] glue=fn() -> unit
@@ -38167,7 +38754,7 @@ write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (2228)
+## borrow_bearing_types (2249)
 &(T0, T1)
 &(T0, T1, T2)
 &(T0, T1, T2, T3)
@@ -38442,6 +39029,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &mut rev_iter[I, T]
 &mut rwlock[T]
 &mut scan_iter[I, T, S]
+&mut self
 &mut sender[T]
 &mut shared[T]
 &mut skip_iter[I, T]
@@ -38562,7 +39150,6 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 *T
 *T
 *T
-*mut T
 *mut T
 *mut T
 *mut T
@@ -39120,14 +39707,6 @@ T
 T
 T
 T
-T
-T
-T
-T
-T
-T
-T
-T
 T0
 T0
 T0
@@ -39233,7 +39812,6 @@ array[T, 0]
 array[T, 0]
 array[T, 0]
 array[T, 0]
-array[T, 0]
 array[T, 2]
 array[T, _]
 array[T, k + 1]
@@ -39257,7 +39835,6 @@ array[T, n]
 array[T, n]
 array[T, n]
 array[T, n]
-array[T, n]
 array[U, 0]
 array[U, n]
 array[slice[T], 0]
@@ -39266,7 +39843,6 @@ array[slice[T], n]
 array[slice[T], n]
 array[test_suite, 1]
 array[test_suite, n]
-atomic[T]
 atomic[T]
 bag[T]
 bag[T]
@@ -39384,6 +39960,25 @@ fn(&mut list[int32]) -> unit
 fn(&mut list[int32], int32) -> unit
 fn(&mut list[int32], usize) -> bool
 fn(&mut option[T], option[T]) -> option[T]
+fn(&mut self) -> option[T]
+fn(&mut self) -> option[T]
+fn(&mut self) -> option[T]
+fn(&mut self) -> option[T]
+fn(&mut self) -> option[T]
+fn(&mut self) -> option[T]
+fn(&mut self) -> result[unit, io_error]
+fn(&mut self) -> task[unit, io_error, io]
+fn(&mut self) -> unit
+fn(&mut self, &mut list[byte]) -> result[usize, io_error]
+fn(&mut self, &mut list[byte]) -> task[usize, io_error, io]
+fn(&mut self, &mut slice_mut[byte]) -> result[unit, io_error]
+fn(&mut self, &mut slice_mut[byte]) -> result[usize, io_error]
+fn(&mut self, &mut slice_mut[byte]) -> task[unit, io_error, io]
+fn(&mut self, &mut slice_mut[byte]) -> task[usize, io_error, io]
+fn(&mut self, &slice[byte]) -> result[unit, io_error]
+fn(&mut self, &slice[byte]) -> result[usize, io_error]
+fn(&mut self, &slice[byte]) -> task[unit, io_error, io]
+fn(&mut self, &slice[byte]) -> task[usize, io_error, io]
 fn(&mut slice_mut[T]) -> unit
 fn(&mut slice_mut[T]) -> unit
 fn(&mut slice_mut[T], bool) -> unit
@@ -39419,6 +40014,16 @@ fn(&mut slice_mut[byte]) -> task[usize, io_error, io]
 fn(&mut slice_mut[int32]) -> unit
 fn(&mut uninit[array[field_info, 1], 1]) -> *mut array[field_info, 1]
 fn(&ordering) -> bool
+fn(&self) -> T
+fn(&self) -> T
+fn(&self) -> int32
+fn(&self) -> self
+fn(&self) -> str
+fn(&self) -> uint64
+fn(&self) -> usize
+fn(&self, &self) -> bool
+fn(&self, &self) -> ordering
+fn(&self, T) -> T
 fn(&slice[T], T) -> option[usize]
 fn(&slice[T], fn(&T) -> bool) -> usize
 fn(&slice[byte]) -> result[usize, io_error]
@@ -39599,23 +40204,22 @@ fn(A) -> B
 fn(A) -> B
 fn(A) -> B
 fn(A) -> B
+fn(A) -> M[A]
 fn(A) -> M[B]
 fn(A) -> _
 fn(A) -> _
 fn(A) -> option[A]
 fn(A) -> option[B]
 fn(A, T) -> A
-fn(I) -> C
+fn(F[A], fn(A) -> B) -> F[B]
+fn(F[A], fn(A) -> B) -> F[B]
 fn(I) -> C
 fn(I) -> C
 fn(I) -> T
 fn(I) -> T
 fn(I) -> counter
-fn(I) -> counter
-fn(I) -> doubler
 fn(I) -> doubler
 fn(I) -> list[_]
-fn(I) -> list[int32]
 fn(I) -> list[int32]
 fn(I) -> self
 fn(I) -> self
@@ -39623,6 +40227,7 @@ fn(I, fn(T) -> U) -> map_iter[I, T, U]
 fn(I, fn(T) -> bool) -> filter_iter[I, T]
 fn(K, K) -> ordering
 fn(K, K) -> ordering
+fn(M[A], fn(A) -> M[B]) -> M[B]
 fn(S, T) -> S
 fn(S, T) -> S
 fn(S, T) -> S
@@ -39643,6 +40248,8 @@ fn(T) -> U
 fn(T) -> U
 fn(T) -> U
 fn(T) -> U
+fn(T) -> U
+fn(T) -> _
 fn(T) -> _
 fn(T) -> _
 fn(T) -> bool
@@ -39655,6 +40262,8 @@ fn(T) -> option[U]
 fn(T) -> option[U]
 fn(T) -> option[U]
 fn(T) -> option[U]
+fn(T) -> self
+fn(T) -> self
 fn(T) -> str
 fn(T) -> unit
 fn(T) -> unit
@@ -39668,6 +40277,7 @@ fn(_) -> &_
 fn(_) -> &mut _
 fn(_) -> *_
 fn(_) -> *mut _
+fn(_) -> B
 fn(_) -> B
 fn(_) -> U
 fn(_) -> _
@@ -39704,6 +40314,7 @@ fn(_) -> option[&_]
 fn(_) -> option[&mut _]
 fn(_) -> option[(_, _)]
 fn(_) -> option[(usize, _)]
+fn(_) -> option[B]
 fn(_) -> option[B]
 fn(_) -> option[U]
 fn(_) -> option[_]
@@ -39854,6 +40465,7 @@ fn(_, usize, _) -> bool
 fn(_, usize, _) -> unit
 fn(array[(int64, int32), 1]) -> unit
 fn(array[(usize, usize), 0]) -> unit
+fn(array[T, n]) -> self
 fn(array[T, n]) -> unit
 fn(array[T, n], index[n]) -> T
 fn(array[_, n]) -> list[_]
@@ -39897,6 +40509,7 @@ fn(float64, usize, bool) -> str
 fn(fn(int32) -> int32, int32) -> int32
 fn(int128, uint8, bool, str, format_spec) -> str
 fn(int32) -> B
+fn(int32) -> U
 fn(int32) -> U
 fn(int32) -> _
 fn(int32) -> array[int32, 4]
@@ -40019,13 +40632,11 @@ fn(vec[T, n + 1]) -> unit
 fn(vec[int32, 7]) -> unit
 fn(weight, weight) -> int32
 holder[T]
-holder[T]
 inspect_iter
 inspect_iter[I, T]
 inspect_iter[I, T]
 inspect_iter[_, _]
 k
-list[T]
 list[T]
 list[T]
 list[T]
@@ -40229,8 +40840,6 @@ option[T]
 option[T]
 option[T]
 option[T]
-option[T]
-option[T]
 option[U]
 option[U]
 option[U]
@@ -40258,7 +40867,6 @@ receiver[T]
 receiver[T]
 result[T, E]
 result[T, E]
-result[T, T]
 result[unit, T]
 rev_iter[I, T]
 rev_iter[I, T]
@@ -40499,8 +41107,8 @@ codegen_stress.generic_monomorphization::holder::at$2
 codegen_stress.generic_monomorphization::holder::echo$int32
 codegen_stress.generic_monomorphization::holder::pick$4$int32
 codegen_stress.generic_monomorphization::zeros$3
-codegen_stress.higher_kinded_trait_dispatch::option::bind$int32$int32
 codegen_stress.higher_kinded_trait_dispatch::option::pure$int32
+codegen_stress.higher_kinded_trait_dispatch::option[int32]::bind$int32$int32
 codegen_stress.impl_const_generic_value_param::buf::capacity$buf_4_
 codegen_stress.impl_const_generic_value_param::buf::capacity$buf_8_
 codegen_stress.impl_on_generic_target::boxed::get$boxed_int32_
@@ -40509,8 +41117,8 @@ codegen_stress.impl_on_generic_target::holder::get$holder_int32_
 codegen_stress.impl_on_generic_target::holder::scale$holder_int32_
 codegen_stress.impl_on_generic_target::holder::scale$holder_int64_
 codegen_stress.instances_by_substitution::bag::count$bag_int32_
-codegen_stress.instances_by_substitution::bag::map$int32
-codegen_stress.instances_by_substitution::bag::map$int64
+codegen_stress.instances_by_substitution::bag[int32]::map$int32
+codegen_stress.instances_by_substitution::bag[int32]::map$int64
 codegen_stress.instances_by_substitution::biggest$int32
 codegen_stress.instances_by_substitution::biggest$money
 codegen_stress.instances_by_substitution::bump$int32
@@ -40522,8 +41130,8 @@ codegen_stress.instances_by_substitution::framed$money
 codegen_stress.instances_by_substitution::get_or$int32
 codegen_stress.instances_by_substitution::get_or$int64
 codegen_stress.instances_by_substitution::mapped_count$int32
-codegen_stress.instances_by_substitution::option::map$int32$int32
-codegen_stress.instances_by_substitution::option::map$int64$int64
+codegen_stress.instances_by_substitution::option[int32]::map$int32$int32
+codegen_stress.instances_by_substitution::option[int64]::map$int64$int64
 codegen_stress.instances_by_substitution::pair_of$int32
 codegen_stress.instances_by_substitution::pair_of$int64
 codegen_stress.instances_by_substitution::sum_list$int32
@@ -40547,7 +41155,7 @@ std.algo::binary_search$uint32
 std.algo::partition_point$uint32
 std.derive::derive_eq$money
 std.derive::derive_show$money
-std.iter::iter$list_test_case_
+std.iter::iter$test_case
 std.iter::list_into_iter::drop$list_into_iter__int64__int32__
 std.iter::list_into_iter::drop$list_into_iter_int32_
 std.iter::list_into_iter::drop$list_into_iter_int64_
@@ -40777,8 +41385,8 @@ alloc$uint32
 alloc$usize
 apply$int32$int32
 bag::count$bag_int32_
-bag::map$int32
-bag::map$int64
+bag[int32]::map$int32
+bag[int32]::map$int64
 biggest$int32
 biggest$money
 binary_search$uint32
@@ -40888,7 +41496,7 @@ holder::pick$4$int32
 holder::scale$holder_int32_
 holder::scale$holder_int64_
 identity$int32
-iter$list_test_case_
+iter$test_case
 list::as_mut_ptr$list__int64__int32__
 list::as_mut_ptr$list_int32_
 list::as_mut_ptr$list_int64_
@@ -41015,10 +41623,10 @@ map$filter_iter_counter__int32_$int32$int32
 map_iter::next$map_iter_counter__int32__int32_
 map_iter::next$map_iter_filter_iter_counter__int32___int32__int32_
 mapped_count$int32
-option::bind$int32$int32
-option::map$int32$int32
-option::map$int64$int64
 option::pure$int32
+option[int32]::bind$int32$int32
+option[int32]::map$int32$int32
+option[int64]::map$int64$int64
 pair_of$int32
 pair_of$int64
 partition_point$uint32
@@ -41054,7 +41662,7 @@ zeros$3
 
 ## arena sizes
 synthesized_functor_nodes 0
-synthesized_types 150
+synthesized_types 139
 synthesized_fragments 26
 synthesized_const_literals 70
 elided_contracts 0

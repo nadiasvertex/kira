@@ -11,7 +11,7 @@ The core sits between the checker and HIR lowering and has one job: to say every
 - Every expression has a settled type.
 - A place is a root (a local, a `static`, or a temporary) plus a list of projections: field, tuple element, variant payload, dereference, and builtin element. Indexing or dereferencing a user type is a call to its impl, followed by a dereference of the returned reference.
 - A place is read, written, or borrowed only through `use` (a copy or a move), `borrow` (shared or mutable, written or inserted), and `assign`. There is no implicit borrow or dereference.
-- There is one `call` form. Its callee names a declared function or an instance of one, a function or closure value, or an intrinsic. Operators on user types, method calls, conversions, default arguments, and `for` loops over iterators are calls. Builtin scalar operators are `primitive` nodes.
+- There is one `call` form. Its callee names a declared function or an instance of one, a function or closure value, an intrinsic, or a trait method called through a bound (`trait_method`, with the bound's type as `self_type` and the trait's arguments as `trait_args`). Inside a template, a call to a template (the template itself included) names that template with its arguments in the caller's parameters, and its signature is the template's under them. Operators on user types, method calls, conversions, default arguments, and `for` loops over iterators are calls. Builtin scalar operators are `primitive` nodes.
 - There is one `match` form: a subject place and arms, where each arm has tests (a structural description of the value) and bindings (each a projection of the subject, as a copy, a move, or an alias). `if let`, `let ... else`, and destructuring `let` elaborate to it.
 - There is one loop, `while_loop`. A `for` loop is a `let` of its state followed by that loop.
 - A function keeps its type and value parameters. An instance is a function whose `instance_of` points at its template.
@@ -27,12 +27,12 @@ Every rule has an id, listed with its statement in `verify.h`, and has a passing
 - **T**, types: every type is settled, free of refinements and existentials, and mentions a type parameter only inside a function that lists it.
 - **P**, places: roots are in scope, each projection is valid for the type before it, and writability follows from the root and path alone.
 - **A**, access: a `use` is a copy exactly when its type is `copy`, a move leaves no reference or element behind, and a mutable borrow is of a writable place.
-- **C**, calls: one argument per parameter, each of the parameter's type; the callee form is consistent with its declaration, value, or intrinsic name; generic arguments are settled and, for a callee whose template is in the program, as many as the template has parameters.
+- **C**, calls: one argument per parameter, each of the parameter's type; the callee form is consistent with its declaration, value, or intrinsic name; generic arguments are settled and, for a callee whose template is in the program, as many as the template has parameters. A template callee's signature is the template's under its arguments (C2), and only a function with generic parameters may call a declaration the program holds only as a template (C10), since lowering cannot call one. A `trait_method` callee names a method of `checked_types::trait_method_signatures`, and its signature and receiver are the table's under `[self_type, trait_args..., generic_args...]` (C9).
 - **E**, expressions: literals, primitives, casts, aggregates, blocks, `if`, `match`, lambdas, and `await` have the types their parts imply.
 - **S**, statements: `let`, assignment, loops, jumps, and contract checks.
 - **F**, functions: each symbol is introduced once, the body has the function's type, and a static's value has the static's type.
 
-A violation is an internal compiler error, never a user diagnostic. The verifier does not yet check that a generic call's arguments meet the callee's bounds, and it does not check that a `match` is exhaustive.
+A violation is an internal compiler error, never a user diagnostic. The verifier does not yet check that a generic call's arguments meet the callee's bounds, including that a `trait_method` callee's `self_type` is bound by the trait, and it does not check that a `match` is exhaustive.
 
 The compiler's own operations are the `intrinsic` callees whose names the elaborator chooses (builtin addressing, views, raw pointers, layout queries, string iteration, task forms such as `task_block`, `on_cpu` and `task_yield`). `src/core/intrinsics.h` holds the table: each name has a fixed shape for its signature and generic arguments, and rule C5 checks a call against it. An intrinsic name outside the table must be declared by an `intrinsic def` in the program.
 
@@ -78,7 +78,7 @@ Lowering has one entry point for a whole program, `hir::lower_program` (`lower_c
 
 ## Compile-time code from the core
 
-Compile-time code is built by the adapter and lowered from the core too. The compile-time VM (`src/comptime_vm/program.cpp`) lowers on demand, so the adapter has three entry points that use the same per-construct code as `adapt_program`: `core::adapt_function` (one declaration, under a name and module), `core::adapt_expression` (a compile-time expression as a function of its own: its captures are by-value parameters, its value is the body's result, and nothing is dropped) and `core::adapt_static` (one reified static's value). `adapt_intrinsic` gives an `intrinsic def`'s declaration. A name the core cannot resolve from the checker's records, such as a call the checker ran at compile time or an `intrinsic def` in the same module, is looked up through `core::function_lookup`; in `adapt_program` that is the program index, and on the VM it is `comptime_program::find_function`, which also prepares the callee so its signature reaches the lowering view.
+Compile-time code is built by the adapter and lowered from the core too. The compile-time VM (`src/comptime_vm/program.cpp`) lowers on demand, so the adapter has three entry points that use the same per-construct code as `adapt_program`: `core::adapt_function` (one declaration, under a name and module), `core::adapt_expression` (a compile-time expression as a function of its own: its captures are by-value parameters, its value is the body's result, and nothing is dropped) and `core::adapt_static` (one reified static's value). `adapt_intrinsic` gives an `intrinsic def`'s declaration. Every call to a free function has a callee record, and a call to an instance carries the generic arguments it was made with (`ownership_results::instance_generic_args`). The one name the adapter still looks up through `core::function_lookup` is a `std.fmt` helper that interpolation calls; in `adapt_program` that is the program index, and on the VM it is `comptime_program::find_function`, which also prepares the callee so its signature reaches the lowering view.
 
 A function the VM runs has `function::compile_time` set: a module-level `static def`, a compile-time expression's function, and anything adapted with `adapt_options::compile_time`. Only such a function may hold a `host_call` (rule E12): the operations only the compiler performs, `quote` (subject the AST quote, arguments the splices it resolves while evaluated), `static` (subject the `static` declaration of a fragment-valued static) and `expr.<builder>` (no subject, the builder's arguments). It maps one to one onto `hir_host_call`. Outside compile-time code these constructs stay gaps. Every static read in a compile-time expression builds the static's value again.
 
@@ -87,6 +87,31 @@ A function the VM runs has `function::compile_time` set: a module-level `static 
 ## Open shapes
 
 `checked_types::open_shapes` holds the member types of struct and sum types that mention a generic parameter, such as `pair[T]` inside a generic body, expressed in terms of those parameters. It is kept apart from `shapes` because no layout exists for such a type. Only the core reads it: the adapter, to build field and payload projections in templates, and the verifier, to check them.
+
+## Template callees
+
+Inside a template, the checker records a call to a template with the callee's arguments (`resolved_callee::template_args`), in the order of the callee's core `generic_params`: the enclosing block's parameters, then its own. They are written in the caller's parameters: `self.reserve(n)` in `extend[T] list[T]` records `[T]`, and `bag[T].width[int64]()` records `[T, int64]`. They are recorded where the call is named in the template (`name_generic_call`, `name_call`, and the open-receiver path of `name_member_solution`), and not for an implicit-generic callee, for a call whose arguments have not settled when it is named (`pick(x, 40)`, whose literal is still open), or for a call whose receiver is reached through `deref` steps the template did not record (see the `deref` entry below). An instance's copy of the record has none: the instance's replay names an instance of the callee, and checks in debug builds that its `instance_generic_args` are the template's arguments under the instance's answers. The adapter calls a template callee only when its arguments are recorded, and otherwise reports a gap.
+
+## Trait method signatures
+
+`checked_types::trait_method_signatures` holds each trait method's signature in the trait's own terms, keyed by the method's declaration: `self` is the type parameter `self`, the receiver is `&self`, `&mut self`, or (for `into_iterator`'s `into_iter`) `self` by value, and `generic_params` is `[self, the trait's parameters..., the method's own...]`. A method whose parameters or result mention an associated type (`self.item`) has no entry, nor does one with a default body and no written result type. Rule C9 reads it.
+
+## Calls through a bound
+
+Inside a template, a call through a bound (`x.next()` with `I: iterator[T]`, `T.zero()`) records the trait's method as its callee, with `resolved_callee::bound` holding the trait, the bound's subject (`self_type`) and the bound's trait arguments, and `template_args` holding the method's own arguments. `name_bound_call` writes the record before it defers the call to instances, and only when the method has a `trait_method_signatures` entry, its own arguments and the bound's have settled, and the receiver is not reached through `deref` steps the template did not record. The adapter builds a `trait_method` callee from it: the signature is the table's under `[self_type, trait_args..., generic_args...]` and the receiver mode is the table's. It leaves a wrong argument count for C9 to report. Core lowering refuses a `trait_method` callee, which only a template holds. An instance's copy of the template's records drops a bound record, since no instance calls the trait's method: the replay records the impl's method, as before.
+
+The record changes what the ownership check sees in a template. The receiver is lent by the trait's declared mode, read from the table: `self` is a `&` borrow, `mut self` a two-phase `&mut`, and `into_iterator`'s `into_iter` moves it. Before the record, the receiver was only read, so a second consuming call, a `mut self` call on a `let`, and a `mut self` call while a `&` of the receiver was live were all accepted in templates. A task's carrier rule reads the receiver mode from the same table (`receiver_is_shared_borrow`), so an `async` method called through a bound is no longer refused as a hidden carrier.
+
+## Dispatch records in templates
+
+Inside a template, the dispatch tables record a template callee's arguments in `template_args`, as a call record does, so the adapter can call the template itself. `dispatch_template_args` computes them for a method found on a target that mentions a template parameter: the impl block's parameters are matched against the target, and the method's own arguments follow. The tables that use it are:
+
+- index dispatch (`xs[i]` on a `list[T]` records `at` at `[T]`), in `dispatch_index`;
+- list literals (`[x, x]` as a `list[T]` records `from_array` at `[T, 2]`), in `record_template_from_array`, with the literal's length bound to the method's constant parameter;
+- `for` loops, where `iterator_loop_dispatch` gains `template_args` for `next` and `adapter_template_args` for `into_iter`, `iter` or `iter_mut`;
+- `deref` steps through a handle whose type mentions a template parameter (`guard.push(v)` on a `mutex_guard[list[T]]`), in `resolve_handle_step`. The template records the steps (`deref_adjustments`, and `deref_mut_adjustments` or `path_deref_mut_adjustments` for a write) when every step has a callee, and a call on the handle's target then records its own arguments.
+
+An instance's copy of these records clears `template_args` and `adapter_template_args`, since each instance names concrete callees by its own replay.
 
 ## See also
 

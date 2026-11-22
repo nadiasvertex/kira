@@ -26,13 +26,13 @@ struct discovered_case {
 /// One `tests` submodule's worth of discovered members, keyed by the
 /// fully-qualified path a synthesized call needs (`<parent module>.tests`).
 struct discovered_suite {
-  std::string suite_name;        ///< The parent module's own path.
-  std::string tests_module_path; ///< `suite_name` + `.tests`.
-  std::vector<discovered_case> cases;
-  std::optional<std::string> before_all;
-  std::optional<std::string> after_all;
-  std::optional<std::string> before_each;
-  std::optional<std::string> after_each;
+  std::string suite_name{};        ///< The parent module's own path.
+  std::string tests_module_path{}; ///< `suite_name` + `.tests`.
+  std::vector<discovered_case> cases{};
+  std::optional<std::string> before_all{};
+  std::optional<std::string> after_all{};
+  std::optional<std::string> before_each{};
+  std::optional<std::string> after_each{};
 };
 
 [[nodiscard]] auto is_simple_named(const ast::node *node,

@@ -55,7 +55,7 @@ using cinder::testing::expect;
 using cinder::testing::fail;
 
 /// Raise this as the adapter covers more of the corpus.
-constexpr auto k_built_floor = std::size_t{1896};
+constexpr auto k_built_floor = std::size_t{2301};
 
 struct temp_dir {
   fs::path path;

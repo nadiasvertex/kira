@@ -199,6 +199,12 @@ public:
   // ---- calls (adapter_expr.cpp) ------------------------------------------
   [[nodiscard]] auto callee_of(const semantic::resolved_callee &resolved,
                                source_span span) -> result<callee>;
+  /// A call through a bound (`resolved_callee::bound`): the `trait_method`
+  /// callee, with the trait's signature restated under the bound's `Self`,
+  /// its trait arguments and the call's own.
+  [[nodiscard]] auto trait_method_callee(
+      const semantic::resolved_callee &resolved, source_span span)
+      -> result<callee>;
   [[nodiscard]] auto argument(const ast::expr &arg, type_id param,
                               std::optional<semantic::param_passing> passing)
       -> result<ptr<expr>>;
@@ -212,13 +218,6 @@ public:
   /// (rule C4): the value of a temporary, else a lending of the place.
   [[nodiscard]] auto function_value(const ast::expr &source, type_id fn_type)
       -> result<ptr<expr>>;
-  /// The callee of a bare `f(x)` naming a function of the current module.
-  /// `check_ufcs` types such a call against the declaration but records no
-  /// `resolved_callees` entry (every other branch there does); this is the
-  /// one place the adapter finds a callee by name. Phase 5 of the plan
-  /// removes it, when the checker records every callee.
-  [[nodiscard]] auto same_module_callee(const ast::call_expr &call)
-      -> std::optional<result<callee>>;
   [[nodiscard]] auto call_of(const ast::call_expr &call) -> result<ptr<expr>>;
   [[nodiscard]] auto builtin_method(const ast::call_expr &call,
                                     const ast::field_expr &field)

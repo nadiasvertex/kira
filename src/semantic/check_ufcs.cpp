@@ -163,83 +163,23 @@ auto checker::ufcs_candidate_path(const ufcs_candidate &candidate)
 /// call `f(recv, a...)` it desugars to: the receiver fills the first
 /// declared parameter, the written arguments fill the rest, and the
 /// callee's type parameters are solved from the receiver first and the
-/// arguments after — the same discipline `check_receiver_call` applies to
-/// a method, on a declaration that simply lives outside any `impl`.
+/// arguments after — the same discipline a receiver-style method gets, on a
+/// declaration that simply lives outside any `impl`.
 auto checker::check_ufcs_call(const ast::call_expr &call,
                               const ast::field_expr &field,
                               const ufcs_candidate &candidate,
                               type_id receiver_type) -> type_id {
-  const auto &decl = *candidate.decl;
-  const auto params = signature_params(decl, candidate.owner,
-                                       /*skip_self=*/false);
-  record_expr_type(field, fn_type_of(decl, candidate.owner));
-
-  auto bindings = param_subst{};
-  // Solved through the references on both sides: a `&T` parameter taking
-  // an auto-ref'd `T` receiver still has to bind `T`, and comparing the
-  // decorated types would bind nothing.
-  match_params(strip_refs(params.front().type), strip_refs(receiver_type),
-               bindings);
-
-  auto rest = std::vector<fn_param_info>(params.begin() + 1, params.end());
-  for (auto &param : rest) {
-    param.type = substitute_solved(param.type, bindings);
-  }
-  auto solved = value_bindings{};
-  const auto generic = generic_call_context{.decl = &decl,
-                                            .owner = candidate.owner,
-                                            .explicit_args = nullptr,
-                                            .ufcs_receiver = nullptr,
-                                            .seed = &bindings};
-  check_call_args_against(
-      call, rest, decl.name,
-      source_location{.file_id = candidate.file_id, .span = decl.span}, &solved,
-      is_generic_template(decl) ? &generic : nullptr);
-  check_call_preconditions(call, decl, params, field.object.get());
-
-  // The receiver is the callee's first argument, so it has to be tied to
-  // that parameter's leaf like any other argument was by
-  // `check_call_args_against`; the rest of the record is the same as for an
-  // ordinary call (`check_call_against_decl`).
-  if (has_unannotated_params(decl) && is_free_function(decl, candidate.owner)) {
-    solve_leaves(params.front().type, receiver_type);
-    auto param_types = std::vector<type_id>{};
-    param_types.reserve(params.size());
-    for (const auto &param : params) {
-      param_types.push_back(param.type);
-    }
-    queue_open_param_call(
-        pending_open_param_call{.call = &call,
-                                .decl = &decl,
-                                .owner = candidate.owner,
-                                .decl_file = candidate.file_id,
-                                .call_params = std::move(param_types),
-                                .file = file_.file_id_,
-                                .module = file_.module_,
-                                .receiver = field.object.get(),
-                                .probe = probing_decl_});
-    mint_open_result(decl, call.span);
-  }
-
-  // A receiver still open (`xs.iter()` on a `list[?a]` a later statement
-  // will pin) names its instance once it settles, like any generic call
-  // (`when_solution_settles`).
-  if (is_generic_template(decl) && is_free_function(decl, candidate.owner)) {
-    if (const auto result = instantiate_generic_function(
-            call, decl, candidate.owner, candidate.file_id, solved, params,
-            /*explicit_args=*/{}, field.object.get())) {
-      return *result;
-    }
-  }
-
-  session_.resolved_callees_[&call] =
-      resolved_callee{.decl = &decl,
-                      .owner_module = candidate.owner->module_name,
-                      .impl_target_type = "",
-                      .receiver = field.object.get()};
-  return open_call_result(
-      call, substitute_solved(signature_return_type(decl, candidate.owner),
-                              bindings));
+  return check_call(
+      call, call_callee{.form = callee_form::free_function,
+                        .decl = candidate.decl,
+                        .owner = candidate.owner,
+                        .decl_file = candidate.file_id,
+                        .receiver = receiver_use::first_param,
+                        .receiver_expr = field.object.get(),
+                        .self_type = receiver_type,
+                        .explicit_args = method_explicit_generic_args(field),
+                        .callee_node = &field,
+                        .display_name = candidate.decl->name});
 }
 
 /// `4.id64()` for `def id64(x: int64)`: an integer literal receiver is
@@ -314,7 +254,7 @@ auto checker::try_ufcs_call(const ast::call_expr &call,
   // free function can never shadow a method") exists to forbid.
   //
   // Nothing is lost by declining: a method on a `T` is what its bounds
-  // promise (`check_bound_method_call`), and each instance names the
+  // promise (`find_bound_callee`), and each instance names the
   // concrete method its template's call reaches.
   if (session_.types_.entry(receiver_type).kind == type_kind::type_param_kind) {
     return std::nullopt;
@@ -630,10 +570,72 @@ auto checker::infer_method_call(const ast::call_expr &call,
     object = *via_deref;
   }
   const auto &entry = session_.types_.entry(object);
-  // `b.take[int64](5)`: the grammar's `"." IDENT "[" type_arg_list "]"`
-  // suffix, which the parser has always built and the checker used to
-  // throw away (§3 — a silently wrong answer, not a missing feature).
+  if (entry.kind == type_kind::type_param_kind) {
+    const auto bound = find_bound_callee(call, field, object,
+                                         /*static_call=*/false);
+    return bound.has_value() ? check_call(call, *bound) : k_error_type;
+  }
+  if (entry.kind == type_kind::builtin_generic_kind &&
+      builtin_method_result(entry, field.field_name) != k_unknown_type) {
+    if (entry.name == "crew" && field.field_name == "spawn" &&
+        call.args.size() == 1) {
+      // `c.spawn(t)` gives back the task it was handed.
+      const auto task = infer_expr(*call.args[0].value, k_unknown_type);
+      if (reject_non_task(*call.args[0].value, task, "c.spawn(...)")) {
+        return k_error_type;
+      }
+      record_crew_spawn(*field.object, task, call.args[0].value->span);
+      require_task_args_sendable(*call.args[0].value);
+      return task;
+    }
+    if (entry.name == "crew" && field.field_name == "errors" &&
+        call.args.empty()) {
+      return infer_crew_errors(call, *field.object, field.span);
+    }
+    if (entry.name == "task" && field.field_name == "get" &&
+        call.args.empty()) {
+      // `t.get()` is `await t`, for a task a `crew` has already finished.
+      return awaited_type(object, field.span);
+    }
+  }
+  auto found = find_method_callee(call, field, object, handle,
+                                  via_deref.has_value());
+  if (const auto *callee = std::get_if<call_callee>(&found)) {
+    const auto result = check_call(call, *callee);
+    // A method that hands back the receiver's own concrete type (e.g. a
+    // builder-style trait method returning `Self`) stays opaque to the
+    // caller, exactly like the value that produced it.
+    if (callee->opaque_result &&
+        session_.types_.compatible(callee->self_type, result)) {
+      return object;
+    }
+    return result;
+  }
+  if (const auto *answered = std::get_if<type_id>(&found)) {
+    return *answered;
+  }
+  // A builtin method the compiler answers itself.
+  infer_call_args_loosely(call);
+  return builtin_method_result(entry, field.field_name);
+}
+
+auto checker::find_method_callee(const ast::call_expr &call,
+                                 const ast::field_expr &field, type_id object,
+                                 type_id handle, bool via_deref)
+    -> method_callee {
+  const auto &entry = session_.types_.entry(object);
   const auto explicit_args = method_explicit_generic_args(field);
+  // A receiver-style method (`ma.bind(f)`) takes its receiver as its first
+  // parameter rather than as `self`.
+  const auto callee_of = [&](const method_entry &method) -> call_callee {
+    auto callee = method_call_callee(method, field, object,
+                                     std::string(entry.name), explicit_args);
+    if (receiver_fills_first_param(method, entry)) {
+      callee.receiver = receiver_use::first_param;
+      callee.receiver_expr = field.object.get();
+    }
+    return callee;
+  };
 
   switch (entry.kind) {
   case type_kind::struct_kind:
@@ -664,41 +666,12 @@ auto checker::infer_method_call(const ast::call_expr &call,
         infer_call_args_loosely(call);
         return k_error_type;
       }
-      if (via_deref.has_value() &&
+      if (via_deref &&
           !method_callable_through_deref(call, field, *method, handle)) {
         infer_call_args_loosely(call);
         return k_error_type;
       }
-      record_expr_type(field, fn_type_of(*method->decl, method->owner));
-      if (!check_method_accepts_generic_args(field, *method->decl,
-                                             explicit_args)) {
-        infer_call_args_loosely(call);
-        return k_error_type;
-      }
-      if (receiver_fills_first_param(*method, entry)) {
-        return check_receiver_call(call, *method, entry.name, *field.object,
-                                   object, explicit_args);
-      }
-      if (const auto instantiated = check_generic_instance_method_call(
-              call, *method, entry.name, *field.object, object,
-              explicit_args)) {
-        return *instantiated;
-      }
-      // Tried after the method's own generics: a method that is a template
-      // itself is handled above even when its impl is generic too, since
-      // that path already solves from the arguments and the receiver.
-      if (const auto instantiated = check_impl_generic_method_call(
-              call, *method, entry, *field.object, object)) {
-        return *instantiated;
-      }
-      record_instance_method_callee(call, *method, entry.name, *field.object);
-      const auto site = method_call_site{.method = method,
-                                         .target_type_name = entry.name,
-                                         .receiver = field.object.get(),
-                                         .receiver_type = object};
-      return check_call_against_decl(call, *method->decl, method->owner,
-                                     file_.file_id_, /*skip_self=*/true,
-                                     /*explicit_args=*/{}, &site);
+      return callee_of(*method);
     }
     if (const auto derived = derived_method_result(entry, field.field_name)) {
       infer_call_args_loosely(call);
@@ -708,7 +681,11 @@ auto checker::infer_method_call(const ast::call_expr &call,
       const auto &field_entry = session_.types_.entry(*field_type);
       if (field_entry.kind == type_kind::fn_kind) {
         record_expr_type(field, *field_type);
-        return check_call_against_fn_type(call, field_entry, field.field_name);
+        return check_call(call,
+                          call_callee{.form = callee_form::fn_value,
+                                      .callee_node = &field,
+                                      .display_name = field.field_name,
+                                      .fn_type = *field_type});
       }
       infer_call_args_loosely(call);
       return k_unknown_type;
@@ -721,11 +698,9 @@ auto checker::infer_method_call(const ast::call_expr &call,
     }
     // The header names the receiver's *applied* type (`list[int32]`), not
     // the bare constructor `entry.name` holds: "no method `pusk` on type
-    // `list`" leaves the reader to guess which `list`, and since `list`
-    // stopped being a builtin and became an ordinary generic user type
-    // (`src/std/list.cn`) this arm is the one every `list` typo reaches.
-    // The note and help stay on `entry.name` — an `impl` block is written
-    // against the constructor, so that is the right spelling there.
+    // `list`" leaves the reader to guess which `list`. The note and help
+    // stay on `entry.name` — an `impl` block is written against the
+    // constructor, so that is the right spelling there.
     const auto display = session_.types_.display(object);
     auto diag = diagnostic(
         diagnostic_level::error,
@@ -734,9 +709,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
     diag.with_label(field.span, "method not found");
     // A near-miss gets named outright rather than leaving the reader to
     // spot it in the list: `nums.pusk(4)` should say "did you mean
-    // `push`?". The builtin arm (`report_unknown_builtin_method`) has
-    // always done this; this arm did not, which stopped being a rarity the
-    // moment `list` became an ordinary user type.
+    // `push`?".
     const auto candidates = available_method_name_list(entry);
     if (const auto suggestion = best_suggestion(field.field_name, candidates)) {
       diag.with_help(std::format("did you mean `{}`?", *suggestion));
@@ -782,16 +755,11 @@ auto checker::infer_method_call(const ast::call_expr &call,
     }
     const auto &underlying = session_.types_.entry(entry.result);
     if (const auto *method = find_method(underlying, field.field_name)) {
-      record_expr_type(field, fn_type_of(*method->decl, method->owner));
-      record_instance_method_callee(call, *method, underlying.name,
-                                    *field.object);
-      const auto result =
-          check_call_against_decl(call, *method->decl, method->owner,
-                                  file_.file_id_, /*skip_self=*/true);
-      // A method that hands back the receiver's own concrete type (e.g. a
-      // builder-style trait method returning `Self`) stays opaque to the
-      // caller, exactly like the value that produced it.
-      return session_.types_.compatible(entry.result, result) ? object : result;
+      auto callee = method_call_callee(*method, field, entry.result,
+                                       std::string(underlying.name),
+                                       explicit_args);
+      callee.opaque_result = true;
+      return callee;
     }
     error_with_help(
         field.span,
@@ -804,96 +772,17 @@ auto checker::infer_method_call(const ast::call_expr &call,
     infer_call_args_loosely(call);
     return k_error_type;
   }
-  case type_kind::type_param_kind:
-    return check_bound_method_call(call, field, object, explicit_args);
   default: {
     // Builtin inherent methods take priority; an impl on the builtin's
     // constructor (`impl monad for option`) or an `extend` block fills in
     // only when the name isn't one of the hardcoded builtin methods.
-    // Handing out a raw pointer into a container's storage escapes every
-    // guarantee the container makes about its own memory, so it is gated
-    // the same as any other raw-pointer operation — but by `infer_call`,
-    // uniformly on the result type, so builtin `as_ptr`/`as_mut_ptr` and a
-    // user type's `machine def` equivalents are treated alike. Reading or
-    // indexing the container itself stays unrestricted.
-    const auto builtin_result = builtin_method_result(entry, field.field_name);
-    if (entry.kind == type_kind::builtin_generic_kind &&
-        builtin_result != k_unknown_type) {
-      if (entry.name == "crew" && field.field_name == "spawn" &&
-          call.args.size() == 1) {
-        // `c.spawn(t)` gives back the task it was handed.
-        const auto task = infer_expr(*call.args[0].value, k_unknown_type);
-        if (reject_non_task(*call.args[0].value, task, "c.spawn(...)")) {
-          return k_error_type;
-        }
-        record_crew_spawn(*field.object, task, call.args[0].value->span);
-        require_task_args_sendable(*call.args[0].value);
-        return task;
-      }
-      if (entry.name == "crew" && field.field_name == "errors" &&
-          call.args.empty()) {
-        return infer_crew_errors(call, *field.object, field.span);
-      }
-      if (entry.name == "task" && field.field_name == "get" &&
-          call.args.empty()) {
-        // `t.get()` is `await t`, for a task a `crew` has already finished.
-        return awaited_type(object, field.span);
-      }
-    }
     const auto resolved = resolve_method(entry, object, field.field_name);
-    if (resolved.origin == method_origin::builtin_impl) {
-      const auto *method = resolved.method;
-      record_expr_type(field, fn_type_of(*method->decl, method->owner));
-      if (!check_method_accepts_generic_args(field, *method->decl,
-                                             explicit_args)) {
-        infer_call_args_loosely(call);
-        return k_error_type;
-      }
-      if (receiver_fills_first_param(*method, entry)) {
-        return check_receiver_call(call, *method, entry.name, *field.object,
-                                   object, explicit_args);
-      }
-      // A generic impl on a prelude generic or a structural type
-      // (`impl[T] eq for option[T]`, `impl[A, B] eq for (A, B)`) is
-      // compiled once per receiver type, the same ladder as the
-      // `extend` arm below.
-      if (const auto instantiated = check_generic_instance_method_call(
-              call, *method, entry.name, *field.object, object,
-              explicit_args)) {
-        return *instantiated;
-      }
-      if (const auto instantiated = check_impl_generic_method_call(
-              call, *method, entry, *field.object, object)) {
-        return *instantiated;
-      }
-      record_instance_method_callee(call, *method, entry.name, *field.object);
-      return check_call_against_decl(call, *method->decl, method->owner,
-                                     file_.file_id_, /*skip_self=*/true);
-    }
-    if (resolved.origin == method_origin::builtin_extend) {
-      const auto *method = resolved.method;
-      record_expr_type(field, fn_type_of(*method->decl, method->owner));
-      // Same instantiation ladder the user-type path above runs. Without
-      // it an `extend[T] option[T]:` block type-checked and then compiled
-      // nothing, because the two arms below name one shared function for
-      // every element type and none was ever built.
-      if (const auto instantiated = check_generic_instance_method_call(
-              call, *method, entry.name, *field.object, object,
-              explicit_args)) {
-        return *instantiated;
-      }
-      if (const auto instantiated = check_impl_generic_method_call(
-              call, *method, entry, *field.object, object)) {
-        return *instantiated;
-      }
-      record_instance_method_callee(call, *method, entry.name, *field.object);
-      const auto site = method_call_site{.method = method,
-                                         .target_type_name = entry.name,
-                                         .receiver = field.object.get(),
-                                         .receiver_type = object};
-      return check_call_against_decl(call, *method->decl, method->owner,
-                                     file_.file_id_, /*skip_self=*/true,
-                                     /*explicit_args=*/{}, &site);
+    if (resolved.origin == method_origin::builtin_impl ||
+        resolved.origin == method_origin::builtin_extend) {
+      // A generic impl or `extend` on a prelude generic or a structural
+      // type (`impl[T] eq for option[T]`, `extend[T] option[T]`) is
+      // compiled once per receiver type, by the call pipeline.
+      return callee_of(*resolved.method);
     }
     if (resolved.origin == method_origin::none) {
       // Same last arm as the struct/sum/opaque case above, and the one
@@ -909,8 +798,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
         return *reported;
       }
     }
-    infer_call_args_loosely(call);
-    return builtin_result;
+    return std::monostate{};
   }
   }
 }
@@ -1020,18 +908,6 @@ auto checker::check_conversion_call(const ast::call_expr &call,
 /// immediately followed by `(` always parses as `field_expr` (see
 /// `parser::parse_ident_or_path_expr`), with `object` holding whatever
 /// dotted prefix, if any, preceded the call-adjacent final segment.
-/// Resolves `C.member(...)` once `C` has been substituted for the concrete
-/// `target` this instance solved it to (§5.2/§5.3).
-///
-/// The instance name comes from the solved type's own interned name, so
-/// `C.from_iter` inside `collect[list_iter[int32], list[int32]]` names
-/// `list[int32]::from_iter`. That keeps lowering's naming scheme untouched:
-/// it sees an ordinary impl member on a concrete type and never learns a
-/// type parameter was involved.
-///
-/// `nullopt` when `target` has no such static member, leaving the caller to
-/// fall through to its remaining cases (and, ultimately, to an ordinary
-/// unknown-member diagnostic carrying the §5.4 instantiation note).
 /// The concrete type a static call's receiver names, when that receiver is
 /// written as a generic application (`list[int32].from_iter(...)`).
 ///
@@ -1073,157 +949,142 @@ auto checker::resolve_applied_type_receiver(const ast::expr &object)
              : std::optional{resolved};
 }
 
-auto checker::resolve_type_param_static(const ast::call_expr &call,
-                                        const ast::field_expr &field,
-                                        type_id target,
-                                        const std::string &fn_name)
-    -> std::optional<type_id> {
-  const auto &entry = session_.types_.entry(target);
-  // A builtin target (`list[int32]`) has no `type_decl` to key on; its impl
-  // and `extend` members (`extend int32: static def zero()`) live in the
-  // constructor-name-keyed tables, which `resolve_method` also consults.
-  const auto *method = resolve_method(entry, target, fn_name).method;
-  if (method == nullptr) {
-    return std::nullopt;
-  }
-  // A `self`-taking method needs a receiver, and a qualified path gives it
-  // none — that is an ordinary method call written wrongly, not this.
-  if (!method->decl->params.empty() &&
-      param_name_of(method->decl->params.front()) == "self") {
-    return std::nullopt;
-  }
-
-  record_expr_type(field, fn_type_of(*method->decl, method->owner));
-  const auto target_name = session_.types_.display(target);
-  const auto params = signature_params(*method->decl, method->owner,
-                                       /*skip_self=*/false);
-  auto solved = value_bindings{};
-  check_call_args_against(
-      call, params, method->decl->name,
-      source_location{.file_id = file_.file_id_, .span = method->decl->span},
-      &solved);
-  check_call_preconditions(call, *method->decl, params);
-
-  auto bindings = param_subst{};
-  solve_from_argument_types(call, params, bindings,
-                            /*ufcs_receiver=*/nullptr,
-                            /*bind_open=*/true);
-
-  // A `static def` carried by a generic impl block. Checked before the
-  // method's own `type_params` are consulted, because the parameter that
-  // makes this call generic is the *impl*'s and the method usually
-  // declares none of its own — which is precisely why the branch below
-  // used to claim it and name a function nobody compiled.
-  // Restricted to methods declaring no parameters of their own: when a
-  // method has its own (`static def from_iter[I]`), those still have to be
-  // solved from the arguments, which is `instantiate_hk_method`'s job
-  // below. Claiming such a call here would build an instance with the
-  // impl's parameters bound and the method's left open, and the body would
-  // then fail to lower on the first use of one.
-  if (method->decl->type_params.empty() &&
-      impl_needs_instance(*method, entry)) {
-    if (!mentions_template_param(target)) {
-      if (const auto *instance =
-              check_impl_generic_static_call(call, *method, target, bindings)) {
-        session_.resolved_callees_[&call] =
-            resolved_callee{.decl = instance,
-                            .owner_module = method->owner->module_name,
-                            .impl_target_type = ""};
-        return substitute_solved(
-            signature_return_type(*method->decl, method->owner,
-                                  method->block_type_params),
-            bindings);
-      }
-    } else {
-      // `list[T].new()` in a template: the instance is each instance's,
-      // for its own `T`.
-      defer_to_instances(
-          call, [this, &call, method, target](instance_subst &subst) -> void {
-            const auto &clone = *clone_of(subst, &call);
-            auto impl_bindings = param_subst{};
-            if (const auto *instance = check_impl_generic_static_call(
-                    clone, *method, substitute_type(target, subst),
-                    impl_bindings)) {
-              session_.resolved_callees_[&clone] =
-                  resolved_callee{.decl = instance,
-                                  .owner_module = method->owner->module_name,
-                                  .impl_target_type = ""};
-            }
-          });
-    }
-  }
-
-  if (method->decl->type_params.empty()) {
-    session_.resolved_callees_[&call] =
-        resolved_callee{.decl = method->decl,
-                        .owner_module = method->owner->module_name,
-                        .impl_target_type = target_name};
-    // The impl's own parameters are read off the target, so `list[T]
-    // .new()` is a `list[T]` rather than a list of the impl's `T`.
-    if (method->block_type_params != nullptr) {
-      auto impl_bindings = param_subst{};
-      match_params(method->impl_target_pattern, target, impl_bindings);
-      bindings.insert(impl_bindings.begin(), impl_bindings.end());
-      return substitute_solved(signature_return_type(*method->decl,
-                                                     method->owner,
-                                                     method->block_type_params),
-                               bindings);
-    }
-    return substitute_solved(
-        signature_return_type(*method->decl, method->owner), bindings);
-  }
-  // A method generic on both counts: its own parameters *and* the impl
-  // block's. The branch above deliberately declines these, because `I` still
-  // has to be solved from the arguments; but declining it must not also drop
-  // `T`. Unifying the impl's target pattern against the concrete target
-  // recovers it — `list[T]` against `list[int32]` gives `T := int32` — and
-  // it then rides into the instance as a fixed binding, so the body resolves
-  // `T` and the return type restates as `list[int32]` rather than `list[T]`.
-  auto impl_bindings = param_subst{};
-  if (method->block_type_params != nullptr) {
-    match_params(method->impl_target_pattern, target, impl_bindings);
-    bindings.insert(impl_bindings.begin(), impl_bindings.end());
-  }
-  const auto impl_scope = bindings_by_name(impl_bindings);
-  // Solved in a template's terms — the target, or an answer for the
-  // method's own parameters, is written in the caller's parameters: each
-  // of the caller's instances names its own copy.
-  const auto open_slot = [&](const auto &slot) -> bool {
-    return mentions_template_param(slot.second);
+/// The finder for every static-member spelling. Each one resolves to a
+/// `method_entry` and the type the static is called on, and `check_call`
+/// does the rest the same way for all of them, so `list[int32].from_iter`
+/// and a `C.from_iter` that solved `C` to `list[int32]` name the same
+/// instance. A bare generic type name (`box.make(40)`) leaves `self_type`
+/// unknown: the block's parameters solve from the arguments.
+auto checker::find_static_callee(const ast::call_expr &call,
+                                 const ast::field_expr &field)
+    -> static_callee {
+  const auto &object = *field.object;
+  const auto &fn_name = field.field_name;
+  const auto takes_self = [&](const method_entry &method) -> bool {
+    return !method.decl->params.empty() &&
+           param_name_of(method.decl->params.front()) == "self";
   };
-  if (function_.current_template_ != nullptr &&
-      (mentions_template_param(target) ||
-       std::ranges::any_of(bindings, open_slot) ||
-       std::ranges::any_of(solved, [](const auto &slot) -> bool {
-         return !slot.second.is_constant();
-       }))) {
-    defer_to_instances(
-        call, [this, &call, &field, target](instance_subst &subst) -> void {
-          const auto &clone = *clone_of(subst, &call);
-          auto clone_args = explicit_generic_args{};
-          (void)method_field_of(clone, clone_args);
-          replay_method_call(clone, *clone_of(subst, &field),
-                             substitute_type(target, subst),
-                             /*static_call=*/true, clone_args);
-        });
-    session_.resolved_callees_[&call] =
-        resolved_callee{.decl = method->decl,
-                        .owner_module = method->owner->module_name,
-                        .impl_target_type = target_name};
-    return substitute_solved(signature_return_type(*method->decl, method->owner,
-                                                   method->block_type_params),
-                             bindings);
-  }
-  if (!instantiate_hk_method(
-          call, *method, target_name, bindings,
-          resolved_callee{.owner_module = method->owner->module_name,
-                          .impl_target_type = ""},
-          /*explicit_args=*/{}, solved,
-          /*self_type=*/k_unknown_type, &impl_scope)) {
+  const auto callee_for = [&](const method_entry &method, type_id self_type,
+                              std::string target_name) -> call_callee {
+    auto display_name = std::format("{}.{}", target_name, fn_name);
+    return call_callee{.form = callee_form::member,
+                       .decl = method.decl,
+                       .owner = method.owner,
+                       .decl_file = method.file_id,
+                       .method = &method,
+                       .self_type = self_type,
+                       .target_name = std::move(target_name),
+                       .explicit_args = method_explicit_generic_args(field),
+                       .callee_node = &field,
+                       .display_name = std::move(display_name)};
+  };
+  // A static member of `target`, found the way a method call finds one:
+  // a builtin target (`list[int32]`) has no `type_decl` to key on, and its
+  // impl and `extend` members live in the constructor-name-keyed tables.
+  const auto static_of = [&](type_id target) -> const method_entry * {
+    const auto *method =
+        resolve_method(session_.types_.entry(target), target, fn_name).method;
+    return method != nullptr && !takes_self(*method) ? method : nullptr;
+  };
+
+  if (object.kind == ast::node_kind::index_expr ||
+      object.kind == ast::node_kind::call_expr) {
+    // A static call on a generic *application*: `list[int32].from_iter(it)`,
+    // `wrap[int32].make(9)`.
+    const auto target = resolve_applied_type_receiver(object);
+    if (!target.has_value()) {
+      return std::monostate{};
+    }
+    const auto target_name = session_.types_.display(*target);
+    if (const auto *method = static_of(*target)) {
+      return callee_for(*method, *target, target_name);
+    }
+    // A `self` method or a free function named on the type, not on a value,
+    // has no receiver; `report_missing_type_static` says which. A value the
+    // parser also read as an application never gets here:
+    // `resolve_applied_type_receiver` declines a head that names a value.
+    report_missing_type_static(field, *target, target_name);
+    infer_call_args_loosely(call);
     return k_error_type;
   }
-  return substitute_solved(signature_return_type(*method->decl, method->owner),
-                           bindings);
+
+  const auto root_path = qualified_call_root(object);
+  if (!root_path.has_value() || root_path->size() != 1) {
+    return std::monostate{};
+  }
+  const auto &root = root_path->front();
+
+  // A prelude constructor (`option.pure(...)`): an associated function an
+  // impl of a higher-kinded trait provides for that constructor. Its type
+  // parameters solve from the arguments.
+  if (builtin_generic_arity(root).has_value()) {
+    if (const auto *method = method_lookup().constructor_method(root, fn_name);
+        method != nullptr && !takes_self(*method)) {
+      return callee_for(*method, k_unknown_type, root);
+    }
+  }
+
+  // A type parameter (`C.from_iter(it)` inside `def collect[I, C](self: I)
+  // -> C`), substituted for whatever this instance solved it to; dispatch is
+  // static and monomorphic, so nothing here needs the trait to be
+  // object-safe (§5.2).
+  if (const auto bound = lookup_type_param(root)) {
+    // Still a template: `C` is the body's own parameter, and its static
+    // members are what its bounds promise (phase 9, rule 2).
+    if (is_rigid_param(*bound)) {
+      auto callee = find_bound_callee(call, field, *bound,
+                                      /*static_call=*/true);
+      if (!callee.has_value()) {
+        return k_error_type;
+      }
+      return *std::move(callee);
+    }
+    if (mentions_abstract_type(*bound) || session_.types_.is_unknown(*bound)) {
+      infer_call_args_loosely(call);
+      return k_unknown_type;
+    }
+    if (const auto *method = static_of(*bound)) {
+      return callee_for(*method, *bound, session_.types_.display(*bound));
+    }
+    // `C` is bound, so this is a type-parameter static that does not
+    // resolve. Reported here: falling through would call the parameter
+    // itself an undefined name and say nothing about the type it stands for.
+    report_missing_type_param_static(field, root, *bound, fn_name);
+    infer_call_args_loosely(call);
+    return k_error_type;
+  }
+
+  // A builtin scalar (`int64.zero()`): its static members come from
+  // `extend` blocks and trait impls (todo 9).
+  if (is_builtin_scalar_name(root)) {
+    const auto type = session_.types_.builtin(root);
+    if (const auto *method = static_of(type)) {
+      return callee_for(*method, type, root);
+    }
+    report_missing_type_static(field, type, root);
+    infer_call_args_loosely(call);
+    return k_error_type;
+  }
+
+  // A type name (`io_error.from(...)`, `box.make(40)`).
+  if (const auto found_type = find_type_decl_by_name(root)) {
+    const auto type =
+        make_user_type(*found_type->first, found_type->second, {});
+    if (const auto *method = find_method(session_.types_.entry(type), fn_name);
+        method != nullptr && !takes_self(*method)) {
+      // The bare name of a generic type says nothing about its arguments.
+      const auto generic = !found_type->first->type_params.empty();
+      return callee_for(*method, generic ? k_unknown_type : type,
+                        found_type->first->name);
+    }
+    // A type with no static function by this name. Answering nothing here
+    // let the call through with no type, and lowering then called the
+    // program valid but unbuildable.
+    report_missing_type_static(field, type, root);
+    infer_call_args_loosely(call);
+    return k_error_type;
+  }
+  return std::monostate{};
 }
 
 /// Explains a `C.member(...)` whose solved type has no such static member.
@@ -1252,368 +1113,36 @@ auto checker::report_missing_type_param_static(const ast::field_expr &field,
                   param_name));
 }
 
-/// A static method of a generic `extend[T] example_type[T]:` block called
-/// through the *bare* type name — `example_type.make(40)` rather than
-/// `example_type[int32].make(40)`. The bare name carries no type arguments,
-/// so the impl's parameters have to be solved from the call's arguments
-/// instead
-/// (`v: T` given `40` solves `T := int32`), which then names the concrete
-/// target `example_type[int32]` and goes through the same instance discipline
-/// as the applied spelling.
-///
-/// Without this, the call was typed against the uninstantiated template:
-/// the result was a `example_type[T]` with `T` abstract, and lowering failed
-/// with "call to `example_type::make` could not be resolved to a function in
-/// this compiled module" — nothing ever compiled that function.
-///
-/// `nullopt` for a method this does not apply to (a non-generic block, or
-/// a method with type parameters of its own), leaving the caller on its
-/// existing path.
-auto checker::check_bare_generic_static_call(const ast::call_expr &call,
-                                             const ast::field_expr &field,
-                                             const method_entry &method,
-                                             const std::string &type_name)
-    -> std::optional<type_id> {
-  if (method.block_type_params == nullptr ||
-      method.block_type_params->empty() || !method.decl->type_params.empty()) {
-    return std::nullopt;
-  }
-  record_expr_type(field, fn_type_of(*method.decl, method.owner));
-  const auto params =
-      signature_params(*method.decl, method.owner,
-                       /*skip_self=*/false, method.block_type_params);
-  check_call_args_against(
-      call, params, method.decl->name,
-      source_location{.file_id = method.file_id, .span = method.decl->span});
-  check_call_preconditions(call, *method.decl, params);
-
-  auto bindings = param_subst{};
-  solve_from_argument_types(call, params, bindings,
-                            /*ufcs_receiver=*/nullptr,
-                            /*bind_open=*/true);
-  const auto return_type = [&] -> type_id {
-    return substitute_solved(signature_return_type(*method.decl, method.owner,
-                                                   method.block_type_params),
-                             bindings);
-  };
-  // In a template the impl's parameters are whatever the arguments are in
-  // each instance, so the instance is each instance's to name.
-  const auto defer = [&] -> void {
-    defer_to_instances(
-        call, [this, &call, &method](instance_subst &subst) -> void {
-          const auto &clone = *clone_of(subst, &call);
-          const auto params =
-              signature_params(*method.decl, method.owner,
-                               /*skip_self=*/false, method.block_type_params);
-          auto solved = param_subst{};
-          solve_from_argument_types(clone, params, solved);
-          const auto target =
-              settle(substitute_solved(method.impl_target_pattern, solved));
-          if (mentions_type_param(target) ||
-              session_.types_.is_unknown(target)) {
-            return;
-          }
-          if (const auto *instance = check_impl_generic_static_call(
-                  clone, method, target, solved)) {
-            session_.resolved_callees_[&clone] =
-                resolved_callee{.decl = instance,
-                                .owner_module = method.owner->module_name,
-                                .impl_target_type = ""};
-          }
-        });
-  };
-
-  for (const auto &type_param : *method.block_type_params) {
-    if (type_param.name.empty() || bindings.contains(param_id(type_param))) {
-      continue;
-    }
-    // Called from inside its own block: the block's `T` is this body's own,
-    // rigid here, and matching it against itself bound nothing.
-    if (const auto own = session_.types_.type_param(
-            type_param.name, type_param.higher_kinded_arity, &type_param);
-        is_rigid_param(own)) {
-      bindings.emplace(own, own);
-      continue;
-    }
-    error_with_help(
-        call.span,
-        std::format("cannot tell which `{}` this call to `{}.{}` means",
-                    type_param.name, type_name, method.decl->name),
-        std::format("`{}` is not determined by the arguments", type_param.name),
-        std::format(
-            "`{}` belongs to the `extend` block, and `{}` names the type "
-            "without saying what `{}` is, so the compiler reads it off the "
-            "arguments instead. None of the arguments mention `{}`. Name "
-            "the type in full to say which one is meant, as in "
-            "`{}[int32].{}(...)`.",
-            type_param.name, type_name, type_param.name, type_param.name,
-            type_name, method.decl->name));
-    return k_error_type;
-  }
-
-  if (check_args_against_solution(
-          call, params, bindings,
-          std::format("{}.{}", type_name, method.decl->name))) {
-    return k_error_type;
-  }
-  const auto target =
-      settle(substitute_solved(method.impl_target_pattern, bindings));
-  // Still written in type parameters: a template body calling
-  // `example_type.make(x)` with `x: T`. Nothing concrete to compile yet.
-  if (mentions_template_param(target)) {
-    defer();
-    return return_type();
-  }
-  // Solved to an argument's open leaf: `example_type.make(40)` knows its
-  // type as `example_type[?]` now, but the instance is named once the
-  // literal settles. Checking the instance against the leaf compiled a body
-  // whose own generic calls were never named.
-  if (mentions_type_var(target)) {
-    defer_method_call(
-        method.decl->name, target, std::vector<type_id>{},
-        [this, &call, &method](type_id settled) -> void {
-          const auto concrete = settle(settled);
-          if (mentions_type_var(concrete) ||
-              session_.types_.is_unknown(concrete)) {
-            return;
-          }
-          auto solved = param_subst{};
-          if (const auto *instance = check_impl_generic_static_call(
-                  call, method, concrete, solved)) {
-            session_.resolved_callees_[&call] =
-                resolved_callee{.decl = instance,
-                                .owner_module = method.owner->module_name,
-                                .impl_target_type = ""};
-          }
-        });
-    return return_type();
-  }
-  const auto *instance =
-      check_impl_generic_static_call(call, method, target, bindings);
-  if (instance == nullptr) {
-    return k_error_type;
-  }
-  session_.resolved_callees_[&call] =
-      resolved_callee{.decl = instance,
-                      .owner_module = method.owner->module_name,
-                      .impl_target_type = ""};
-  return return_type();
-}
-
 auto checker::infer_qualified_call(const ast::call_expr &call,
                                    const ast::field_expr &field)
     -> std::optional<type_id> {
   const auto &object = *field.object;
-  const auto fn_name = field.field_name;
-  if (object.kind == ast::node_kind::index_expr ||
-      object.kind == ast::node_kind::call_expr) {
-    // A static call on a generic *application*: `list[int32].from_iter(it)`,
-    // `example_type[int32].make(9)`. Resolved to the concrete target and then
-    // dispatched by exactly the machinery a solved type parameter uses, so
-    // `list[int32].from_iter` and a `C.from_iter` that solved `C` to
-    // `list[int32]` name the same instance.
-    const auto target = resolve_applied_type_receiver(object);
-    if (!target.has_value()) {
+  if (object.kind != ast::node_kind::index_expr &&
+      object.kind != ast::node_kind::call_expr) {
+    const auto root = qualified_call_root(object);
+    if (!root.has_value()) {
       return std::nullopt;
     }
-    return resolve_type_param_static(call, field, *target, fn_name);
-  }
-  const auto root_path = qualified_call_root(object);
-  if (!root_path.has_value()) {
-    return std::nullopt;
-  }
-  const auto &root = *root_path;
-
-  if (const auto found = find_path_function(root, fn_name)) {
-    // `limits.max[int32]()` carries its brackets on the field (todo 8).
-    const auto explicit_args = method_explicit_generic_args(field);
-    if (!check_method_accepts_generic_args(field, *found->decl,
-                                           explicit_args)) {
-      infer_call_args_loosely(call);
-      return k_error_type;
-    }
-    return check_function_call(call, field, *found, explicit_args);
-  }
-
-  const auto resolve_against =
-      [&](const ast::func_decl &decl, const module_members *owner,
-          file_id_type decl_file, std::string impl_target_type) -> type_id {
-    record_expr_type(field, fn_type_of(decl, owner));
-    session_.resolved_callees_[&call] =
-        resolved_callee{.decl = &decl,
-                        .owner_module = owner->module_name,
-                        .impl_target_type = std::move(impl_target_type)};
-    return check_call_against_decl(call, decl, owner, decl_file,
-                                   /*skip_self=*/false);
-  };
-
-  if (root.size() == 1) {
-    // A single-segment root naming a prelude constructor
-    // (`option.pure(...)`) — an associated function provided by an impl
-    // of a higher-kinded trait for that constructor. The callee's type
-    // parameters solve from the checked arguments by rigid pattern
-    // unification, so the call's type is the concrete instantiation
-    // (`option.pure(1)` is an `option[int32]`).
-    if (builtin_generic_arity(root.front()).has_value()) {
-      if (const auto *method =
-              method_lookup().constructor_method(root.front(), fn_name)) {
-        const auto has_self =
-            !method->decl->params.empty() &&
-            param_name_of(method->decl->params.front()) == "self";
-        if (!has_self) {
-          record_expr_type(field, fn_type_of(*method->decl, method->owner));
-          const auto params =
-              signature_params(*method->decl, method->owner, false);
-          // `solved` carries the callee's *value* parameters as the
-          // arguments determined them. Without it a `static def
-          // from_array[n: usize](items: array[T, n])` never has `n`
-          // solved, `solve_generic_params` finds no instance to build,
-          // and nothing is recorded in `session_.resolved_callees_` — leaving
-          // lowering to name the uncompiled template `trio::from_array`
-          // and both backends to report "could not be resolved to a
-          // function in this compiled module" for correct code.
-          auto solved = value_bindings{};
-          check_call_args_against(call, params, method->decl->name,
-                                  source_location{.file_id = file_.file_id_,
-                                                  .span = method->decl->span},
-                                  &solved);
-          auto bindings = param_subst{};
-          solve_from_argument_types(call, params, bindings,
-                                    /*ufcs_receiver=*/nullptr,
-                                    /*bind_open=*/true);
-          // Same instance discipline as `check_receiver_call`: a generic
-          // associated function resolves to its monomorphized copy.
-          if (!method->decl->type_params.empty()) {
-            if (!instantiate_hk_method(
-                    call, *method, root.front(), bindings,
-                    resolved_callee{.owner_module = method->owner->module_name,
-                                    .impl_target_type = ""},
-                    /*explicit_args=*/{}, solved) &&
-                function_.current_template_ != nullptr) {
-              // `option.pure(x)` with `x: T`: each instance solves it for
-              // its own `T`, from the arguments' recorded types.
-              defer_to_instances(
-                  call,
-                  [this, &call, method,
-                   target = root.front()](instance_subst &subst) -> void {
-                    const auto &clone = *clone_of(subst, &call);
-                    const auto params =
-                        signature_params(*method->decl, method->owner, false);
-                    auto values = value_bindings{};
-                    solve_values_from_argument_types(clone, params, values);
-                    auto types = param_subst{};
-                    solve_from_argument_types(clone, params, types);
-                    (void)instantiate_hk_method(
-                        clone, *method, target, types,
-                        resolved_callee{.owner_module =
-                                            method->owner->module_name,
-                                        .impl_target_type = ""},
-                        {}, values);
-                  });
-            }
-          } else {
-            session_.resolved_callees_[&call] =
-                resolved_callee{.decl = method->decl,
-                                .owner_module = method->owner->module_name,
-                                .impl_target_type = root.front()};
-          }
-          return substitute_solved(
-              signature_return_type(*method->decl, method->owner), bindings);
-        }
-      }
-    }
-
-    // A single-segment root naming a *type parameter* (`C.from_iter(it)`
-    // inside `def collect[I, C](self: I) -> C`). The parameter is
-    // substituted for whatever this instance solved it to, and the member
-    // is then resolved against that concrete type — dispatch is static and
-    // monomorphic, so nothing here needs the trait to be object-safe
-    // (§5.2).
-    if (const auto bound = lookup_type_param(root.front())) {
-      // Still a template: `C` is the body's own parameter, and its static
-      // members are what its bounds promise (phase 9, rule 2).
-      if (is_rigid_param(*bound)) {
-        return check_bound_method_call(call, field, *bound,
-                                       method_explicit_generic_args(field),
-                                       /*static_call=*/true);
-      }
-      if (mentions_abstract_type(*bound) ||
-          session_.types_.is_unknown(*bound)) {
-        infer_call_args_loosely(call);
-        return k_unknown_type;
-      }
-      if (const auto result =
-              resolve_type_param_static(call, field, *bound, fn_name)) {
-        return result;
-      }
-      // `C` is bound, so this path is definitely a type-parameter static
-      // dispatch — it just doesn't resolve. Diagnosed here rather than
-      // left to fall through, which would report the parameter itself as
-      // an undefined name and say nothing about the type it stands for.
-      report_missing_type_param_static(field, root.front(), *bound, fn_name);
-      infer_call_args_loosely(call);
-      return k_error_type;
-    }
-
-    // A single-segment root naming a builtin scalar type (`int64.zero()`):
-    // its static members come from `extend` blocks and trait impls, found
-    // the same way a type parameter solved to it finds them (todo 9).
-    if (is_builtin_scalar_name(root.front())) {
-      if (const auto result = resolve_type_param_static(
-              call, field, session_.types_.builtin(root.front()), fn_name)) {
-        return result;
-      }
-    }
-
-    // A single-segment root naming a type (`io_error.from(...)`) —
-    // resolve an associated (non-`self`) function the same way a method
-    // call resolves an instance method.
-    if (const auto found_type = find_type_decl_by_name(root.front())) {
-      const auto type =
-          make_user_type(*found_type->first, found_type->second, {});
-      const auto &entry = session_.types_.entry(type);
-      if (const auto *method = find_method(entry, fn_name)) {
-        const auto has_self = !method->decl->params.empty() &&
-                              method->decl->params.front().pattern != nullptr &&
-                              method->decl->params.front().pattern->kind ==
-                                  ast::node_kind::binding_pattern &&
-                              ast::cast<const ast::binding_pattern>(
-                                  *method->decl->params.front().pattern)
-                                      .name == "self";
-        if (!has_self) {
-          if (const auto result = check_bare_generic_static_call(
-                  call, field, *method, found_type->first->name)) {
-            return *result;
-          }
-          return resolve_against(*method->decl, method->owner, file_.file_id_,
-                                 found_type->first->name);
-        }
-      }
-    }
-
-    // A type name with no static function by this name. Answering nothing
-    // here let the call through with no type, and lowering then called the
-    // program valid but unbuildable.
-    if (is_builtin_scalar_name(root.front()) ||
-        find_type_decl_by_name(root.front()).has_value()) {
-      report_missing_type_static(field, root.front());
-      infer_call_args_loosely(call);
-      return k_error_type;
+    if (const auto found = find_path_function(*root, field.field_name)) {
+      // `limits.max[int32]()` carries its brackets on the field (todo 8).
+      return check_function_call(call, field, *found,
+                                 method_explicit_generic_args(field));
     }
   }
-
+  auto found = find_static_callee(call, field);
+  if (const auto *callee = std::get_if<call_callee>(&found)) {
+    return check_call(call, *callee);
+  }
+  if (const auto *answered = std::get_if<type_id>(&found)) {
+    return *answered;
+  }
   return std::nullopt;
 }
 
 auto checker::report_missing_type_static(const ast::field_expr &field,
+                                         type_id type,
                                          const std::string &type_name)
     -> void {
-  auto type = k_unknown_type;
-  if (is_builtin_scalar_name(type_name)) {
-    type = session_.types_.builtin(type_name);
-  } else if (const auto found = find_type_decl_by_name(type_name)) {
-    type = make_user_type(*found->first, found->second, {});
-  }
   const auto &entry = session_.types_.entry(type);
   const auto *method = resolve_method(entry, type, field.field_name).method;
   if (method != nullptr) {
@@ -1644,8 +1173,7 @@ auto checker::find_callable_decl(std::string_view name)
         it != file_.module_->functions.end()) {
       return callable_lookup{.decl = it->second.decl,
                              .owner = file_.module_,
-                             .file_id = it->second.file_id,
-                             .record = false};
+                             .file_id = it->second.file_id};
     }
   }
   if (const auto *import = find_import(name)) {
@@ -1778,18 +1306,19 @@ auto checker::check_function_call(const ast::call_expr &call,
                                   const callable_lookup &found,
                                   const explicit_generic_args &explicit_args)
     -> type_id {
-  record_expr_type(callee_node, explicit_args.empty()
-                                    ? fn_type_of(*found.decl, found.owner)
-                                    : k_unknown_type);
-  // Lowering needs the owning module to rebuild a cross-module call.
-  if (found.record) {
-    session_.resolved_callees_[&call] =
-        resolved_callee{.decl = found.decl,
-                        .owner_module = found.owner->module_name,
-                        .impl_target_type = ""};
-  }
-  return check_call_against_decl(call, *found.decl, found.owner, found.file_id,
-                                 /*skip_self=*/false, explicit_args);
+  // The template's record, which a concrete generic call's instance
+  // overwrites (`instantiate_solved_call`).
+  session_.resolved_callees_[&call] =
+      resolved_callee{.decl = found.decl,
+                      .owner_module = found.owner->module_name,
+                      .impl_target_type = ""};
+  return check_call(call, call_callee{.form = callee_form::free_function,
+                                      .decl = found.decl,
+                                      .owner = found.owner,
+                                      .decl_file = found.file_id,
+                                      .explicit_args = explicit_args,
+                                      .callee_node = &callee_node,
+                                      .display_name = found.decl->name});
 }
 
 /// Recognizes an explicitly instantiated call — `zeros[8]()`,
@@ -2137,63 +1666,6 @@ auto checker::infer_slice_from_raw_parts_call(const ast::call_expr &call)
   return record_expr_type(call, result);
 }
 
-/// Recognizes `name[T](...)` — a compile-time generic call to a top-level
-/// `static def` function (e.g. `derive_show[point]()`), distinguished
-/// from ordinary indexing-then-calling by `ident_names_callable_decl`
-/// (mirrors `infer_index`'s own "generic instantiation, not indexing"
-/// branch). Types the call as the function's declared return type via the
-/// ordinary `check_call_against_decl` machinery (`T` isn't substituted
-/// into the signature — this milestone's only caller, `derive_show`,
-/// never mentions its type parameter in its own signature, only inside
-/// its body via reflection) so argument-count/type checking stays real.
-/// Returns `nullopt` when the shape doesn't match at all, so `infer_call`
-/// falls through to its ordinary dispatch.
-auto checker::infer_comptime_generic_call(const ast::call_expr &call,
-                                          const ast::index_expr &index)
-    -> std::optional<type_id> {
-  if (index.object == nullptr || index.index == nullptr ||
-      index.object->kind != ast::node_kind::ident_expr) {
-    return std::nullopt;
-  }
-  const auto &callee_ident = ast::cast<const ast::ident_expr>(*index.object);
-  const auto found = find_callable_decl(callee_ident.name);
-  if (!found.has_value() || !found->decl->modifiers.is_static ||
-      found->decl->type_params.empty()) {
-    return std::nullopt;
-  }
-  const auto *decl = found->decl;
-  const auto *owner = found->owner;
-  const auto decl_file = found->file_id;
-  // The type argument must name either an in-scope generic parameter (a
-  // nested compile-time generic call forwarding its own type parameter)
-  // or a real declared type — anything else falls through to ordinary
-  // indexing so a genuine mistake still gets an ordinary diagnostic
-  // rather than a confusing one from this narrow comptime-only path.
-  if (index.index->kind != ast::node_kind::ident_expr) {
-    return std::nullopt;
-  }
-  const auto &type_arg_name =
-      ast::cast<const ast::ident_expr>(*index.index).name;
-  if (!lookup_type_param(type_arg_name).has_value() &&
-      !find_type_decl_by_name(type_arg_name).has_value()) {
-    return std::nullopt;
-  }
-  // Thread `T` through as an explicit argument, exactly the way `infer_
-  // explicit_generic_call` does for the general `pair[int32, str](...)`
-  // shape below. Without this, `check_call_against_decl` has no solution
-  // for `T` at all and reports "cannot tell what `T` is" even though the
-  // bracket spelled it out outright — a real gap, not a deliberate
-  // choice: a `static def` whose signature never mentions its own type
-  // parameter (every predicate in `std.traits`, and `derive_show` itself)
-  // still needs `T` *solved* so the body-check phase can bind it
-  // (`checker::check_function`'s `type_param_locals`), even though
-  // nothing in the *signature* substitutes it.
-  const auto explicit_args = explicit_generic_args{explicit_generic_arg{
-      .value = index.index.get(), .span = index.index->span}};
-  return check_call_against_decl(call, *decl, owner, decl_file,
-                                 /*skip_self=*/false, explicit_args);
-}
-
 /// Recognizes `implements[T, Trait]()` — a compile-time coherence-table
 /// query, not an ordinary generic call. `Trait` names a *trait*, not a
 /// type, so it cannot go through `solve_generic_params`/`explicit_type_
@@ -2354,13 +1826,6 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
     return *result;
   }
 
-  if (call.callee->kind == ast::node_kind::index_expr) {
-    if (const auto result = infer_comptime_generic_call(
-            call, ast::cast<const ast::index_expr>(*call.callee))) {
-      return *result;
-    }
-  }
-
   // `implements[T, Trait]()`: tried before the general explicit-generic-
   // call form below, which would otherwise try to resolve `implements` as
   // a declared function (it isn't one — see `infer_implements_call`'s
@@ -2372,9 +1837,8 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
     }
   }
 
-  // `zeros[8]()` / `pair[int32, str](a, b)`: the brackets carry the
-  // callee's compile-time arguments. Tried after the `static def` form
-  // above, which is the narrower of the two and claims its own shape.
+  // `zeros[8]()` / `pair[int32, str](a, b)` / `derive_show[point]()`: the
+  // brackets carry the callee's compile-time arguments.
   if (call.callee->kind == ast::node_kind::index_expr ||
       call.callee->kind == ast::node_kind::call_expr) {
     if (const auto result = infer_explicit_generic_call(call)) {
@@ -2387,7 +1851,11 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
         infer_expr(*call.callee, invoked_lambda_expectation(*call.callee));
     const auto &entry = session_.types_.entry(strip_refs(callee));
     if (entry.kind == type_kind::fn_kind) {
-      return check_call_against_fn_type(call, entry, "this function value");
+      return check_call(call,
+                        call_callee{.form = callee_form::fn_value,
+                                    .callee_node = call.callee.get(),
+                                    .display_name = "this function value",
+                                    .fn_type = callee});
     }
     infer_call_args_loosely(call);
     return k_unknown_type;
@@ -2417,8 +1885,10 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
         infer_call_args_loosely(call);
         return k_error_type;
       }
-      return check_call_against_fn_type(call, session_.types_.entry(copy),
-                                        name);
+      return check_call(call, call_callee{.form = callee_form::fn_value,
+                                          .callee_node = &ident,
+                                          .display_name = name,
+                                          .fn_type = copy});
     }
     const auto &entry = session_.types_.entry(strip_refs(binding->type));
     if (entry.kind == type_kind::fn_kind) {
@@ -2427,7 +1897,10 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
       // resolution bypasses this chokepoint doc comment lists) it needs
       // its own persistence hook.
       record_expr_type(ident, binding->type);
-      return check_call_against_fn_type(call, entry, name);
+      return check_call(call, call_callee{.form = callee_form::fn_value,
+                                          .callee_node = &ident,
+                                          .display_name = name,
+                                          .fn_type = binding->type});
     }
     if (session_.types_.is_unknown(binding->type)) {
       infer_call_args_loosely(call);

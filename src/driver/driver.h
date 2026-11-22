@@ -17,11 +17,11 @@
 namespace cinder::driver {
 /// Parsed command-line inputs for one `cinder` invocation.
 struct cli_config {
-  std::string program_name; ///< Executable name shown in usage and diagnostics.
+  std::string program_name{}; ///< Executable name shown in usage and diagnostics.
   std::vector<std::string>
       sources; ///< Source file paths to compile in this session.
   std::map<std::string, std::string>
-      generated_sources; ///< Compiler-synthesized sources, keyed by the
+      generated_sources{}; ///< Compiler-synthesized sources, keyed by the
                          ///< name they appear under in `sources` (and in
                          ///< diagnostics). `parse_sources` takes their text
                          ///< from here instead of reading the disk, so
@@ -29,7 +29,7 @@ struct cli_config {
                          ///< system — concurrent compiles can't observe
                          ///< each other's half-written or differing copies.
   std::optional<unsigned>
-      stdlib_boundary; ///< Number of user-provided
+      stdlib_boundary{}; ///< Number of user-provided
                        ///< sources before `inject_stdlib_prelude` appended
                        ///< stdlib files to `sources`; unset when it was never
                        ///< called (all of `sources` is then user code).
@@ -79,7 +79,7 @@ struct cli_config {
       std::string(k_default_run_function); ///< Zero-argument function to use as
                                            ///< the executable's entry point
                                            ///< when `build` is set.
-  std::string build_output; ///< Output executable path; empty derives one
+  std::string build_output{}; ///< Output executable path; empty derives one
                             ///< from the first source file's stem.
   optimization_level opt_level =
       k_default_optimization_level; ///< `-O0`/`-O1`/`-O2`/`-O3` — only takes

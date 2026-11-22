@@ -264,6 +264,21 @@ auto checker::emit_undefined_type(const ast::named_type &named,
            .second) {
     return;
   }
+  // `tname[some_local]()`: the name is in scope, as a value. Saying it is
+  // "not found" would send the reader looking for a missing declaration.
+  if (lookup_value(name) != nullptr) {
+    auto diag = diagnostic(diagnostic_level::error,
+                           std::format("`{}` is a value, not a type", name),
+                           file_.file_id_);
+    diag.with_label(named.span, "expected a type here");
+    diag.with_help(std::format(
+        "`{}` is a local binding. Write a type name in this position, such "
+        "as `int32` or a declared `type`.",
+        name));
+    emit_diag(diag);
+    mark_error();
+    return;
+  }
   auto diag =
       diagnostic(diagnostic_level::error,
                  std::format("undefined type `{}`", name), file_.file_id_);
@@ -1030,7 +1045,7 @@ auto checker::build_try_from_fragment(const ast::call_expr &call,
       // `index[n].try_from(raw)` inside a function generic over `n`. There
       // is no check to build *here* — `n` is a symbol — but there will be
       // one in each instance the template is compiled into, where `n` is a
-      // number (`instantiate_generic_function`). The template itself is never
+      // number (`name_generic_call`). The template itself is never
       // lowered, so leaving this call without a fragment costs nothing.
       return nullptr;
     }
@@ -1138,7 +1153,7 @@ auto checker::resolve_index_output(type_id target, std::string_view trait_name,
   // Resolve the declaration's own return type with the impl block's type
   // parameters in scope (so a literally-written `-> T` resolves to the
   // parameter rather than to `unknown`), then apply the bindings the
-  // receiver pins — the same two-step `check_impl_generic_method_call`
+  // receiver pins — the same two-step the call pipeline (`callee_signature`)
   // uses for this method's *parameter* types.
   if (method.block_type_params != nullptr) {
     auto bindings = param_subst{};
@@ -1307,6 +1322,12 @@ auto checker::dispatch_index(
                       .owner_module = method.owner->module_name,
                       .impl_target_type = callee != nullptr ? "" : entry.name,
                       .receiver = index.object.get()};
+  if (callee == nullptr) {
+    // In a template, the template's own method, at the receiver's
+    // arguments.
+    dispatches[&index].template_args =
+        dispatch_template_args(method, target, generic_solution{});
+  }
   if (callee == nullptr && mentions_template_param(target)) {
     defer_to_instances(
         index,

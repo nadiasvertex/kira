@@ -1535,14 +1535,22 @@ auto checker::carried_by(const ast::expr &expr) -> carried_values {
     auto out = std::vector<carried_value>{};
     if (method != nullptr &&
         session_.node_types_.contains(method->object.get())) {
-      // The receiver, which the task may only borrow.
+      // The receiver. Only a `&` borrow (`self`, or a `&T` first parameter)
+      // lets several tasks read it, which needs `share`; one moved into a
+      // by-value first parameter, or lent through `mut self` or `&mut T`
+      // (which moves with its referent), needs `send`, like an argument.
+      const auto shared_borrow = receiver_is_shared_borrow(call);
+      if (!shared_borrow.has_value()) {
+        hidden_carrier_ = &expr;
+        return nullptr;
+      }
       const auto before = out.size();
       if (!append_carried(*method->object, out)) {
         return nullptr;
       }
       for (auto i = before; i < out.size(); ++i) {
-        out[i].need_share = true;
-        if (out[i].label.empty()) {
+        out[i].need_share = out[i].need_share || *shared_borrow;
+        if (out[i].label.empty() && *shared_borrow) {
           out[i].label = "the task borrows it";
         }
       }
@@ -1558,6 +1566,41 @@ auto checker::carried_by(const ast::expr &expr) -> carried_values {
     hidden_carrier_ = &expr;
     return nullptr;
   }
+}
+
+auto checker::receiver_is_shared_borrow(const ast::call_expr &call) const
+    -> std::optional<bool> {
+  const auto found = session_.resolved_callees_.find(&call);
+  if (found == session_.resolved_callees_.end() ||
+      found->second.decl == nullptr ||
+      found->second.decl->params.empty()) {
+    return std::nullopt;
+  }
+  // A call through a bound: the receiver mode the trait declares, which
+  // also tells a consuming `self` from a lent one.
+  if (found->second.bound.has_value()) {
+    const auto entry = trait_method_signatures_.find(found->second.decl);
+    if (entry == trait_method_signatures_.end() ||
+        entry->second.receiver == trait_receiver::none) {
+      return std::nullopt;
+    }
+    return entry->second.receiver == trait_receiver::shared;
+  }
+  const auto &front = found->second.decl->params.front();
+  if (const auto *binding =
+          front.pattern != nullptr
+              ? ast::as<const ast::binding_pattern>(front.pattern.get())
+              : nullptr;
+      binding != nullptr && binding->name == "self") {
+    return !binding->is_mut;
+  }
+  // Auto-ref borrows the receiver only for a parameter written `&T`; a
+  // receiver that is already a reference carries it as its own type.
+  const auto *ref = front.type_annotation != nullptr
+                        ? ast::as<const ast::ref_type>(
+                              front.type_annotation.get())
+                        : nullptr;
+  return ref != nullptr && !ref->is_mut;
 }
 
 auto checker::require_carried_sendable(
@@ -1771,7 +1814,7 @@ auto checker::infer_yield(const ast::yield_expr &expr) -> type_id {
 /// `next` — the `for` statement. An adapter declared
 /// `impl[I, T, U] iterator[U] for map_iter[I, T, U]` has no single compiled
 /// `next`, exactly as a written `it.next()` call would not
-/// (`check_impl_generic_method_call`); the difference is only that nothing
+/// (`name_member_instance`); the difference is only that nothing
 /// in the source names the call, so the instance has to be requested from
 /// here or lowering finds no such function. Passing `nullptr` answers the
 /// element type without compiling anything, which is what `element_type_of`
@@ -1829,21 +1872,54 @@ auto checker::try_resolve_iter_borrow(type_id operand, bool is_mut,
     inner->adapter_impl_target_type = "";
     inner->adapter_result_type = ret_type;
     inner->adapter_borrows = true;
+    if (function_.current_template_ != nullptr &&
+        mentions_template_param(operand)) {
+      auto answers = generic_solution{};
+      for (const auto &[slot, answer] : bindings_by_name(bindings)) {
+        if (session_.types_.entry(answer).kind ==
+            type_kind::const_value_kind) {
+          answers.const_slots.emplace(slot, answer);
+        } else {
+          answers.type_slots.emplace(slot, answer);
+        }
+      }
+      inner->adapter_template_args =
+          template_call_args(call_callee{.form = callee_form::free_function,
+                                         .decl = candidate.decl,
+                                         .owner = candidate.owner},
+                             param_subst{}, answers)
+              .value_or(std::vector<type_id>{});
+    }
 
     // A generic `iter[T]`/`iter_mut[T]` needs its own compiled instance for
     // the reason `try_resolve_into_iterator` documents: nothing in the
     // source names this call.
     if (site != nullptr && is_generic_template(*candidate.decl) &&
         !mentions_template_param(operand)) {
-      auto solution = generic_solution{};
-      solution.type_slots = bindings_by_name(bindings);
-      solution.suffix = std::format("${}", mangle_type_for_instance(operand));
-      const auto instance_name =
-          std::format("{}{}", candidate.decl->name, solution.suffix);
-      if (const auto *instance = find_or_check_generic_instance(
-              *site, *candidate.decl, candidate.owner, candidate.file_id,
-              solution, instance_name, &solution.type_slots)) {
-        inner->adapter_decl = instance;
+      // Named by the solution, as a written `iter(&b)` names it. Named by
+      // the operand, a loop over a `bag[int32]` (`T := int32`) and a call
+      // `iter(&outer)` with `T := bag[int32]` were both
+      // `iter$bag_int32_`, and one ran the other's body (todo 72).
+      auto answers = generic_solution{};
+      for (const auto &[slot, answer] : bindings_by_name(bindings)) {
+        if (session_.types_.entry(answer).kind ==
+            type_kind::const_value_kind) {
+          answers.const_slots.emplace(slot, answer);
+        } else {
+          answers.type_slots.emplace(slot, answer);
+        }
+      }
+      const auto solution = map_solution(
+          *candidate.decl, answers, [](type_id type) -> type_id {
+            return type;
+          });
+      if (solution.has_value()) {
+        if (const auto *instance = find_or_check_generic_instance(
+                *site, *candidate.decl, candidate.owner, candidate.file_id,
+                *solution, candidate.decl->name + solution->suffix,
+                &solution->type_slots)) {
+          inner->adapter_decl = instance;
+        }
       }
     }
     return inner;
@@ -1901,9 +1977,11 @@ auto checker::try_resolve_into_iterator(type_id iterable, const ast::node *site)
   inner->adapter_owner_module = method->owner->module_name;
   inner->adapter_impl_target_type = entry.name;
   inner->adapter_result_type = iter_type;
+  inner->adapter_template_args =
+      dispatch_template_args(*method, stripped, generic_solution{});
 
   // An `into_iter` on a generic collection needs its own compiled
-  // instance, for the reason `check_impl_generic_method_call` documents:
+  // instance, for the reason `member_instance` documents:
   // nothing in the source names this call, so if the instance is not
   // requested here, lowering finds no such function.
   if (site != nullptr && impl_needs_instance(*method, entry) &&
@@ -1916,7 +1994,7 @@ auto checker::try_resolve_into_iterator(type_id iterable, const ast::node *site)
         method_instance_name(entry.name, method->decl->name, solution.suffix);
     if (const auto *instance = find_or_check_generic_instance(
             *site, *method->decl, method->owner, method->file_id, solution,
-            name, &scoped_params, stripped)) {
+            name, &scoped_params, stripped, method->block_type_params)) {
       // The instance's name already carries the receiver, so it is a plain
       // function name rather than a `Type::method` pair to be joined.
       inner->adapter_decl = instance;
@@ -1964,13 +2042,15 @@ auto checker::try_resolve_iterator(type_id iterable, const ast::node *site)
                              .impl_target_type = entry.name,
                              .element_type = ret_entry.args.front()};
 
+  dispatch.template_args =
+      dispatch_template_args(*method, stripped, generic_solution{});
   if (site == nullptr || !impl_needs_instance(*method, entry) ||
       mentions_template_param(stripped)) {
     return dispatch;
   }
 
   // Keyed on the receiver, and named after it, for the reason
-  // `check_impl_generic_method_call` documents: two impls on two
+  // `member_instance` documents: two impls on two
   // instantiations of one target both claim `next`, and only the
   // receiver's arguments tell them apart.
   auto scoped_params = method->fixed_type_params;
@@ -1981,7 +2061,7 @@ auto checker::try_resolve_iterator(type_id iterable, const ast::node *site)
       method_instance_name(entry.name, method->decl->name, solution.suffix);
   const auto *instance = find_or_check_generic_instance(
       *site, *method->decl, method->owner, method->file_id, solution, name,
-      &scoped_params, stripped);
+      &scoped_params, stripped, method->block_type_params);
   if (instance == nullptr) {
     return dispatch;
   }
@@ -2846,6 +2926,7 @@ auto checker::instantiate_from_array_for(const ast::array_expr &array,
     return;
   }
   if (mentions_template_param(target)) {
+    record_template_from_array(array, target, length);
     defer_to_instances(
         array, [this, &array, target, length](instance_subst &subst) -> void {
           instantiate_from_array_for(*clone_of(subst, &array),
@@ -2897,6 +2978,31 @@ auto checker::instantiate_from_array_for(const ast::array_expr &array,
   // function name rather than a `Type::method` pair to be joined.
   conversion->second.callee.decl = instance;
   conversion->second.callee.impl_target_type = "";
+}
+
+/// In a template, the arguments of a list literal's call to its target's
+/// `from_array` template: the target's block arguments, then the literal's
+/// length.
+auto checker::record_template_from_array(const ast::array_expr &array,
+                                         type_id target, uint64_t length)
+    -> void {
+  const auto conversion = session_.array_literal_conversions_.find(&array);
+  if (conversion == session_.array_literal_conversions_.end()) {
+    return;
+  }
+  const auto &entry = session_.types_.entry(target);
+  const auto *method = find_method(entry, "from_array", target);
+  if (method == nullptr || method->decl != conversion->second.callee.decl ||
+      method->decl->type_params.empty() ||
+      !method->decl->type_params.front().is_value_param) {
+    return;
+  }
+  auto own = generic_solution{};
+  bind_generic_constant(own, method->decl->type_params.front(),
+                        session_.types_.usize_type(),
+                        static_cast<int64_t>(length));
+  conversion->second.callee.template_args =
+      dispatch_template_args(*method, target, own);
 }
 
 /// If `target` is a user type implementing `std.traits.from_array`,

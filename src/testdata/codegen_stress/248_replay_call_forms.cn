@@ -1,0 +1,109 @@
+module codegen_stress.replay_call_forms
+
+# Every kind of call a template defers to its instances, made inside one
+# generic body: a free generic call, a static on an applied type, a self
+# method, a receiver-style method, a bound method, a bound static and a
+# prelude-constructor static, with and without brackets that name the
+# template's own `T`. `run` is instantiated at `int32` and at `int64`. The
+# `int64` argument does not fit in an `int32`, the two impls of `shape`
+# return different bases, and `size_of` reads each instance's own `T`, so a
+# decision that leaks from one instance into the other gives a wrong total.
+#
+# Both backends name instances from the same checker output and would agree
+# on a leaked decision, so `# expect:` is computed by hand.
+#
+# run(3) at int32:
+#   a  ident(x)                     3
+#   a2 size_twice(x)                4 * 2          =     8
+#   a3 ident[T](x)                  3
+#   c  bag[T].width[T]()            4 + 4 * 10     =    44
+#   d  b.get()                      3
+#   e  b.get_as[T](x)               3
+#   f  b.fold(...)                  3
+#   g  x.pick[T](x)                 3
+#   h  T.base() + T.conv[T](x)      1 + 3          =     4
+#   i  option.width[T](1000)        4 * 1000       =  4000
+#   total                                             4074
+# run(5000000000) at int64, with x = 5000000000:
+#   a, a3, d, e, f, g               6 * x
+#   a2                              8 * 2          =    16
+#   c                               8 + 8 * 10     =    88
+#   h                               100 + x
+#   i                               8 * 1000       =  8000
+#   total                           7 * x + 8204
+# main subtracts 7 * x: 4074 + 8204 = 12278.
+
+# expect: 12278
+
+trait shape:
+    def wide(self) -> int64
+    def pick[U](self, u: U) -> U
+    static def base() -> self
+    static def conv[U](v: U) -> U
+
+impl shape for int32:
+    def wide(self) -> int64:
+        return int64(self)
+    def pick[U](self, u: U) -> U:
+        return u
+    static def base() -> int32:
+        return 1
+    static def conv[U](v: U) -> U:
+        return v
+
+impl shape for int64:
+    def wide(self) -> int64:
+        return self
+    def pick[U](self, u: U) -> U:
+        return u
+    static def base() -> int64:
+        return 100
+    static def conv[U](v: U) -> U:
+        return v
+
+type bag[T] = { v: T }
+
+extend[T: copy] bag[T]:
+    def get(self) -> T:
+        return self.v
+    def get_as[U](self, u: U) -> U:
+        return u
+    static def make(v: T) -> bag[T]:
+        return bag[T] { v: v }
+    static def width[U]() -> usize:
+        return size_of[U]() + size_of[T]() * 10
+    # Receiver-style: the receiver fills the first parameter.
+    def fold[U](b: bag[T], f: fn(T) -> U) -> U:
+        return f(b.v)
+
+trait sized_kind[F[_]]:
+    def width[A](scale: usize) -> usize
+
+impl sized_kind for option:
+    def width[A](scale: usize) -> usize:
+        return size_of[A]() * scale
+
+def ident[U](u: U) -> U:
+    return u
+
+def size_twice[U](u: U) -> usize:
+    return size_of[U]() * 2
+
+def run[T: shape + copy](x: T) -> int64:
+    let a = ident(x).wide()
+    let a2 = int64(size_twice(x))
+    let a3 = ident[T](x).wide()
+    let b = bag[T].make(x)
+    let c = int64(bag[T].width[T]())
+    let d = b.get().wide()
+    let e = b.get_as[T](x).wide()
+    let f = b.fold((v: T) => v.wide())
+    let g = x.pick[T](x).wide()
+    let h = T.base().wide() + T.conv[T](x).wide()
+    let i = int64(option.width[T](1000))
+    return a + a2 + a3 + c + d + e + f + g + h + i
+
+def main() -> int32:
+    let narrow: int32 = 3
+    let wide: int64 = 5000000000
+    return int32(run(narrow) + run(wide) - 35000000000)

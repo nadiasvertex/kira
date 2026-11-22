@@ -12,10 +12,9 @@ module codegen_stress.generic_impl_static_on_builtin
 #     impl[T] from_iter[T] for list[T]:
 #         static def from_iter[I](it: I) -> list[T] where I: iterator[T]
 #
-# `I` must be solved from the argument, so the call cannot take the
-# impl-parameters-only path `check_impl_generic_static_call` serves — it goes
-# to `instantiate_hk_method`, which solves the *declaration's* `type_params`
-# and knows nothing of the impl's. `T` was therefore never bound, and the
+# `I` must be solved from the argument as well as `T` from the impl's
+# target. A solver that walks only the *declaration's* `type_params` knows
+# nothing of the impl's, so `T` was never bound, and the
 # instance failed to check with ``undefined type `T` `` pointing inside
 # `std.iter`, carrying R1's instantiated-from note back to the user's
 # `collect`. Declining the impl-only path must not also drop the impl's

@@ -179,7 +179,7 @@ auto checker::find_prelude_variant(std::string_view name)
 /// `eprint`) — without requiring an explicit `use`. Mirrors
 /// `find_prelude_trait` exactly, one module list for functions instead of
 /// traits, except it also returns the declaring module (`fn_type_of`/
-/// `check_call_against_decl` need it as the function's "owner", the same
+/// `check_call` need it as the function's "owner", the same
 /// way the `find_import` call branch a few lines below passes its own
 /// resolved `source` module through); see `find_prelude_trait`'s doc
 /// comment for the auto-injection mechanism (`inject_stdlib_prelude`,
@@ -649,7 +649,7 @@ auto checker::add_synthesized_impl(impl_ref impl) -> void {
 /// over `self`; that copy's `session_.node_types_` entries can never resolve a
 /// concrete call like `self.write(buf)` against a real declaration). On
 /// success, registers the clone as an ordinary `method_entry` (so
-/// `find_method`/`record_instance_method_callee` treat it exactly like a
+/// `find_method` and the call pipeline treat it exactly like a
 /// real impl-provided method — see `infer_method_call`) and records it in
 /// `session_.synthesized_trait_defaults_` so `hir::lower_module` lowers it into
 /// a real `hir_function`. On failure (a construct `ast::clone_func_decl`
@@ -685,7 +685,7 @@ auto checker::monomorphize_trait_default(const deferred_trait_default &deferred)
   // as a written method of that impl is: under the impl's parameters and
   // facts, with nothing outside it in scope. Each concrete receiver then
   // gets its own instance, named and made by the machinery every generic
-  // impl method uses (`check_impl_generic_method_call`). Todo 57.
+  // impl method uses (`name_member_instance`). Todo 57.
   const auto *block_params =
       deferred.impl_type_params != nullptr && !deferred.impl_type_params->empty()
           ? deferred.impl_type_params
@@ -1406,36 +1406,81 @@ auto checker::resolve_handle_step(const ast::expr &receiver, type_id handle,
       mentions_template_param(handle)) {
     auto bindings = param_subst{};
     match_params(method->impl_target_pattern, handle, bindings);
-    return deref_step{.callee = {},
+    // The template's own `deref`, at the handle's arguments, when they are
+    // all known; otherwise no callee, and the step is left to instances.
+    auto template_callee = resolved_callee{};
+    if (auto args = dispatch_template_args(*method, handle, generic_solution{});
+        !args.empty()) {
+      template_callee = resolved_callee{
+          .decl = method->decl,
+          .owner_module = method->owner->module_name,
+          .impl_target_type = entry.name,
+          .receiver = nullptr,
+          .trait_name = method->trait_name,
+          .template_args = std::move(args)};
+    }
+    return deref_step{.callee = std::move(template_callee),
                       .callee_type = callee_type,
                       .result = substitute_solved(
                           signature_return_type(*method->decl, method->owner,
                                                 method->block_type_params),
                           bindings)};
   }
+  auto block = param_subst{};
+  if (method->block_type_params != nullptr) {
+    match_params(method->impl_target_pattern, handle, block);
+    solve_impl_value_params(*method, handle, block);
+  }
+  const auto result =
+      substitute_solved(signature_return_type(*method->decl, method->owner,
+                                              method->block_type_params),
+                        block);
+  auto callee = resolved_callee{.decl = method->decl,
+                                .owner_module = method->owner->module_name,
+                                .impl_target_type = entry.name,
+                                .receiver = nullptr,
+                                .trait_name = method->trait_name};
+  if (!impl_needs_instance(*method, entry)) {
+    return deref_step{.callee = std::move(callee),
+                      .callee_type = callee_type,
+                      .result = result};
+  }
+  for (const auto &type_param : *method->block_type_params) {
+    if (!type_param.name.empty() && !block.contains(param_id(type_param))) {
+      report_block_param_not_on_receiver(span, type_param,
+                                         method->decl->name,
+                                         /*trait_method=*/true);
+      return std::nullopt;
+    }
+  }
+  // A `deref` step is not a call expression, but its instance is named by
+  // the call pipeline's naming stage, so it is the one a written
+  // `h.deref()` would name. The probe is the node that stage records
+  // against and points its diagnostics at.
   auto probe = std::make_unique<ast::call_expr>();
   probe->span = span;
   const auto &call = *probe;
   session_.deref_probe_calls_.push_back(std::move(probe));
-  auto result = k_unknown_type;
-  if (const auto instantiated = check_impl_generic_method_call(
-          call, *method, entry, receiver, handle)) {
-    result = *instantiated;
-  } else {
-    record_instance_method_callee(call, *method, entry.name, receiver);
-    result = signature_return_type(*method->decl, method->owner);
-  }
-  session_.call_argument_mappings_.erase(&call);
-  const auto found = session_.resolved_callees_.find(&call);
-  if (found == session_.resolved_callees_.end() || result == k_error_type) {
-    if (found != session_.resolved_callees_.end()) {
-      session_.resolved_callees_.erase(found);
-    }
+  const auto stage_callee =
+      call_callee{.form = callee_form::member,
+                  .decl = method->decl,
+                  .owner = method->owner,
+                  .decl_file = method->file_id,
+                  .method = method,
+                  .receiver = receiver_use::self_param,
+                  .receiver_expr = &receiver,
+                  .self_type = handle,
+                  .target_name = std::string(entry.name),
+                  .display_name = method->decl->name};
+  const auto *instance =
+      name_member_instance(call, stage_callee, handle, block,
+                           generic_solution{}, /*check_bounds=*/true);
+  session_.resolved_callees_.erase(&call);
+  if (instance == nullptr) {
     return std::nullopt;
   }
-  auto callee = found->second;
-  callee.receiver = nullptr;
-  session_.resolved_callees_.erase(found);
+  callee.decl = instance;
+  callee.impl_target_type = "";
   return deref_step{.callee = std::move(callee),
                     .callee_type = callee_type,
                     .result = result};
@@ -1574,6 +1619,13 @@ auto checker::lookup_through_deref(const deref_site &site, type_id object,
     record_deref_steps(site, std::move(chain->first));
   } else {
     record_template_deref_count(site, chain->first.size());
+    // Steps through the template's own `deref` at known arguments are
+    // recorded for the template too; the instances still record theirs.
+    if (std::ranges::all_of(chain->first, [](const deref_step &step) -> bool {
+          return step.callee.decl != nullptr;
+        })) {
+      record_deref_steps(site, std::move(chain->first));
+    }
   }
   return target;
 }
@@ -1864,6 +1916,11 @@ auto checker::record_handle_deref_mut(const ast::expr &handle_node,
             session_.deref_mut_adjustments_[clone] = {std::move(*step)};
           }
         });
+    if (auto step = resolve_handle_step(*node, handle, span, method);
+        step.has_value() && step->callee.decl != nullptr &&
+        session_.deref_adjustments_.contains(node)) {
+      session_.deref_mut_adjustments_[node] = {std::move(*step)};
+    }
   } else {
     auto step = resolve_handle_step(*node, handle, span, method);
     if (!step.has_value()) {
@@ -1934,6 +1991,15 @@ auto checker::record_path_write_through_deref_mut(
         session_.path_deref_mut_adjustments_[clone] = std::move(segments);
       }
     });
+    // A path whose `deref` steps the template recorded gets its
+    // `deref_mut` step too, as `record_handle_deref_mut` does.
+    if (auto step = resolve_handle_step(path, handle, path.span, method);
+        step.has_value() && step->callee.decl != nullptr &&
+        session_.path_deref_adjustments_.contains(&path)) {
+      auto segments = std::vector<std::vector<deref_step>>(counts.size());
+      segments[segment] = {std::move(*step)};
+      session_.path_deref_mut_adjustments_[&path] = std::move(segments);
+    }
   } else {
     auto step = resolve_handle_step(path, handle, path.span, method);
     if (!step.has_value()) {

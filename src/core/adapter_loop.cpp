@@ -329,7 +329,9 @@ auto body_builder::loop_of(const ast::expr &iterable,
                                .impl_target_type =
                                    dispatch->adapter_impl_target_type,
                                .receiver = nullptr,
-                               .trait_name = {}},
+                               .trait_name = {},
+                               .template_args =
+                                   dispatch->adapter_template_args},
                            span));
         const auto params = checked_.types.entry(adapter.signature).args;
         if (params.size() != 1) {
@@ -379,7 +381,8 @@ auto body_builder::loop_of(const ast::expr &iterable,
                              .owner_module = dispatch->owner_module,
                              .impl_target_type = dispatch->impl_target_type,
                              .receiver = nullptr,
-                             .trait_name = {}},
+                             .trait_name = {},
+                             .template_args = dispatch->template_args},
                          span));
       const auto params = checked_.types.entry(next_target.signature).args;
       if (params.size() != 1) {

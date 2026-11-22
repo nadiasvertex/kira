@@ -1,0 +1,41 @@
+module codegen_stress.template_callee_arguments
+
+# Calls from a template to a template, built in the template itself from the
+# arguments the checker records in the caller's parameters (block first,
+# then the callee's own). Each callee takes parameters of different types in
+# an order the caller's arguments do not share, so arguments recorded in the
+# wrong order, or missing one, give a call the adapter or the verifier
+# rejects. (`pick(x, 40)` would record nothing: the literal's type is open
+# when the template names the call.)
+#
+#   tag(3)           pick(3, 40)            40
+#   shelf.weigh(2)   2 + 100 * size_of[T]   402  (T = int32)
+#   shelf.mix(7)     7 * 1000 + 8           7008 (U = int64)
+#
+# 40 + 402 + 7008 = 7450
+
+# expect: 7450
+
+def pick[A, B](a: A, b: B) -> B:
+    return b
+
+def tag[T](x: T) -> int32:
+    let b: int32 = 40
+    return pick(x, b)
+
+type shelf[T] = { v: T }
+
+extend[T] shelf[T]:
+    static def scale[U](n: U, k: usize) -> usize:
+        return k + size_of[U]()
+
+    def weigh(self, n: usize) -> usize:
+        return n + 100 * size_of[T]()
+
+    def mix(self, n: usize) -> usize:
+        return shelf[T].scale[int64](0, n * 1000)
+
+def main() -> int32:
+    let s = shelf[int32] { v: 1 }
+    let total = tag(3) + (s.weigh(2) as int32) + (s.mix(7) as int32)
+    return total

@@ -24,7 +24,7 @@ struct interp_run {
   /// already collapsed to a single literal brace, but backslash escapes
   /// (`\n`, `\"`, ...) still undecoded — callers should still run this
   /// through `decode_string_body`.
-  std::string literal_text;
+  std::string literal_text{};
 
   /// Valid when `!is_literal`: half-open `[expr_start, expr_end)` range of
   /// the embedded expression's raw source text.

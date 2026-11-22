@@ -83,6 +83,33 @@ auto checker::drop_all_dead_records(const instance_subst &subst) -> void {
 
 /// Each abstract parameter of `item`'s template, matched to the answer the
 /// instance gives it.
+/// The answer `item` gives its template's parameter `name`: from the call's
+/// solution, the parameters fixed by the request, or an enclosing scope.
+auto checker::instance_answer(const pending_instance &item,
+                              const std::string &name)
+    -> std::optional<type_id> {
+  if (const auto it = item.solution.type_slots.find(name);
+      it != item.solution.type_slots.end()) {
+    return it->second;
+  }
+  if (const auto it = item.solution.const_slots.find(name);
+      it != item.solution.const_slots.end()) {
+    return it->second;
+  }
+  if (item.fixed_type_params.has_value()) {
+    if (const auto it = item.fixed_type_params->find(name);
+        it != item.fixed_type_params->end()) {
+      return it->second;
+    }
+  }
+  for (const auto &scope : std::views::reverse(item.enclosing_type_params)) {
+    if (const auto it = scope.find(name); it != scope.end()) {
+      return it->second;
+    }
+  }
+  return std::nullopt;
+}
+
 auto checker::instance_subst_for(const pending_instance &item)
     -> instance_subst {
   auto subst = instance_subst{.pairs = item.clone_pairs.get(),
@@ -92,30 +119,8 @@ auto checker::instance_subst_for(const pending_instance &item)
   if (abstract == template_abstract_params_.end()) {
     return subst;
   }
-  const auto answer = [&](const std::string &name) -> std::optional<type_id> {
-    if (const auto it = item.solution.type_slots.find(name);
-        it != item.solution.type_slots.end()) {
-      return it->second;
-    }
-    if (const auto it = item.solution.const_slots.find(name);
-        it != item.solution.const_slots.end()) {
-      return it->second;
-    }
-    if (item.fixed_type_params.has_value()) {
-      if (const auto it = item.fixed_type_params->find(name);
-          it != item.fixed_type_params->end()) {
-        return it->second;
-      }
-    }
-    for (const auto &scope : std::views::reverse(item.enclosing_type_params)) {
-      if (const auto it = scope.find(name); it != scope.end()) {
-        return it->second;
-      }
-    }
-    return std::nullopt;
-  };
   for (const auto &[name, id] : abstract->second) {
-    if (const auto found = answer(name); found.has_value()) {
+    if (const auto found = instance_answer(item, name); found.has_value()) {
       subst.params.emplace(id, *found);
       const auto &entry = session_.types_.entry(*found);
       if (entry.kind == type_kind::const_value_kind) {
@@ -218,6 +223,9 @@ auto checker::explicit_type_argument(const explicit_generic_arg &arg,
                ? std::nullopt
                : std::optional{resolved};
   };
+  if (arg.resolved.has_value()) {
+    return finish(*arg.resolved);
+  }
   // Already a type on the way in (`b.take[int64](5)`): nothing to
   // reinterpret, just resolve it.
   if (arg.type != nullptr) {
@@ -630,9 +638,13 @@ auto checker::solve_from_argument_types(
     // A parameter with structure (`xs: list[T]`) is matched by the
     // argument's head, so an argument whose head is still a leaf (`[5, 6]`
     // before its literal is wired) owes its shape here. A bare `x: T`
-    // takes the leaf as it is.
-    if (session_.types_.entry(strip_refs(params[i].type)).kind !=
-        type_kind::type_param_kind) {
+    // takes the leaf as it is, and so does a bare parameter a receiver
+    // already answered with its own leaf (`xs.push(b)` on a `list[?a]`
+    // checks `b` against `?a`).
+    if (const auto param_kind =
+            session_.types_.entry(strip_refs(params[i].type)).kind;
+        param_kind != type_kind::type_param_kind &&
+        param_kind != type_kind::type_var_kind) {
       arg_types[i] = demand_shape(arg_types[i]);
     }
     auto seen = std::unordered_set<type_id>{};
@@ -712,24 +724,36 @@ auto checker::preliminary_type_bindings(
     const ast::call_expr &call, const std::vector<fn_param_info> &params,
     const generic_call_context &generic) -> param_subst {
   auto bindings = generic.seed != nullptr ? *generic.seed : param_subst{};
-  const auto &decl = *generic.decl;
-  if (generic.explicit_args != nullptr) {
-    for (size_t i = 0;
-         i < generic.explicit_args->size() && i < decl.type_params.size();
-         ++i) {
-      const auto &param = decl.type_params[i];
-      if (param.is_value_param || param.name.empty()) {
-        continue;
-      }
-      if (const auto resolved =
-              explicit_type_argument((*generic.explicit_args)[i])) {
-        bindings.emplace(param_id(param), *resolved);
-      }
-    }
+  for (const auto &[param, type] : explicit_type_bindings(generic)) {
+    bindings.emplace(param, type);
   }
   solve_from_argument_types(call, params, bindings, generic.ufcs_receiver,
                             /*bind_open=*/true);
-  solve_from_bounds(decl, generic.owner, bindings);
+  solve_from_bounds(*generic.decl, generic.owner, bindings);
+  return bindings;
+}
+
+/// The type parameters a call gave in brackets: `ident[int64](2000000000)`
+/// checks its argument against `int64`, not against an open `T` a literal
+/// would answer with `int32`.
+auto checker::explicit_type_bindings(const generic_call_context &generic)
+    -> param_subst {
+  auto bindings = param_subst{};
+  if (generic.decl == nullptr || generic.explicit_args == nullptr) {
+    return bindings;
+  }
+  const auto &type_params = generic.decl->type_params;
+  for (size_t i = 0;
+       i < generic.explicit_args->size() && i < type_params.size(); ++i) {
+    const auto &param = type_params[i];
+    if (param.is_value_param || param.name.empty()) {
+      continue;
+    }
+    if (const auto resolved =
+            explicit_type_argument((*generic.explicit_args)[i])) {
+      bindings.emplace(param_id(param), *resolved);
+    }
+  }
   return bindings;
 }
 
@@ -1340,90 +1364,6 @@ auto checker::mangle_type_for_instance(type_id id) -> std::string {
     out += std::isalnum(static_cast<unsigned char>(c)) != 0 ? c : '_';
   }
   return out;
-}
-
-/// Monomorphizes an impl/extend-provided generic method for one call's
-/// solved bindings, returning the checked instance — reused per (method,
-/// solution) — or `nullptr` when a parameter is unsolved or the body can't
-/// be cloned (both diagnosed here).
-///
-/// This is `instantiate_generic_function` with a receiver: the same
-/// solution, the same instance builder, the same registry. It differs only
-/// in the instance's name, which carries the impl target
-/// (`option::pure$int32`, `vec::at$3`) because that is how `hir::lower_impl_
-/// associated_functions` names an impl member, and in taking a
-/// `method_entry` — which records no declaring file, and may carry a trait
-/// default's own fixed bindings.
-///
-/// A value parameter is solved here exactly as a type parameter is: `n` in
-/// a `def at[n: usize](self, i: index[n])` is unified out of the receiver's
-/// own type and arrives as an interned constant, which
-/// `solve_generic_params` reads back.
-///
-/// `bindings` is taken by mutable reference because the expected-type
-/// solution (§2) is folded into it here: the callers substitute the same
-/// map into the declared return type afterward, and a `C` solved only from
-/// context has to reach that substitution too or the call would come back
-/// typed as the abstract parameter.
-/// `extra_fixed` carries bindings the *impl block* supplies, for a method
-/// that is generic on both counts: `static def from_iter[I]` inside
-/// `impl[T] from_iter[T] for list[T]` declares `I` and inherits `T`.
-/// `solve_generic_params` only ever walks the declaration's own
-/// `type_params`, so it solves `I` from the arguments and never learns `T`
-/// exists — the instance then fails to check with ``undefined type `T` ``.
-/// The impl's parameters have to arrive the way
-/// `check_impl_generic_method_call` delivers them: as scoped fixed
-/// bindings, not as solution slots.
-///
-/// The instance is recorded as the call's callee — `callee` with its
-/// `decl` filled in — once the solution is concrete, which may be later
-/// (`when_solution_settles`). False when the call cannot be monomorphized
-/// (diagnosed here) or names no instance of its own (a template's call).
-auto checker::instantiate_hk_method(
-    const ast::call_expr &call, const method_entry &method,
-    std::string_view target_type_name, param_subst &bindings,
-    const resolved_callee &callee, const explicit_generic_args &explicit_args,
-    const value_bindings &solved, type_id self_type,
-    const type_scope *extra_fixed) -> bool {
-  const auto &decl = *method.decl;
-  const auto solution =
-      solve_call(call, decl, method.owner, solved, bindings, explicit_args);
-  if (!solution.has_value()) {
-    return false;
-  }
-  auto scoped_params = method.fixed_type_params;
-  if (extra_fixed != nullptr) {
-    scoped_params.insert(extra_fixed->begin(), extra_fixed->end());
-  }
-  const auto name_instance = [this, &call, &method,
-                              target = std::string(target_type_name),
-                              scoped_params, self_type,
-                              callee](const generic_solution &settled) -> bool {
-    if (!check_call_bounds(call, *method.decl, method.owner, method.file_id,
-                           settled, &scoped_params)) {
-      return false;
-    }
-    const auto *instance = find_or_check_generic_instance(
-        call, *method.decl, method.owner, method.file_id, settled,
-        method_instance_name(target, method.decl->name, settled.suffix),
-        &scoped_params, self_type);
-    if (instance == nullptr) {
-      return false;
-    }
-    auto named = callee;
-    named.decl = instance;
-    session_.resolved_callees_[&call] = named;
-    return true;
-  };
-  if (!solution_is_open(*solution)) {
-    return name_instance(*solution);
-  }
-  when_solution_settles(
-      decl, *solution,
-      [name_instance](const generic_solution &settled) -> void {
-        (void)name_instance(settled);
-      });
-  return true;
 }
 
 /// Holds a callee's `pre` conditions to account at the call site.

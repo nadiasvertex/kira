@@ -1,8 +1,10 @@
+#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
 #include <format>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -751,6 +753,17 @@ auto test_reports_copy_bound_unsatisfied() -> void {
                     "expected the help to say `copy` cannot be implemented");
 }
 
+auto test_reports_reference_to_category_bound() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_reference_to_category_bound.cn");
+  expect_diagnostic(analyzed,
+                    "`pick` needs `T: numeric`, and `&int32` does not "
+                    "satisfy it",
+                    "expected a `&int32` bound to a `T: numeric` parameter to "
+                    "be rejected, since a category parameter carries no "
+                    "borrow");
+}
+
 auto test_reports_fn_value_reference_mismatch() -> void {
   const auto analyzed =
       analyze_test_data_file("report_fn_value_reference_mismatch.cn");
@@ -1125,6 +1138,37 @@ auto test_undefined_explicit_type_argument_reported_once() -> void {
                     "expected the undefined-type diagnostic");
   expect(analyzed.diagnostics.find("this call can name") == std::string::npos,
          "expected no second diagnostic for the same argument");
+}
+
+/// A bracketed `static def` call takes the explicit-generic path, so a
+/// bracket that names a value or holds a literal is reported as a bracket
+/// that is not a type. A local value is named as a value; it is not
+/// reported as an undefined type, since it is in scope.
+auto test_static_def_bracket_rejects_non_type() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "static_def_bracket_non_type.cn",
+      .text = R"(module static_def_bracket_non_type
+
+static def tname[T]() -> str:
+    return T.name()
+
+def from_local() -> str:
+    let some_local = 5
+    return tname[some_local]()
+
+def from_literal() -> str:
+    return tname[3]()
+)",
+  }});
+  expect_diagnostic(analyzed, "`some_local` is a value, not a type",
+                    "expected a local in brackets to be named as a value");
+  expect(analyzed.diagnostics.find("undefined type `some_local`") ==
+             std::string::npos,
+         "expected a local in brackets not to be called undefined");
+  expect_diagnostic(analyzed,
+                    "`tname`'s compile-time argument `T` is not a type this "
+                    "call can name",
+                    "expected a literal in brackets to be rejected");
 }
 
 auto test_reports_packed_on_sum_type() -> void {
@@ -2376,6 +2420,36 @@ auto test_reports_unsolved_impl_const_generic_value_param() -> void {
                     "value parameter");
 }
 
+auto test_reports_deref_impl_param_off_the_handle() -> void {
+  // A `deref` impl whose block parameter the handle does not mention
+  // (`impl[T, U] deref for wrap[T]`) cannot be instantiated for any
+  // handle. Looking a field up through it reports that, rather than only
+  // the field the step would have reached.
+  const auto analyzed = analyze_sources(
+      {{.path = "deref_unpinned.cn", .text = R"(module deref_unpinned
+
+type point = { a: int64 }
+
+type wrap[T] = { inner: point }
+
+impl[T, U] deref for wrap[T]:
+    type target = point
+    def deref(self) -> &point:
+        return &self.inner
+
+def main() -> int32:
+    let w = wrap[int32] { inner: point { a: 5 } }
+    return int32(w.a)
+)"}});
+  expect_diagnostic(analyzed,
+                    "cannot tell which `U` this call to `deref` means",
+                    "expected the deref step to name the impl parameter the "
+                    "handle does not pin");
+  expect_diagnostic(analyzed, "Remove `U` from the `impl` block",
+                    "expected a trait method's fix to remove the parameter, "
+                    "not move it onto the method");
+}
+
 auto test_accepts_explicit_generic_args() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_explicit_generic_args.cn");
@@ -2894,6 +2968,1023 @@ auto test_call_forms_share_checks() -> void {
                     "`get` takes `self`, so it is called on a value of "
                     "`counter`",
                     "expected a `self` method called on a type name");
+}
+
+// ---- Call-form matrix -----------------------------------------------------
+//
+// `test_call_forms_share_checks` covers bare versus qualified calls. The
+// matrix below runs one scenario at a time through every call form the
+// checker has an entry point for, one program per form so a diagnostic is
+// attributable to exactly one call:
+//
+//   bare             `two(1)`
+//   qualified        `call_forms_lib.two(1)`
+//   type static      `point.two(1)`
+//   builtin static   `int64.two(1)`
+//   generic static   `wrap[int32].two(1)`
+//   method           `p.m_two(1)`
+//   ufcs             `p.u_two(1)`           (free function, receiver first)
+//   trait static     `T.make(1)` in a generic body, and `point.make(1)`
+//
+// Where the forms agree the case asserts the text. Where they differ today the
+// case pins today's behavior and a comment says which form it differs from, so
+// a refactor that merges the entry points has to decide each difference
+// deliberately instead of changing one silently.
+
+constexpr std::string_view call_forms_lib_source =
+    R"(module semantic_check_test.call_forms_lib
+
+pub def ident[T](v: T) -> T:
+    return v
+
+pub def two(a: int32, b: int32) -> int32:
+    return a + b
+
+pub def bounded[T: numeric](v: T) -> T:
+    return v
+)";
+
+constexpr std::string_view call_forms_decls =
+    R"(module semantic_check_test.call_forms
+
+use semantic_check_test.call_forms_lib
+
+type point = { pub x: int32 }
+
+extend point:
+    static def ident[T](v: T) -> T:
+        return v
+    static def two(a: int32, b: int32) -> int32:
+        return a + b
+    static def bounded[T: numeric](v: T) -> T:
+        return v
+    def m_ident[T](self, v: T) -> T:
+        return v
+    def m_two(self, a: int32, b: int32) -> int32:
+        return a + b
+    def m_bounded[T: numeric](self, v: T) -> T:
+        return v
+
+type wrap[T] = { pub v: T }
+
+extend[T] wrap[T]:
+    static def new(v: T) -> wrap[T]:
+        return wrap { v: v }
+    static def two(a: int32, b: int32) -> int32:
+        return a + b
+    static def ident[U](v: U) -> U:
+        return v
+    static def bounded[U: numeric](v: U) -> U:
+        return v
+
+extend int64:
+    static def ident[T](v: T) -> T:
+        return v
+    static def two(a: int32, b: int32) -> int32:
+        return a + b
+    static def bounded[T: numeric](v: T) -> T:
+        return v
+
+def ident[T](v: T) -> T:
+    return v
+def two(a: int32, b: int32) -> int32:
+    return a + b
+def bounded[T: numeric](v: T) -> T:
+    return v
+def u_ident[T](p: point, v: T) -> T:
+    return v
+def u_two(p: point, a: int32, b: int32) -> int32:
+    return a + b
+def u_bounded[T: numeric](p: point, v: T) -> T:
+    return v
+
+trait maker:
+    static def make(a: int32, b: int32) -> self
+    static def conv[U](v: U) -> U
+
+impl maker for int64:
+    static def make(a: int32, b: int32) -> int64:
+        return int64(a + b)
+    static def conv[U](v: U) -> U:
+        return v
+
+impl maker for point:
+    static def make(a: int32, b: int32) -> point:
+        return point { x: a + b }
+    static def conv[U](v: U) -> U:
+        return v
+
+def needs_maker[T: maker]() -> int32:
+    return 0
+
+trait picker:
+    def pick[U](self, u: U) -> U
+    def plain(self) -> int32
+    static def narrow[U: numeric](u: U) -> U
+
+impl picker for point:
+    def pick[U](self, u: U) -> U:
+        return u
+    def plain(self) -> int32:
+        return self.x
+    static def narrow[U: numeric](u: U) -> U:
+        return u
+
+)";
+
+/// One call written in one form. `statement` is the body of `main` after
+/// `let p = point { x: 1 }`, `let v: int32 = 1` and `let w: int64 = 1`;
+/// `top_level` is extra declarations (a generic function for the forms that
+/// need a type parameter in scope). `errors` is the exact error count and
+/// `needle` the text one diagnostic must contain (empty when none is expected).
+struct call_form_case {
+  std::string_view form;
+  std::string_view statement;
+  std::string_view top_level;
+  uint32_t errors;
+  std::string_view needle;
+};
+
+/// Checks every case of a scenario in one program, one function per case, so
+/// the standard library is analyzed once per scenario rather than once per
+/// form. A diagnostic belongs to the case whose function holds its primary
+/// source line, so a failure still names the form.
+auto run_call_forms(std::string_view scenario,
+                    const std::vector<call_form_case> &cases) -> void {
+  auto text = std::string(call_forms_decls);
+  const auto line_count = [&]() -> size_t {
+    return static_cast<size_t>(std::ranges::count(text, '\n')) + 1;
+  };
+  // [first, last] source lines of each case's text.
+  auto ranges = std::vector<std::pair<size_t, size_t>>{};
+  auto index = size_t{0};
+  for (const auto &c : cases) {
+    const auto first = line_count();
+    auto top_level = std::string(c.top_level);
+    if (const auto at = top_level.find("def g["); at != std::string::npos) {
+      top_level.insert(at + 5, std::to_string(index));
+    }
+    text += top_level;
+    text += std::format("\ndef f{}() -> int32:\n", index);
+    text += "    let p = point { x: 1 }\n"
+            "    let v: int32 = 1\n"
+            "    let w: int64 = 1\n"
+            "    ";
+    text += c.statement;
+    text += "\n    return 0\n";
+    ranges.emplace_back(first, line_count());
+    ++index;
+  }
+  const auto analyzed = analyze_sources({
+      {.path = "call_forms_lib.cn", .text = std::string(call_forms_lib_source)},
+      {.path = "call_forms.cn", .text = text},
+  });
+
+  // Split the rendered diagnostics into one block per error.
+  auto blocks = std::vector<std::string>(cases.size());
+  auto counts = std::vector<uint32_t>(cases.size(), 0);
+  auto unattributed = std::string{};
+  const auto &rendered = analyzed.diagnostics;
+  for (auto at = rendered.find("error: "); at != std::string::npos;) {
+    const auto next = rendered.find("\nerror: ", at + 1);
+    const auto block = rendered.substr(
+        at, next == std::string::npos ? std::string::npos : next + 1 - at);
+    at = next == std::string::npos ? next : next + 1;
+    const auto marker = block.find("--> call_forms.cn:");
+    auto owner = cases.size();
+    if (marker != std::string::npos) {
+      const auto line = static_cast<size_t>(
+          std::atoi(block.c_str() + marker +
+                    std::string_view("--> call_forms.cn:").size()));
+      for (size_t i = 0; i < ranges.size(); ++i) {
+        if (line >= ranges[i].first && line <= ranges[i].second) {
+          owner = i;
+        }
+      }
+    }
+    if (owner == cases.size()) {
+      unattributed += block;
+    } else {
+      blocks[owner] += block;
+      ++counts[owner];
+    }
+  }
+  if (!unattributed.empty()) {
+    std::cerr << "check_test: " << scenario
+              << ": diagnostics outside any case:\n"
+              << unattributed << '\n';
+    fail("a call-form scenario gave an error outside its cases");
+  }
+  for (size_t i = 0; i < cases.size(); ++i) {
+    const auto &c = cases[i];
+    const auto label = std::format(
+        "{} / {} (`{}`)", scenario, c.form,
+        c.statement.empty() ? c.top_level.substr(0, c.top_level.find('\n'))
+                            : c.statement);
+    if (counts[i] != c.errors) {
+      std::cerr << "check_test: " << label << ": expected " << c.errors
+                << " error(s), got " << counts[i] << "\n"
+                << blocks[i] << '\n';
+      fail("a call form gave a different error count than expected");
+    }
+    if (!c.needle.empty() && blocks[i].find(c.needle) == std::string::npos) {
+      std::cerr << "check_test: " << label << ": missing diagnostic `"
+                << c.needle << "`\nrendered diagnostics were:\n"
+                << blocks[i] << '\n';
+      fail("a call form gave different diagnostic text than expected");
+    }
+  }
+}
+
+// Generic bodies that call a trait static through a bound.
+constexpr std::string_view g_make_1 =
+    "def g[T: maker]() -> int32:\n    let q = T.make(1)\n    return 0\n";
+constexpr std::string_view g_make_3 =
+    "def g[T: maker]() -> int32:\n    let q = T.make(1, 2, 3)\n    return 0\n";
+constexpr std::string_view g_make_str =
+    "def g[T: maker]() -> int32:\n    let q = T.make(1, \"s\")\n    return 0\n";
+constexpr std::string_view g_nope =
+    "def g[T: maker]() -> int32:\n    let q = T.nope(1)\n    return 0\n";
+
+auto test_call_forms_too_few_arguments() -> void {
+  run_call_forms("too few arguments",
+                 {
+                     {"bare", "let q = two(1)", "", 1,
+                      "missing argument `b` in call to `two`"},
+                     {"qualified", "let q = call_forms_lib.two(1)", "", 1,
+                      "missing argument `b` in call to `two`"},
+                     {"type static", "let q = point.two(1)", "", 1,
+                      "missing argument `b` in call to `two`"},
+                     {"builtin static", "let q = int64.two(1)", "", 1,
+                      "missing argument `b` in call to `two`"},
+                     {"generic static", "let q = wrap[int32].two(1)", "", 1,
+                      "missing argument `b` in call to `two`"},
+                     {"method", "let q = p.m_two(1)", "", 1,
+                      "missing argument `b` in call to `m_two`"},
+                     {"ufcs", "let q = p.u_two(1)", "", 1,
+                      "missing argument `b` in call to `u_two`"},
+                     {"trait static, concrete type", "let q = point.make(1)",
+                      "", 1, "missing argument `b` in call to `make`"},
+                     {"trait static, builtin type", "let q = int64.make(1)", "",
+                      1, "missing argument `b` in call to `make`"},
+                     {"trait static, through a bound", "", g_make_1, 1,
+                      "missing argument `b` in call to `make`"},
+                 });
+}
+
+auto test_call_forms_too_many_arguments() -> void {
+  run_call_forms(
+      "too many arguments",
+      {
+          {"bare", "let q = two(1, 2, 3)", "", 1,
+           "too many arguments to `two`: expected 2, found 3"},
+          {"qualified", "let q = call_forms_lib.two(1, 2, 3)", "", 1,
+           "too many arguments to `two`: expected 2, found 3"},
+          {"type static", "let q = point.two(1, 2, 3)", "", 1,
+           "too many arguments to `two`: expected 2, found 3"},
+          {"builtin static", "let q = int64.two(1, 2, 3)", "", 1,
+           "too many arguments to `two`: expected 2, found 3"},
+          {"generic static", "let q = wrap[int32].two(1, 2, 3)", "", 1,
+           "too many arguments to `two`: expected 2, found 3"},
+          {"generic static, bare", "let q = wrap.new(1, 2)", "", 1,
+           "too many arguments to `new`: expected 1, found 2"},
+          {"method", "let q = p.m_two(1, 2, 3)", "", 1,
+           "too many arguments to `m_two`: expected 2, found 3"},
+          {"ufcs", "let q = p.u_two(1, 2, 3)", "", 1,
+           "too many arguments to `u_two`: expected 2, found 3"},
+          {"trait static, concrete type", "let q = point.make(1, 2, 3)", "", 1,
+           "too many arguments to `make`: expected 2, found 3"},
+          {"trait static, builtin type", "let q = int64.make(1, 2, 3)", "", 1,
+           "too many arguments to `make`: expected 2, found 3"},
+          {"trait static, through a bound", "", g_make_3, 1,
+           "too many arguments to `make`: expected 2, found 3"},
+      });
+}
+
+auto test_call_forms_wrong_argument_type() -> void {
+  run_call_forms(
+      "wrong argument type",
+      {
+          {"bare", "let q = two(1, \"s\")", "", 1,
+           "type mismatch: expected `int32`, found `str`"},
+          {"qualified", "let q = call_forms_lib.two(1, \"s\")", "", 1,
+           "type mismatch: expected `int32`, found `str`"},
+          {"type static", "let q = point.two(1, \"s\")", "", 1,
+           "type mismatch: expected `int32`, found `str`"},
+          {"builtin static", "let q = int64.two(1, \"s\")", "", 1,
+           "type mismatch: expected `int32`, found `str`"},
+          {"generic static", "let q = wrap[int32].two(1, \"s\")", "", 1,
+           "type mismatch: expected `int32`, found `str`"},
+          {"method", "let q = p.m_two(1, \"s\")", "", 1,
+           "type mismatch: expected `int32`, found `str`"},
+          {"ufcs", "let q = p.u_two(1, \"s\")", "", 1,
+           "type mismatch: expected `int32`, found `str`"},
+          {"trait static, concrete type", "let q = point.make(1, \"s\")", "", 1,
+           "type mismatch: expected `int32`, found `str`"},
+          {"trait static, builtin type", "let q = int64.make(1, \"s\")", "", 1,
+           "type mismatch: expected `int32`, found `str`"},
+          {"trait static, through a bound", "", g_make_str, 1,
+           "type mismatch: expected `int32`, found `str`"},
+          // The argument's type comes from the block's own parameter `T`
+          // (`new(v: T)` in `extend[T] wrap[T]`), read off `wrap[int32]`.
+          {"generic static, argument typed by the impl parameter",
+           "let q = wrap[int32].new(\"s\")", "", 1,
+           "type mismatch: expected `int32`, found `str`"},
+      });
+}
+
+auto test_call_forms_unmet_where_bound() -> void {
+  const auto numeric_bound = [](std::string_view name,
+                                std::string_view param) -> std::string {
+    return std::format(
+        "`{}` needs `{}: numeric`, and `str` does not satisfy it", name, param);
+  };
+  // The needles are kept alive by this vector: `call_form_case` holds views.
+  const auto bare = numeric_bound("bounded", "T");
+  const auto type_static = numeric_bound("bounded", "T");
+  const auto generic_static = numeric_bound("bounded", "U");
+  const auto method = numeric_bound("m_bounded", "T");
+  const auto ufcs = numeric_bound("u_bounded", "T");
+  run_call_forms(
+      "unmet bound, inferred",
+      {
+          {"bare", "let q = bounded(\"s\")", "", 1, bare},
+          {"qualified", "let q = call_forms_lib.bounded(\"s\")", "", 1, bare},
+          {"type static", "let q = point.bounded(\"s\")", "", 1, type_static},
+          {"builtin static", "let q = int64.bounded(\"s\")", "", 1,
+           type_static},
+          // The generic static names the method's own parameter `U`, which is
+          // what the declaration calls it; the other forms name `T`.
+          {"generic static", "let q = wrap[int32].bounded(\"s\")", "", 1,
+           generic_static},
+          {"method", "let q = p.m_bounded(\"s\")", "", 1, method},
+          {"ufcs", "let q = p.u_bounded(\"s\")", "", 1, ufcs},
+      });
+  run_call_forms(
+      "unmet bound, explicit type argument",
+      {
+          {"bare", "let q = bounded[str](\"s\")", "", 1, bare},
+          {"qualified", "let q = call_forms_lib.bounded[str](\"s\")", "", 1,
+           bare},
+          {"type static", "let q = point.bounded[str](\"s\")", "", 1,
+           type_static},
+          {"builtin static", "let q = int64.bounded[str](\"s\")", "", 1,
+           type_static},
+          {"generic static", "let q = wrap[int32].bounded[str](\"s\")", "", 1,
+           generic_static},
+          {"method", "let q = p.m_bounded[str](\"s\")", "", 1, method},
+          {"ufcs", "let q = p.u_bounded[str](\"s\")", "", 1, ufcs},
+      });
+  // A template that is never instantiated: its call is checked against its
+  // own unbounded `T` (phase 9, rule 3), on every form.
+  const auto at_template = [](std::string_view name) -> std::string {
+    return std::format(
+        "`{}` needs `T: numeric`, and nothing says this function's `T` is one",
+        name);
+  };
+  const auto bare_template = at_template("bounded");
+  const auto method_template = at_template("m_bounded");
+  const auto ufcs_template = at_template("u_bounded");
+  const auto generic_static_template =
+      std::string("`bounded` needs `U: numeric`, and nothing says this "
+                  "function's `T` is one");
+  run_call_forms(
+      "unmet bound, at an uninstantiated template",
+      {
+          {"bare", "", "def g[T](v: T) -> T:\n    return bounded(v)\n", 1,
+           bare_template},
+          {"type static", "",
+           "def g[T](v: T) -> T:\n    return point.bounded(v)\n", 1,
+           bare_template},
+          {"generic static", "",
+           "def g[T](v: T) -> T:\n    return wrap[int32].bounded(v)\n", 1,
+           generic_static_template},
+          {"method", "",
+           "def g[T](p: point, v: T) -> T:\n    return p.m_bounded(v)\n", 1,
+           method_template},
+          {"ufcs", "",
+           "def g[T](p: point, v: T) -> T:\n    return p.u_bounded(v)\n", 1,
+           ufcs_template},
+      });
+  run_call_forms(
+      "unmet trait bound on a trait static",
+      {
+          // A type with no impl of the trait: the missing impl is reported as a
+          // missing static, not as an unmet bound.
+          {"trait static, builtin type", "let q = int32.make(1, 2)", "", 1,
+           "`int32` has no static function `make`"},
+          {"trait static, str", "let q = str.make(1, 2)", "", 1,
+           "`str` has no static function `make`"},
+          {"trait static, user type", "let q = point.make(1, 2)", "", 0, ""},
+          // A type parameter whose bounds lack the trait.
+          {"trait static, bound missing", "",
+           "def g[T]() -> int32:\n    let q = T.make(1, 2)\n    return 0\n", 1,
+           "no static member `make` on `T`"},
+          {"trait static, other bound", "",
+           "def g[T: needs_nothing]() -> int32:\n    let q = T.make(1, 2)\n"
+           "    return 0\ntrait needs_nothing:\n    def nothing(self) -> "
+           "int32\n",
+           1, "no static member `make` on `T`"},
+          // The generic function's own bound, checked at its call.
+          {"generic function bound", "let q = needs_maker[str]()", "", 1,
+           "`needs_maker` needs `T: maker`, and `str` does not satisfy it"},
+      });
+}
+
+auto test_call_forms_explicit_type_argument_binding() -> void {
+  // `ident[int64](v)` with `v: int32` contradicts itself.
+  run_call_forms(
+      "explicit type argument against the arguments",
+      {
+          {"bare", "let q = ident[int64](v)", "", 1,
+           "`ident`'s `T` is given as `int64` in brackets, but the arguments "
+           "make it `int32`"},
+          {"qualified", "let q = call_forms_lib.ident[int64](v)", "", 1,
+           "`ident`'s `T` is given as `int64` in brackets, but the arguments "
+           "make it `int32`"},
+          {"method", "let q = p.m_ident[int64](v)", "", 1,
+           "`m_ident`'s `T` is given as `int64` in brackets, but the arguments "
+           "make it `int32`"},
+          {"type static", "let q = point.ident[int64](v)", "", 1,
+           "`ident`'s `T` is given as `int64` in brackets, but the arguments "
+           "make it `int32`"},
+          {"builtin static", "let q = int64.ident[int64](v)", "", 1,
+           "`ident`'s `T` is given as `int64` in brackets, but the arguments "
+           "make it `int32`"},
+          {"generic static", "let q = wrap[int32].ident[int64](v)", "", 1,
+           "`ident`'s `U` is given as `int64` in brackets, but the arguments "
+           "make it `int32`"},
+          {"ufcs", "let q = p.u_ident[int64](v)", "", 1,
+           "`u_ident`'s `T` is given as `int64` in brackets, but the arguments "
+           "make it `int32`"},
+          {"trait static, concrete type", "let q = point.conv[int64](v)", "", 1,
+           "`conv`'s `U` is given as `int64` in brackets, but the arguments "
+           "make it `int32`"},
+      });
+  // The bracketed argument decides the result type: `ident[int64](1)` cannot
+  // be an `int32`.
+  run_call_forms(
+      "explicit type argument against the result",
+      {
+          {"bare", "let q: int32 = ident[int64](1)", "", 1,
+           "expected `int32`, found `int64`"},
+          {"qualified", "let q: int32 = call_forms_lib.ident[int64](1)", "", 1,
+           "expected `int32`, found `int64`"},
+          {"method", "let q: int32 = p.m_ident[int64](1)", "", 1,
+           "expected `int32`, found `int64`"},
+          {"type static", "let q: int32 = point.ident[int64](1)", "", 1,
+           "expected `int32`, found `int64`"},
+          {"builtin static", "let q: int32 = int64.ident[int64](1)", "", 1,
+           "expected `int32`, found `int64`"},
+          {"generic static", "let q: int32 = wrap[int32].ident[int64](1)", "",
+           1, "expected `int32`, found `int64`"},
+          {"ufcs", "let q: int32 = p.u_ident[int64](1)", "", 1,
+           "expected `int32`, found `int64`"},
+      });
+  // A bracketed argument that agrees with the argument and the annotation
+  // is accepted by every form.
+  run_call_forms(
+      "explicit type argument, consistent",
+      {
+          {"bare", "let q: int64 = ident[int64](w)", "", 0, ""},
+          {"qualified", "let q: int64 = call_forms_lib.ident[int64](w)", "", 0,
+           ""},
+          {"type static", "let q: int64 = point.ident[int64](w)", "", 0, ""},
+          {"builtin static", "let q: int64 = int64.ident[int64](w)", "", 0, ""},
+          {"generic static", "let q: int64 = wrap[int32].ident[int64](w)", "",
+           0, ""},
+          {"method", "let q: int64 = p.m_ident[int64](w)", "", 0, ""},
+          {"ufcs", "let q: int64 = p.u_ident[int64](w)", "", 0, ""},
+      });
+  // A literal argument takes the bracketed type; `3000000000` fits `int64`
+  // only (todo 70).
+  run_call_forms(
+      "explicit type argument, wide literal",
+      {
+          {"bare", "let q = ident[int64](3000000000)", "", 0, ""},
+          {"qualified", "let q = call_forms_lib.ident[int64](3000000000)", "",
+           0, ""},
+          {"type static", "let q = point.ident[int64](3000000000)", "", 0, ""},
+          {"builtin static", "let q = int64.ident[int64](3000000000)", "", 0,
+           ""},
+          {"generic static", "let q = wrap[int32].ident[int64](3000000000)", "",
+           0, ""},
+          // The block's `T` is read off `wrap[int64]` before the argument is
+          // checked, so the literal is checked against `int64`, not a bracket.
+          {"generic static, impl parameter",
+           "let q = wrap[int64].new(3000000000)", "", 0, ""},
+          {"method", "let q = p.m_ident[int64](3000000000)", "", 0, ""},
+          {"ufcs", "let q = p.u_ident[int64](3000000000)", "", 0, ""},
+      });
+  // A trait static with its own type parameter, `static def conv[U](v: U) ->
+  // U`, reached through a bound: `U` is solved at the template, so the
+  // result is what the arguments or the brackets make it (todo 71).
+  run_call_forms(
+      "trait static with its own type parameter",
+      {
+          {"trait static, through a bound, inferred", "",
+           "def g[T: maker](v: int32) -> int32:\n    let q = T.conv(v)\n    "
+           "return q\n",
+           0, ""},
+          {"trait static, through a bound, explicit", "",
+           "def g[T: maker](v: int64) -> int64:\n    return T.conv[int64](v)\n",
+           0, ""},
+          {"trait static, through a bound, explicit, wide literal", "",
+           "def g[T: maker]() -> int64:\n    return "
+           "T.conv[int64](3000000000)\n",
+           0, ""},
+          {"trait static, through a bound, explicit against the arguments", "",
+           "def g[T: maker](v: int32) -> int64:\n    return T.conv[int64](v)\n",
+           1,
+           "`conv`'s `U` is given as `int64` in brackets, but the arguments "
+           "make it `int32`"},
+      });
+}
+
+auto test_call_forms_through_a_bound() -> void {
+  // A trait method or static reached through a bound on a type parameter
+  // goes through the same stages as every other form: its own parameters are
+  // solved at the template, brackets are bound or refused, and its own
+  // bounds are checked at the template.
+  run_call_forms(
+      "call through a bound",
+      {
+          {"bound method, inferred", "",
+           "def g[T: picker](x: T, v: int32) -> int32:\n    return x.pick(v)\n",
+           0, ""},
+          {"bound method, explicit", "",
+           "def g[T: picker](x: T) -> int64:\n"
+           "    return x.pick[int64](3000000000)\n",
+           0, ""},
+          {"bound method, explicit against the arguments", "",
+           "def g[T: picker](x: T, v: int32) -> int64:\n"
+           "    return x.pick[int64](v)\n",
+           1,
+           "`pick`'s `U` is given as `int64` in brackets, but the arguments "
+           "make it `int32`"},
+          {"bound method, brackets on a non-generic method", "",
+           "def g[T: picker](x: T) -> int32:\n    return x.plain[int64]()\n", 1,
+           "takes no compile-time parameters"},
+          {"bound static, own bound unmet at the template", "",
+           "def g[T: picker, V](v: V) -> V:\n    return T.narrow(v)\n", 1,
+           "`narrow` needs `U: numeric`, and nothing says this function's `V` "
+           "is "
+           "one"},
+          {"bound static, own bound met", "",
+           "def g[T: picker](v: int32) -> int32:\n    return T.narrow(v)\n", 0,
+           ""},
+          // `self` in the brackets is the caller's own `self` type, not the
+          // bound's parameter, though the trait's signature reads `self` as
+          // `T`.
+          {"bound method, `self` in brackets inside a method", "",
+           "type selfie = { n: int32 }\n\n"
+           "extend selfie:\n"
+           "    def g[T: picker](self, x: T) -> selfie:\n"
+           "        return x.pick[self](selfie { n: 1 })\n",
+           0, ""},
+      });
+}
+
+auto test_call_forms_missing_callee() -> void {
+  run_call_forms(
+      "missing callee",
+      {
+          {"bare", "let q = nope(1)", "", 1, "undefined name `nope`"},
+          {"type static", "let q = point.nope(1)", "", 1,
+           "`point` has no static function `nope`"},
+          {"builtin static", "let q = int64.nope(1)", "", 1,
+           "`int64` has no static function `nope`"},
+          {"generic static, bare", "let q = wrap.nope(1)", "", 1,
+           "`wrap` has no static function `nope`"},
+          {"method", "let q = p.nope(1)", "", 1,
+           "no method `nope` on type `point`"},
+          {"trait static, through a bound", "", g_nope, 1,
+           "no static member `nope` on `T`"},
+          // differs from every form above: a missing function in a module gets
+          // no checker diagnostic. The program is refused later, in lowering,
+          // with "no concrete checked type is available for this node".
+          {"qualified", "let q = call_forms_lib.nope(1)", "", 0, ""},
+          {"generic static, explicit", "let q = wrap[int32].nope(1)", "", 1,
+           "`wrap[int32]` has no static function `nope`"},
+      });
+}
+
+// ---- One call pipeline: static members ------------------------------------
+
+auto test_applied_static_checks_block_parameter() -> void {
+  // `wrap[int32]` fixes the block's `T`, so `new` takes an `int32` and the
+  // string is the argument's mistake, reported by the checker (todo 67).
+  const auto analyzed = analyze_sources(
+      {{.path = "applied_static.cn", .text = R"(module applied_static
+
+type wrap[T] = { pub v: T }
+
+extend[T] wrap[T]:
+    static def new(v: T) -> wrap[T]:
+        return wrap { v: v }
+
+def main() -> int32:
+    let good = wrap[int32].new(1)
+    let bad = wrap[int32].new("s")
+    return good.v
+)"}});
+  expect(analyzed.error_count == 1,
+         "expected only the `str` argument to be rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "type mismatch: expected `int32`, found `str`",
+                    "expected the argument to be checked against `int32`");
+  expect_diagnostic(analyzed, "expected `int32` for this argument",
+                    "expected the mismatch to point at the argument");
+}
+
+auto test_unresolved_bracket_type_reported_once() -> void {
+  // A bracket naming an undefined type is reported, and a literal argument
+  // is not then typed against the broken `list[<error>]` into a second
+  // conflict (todo 70).
+  const auto analyzed =
+      analyze_sources({{.path = "bad_bracket.cn", .text = R"(module bad_bracket
+
+def ident[T](v: T) -> T:
+    return v
+
+def main() -> int32:
+    let b = ident[list[nope]](1)
+    return 0
+)"}});
+  expect(analyzed.error_count == 1,
+         "expected only the undefined type:\n" + analyzed.diagnostics);
+  expect_diagnostic(analyzed, "undefined type `nope`",
+                    "expected the undefined bracket type to be reported");
+}
+
+auto test_applied_type_value_call_is_reported() -> void {
+  // A `self` method or a free function called on the type `wrap[int32]`
+  // rather than on a value has no receiver. Both were once let through to
+  // lowering ("no concrete checked type is available for this node").
+  const auto analyzed = analyze_sources(
+      {{.path = "applied_value_call.cn", .text = R"(module applied_value_call
+
+type wrap[T] = { pub v: T }
+
+extend wrap[int32]:
+    def get(self) -> int32:
+        return self.v
+
+def helper(w: wrap[int32]) -> int32:
+    return w.v
+
+def main() -> int32:
+    let a = wrap[int32].get()
+    let b = wrap[int32].helper()
+    return a + b
+)"}});
+  expect(analyzed.error_count == 2,
+         "expected both calls on the type to be rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed,
+                    "`get` takes `self`, so it is called on a value of "
+                    "`wrap[int32]`",
+                    "expected the self method to ask for a value");
+  expect_diagnostic(analyzed, "`wrap[int32]` has no static function `helper`",
+                    "expected the free function to be reported as missing");
+}
+
+// ---- One call pipeline: free functions and UFCS --------------------------
+
+auto test_binds_ufcs_explicit_type_argument() -> void {
+  // The brackets name `T` outright, so the receiver `n: int32` contradicts
+  // them, as it does for the bare `widen[int64](n)`.
+  const auto analyzed = analyze_sources(
+      {{.path = "ufcs_brackets.cn", .text = R"(module ufcs_brackets
+
+def widen[T](x: T) -> T:
+    return x
+
+def main() -> int32:
+    let n: int32 = 3
+    let w = n.widen[int64]()
+    return 0
+)"}});
+  expect(analyzed.error_count == 1,
+         "expected the bracketed `T` on a UFCS call to be bound:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed,
+                    "`widen`'s `T` is given as `int64` in brackets, but the "
+                    "arguments make it `int32`",
+                    "expected the receiver to contradict the brackets");
+}
+
+auto test_rejects_ufcs_brackets_on_non_generic_function() -> void {
+  const auto analyzed =
+      analyze_sources({{.path = "ufcs_plain.cn", .text = R"(module ufcs_plain
+
+def plain(x: int32) -> int32:
+    return x
+
+def main() -> int32:
+    let n: int32 = 3
+    let w = n.plain[int32]()
+    return 0
+)"}});
+  expect(analyzed.error_count == 1,
+         "expected brackets on a non-generic UFCS callee to be rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed,
+                    "`plain` takes no compile-time parameters, and this call "
+                    "gives it 1 in brackets",
+                    "expected the no-compile-time-parameters error");
+}
+
+auto test_missing_argument_note_points_into_callee_file() -> void {
+  const auto analyzed = analyze_sources({
+      {.path = "callee_file_lib.cn",
+       .text = R"(module semantic_check_test.callee_file_lib
+
+pub def two(a: int32, b: int32) -> int32:
+    return a + b
+)"},
+      {.path = "callee_file_main.cn",
+       .text = R"(module semantic_check_test.callee_file_main
+
+use semantic_check_test.callee_file_lib.two
+
+def main() -> int32:
+    let x: int32 = 1
+    let p = two(1)
+    let q = x.two()
+    return 0
+)"},
+  });
+  expect(analyzed.error_count == 2,
+         "expected the bare and the UFCS call to miss `b`:\n" +
+             analyzed.diagnostics);
+  const auto note = std::string_view("note: `two` is declared here");
+  auto notes = 0;
+  for (auto at = analyzed.diagnostics.find(note); at != std::string::npos;
+       at = analyzed.diagnostics.find(note, at + note.size())) {
+    const auto arrow = analyzed.diagnostics.find("--> ", at);
+    expect(arrow != std::string::npos &&
+               analyzed.diagnostics.compare(
+                   arrow + 4, std::string_view("callee_file_lib.cn").size(),
+                   "callee_file_lib.cn") == 0,
+           "expected the \"declared here\" note in the callee's file:\n" +
+               analyzed.diagnostics);
+    ++notes;
+  }
+  expect(notes == 2, "expected a \"declared here\" note on both calls:\n" +
+                         analyzed.diagnostics);
+}
+
+// ---- One call pipeline: receiver-style methods ----------------------------
+
+auto test_receiver_style_method_checks() -> void {
+  // `b.two(1)` and `b.bounded(v)` reach methods that take their receiver as
+  // a first parameter (`b: bag[T]`) rather than `self`. The missing
+  // argument's note points into the file that declares `two`; the bound
+  // on `bounded`'s `U` is checked at the call and at a template that is
+  // never instantiated, as it is for every other form.
+  const auto analyzed = analyze_sources({
+      {.path = "receiver_style_lib.cn",
+       .text = R"(module semantic_check_test.receiver_style_lib
+
+pub type bag[T] = { pub v: T }
+
+extend[T] bag[T]:
+    pub def two(b: bag[T], x: int32, y: int32) -> int32:
+        return x + y
+    pub def bounded[U: numeric](b: bag[T], v: U) -> U:
+        return v
+)"},
+      {.path = "receiver_style_main.cn",
+       .text = R"(module semantic_check_test.receiver_style_main
+
+use semantic_check_test.receiver_style_lib.bag
+
+def g[T](b: bag[int32], v: T) -> T:
+    return b.bounded(v)
+
+def main() -> int32:
+    let b = bag[int32] { v: 1 }
+    let p = b.two(1)
+    let q = b.bounded("s")
+    let r = b.bounded(2)
+    return 0
+)"},
+  });
+  expect(analyzed.error_count == 3,
+         "expected the missing argument and both unmet bounds:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "missing argument `y` in call to `two`",
+                    "expected the missing argument");
+  const auto note = analyzed.diagnostics.find("note: `two` is declared here");
+  const auto arrow = analyzed.diagnostics.find("--> ", note);
+  expect(note != std::string::npos &&
+             analyzed.diagnostics.compare(
+                 arrow + 4, std::string_view("receiver_style_lib.cn").size(),
+                 "receiver_style_lib.cn") == 0,
+         "expected the \"declared here\" note in the callee's file:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(
+      analyzed, "`bounded` needs `U: numeric`, and `str` does not satisfy it",
+      "expected the bound checked at the call");
+  expect_diagnostic(analyzed,
+                    "`bounded` needs `U: numeric`, and nothing says this "
+                    "function's `T` is one",
+                    "expected the bound checked at the template");
+}
+
+// ---- One call pipeline: function values -----------------------------------
+
+auto test_function_value_call_messages() -> void {
+  // A function value's arguments are checked by the same stage as a named
+  // function's, so arity errors use the declaration wording. Its parameters
+  // have no names, so a missing one is numbered and a named argument is
+  // refused.
+  const auto analyzed = analyze_sources(
+      {{.path = "fn_value_calls.cn", .text = R"(module fn_value_calls
+
+type holder = { pub f: fn(int32, int32) -> int32 }
+
+def main() -> int32:
+    let add = (a: int32, b: int32) => a + b
+    let x = add(1)
+    let y = add(1, 2, 3)
+    let z = add(a: 1, b: 2)
+    let h = holder { f: add }
+    let w = h.f(1)
+    return 0
+)"}});
+  expect(analyzed.error_count == 4,
+         "expected two arity errors and one named-argument error on `add`, "
+         "and one arity error on `h.f`:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "missing argument `#2` in call to `add`",
+                    "expected a missing argument on a local function value");
+  expect_diagnostic(analyzed,
+                    "too many arguments to `add`: expected 2, found 3",
+                    "expected too many arguments on a function value");
+  expect_diagnostic(
+      analyzed, "`add` is a function value, so its arguments are positional",
+      "expected a named argument to a function value refused");
+  expect_diagnostic(analyzed, "missing argument `#2` in call to `f`",
+                    "expected a missing argument on a function-typed field");
+  expect(analyzed.diagnostics.find("is declared here") == std::string::npos,
+         "expected no \"declared here\" note for a function value:\n" +
+             analyzed.diagnostics);
+}
+
+auto test_borrowed_number_argument_hint_every_call_form() -> void {
+  // A `&int32` passed where an `int32` is wanted is told to write `*`, on
+  // every call form. Function values had the hint before the shared
+  // argument stage and lost it there; the other forms never had it.
+  const auto analyzed = analyze_sources(
+      {{.path = "borrowed_arguments.cn", .text = R"(module borrowed_arguments
+
+type counter = { pub n: int32 }
+
+extend counter:
+    def add(self, x: int32) -> int32:
+        return self.n + x
+    static def make(x: int32) -> counter:
+        return counter { n: x }
+
+def take(x: int32) -> int32:
+    return x
+
+def plus(a: int32, b: int32) -> int32:
+    return a + b
+
+def main() -> int32:
+    let n: int32 = 4
+    let r = &n
+    let f: fn(int32) -> int32 = take
+    let c = counter { n: 1 }
+    let a = take(r)
+    let b = f(r)
+    let d = n.plus(r)
+    let e = c.add(r)
+    let g = counter.make(r)
+    return 0
+)"}});
+  const auto hint = std::string_view{"this is a borrow, not a number"};
+  auto count = 0;
+  for (auto at = analyzed.diagnostics.find(hint); at != std::string::npos;
+       at = analyzed.diagnostics.find(hint, at + hint.size())) {
+    ++count;
+  }
+  expect(analyzed.error_count == 5 && count == 5,
+         "expected each of the five calls to get the missing-`*` hint:\n" +
+             analyzed.diagnostics);
+}
+
+auto test_ufcs_async_call_carries_its_arguments() -> void {
+  // `c.spawn(t)` follows `t` back to the `async def` call that made it.
+  // A UFCS call reaches `go` as surely as `go(x)` does, so its task carries
+  // the receiver and nothing else (`async_calls_`); without the record the
+  // spawn reports that it cannot tell what the task carries.
+  const auto analyzed = analyze_sources({
+      {.path = "ufcs_async_lib.cn",
+       .text = R"(module semantic_check_test.ufcs_async_lib
+
+pub async def go(x: int32) -> int32:
+    return x
+)"},
+      {.path = "ufcs_async_main.cn",
+       .text = R"(module semantic_check_test.ufcs_async_main
+
+use semantic_check_test.ufcs_async_lib.go
+
+async def main() -> int32:
+    let x: int32 = 3
+    crew c:
+        let _ = c.spawn(go(x))
+        let _ = c.spawn(x.go())
+    return 0
+)"},
+  });
+  expect_clean(analyzed, "expected the UFCS `async def` call to be known to "
+                         "carry only its receiver");
+}
+
+auto test_async_receiver_carried_by_how_it_is_passed() -> void {
+  // A task's receiver needs `share` only when the task borrows it through
+  // `&`. Moved into a by-value first parameter, or lent through `mut self`
+  // (a `&mut`, which moves with its referent), it needs `send`. `held` is
+  // `share` but not `send`.
+  const auto analyzed = analyze_sources(
+      {{.path = "async_receiver.cn", .text = R"(module async_receiver
+
+use std.mem.{alloc}
+
+type held = { word: *mut usize }
+
+impl share for held:
+
+extend held:
+    async def poke(mut self) -> int32:
+        return 1
+    async def peek(self) -> int32:
+        return 2
+
+machine def make_held() -> held:
+    return held { word: alloc[usize](1) }
+
+async def take(h: held) -> int32:
+    return 1
+
+async def look(h: &held) -> int32:
+    return 2
+
+async def main() -> int32:
+    var a = make_held()
+    let b = make_held()
+    let d = make_held()
+    crew c:
+        let _ = c.spawn(on(pool, a.poke()))
+        let _ = c.spawn(on(pool, b.peek()))
+        let _ = c.spawn(on(pool, b.look()))
+        let _ = c.spawn(on(pool, d.take()))
+    return 0
+)"}});
+  expect(analyzed.error_count == 2,
+         "expected the `mut self` and the by-value UFCS receiver to need "
+         "`send`, and the two `&` receivers to pass:\n" +
+             analyzed.diagnostics);
+  const auto needle = std::string_view("`held` cannot be sent to another task");
+  auto found = 0;
+  for (auto at = analyzed.diagnostics.find(needle); at != std::string::npos;
+       at = analyzed.diagnostics.find(needle, at + needle.size())) {
+    ++found;
+  }
+  expect(found == 2, "expected both errors to say `held` cannot be sent:\n" +
+                         analyzed.diagnostics);
+}
+
+auto test_async_bound_receiver_carried_by_trait_mode() -> void {
+  // An `async` method called through a bound has a callee record naming
+  // the trait's method, so the task's carrier reads the receiver's mode from
+  // the trait (`mut self` moves with the task, `self` is lent through `&`).
+  // Without the record each task was refused as a hidden carrier.
+  const auto analyzed = analyze_sources({{.path = "async_bound_receiver.cn",
+                                          .text = R"(module async_bound_receiver
+
+trait worker:
+    async def poke(mut self) -> int32
+    async def peek(self) -> int32
+
+async def run[S, H](s: S, h: H) -> int32 where S: worker, H: worker:
+    var a = s
+    let b = h
+    crew c:
+        let _ = c.spawn(on(pool, a.poke()))
+        let _ = c.spawn(on(pool, b.peek()))
+    return 0
+
+async def main() -> int32:
+    return 0
+)"}});
+  expect_clean(analyzed, "expected `async` calls through a bound to carry "
+                         "their receiver by the trait's mode");
 }
 
 auto test_rejects_static_def_call_with_run_time_argument() -> void {
@@ -4179,6 +5270,392 @@ auto test_rejects_non_task_spawned() -> void {
 }
 
 // ==========================================================================
+//  Checked tables read directly (checked_types)
+// ==========================================================================
+
+namespace {
+
+/// One session checked with the prelude, kept alive so a test can read the
+/// checker's tables and find nodes in the ASTs they are keyed by.
+struct checked_session {
+  cinder::source_manager sources;
+  std::vector<cinder::ast::ptr<cinder::ast::file>> ast_files;
+  cinder::semantic::checked_types checked;
+  /// The last fixture's file: the test's own, after the prelude.
+  cinder::file_id_type last_file{};
+};
+
+auto check_with_prelude(const std::vector<source_fixture> &extra)
+    -> std::unique_ptr<checked_session> {
+  auto session = std::make_unique<checked_session>();
+  auto fixtures = prelude_fixtures();
+  fixtures.insert(fixtures.end(), extra.begin(), extra.end());
+  auto diag = cinder::diagnostic_bag{};
+  auto file_has_errors = std::vector<bool>{};
+  auto parsed_modules = std::vector<cinder::semantic::parsed_module>{};
+  for (const auto &fixture : fixtures) {
+    const auto file_id = session->sources.add_file(fixture.path, fixture.text);
+    expect(file_id.has_value(), "expected fixture source to register");
+    if (file_has_errors.size() <= static_cast<size_t>(*file_id)) {
+      file_has_errors.resize(static_cast<size_t>(*file_id) + 1, false);
+    }
+    session->last_file = *file_id;
+    const auto *file = session->sources.get(*file_id);
+    auto lexer = cinder::lexer(file->source(), file->id(), diag);
+    auto parser = cinder::parser(lexer.tokenize(), file->id(), diag);
+    auto ast_file = parser.parse_file();
+    parsed_modules.push_back(cinder::semantic::parsed_module{
+        .file_id = *file_id, .ast_file = ast_file.get()});
+    session->ast_files.push_back(std::move(ast_file));
+  }
+  auto comptime = cinder::comptime_vm::vm_backend{};
+  session->checked = cinder::semantic::check_program(
+      parsed_modules, diag, file_has_errors, &comptime);
+  if (diag.error_count() != 0) {
+    std::cerr << cinder::diagnostic_renderer(session->sources, false)
+                     .render_all(diag);
+    fail("expected the fixtures to check cleanly");
+  }
+  return session;
+}
+
+/// The `trait_method_signatures` entry for `trait.method`, or null.
+auto trait_signature(const cinder::semantic::checked_types &checked,
+                     std::string_view module, std::string_view trait,
+                     std::string_view method)
+    -> const cinder::semantic::trait_method_signature * {
+  for (const auto &[decl, sig] : checked.trait_method_signatures) {
+    if (decl != nullptr && decl->name == method && sig.trait_name == trait &&
+        sig.owner_module == module) {
+      return &sig;
+    }
+  }
+  return nullptr;
+}
+
+/// Whether `trait.method` was declared at all (to tell "no entry" from "no
+/// such method").
+auto declares_trait_method(const checked_session &session,
+                           std::string_view trait, std::string_view method)
+    -> bool {
+  for (const auto &file : session.ast_files) {
+    for (const auto &item : file->items) {
+      if (item == nullptr || item->kind != cinder::ast::node_kind::trait_decl) {
+        continue;
+      }
+      const auto &decl = dynamic_cast<const cinder::ast::trait_decl &>(*item);
+      if (decl.name != trait) {
+        continue;
+      }
+      for (const auto &member : decl.items) {
+        if (member != nullptr &&
+            member->kind == cinder::ast::node_kind::func_decl &&
+            dynamic_cast<const cinder::ast::func_decl &>(*member).name ==
+                method) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+} // namespace
+
+auto test_trait_method_signatures() -> void {
+  // A call through a bound is checked against the trait's own signature for
+  // the method (`trait_method_signatures`), so the table must say exactly
+  // what each trait declares, receiver first.
+  const auto session =
+      check_with_prelude({{.path = "trait_sigs.cn", .text = R"(module trait_sigs
+
+trait holder:
+    type item
+    def get(self) -> self.item
+
+trait sized_maker:
+    def make[n: usize]() -> array[int32, n]
+
+trait resettable:
+    def reset(mut self)
+
+# Named like std.iter's trait, whose `into_iter` returns `self.iter` and so
+# has no entry: the consuming rule goes by the trait's name.
+trait into_iterator[T]:
+    def into_iter(self) -> list[T]
+
+def main() -> int32:
+    return 0
+)"}});
+  const auto &checked = session->checked;
+  const auto show = [&](cinder::semantic::type_id id) {
+    return checked.types.display(id);
+  };
+  const auto names = [&](const cinder::semantic::trait_method_signature &sig) {
+    auto out = std::string{};
+    for (const auto param : sig.generic_params) {
+      out += (out.empty() ? "" : ", ") + show(param);
+    }
+    return out;
+  };
+  using cinder::semantic::trait_receiver;
+
+  const auto *next = trait_signature(checked, "std.iter", "iterator", "next");
+  expect(next != nullptr, "expected `iterator.next` in the table");
+  expect(show(next->signature) == "fn(&mut self) -> option[T]" &&
+             names(*next) == "self, T" &&
+             next->receiver == trait_receiver::exclusive &&
+             next->owner_module == "std.iter",
+         std::format("expected `iterator.next` to be `fn(&mut self) -> "
+                     "option[T]` over `self, T` in std.iter, got `{}` over "
+                     "`{}` in {}",
+                     show(next->signature), names(*next), next->owner_module));
+
+  const auto *into_iter =
+      trait_signature(checked, "trait_sigs", "into_iterator", "into_iter");
+  expect(into_iter != nullptr &&
+             into_iter->receiver == trait_receiver::consuming &&
+             show(checked.types.entry(into_iter->signature).args.at(0)) ==
+                 "self",
+         "expected `into_iterator.into_iter` to consume a by-value `self`");
+
+  const auto *zero = trait_signature(checked, "std.traits", "zero", "zero");
+  expect(zero != nullptr && show(zero->signature) == "fn() -> self" &&
+             zero->receiver == trait_receiver::none,
+         std::format("expected `zero.zero` to be `fn() -> self`, got `{}`",
+                     zero == nullptr ? "-" : show(zero->signature)));
+
+  const auto *reset =
+      trait_signature(checked, "trait_sigs", "resettable", "reset");
+  expect(reset != nullptr && show(reset->signature) == "fn(&mut self) -> unit",
+         "expected a method with no result type to return `unit`");
+
+  const auto *make =
+      trait_signature(checked, "trait_sigs", "sized_maker", "make");
+  expect(make != nullptr && names(*make) == "self, n",
+         "expected `sized_maker.make` to list `self` and its own `n`");
+
+  expect(declares_trait_method(*session, "into_iterator", "into_iter") &&
+             trait_signature(checked, "std.iter", "into_iterator",
+                             "into_iter") == nullptr,
+         "expected no entry for std.iter's `into_iter`, which returns "
+         "`self.iter`");
+  expect(declares_trait_method(*session, "holder", "get") &&
+             trait_signature(checked, "trait_sigs", "holder", "get") == nullptr,
+         "expected no entry for a method whose result is `self.item`");
+}
+
+auto test_template_callee_arguments() -> void {
+  // Inside a template, a call to a template records the callee's arguments
+  // in the caller's parameters (`template_args`), the block's first and the
+  // callee's own after, so the typed core can call the template itself.
+  const auto session =
+      check_with_prelude({{.path = "tmpl_args.cn", .text = R"(module tmpl_args
+
+use std.mem.{drop_in_place}
+
+type bag[T] = { pub items: list[T] }
+
+extend[T] bag[T]:
+    static def width[U]() -> usize:
+        return 0
+
+    def both(self) -> usize:
+        return bag[T].width[int64]()
+
+    def grow(mut self, n: usize):
+        self.items.reserve(n)
+
+machine def destroy[T](p: *mut T):
+    drop_in_place[T](p)
+
+def main() -> int32:
+    let b = bag[int32] { items: [1, 2] }
+    return b.both() as int32
+)"}});
+  const auto &checked = session->checked;
+  const auto user_file = session->last_file;
+  // Callee name to its recorded arguments, for the user file's calls.
+  auto found = std::vector<std::pair<std::string, std::string>>{};
+  for (const auto &[call, record] : checked.resolved_callees) {
+    const auto where = checked.node_files.find(call);
+    if (record.decl == nullptr || record.template_args.empty() ||
+        where == checked.node_files.end() || where->second != user_file) {
+      continue;
+    }
+    auto args = std::string{};
+    for (const auto arg : record.template_args) {
+      args += (args.empty() ? "" : ", ") + checked.types.display(arg);
+    }
+    found.emplace_back(record.decl->name, args);
+  }
+  const auto has = [&](std::string_view name, std::string_view args) -> bool {
+    return std::ranges::any_of(found, [&](const auto &item) -> bool {
+      return item.first == name && item.second == args;
+    });
+  };
+  auto listed = std::string{};
+  for (const auto &[name, args] : found) {
+    listed += std::format(" {}[{}]", name, args);
+  }
+  expect(has("reserve", "T"),
+         "expected `self.items.reserve(n)` in `extend[T] bag[T]` to record "
+         "`[T]`; recorded:" +
+             listed);
+  expect(has("width", "T, int64"),
+         "expected `bag[T].width[int64]()` to record the block's `T`, then "
+         "its own `int64`; recorded:" +
+             listed);
+  expect(has("drop_in_place", "T"),
+         "expected `drop_in_place[T](p)` in a generic free function to record "
+         "`[T]`; recorded:" +
+             listed);
+
+  // The standard library's own template: `list[T].push` grows through
+  // `self.reserve(grown)`.
+  const auto std_reserve = std::ranges::any_of(
+      checked.resolved_callees, [&](const auto &item) -> bool {
+        const auto &record = item.second;
+        return record.decl != nullptr && record.decl->name == "reserve" &&
+               record.impl_target_type == "list" &&
+               record.template_args.size() == 1 &&
+               checked.types.display(record.template_args.front()) == "T";
+      });
+  expect(std_reserve, "expected std.list's `self.reserve(grown)` to record "
+                      "`[T]`");
+}
+
+auto test_dispatch_and_bound_template_arguments() -> void {
+  // Inside a template, the dispatch tables record a template callee's
+  // arguments too (an index, a list literal, a `for` loop, a `deref`
+  // step), and a call through a bound records the trait's method with the
+  // bound's `Self` and trait arguments.
+  const auto session = check_with_prelude(
+      {{.path = "dispatch_args.cn", .text = R"(module dispatch_args
+
+use std.sync.mutex
+
+trait counter[T]:
+    def bump(mut self) -> T
+
+def first[T](xs: list[T]) -> T:
+    return xs[0]
+
+def pair[T](x: T) -> list[T]:
+    return [x, x]
+
+def count[T](xs: list[T]) -> usize:
+    var n: usize = 0
+    for x in xs:
+        n = n + 1
+    return n
+
+def append[T](m: &mutex[list[T]], v: T) -> unit:
+    var guard = m.lock()
+    guard.push(v)
+
+def bumped[C, T](c: C) -> T where C: counter[T]:
+    var k = c
+    return k.bump()
+
+def main() -> int32:
+    return 0
+)"}});
+  const auto &checked = session->checked;
+  const auto user_file = session->last_file;
+  const auto show_args =
+      [&](const std::vector<cinder::semantic::type_id> &args) {
+        auto out = std::string{};
+        for (const auto arg : args) {
+          out += (out.empty() ? "" : ", ") + checked.types.display(arg);
+        }
+        return out;
+      };
+  const auto in_user_file = [&](const void *node) -> bool {
+    const auto where =
+        checked.node_files.find(static_cast<const cinder::ast::node *>(node));
+    return where != checked.node_files.end() && where->second == user_file;
+  };
+
+  auto index = std::string{};
+  for (const auto &[node, record] : checked.lowering.index_dispatches) {
+    if (in_user_file(node) && record.decl != nullptr) {
+      index += std::format(" {}[{}]", record.decl->name,
+                           show_args(record.template_args));
+    }
+  }
+  expect(index == " at[T]",
+         "expected `xs[0]` on a `list[T]` to record `at` at `[T]`; got:" +
+             index);
+
+  auto literal = std::string{};
+  for (const auto &[node, conversion] :
+       checked.lowering.array_literal_conversions) {
+    if (in_user_file(node) && conversion.callee.decl != nullptr) {
+      literal += std::format(" {}[{}]", conversion.callee.decl->name,
+                             show_args(conversion.callee.template_args));
+    }
+  }
+  expect(literal == " from_array[T, 2]",
+         "expected `[x, x]` as a `list[T]` to record `from_array` at "
+         "`[T, 2]`; got:" +
+             literal);
+
+  auto loop = std::string{};
+  for (const auto &[node, dispatch] : checked.for_iterator_dispatches) {
+    if (in_user_file(node->iterable.get()) && dispatch.decl != nullptr &&
+        dispatch.adapter_decl != nullptr) {
+      loop +=
+          std::format(" {}[{}] {}[{}]", dispatch.adapter_decl->name,
+                      show_args(dispatch.adapter_template_args),
+                      dispatch.decl->name, show_args(dispatch.template_args));
+    }
+  }
+  expect(loop == " into_iter[T] next[T]",
+         "expected `for x in xs` on a `list[T]` to record `into_iter` and "
+         "`next` at `[T]`; got:" +
+             loop);
+
+  auto deref = std::string{};
+  for (const auto &[node, steps] : checked.deref_adjustments) {
+    if (in_user_file(node)) {
+      for (const auto &step : steps) {
+        deref += std::format(
+            " {}[{}]",
+            step.callee.decl != nullptr ? step.callee.decl->name : "-",
+            show_args(step.callee.template_args));
+      }
+    }
+  }
+  auto push = std::string{};
+  auto bound = std::string{};
+  for (const auto &[call, record] : checked.resolved_callees) {
+    if (!in_user_file(call) || record.decl == nullptr) {
+      continue;
+    }
+    if (record.decl->name == "push") {
+      push += std::format(" [{}]", show_args(record.template_args));
+    }
+    if (record.bound.has_value()) {
+      bound += std::format(" {} self={} trait=[{}] own=[{}]", record.decl->name,
+                           checked.types.display(record.bound->self_type),
+                           show_args(record.bound->trait_args),
+                           show_args(record.template_args));
+    }
+  }
+  expect(deref == " deref[list[T]]",
+         "expected `guard.push(v)` to record the guard's `deref` at "
+         "`[list[T]]`; got:" +
+             deref);
+  expect(push == " [T]",
+         "expected `guard.push(v)` to record `push` at `[T]`; got:" + push);
+  expect(bound == " bump self=C trait=[T] own=[]",
+         "expected `k.bump()` to record the trait's `bump` with `C` and "
+         "`[T]`; got:" +
+             bound);
+}
+
+// ==========================================================================
 //  Settled constructor types (todo 41)
 // ==========================================================================
 
@@ -4327,6 +5804,7 @@ auto main() -> int {
       {"test_rejects_on_io_non_sendable", test_rejects_on_io_non_sendable},
       {"test_accepts_on_io_sendable", test_accepts_on_io_sendable},
       {"test_reports_copy_bound_unsatisfied", test_reports_copy_bound_unsatisfied},
+      {"test_reports_reference_to_category_bound", test_reports_reference_to_category_bound},
       {"test_reports_fn_value_reference_mismatch", test_reports_fn_value_reference_mismatch},
       {"test_accepts_try_from_conversion", test_accepts_try_from_conversion},
       {"test_accepts_structs_and_methods", test_accepts_structs_and_methods},
@@ -4403,6 +5881,28 @@ auto main() -> int {
       {"test_rejects_writes_through_deref_handles", test_rejects_writes_through_deref_handles},
       {"test_rejects_mut_methods_through_deref_handles", test_rejects_mut_methods_through_deref_handles},
       {"test_call_forms_share_checks", test_call_forms_share_checks},
+      {"test_call_forms_too_few_arguments", test_call_forms_too_few_arguments},
+      {"test_call_forms_too_many_arguments", test_call_forms_too_many_arguments},
+      {"test_call_forms_wrong_argument_type", test_call_forms_wrong_argument_type},
+      {"test_call_forms_unmet_where_bound", test_call_forms_unmet_where_bound},
+      {"test_call_forms_explicit_type_argument_binding", test_call_forms_explicit_type_argument_binding},
+      {"test_call_forms_through_a_bound", test_call_forms_through_a_bound},
+      {"test_call_forms_missing_callee", test_call_forms_missing_callee},
+      {"test_applied_static_checks_block_parameter", test_applied_static_checks_block_parameter},
+      {"test_applied_type_value_call_is_reported", test_applied_type_value_call_is_reported},
+      {"test_unresolved_bracket_type_reported_once", test_unresolved_bracket_type_reported_once},
+      {"test_binds_ufcs_explicit_type_argument", test_binds_ufcs_explicit_type_argument},
+      {"test_rejects_ufcs_brackets_on_non_generic_function", test_rejects_ufcs_brackets_on_non_generic_function},
+      {"test_missing_argument_note_points_into_callee_file", test_missing_argument_note_points_into_callee_file},
+      {"test_receiver_style_method_checks", test_receiver_style_method_checks},
+      {"test_function_value_call_messages", test_function_value_call_messages},
+      {"test_borrowed_number_argument_hint_every_call_form", test_borrowed_number_argument_hint_every_call_form},
+      {"test_ufcs_async_call_carries_its_arguments", test_ufcs_async_call_carries_its_arguments},
+      {"test_trait_method_signatures", test_trait_method_signatures},
+      {"test_template_callee_arguments", test_template_callee_arguments},
+      {"test_async_receiver_carried_by_how_it_is_passed", test_async_receiver_carried_by_how_it_is_passed},
+      {"test_dispatch_and_bound_template_arguments", test_dispatch_and_bound_template_arguments},
+      {"test_async_bound_receiver_carried_by_trait_mode", test_async_bound_receiver_carried_by_trait_mode},
       {"test_rejects_static_def_call_with_run_time_argument", test_rejects_static_def_call_with_run_time_argument},
       {"test_dispatches_index_mut_borrow", test_dispatches_index_mut_borrow},
       {"test_accepts_intrinsic_decl", test_accepts_intrinsic_decl},
@@ -4437,6 +5937,7 @@ auto main() -> int {
       {"test_reports_undefined_name_with_suggestion", test_reports_undefined_name_with_suggestion},
       {"test_reports_undefined_type", test_reports_undefined_type},
       {"test_undefined_explicit_type_argument_reported_once", test_undefined_explicit_type_argument_reported_once},
+      {"test_static_def_bracket_rejects_non_type", test_static_def_bracket_rejects_non_type},
       {"test_reports_packed_on_sum_type", test_reports_packed_on_sum_type},
       {"test_reports_annotation_mismatch", test_reports_annotation_mismatch},
       {"test_reports_quote_type_annotation_mismatch", test_reports_quote_type_annotation_mismatch},
@@ -4518,6 +6019,7 @@ auto main() -> int {
       {"test_reports_unsolved_const_generic_value_param", test_reports_unsolved_const_generic_value_param},
       {"test_reports_underdetermined_value_params", test_reports_underdetermined_value_params},
       {"test_reports_unsolved_impl_const_generic_value_param", test_reports_unsolved_impl_const_generic_value_param},
+      {"test_reports_deref_impl_param_off_the_handle", test_reports_deref_impl_param_off_the_handle},
       {"test_accepts_explicit_generic_args", test_accepts_explicit_generic_args},
       {"test_accepts_generic_methods", test_accepts_generic_methods},
       {"test_reports_bad_explicit_generic_args", test_reports_bad_explicit_generic_args},

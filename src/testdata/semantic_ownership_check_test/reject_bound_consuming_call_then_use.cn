@@ -1,0 +1,14 @@
+module ownership.bound_consuming_call_then_use
+
+# A consuming call through a bound moves its receiver; reading it
+# afterwards is a use of a moved value.
+trait into_iterator[T]:
+    def into_iter(self) -> list[T]
+    def size(self) -> usize
+
+def size_after[C](c: C) -> usize where C: into_iterator[int64]:
+    let a = c.into_iter()
+    return a.len() + c.size()
+
+def main() -> int32:
+    return 0

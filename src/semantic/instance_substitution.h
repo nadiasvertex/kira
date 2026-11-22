@@ -37,9 +37,9 @@ using type_settler = std::function<type_id(type_id)>;
 struct instance_subst {
   /// Each abstract parameter of the template (as it was interned while the
   /// template was checked) and the instance's answer for it.
-  std::unordered_map<type_id, type_id> params;
+  std::unordered_map<type_id, type_id> params{};
   /// The value parameters' constants, for open polynomials (`n + 1`).
-  std::unordered_map<std::string, linear_poly> values;
+  std::unordered_map<std::string, linear_poly> values{};
   /// Template node to clone node.
   const ast::clone_map *pairs = nullptr;
   /// The template, and the instance being made from it.
@@ -47,9 +47,9 @@ struct instance_subst {
   const ast::func_decl *instance = nullptr;
   /// The source ranges of `static if` branches this instance does not
   /// take. Nothing inside one is elaborated, and its records are dropped.
-  std::vector<source_span> dead;
+  std::vector<source_span> dead{};
   /// Types already substituted under this instance, so each is interned once.
-  std::unordered_map<type_id, type_id> memo;
+  std::unordered_map<type_id, type_id> memo{};
 };
 
 /// The clone of a template node, or the node itself when it has none (it is

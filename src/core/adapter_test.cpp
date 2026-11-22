@@ -1004,13 +1004,7 @@ auto test_verifier_accepts(const session &s) -> void {
       program.push_back(m.get());
     }
   }
-  auto violations = core::verify(program, s.checked);
-  // C8: the checker records no generic arguments for a call to an instance
-  // (`left_of$int32` from `use_left`), so such a call has none while its
-  // template has one parameter. `core_known_violations.txt` lists the same.
-  std::erase_if(violations, [](const auto &v) {
-    return v.rule == "C8" && v.function == "use_left";
-  });
+  const auto violations = core::verify(program, s.checked);
   for (const auto &v : violations) {
     std::cerr << v.rule << ' ' << v.function << ": " << v.message << '\n';
   }

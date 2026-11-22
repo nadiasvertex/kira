@@ -484,10 +484,11 @@ private:
     return out;
   }
 
-  /// T1–T3 for one type held by a node. `settled_rule` overrides the id
-  /// reported for T1 and T2 (C6 reports unsettled generic arguments).
+  /// T1–T3 for one type held by a node. `call_rule` overrides the id
+  /// reported for all three (C6 reports a callee's generic arguments as a
+  /// call problem).
   auto check_type(type_id id, source_span span, std::string_view what,
-                  std::string_view settled_rule = {}) -> void {
+                  std::string_view call_rule = {}) -> void {
     static constexpr std::array<std::string_view, 3> rules{"T1", "T2", "T3"};
     static constexpr std::array<std::string_view, 3> reasons{
         "is not settled",
@@ -499,7 +500,7 @@ private:
       if (!found.at(rule)) {
         continue;
       }
-      const auto id_for = rule < 2 && !settled_rule.empty() ? settled_rule : rules.at(rule);
+      const auto id_for = call_rule.empty() ? rules.at(rule) : call_rule;
       report(id_for, span,
              std::format("{} has type `{}`, in which `{}` {}", what, show(id), show(*found.at(rule)),
                          reasons.at(rule)));
@@ -873,14 +874,133 @@ private:
                        describe(mode), show(first));
   }
 
-  [[nodiscard]] auto signature_of(const function &f, type_id signature) const -> bool {
+  /// The images of a callee's parameters: a template's `generic_params`, or
+  /// a trait method's `Self`, trait parameters and own parameters.
+  using param_map = std::unordered_map<type_id, type_id>;
+
+  /// Whether `actual` is `pattern` with each parameter in `map` replaced by
+  /// its image. A read-only structural match: it interns nothing, so it
+  /// shares no code with the substitution that built `actual`. A parameter
+  /// outside `map` stands for itself. Anything it cannot compare is a
+  /// mismatch.
+  [[nodiscard]] auto same_under(type_id pattern, type_id actual, const param_map &map,
+                                int depth = 0) const -> bool {
+    if (depth > k_max_type_depth) {
+      return false;
+    }
+    const auto &p = entry(pattern);
+    const auto &a = entry(actual);
+    const auto args_under = [&](const std::vector<type_id> &ps, const std::vector<type_id> &as) {
+      if (ps.size() != as.size()) {
+        return false;
+      }
+      for (std::size_t k = 0; k < ps.size(); ++k) {
+        if (!same_under(ps[k], as[k], map, depth + 1)) {
+          return false;
+        }
+      }
+      return true;
+    };
+    switch (p.kind) {
+    case type_kind::unknown_kind:
+    case type_kind::error_kind:
+    case type_kind::type_var_kind:
+    case type_kind::refinement_kind:
+    case type_kind::existential_kind:
+      return false;
+    case type_kind::type_param_kind: {
+      const auto image = map.find(pattern);
+      return image == map.end() ? pattern == actual : image->second == actual;
+    }
+    case type_kind::symbolic_value_kind: {
+      const auto value = substituted_value(p.value, map);
+      return value.has_value() &&
+             (a.kind == type_kind::const_value_kind || a.kind == type_kind::symbolic_value_kind) &&
+             a.result == p.result && a.value == *value;
+    }
+    case type_kind::param_app_kind: {
+      const auto head = map.find(p.result);
+      if (head == map.end()) {
+        return a.kind == type_kind::param_app_kind && a.result == p.result &&
+               args_under(p.args, a.args);
+      }
+      const auto &image = entry(head->second);
+      if (image.kind == type_kind::type_param_kind) {
+        return a.kind == type_kind::param_app_kind && a.result == head->second &&
+               args_under(p.args, a.args);
+      }
+      if (image.kind != type_kind::ctor_ref_kind) {
+        return false;
+      }
+      const bool same_constructor =
+          image.decl != nullptr
+              ? a.decl == image.decl && (a.kind == type_kind::struct_kind ||
+                                         a.kind == type_kind::sum_kind ||
+                                         a.kind == type_kind::opaque_kind)
+              : a.kind == type_kind::builtin_generic_kind && a.name == image.name;
+      return same_constructor && args_under(p.args, a.args);
+    }
+    default:
+      break;
+    }
+    if (a.kind != p.kind || a.name != p.name || a.module_name != p.module_name ||
+        a.decl != p.decl || a.is_mut != p.is_mut || a.ctor_arity != p.ctor_arity ||
+        a.value != p.value) {
+      return false;
+    }
+    if ((p.result == k_unknown_type) != (a.result == k_unknown_type)) {
+      return false;
+    }
+    if (p.result != k_unknown_type && !same_under(p.result, a.result, map, depth + 1)) {
+      return false;
+    }
+    // An array's length is its argument; `array_size` only mirrors a closed
+    // one, so it is compared when the length itself is not written.
+    if (p.kind == type_kind::array_kind && !p.args.empty() && p.args.front() == k_unknown_type &&
+        p.array_size != a.array_size) {
+      return false;
+    }
+    return args_under(p.args, a.args);
+  }
+
+  /// `value` with each value parameter in `map` replaced by its image's
+  /// value. Null when an image is not a value.
+  [[nodiscard]] auto substituted_value(const semantic::linear_poly &value,
+                                       const param_map &map) const
+      -> std::optional<semantic::linear_poly> {
+    auto bindings = std::unordered_map<std::string, semantic::linear_poly>{};
+    for (const auto &term : value.terms) {
+      const auto identity = semantic::poly_var_identity(term.var);
+      if (!identity) {
+        continue;
+      }
+      const auto image = map.find(*identity);
+      if (image == map.end()) {
+        continue;
+      }
+      const auto &e = entry(image->second);
+      if (e.kind == type_kind::const_value_kind || e.kind == type_kind::symbolic_value_kind) {
+        bindings.emplace(term.var, e.value);
+      } else if (e.kind == type_kind::type_param_kind) {
+        bindings.emplace(term.var, semantic::poly_variable(
+                                       semantic::poly_param_var(e.name, image->second)));
+      } else {
+        return std::nullopt;
+      }
+    }
+    return semantic::poly_substitute(value, bindings);
+  }
+
+  /// Whether `signature` is `f`'s parameters and result under `map`.
+  [[nodiscard]] auto signature_of(const function &f, type_id signature,
+                                  const param_map &map) const -> bool {
     const auto &e = entry(signature);
-    if (e.kind != type_kind::fn_kind || e.result != f.return_type ||
-        e.args.size() != f.params.size()) {
+    if (e.kind != type_kind::fn_kind || e.args.size() != f.params.size() ||
+        !same_under(f.return_type, e.result, map)) {
       return false;
     }
     for (std::size_t k = 0; k < e.args.size(); ++k) {
-      if (e.args[k] != f.params[k].type) {
+      if (!same_under(f.params[k].type, e.args[k], map)) {
         return false;
       }
     }
@@ -888,7 +1008,8 @@ private:
   }
 
   /// C2: a function callee's declaration and, when the program holds it, its
-  /// signature and receiver. C8: the generic argument count.
+  /// signature (substituted by `generic_args`) and receiver. C8: the generic
+  /// argument count. C10: a template callee only inside a template.
   auto check_function_callee(const callee &t, source_span span) -> void {
     if (t.decl == nullptr) {
       report("C2", span, std::format("function callee `{}` has no declaration", t.name));
@@ -900,17 +1021,36 @@ private:
     const auto [first, last] = functions_.equal_range(t.decl);
     if (first != last) {
       bool matched = false;
+      bool compared = false;
+      bool only_templates = true;
       for (auto it = first; it != last; ++it) {
-        matched = matched || (signature_of(*it->second, t.signature) &&
-                              it->second->receiver == t.receiver);
+        const auto &f = *it->second;
+        only_templates = only_templates && !f.generic_params.empty();
+        // A count C8 rejects leaves nothing to substitute with.
+        if (f.generic_params.size() != t.generic_args.size() && !f.generic_params.empty()) {
+          continue;
+        }
+        auto map = param_map{};
+        for (std::size_t k = 0; k < f.generic_params.size(); ++k) {
+          map.emplace(f.generic_params[k], t.generic_args[k]);
+        }
+        compared = true;
+        matched = matched || (signature_of(f, t.signature, map) && f.receiver == t.receiver);
       }
-      if (!matched) {
+      if (compared && !matched) {
         const auto &f = *first->second;
         report("C2", span,
                std::format("callee `{}` has signature `{}` and receiver `{}`, but no core function "
-                           "for its declaration has them (e.g. `{}` has receiver `{}`)",
+                           "for its declaration has them under its generic arguments (e.g. `{}` "
+                           "has receiver `{}`)",
                            t.name, show(t.signature), describe(t.receiver), f.name,
                            describe(f.receiver)));
+      }
+      if (only_templates && generic_params_.empty()) {
+        report("C10", span,
+               std::format("callee `{}` is a template, called from a function with no generic "
+                           "parameters",
+                           t.name));
       }
     }
     const auto *template_decl = t.instance_of != nullptr ? t.instance_of : t.decl;
@@ -924,6 +1064,85 @@ private:
                            t.name, t.generic_args.size(), tmpl.name, tmpl.generic_params.size()));
         break;
       }
+    }
+  }
+
+  [[nodiscard]] static auto receiver_of(semantic::trait_receiver r) -> receiver_mode {
+    switch (r) {
+    case semantic::trait_receiver::none:
+      return receiver_mode::none;
+    case semantic::trait_receiver::shared:
+      return receiver_mode::shared;
+    case semantic::trait_receiver::exclusive:
+      return receiver_mode::exclusive;
+    case semantic::trait_receiver::consuming:
+      return receiver_mode::consuming;
+    }
+    return receiver_mode::none;
+  }
+
+  /// C9: a call through a bound names a trait method of the table, inside a
+  /// template, with the trait's signature under `Self`, the trait's
+  /// arguments and its own.
+  auto check_trait_method_callee(const callee &t, source_span span) -> void {
+    const auto found = t.decl == nullptr ? checked_.trait_method_signatures.end()
+                                         : checked_.trait_method_signatures.find(t.decl);
+    if (found == checked_.trait_method_signatures.end()) {
+      report("C9", span,
+             std::format("trait method callee `{}` names no declared trait method signature",
+                         t.name));
+      return;
+    }
+    const auto &declared = found->second;
+    if (declared.trait_name != t.trait_name) {
+      report("C9", span,
+             std::format("trait method callee `{}` says trait `{}`, but its method is `{}`'s",
+                         t.name, t.trait_name, declared.trait_name));
+    }
+    if (t.value != nullptr || t.instance_of != nullptr) {
+      report("C9", span,
+             std::format("trait method callee `{}` has a value or an instance", t.name));
+    }
+    if (generic_params_.empty()) {
+      report("C9", span,
+             std::format("trait method callee `{}` in a function with no generic parameters",
+                         t.name));
+    }
+    const auto trait_count = declared.trait == nullptr ? 0 : declared.trait->type_params.size();
+    if (declared.trait == nullptr || declared.generic_params.size() < 1 + trait_count) {
+      report("C9", span,
+             std::format("the signature of trait method `{}` does not list `self` and its "
+                         "trait's parameters",
+                         t.name));
+      return;
+    }
+    const auto own_count = declared.generic_params.size() - 1 - trait_count;
+    if (t.trait_args.size() != trait_count || t.generic_args.size() != own_count) {
+      report("C9", span,
+             std::format("trait method callee `{}` has {} trait and {} own arguments, but its "
+                         "trait has {} parameters and the method {}",
+                         t.name, t.trait_args.size(), t.generic_args.size(), trait_count,
+                         own_count));
+      return;
+    }
+    auto map = param_map{};
+    map.emplace(declared.generic_params.front(), t.self_type);
+    for (std::size_t k = 0; k < trait_count; ++k) {
+      map.emplace(declared.generic_params[1 + k], t.trait_args[k]);
+    }
+    for (std::size_t k = 0; k < own_count; ++k) {
+      map.emplace(declared.generic_params[1 + trait_count + k], t.generic_args[k]);
+    }
+    if (!same_under(declared.signature, t.signature, map)) {
+      report("C9", span,
+             std::format("trait method callee `{}` has signature `{}`, which is not `{}` under "
+                         "its arguments",
+                         t.name, show(t.signature), show(declared.signature)));
+    }
+    if (receiver_of(declared.receiver) != t.receiver) {
+      report("C9", span,
+             std::format("trait method callee `{}` has receiver `{}`, but the trait declares `{}`",
+                         t.name, describe(t.receiver), describe(receiver_of(declared.receiver))));
     }
   }
 
@@ -964,12 +1183,18 @@ private:
                        t.name, show(t.signature), show(first->second->signature)));
   }
 
-  /// C1 (the signature is a `fn`), C2–C7 for one callee. Returns the
+  /// C1 (the signature is a `fn`), C2–C7, C9 and C10 for one callee. Returns the
   /// signature's entry when it is a `fn` type.
   auto check_callee(const callee &t, source_span span, bool function_ref) -> const type_entry * {
     check_type(t.signature, span, "a callee signature");
     for (const auto arg : t.generic_args) {
       check_type(arg, span, "a generic argument", "C6");
+    }
+    if (t.kind == callee::form::trait_method) {
+      check_type(t.self_type, span, "a trait method's `Self`", "C6");
+      for (const auto arg : t.trait_args) {
+        check_type(arg, span, "a trait argument", "C6");
+      }
     }
     const type_entry *sig = &entry(t.signature);
     if (sig->kind != type_kind::fn_kind) {
@@ -1001,6 +1226,11 @@ private:
                  std::format("a value callee's value has type `{}`, expected `{}` or a `&` of it",
                              show(t.value->type), show(t.signature)));
         }
+      }
+      break;
+    case callee::form::trait_method:
+      if (!function_ref) {
+        check_trait_method_callee(t, span);
       }
       break;
     case callee::form::intrinsic:

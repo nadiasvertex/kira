@@ -13,7 +13,8 @@
 ///
 /// The verifier trusts nothing the elaborator decided. It reads the core, the
 /// type table, the member types in `checked_types::shapes` (and `open_shapes`
-/// for a type that mentions a generic parameter), and
+/// for a type that mentions a generic parameter), the trait method
+/// signatures in `checked_types::trait_method_signatures`, and
 /// `checked_types::is_copy`, and recomputes every fact below from them. Type
 /// equality is equality of `type_id`. A violation is an internal compiler
 /// error, never a user diagnostic.
@@ -82,8 +83,11 @@
 ///   C1  `signature` is a `fn` type. There is one argument per parameter, each
 ///       of exactly the parameter's type, and the call has the result type.
 ///   C2  A `function` callee has a declaration. When the program holds the
-///       core function for that declaration, the callee's signature and
-///       receiver mode are that function's.
+///       core function for that declaration, the callee's receiver mode is
+///       that function's, and its signature is that function's with the
+///       function's `generic_params` replaced by the callee's
+///       `generic_args`. For an instance or a non-generic function the list
+///       is empty, so the signature is the function's own.
 ///   C3  A receiver mode other than `none` fixes the first parameter's type as
 ///       `receiver_mode` documents; `by_value` needs a `copy` type.
 ///   C4  A `value` callee has a value whose type is the signature or a `&`
@@ -93,13 +97,27 @@
 ///       signature and `generic_args` have that operation's shape; or it is
 ///       an `intrinsic def` of the program, and the signature is the declared
 ///       one (for a generic declaration, has as many parameters).
-///   C6  `generic_args` are settled (T1, T2).
+///   C6  `generic_args`, and a `trait_method`'s `self_type` and
+///       `trait_args`, are settled and mention only parameters the enclosing
+///       function lists (T1–T3).
 ///   C7  A `function_ref` has a `function` callee and the type of its
 ///       signature.
 ///   C8  A callee whose template the program holds has as many `generic_args`
-///       as the template has parameters. The checker does not record an
-///       instance's arguments yet, so every call to an instance breaks this
-///       until phase 5 of the plan; `core_known_violations.txt` lists it.
+///       as the template has parameters. A template callee (`instance_of`
+///       null) is its own template.
+///   C9  A `trait_method` callee
+///         1. has a declaration with a `trait_method_signatures` entry whose
+///            trait is `trait_name`;
+///         2. has no value and no `instance_of`;
+///         3. appears only in a function with `generic_params`;
+///         4. has as many `trait_args` as the trait has parameters, and as
+///            many `generic_args` as the method has parameters of its own;
+///         5. has the entry's signature with the entry's `generic_params`
+///            replaced by `self_type`, `trait_args` and `generic_args`;
+///         6. has the entry's receiver mode.
+///   C10 A `function` callee whose declaration the program holds only as a
+///       template (its core function lists `generic_params`) appears only in
+///       a function with `generic_params`. Lowering cannot call a template.
 ///
 /// Expressions
 ///   E1  A literal's type fits its token: an integer or float type for a
@@ -169,9 +187,10 @@
 ///   F4  A static's value has the static's type and is built only from
 ///       literals, aggregate and variant construction, and calls.
 ///
-/// Not checked yet: that a generic call's arguments meet the callee's bounds
-/// (the satisfaction query arrives in phase 6), and that a `match` is
-/// exhaustive.
+/// Not checked yet: that a generic call's arguments meet the callee's bounds,
+/// including that the function making a `trait_method` call has the bound
+/// `self_type: trait[trait_args]` it calls through (C9; the satisfaction
+/// query arrives in phase 6), and that a `match` is exhaustive.
 namespace cinder::core {
 
 struct violation {

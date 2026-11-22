@@ -1,0 +1,26 @@
+module ownership.category_bound_result_carries_no_borrow
+
+# A type parameter bounded by a category (`T: numeric`) is a builtin
+# scalar, which carries no borrow. So a `T` result made from a borrow of a
+# loop-local `x` does not keep `x` borrowed after its block ends, whether
+# the call is through a bound or to a generic function.
+trait scalable:
+    def scaled(self) -> self
+
+def helper[T: scalable](v: &T) -> T:
+    return v.scaled()
+
+def through_bound[T](xs: list[T]) -> T where T: scalable + numeric:
+    var acc = xs[0]
+    for x in xs:
+        acc = acc + x.scaled()
+    return acc
+
+def through_generic[T](xs: list[T]) -> T where T: scalable + numeric:
+    var acc = xs[0]
+    for x in xs:
+        acc = acc + helper(&x)
+    return acc
+
+def main() -> int32:
+    return 0

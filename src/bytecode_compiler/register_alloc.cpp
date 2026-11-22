@@ -39,7 +39,7 @@ struct live_interval {
 struct scan_group {
   uint32_t first = 0;
   uint32_t count = 1;
-  live_interval range;
+  live_interval range{};
 };
 
 /// A group currently holding physical registers `[physical, physical+count)`.

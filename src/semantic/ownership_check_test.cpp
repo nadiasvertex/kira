@@ -241,6 +241,72 @@ auto test_generic_method_result_not_tied_to_receiver_is_accepted() -> void {
              analyzed.diagnostics);
 }
 
+// Calls through a bound (`x.next()` with `I: iterator[T]`) lend their
+// receiver as the trait declares (phase 5 slice 8, step 4).
+
+auto test_bound_consuming_call_twice_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_bound_consuming_call_twice.cn");
+  expect_diagnostic(analyzed, "use of moved value `c`",
+                    "expected a second consuming call through a bound to use "
+                    "a moved receiver");
+}
+
+auto test_bound_consuming_call_then_use_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_bound_consuming_call_then_use.cn");
+  expect_diagnostic(analyzed, "use of moved value `c`",
+                    "expected a use after a consuming call through a bound "
+                    "to be rejected");
+}
+
+auto test_bound_mut_call_while_shared_borrow_live_is_rejected() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "reject_bound_mut_call_while_shared_borrow_live.cn");
+  expect_diagnostic(analyzed,
+                    "cannot borrow `k` while the reference `r` to `k` is "
+                    "still in use",
+                    "expected a `mut self` call through a bound to conflict "
+                    "with a live `&`");
+}
+
+auto test_bound_shared_call_while_mut_borrow_live_is_rejected() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "reject_bound_shared_call_while_mut_borrow_live.cn");
+  expect_diagnostic(analyzed,
+                    "cannot borrow `k` while the reference `m` to `k` is "
+                    "still in use",
+                    "expected a `self` call through a bound to borrow its "
+                    "receiver while a `&mut` is live");
+}
+
+auto test_bound_mut_call_on_let_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_bound_mut_call_on_let.cn");
+  expect_diagnostic(analyzed,
+                    "cannot call `bump` on `k` — it is bound with `let`",
+                    "expected a `mut self` call through a bound on a `let` "
+                    "to be rejected");
+}
+
+auto test_bound_receiver_calls_are_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_bound_receiver_calls.cn");
+  expect(analyzed.error_count == 0,
+         std::string("expected `mut self` calls through a bound on a field, a "
+                     "by-value parameter and a `var` to check cleanly:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_category_bound_result_carries_no_borrow() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_category_bound_result_carries_no_borrow.cn");
+  expect(analyzed.error_count == 0,
+         std::string("expected a `T: numeric` result not to keep a borrow of "
+                     "a loop local:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_returning_a_borrow_through_an_implicit_generic_is_rejected() -> void {
   const auto analyzed = analyze_test_data_file(
       "reject_return_borrow_through_implicit_generic.cn");
@@ -1057,6 +1123,15 @@ auto test_repeated_autoref_calls_are_accepted() -> void {
              analyzed.diagnostics);
 }
 
+auto test_repeated_autoref_function_value_calls_are_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_repeated_autoref_function_value_calls.cn");
+  expect(analyzed.error_count == 0,
+         std::string("expected a bare argument to a `&` parameter of a "
+                     "function value to be lent, not moved:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_autoref_aliasing_is_rejected() -> void {
   const auto analyzed = analyze_test_data_file("reject_autoref_aliasing.cn");
   expect_diagnostic(
@@ -1315,6 +1390,13 @@ auto main() -> int {
     test_returning_a_borrow_of_a_local_is_rejected();
     test_returning_a_laundered_borrow_of_a_local_is_rejected();
     test_generic_method_result_not_tied_to_receiver_is_accepted();
+    test_bound_consuming_call_twice_is_rejected();
+    test_bound_consuming_call_then_use_is_rejected();
+    test_bound_mut_call_while_shared_borrow_live_is_rejected();
+    test_bound_shared_call_while_mut_borrow_live_is_rejected();
+    test_bound_mut_call_on_let_is_rejected();
+    test_bound_receiver_calls_are_accepted();
+    test_category_bound_result_carries_no_borrow();
     test_returning_a_borrow_through_an_implicit_generic_is_rejected();
     test_returning_a_receiver_borrow_through_a_type_param_is_rejected();
     test_returning_a_reference_to_a_member_is_accepted();
@@ -1383,6 +1465,7 @@ auto main() -> int {
     test_move_in_loop_is_rejected();
     test_move_in_one_branch_is_rejected();
     test_repeated_autoref_calls_are_accepted();
+    test_repeated_autoref_function_value_calls_are_accepted();
     test_autoref_aliasing_is_rejected();
     test_assign_while_view_live_is_rejected();
     test_replace_while_view_live_is_rejected();

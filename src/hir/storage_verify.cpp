@@ -1298,23 +1298,23 @@ private:
 
   struct region {
     region_kind kind = region_kind::branch;
-    flow_state entry;
+    flow_state entry{};
     /// A branch: the state at the end of the `then` side, once `else` began.
-    maybe_flow then_end;
+    maybe_flow then_end{};
     bool has_else = false;
     /// A loop or block: the join of the states at each `exit` that reaches it.
-    maybe_flow exits;
+    maybe_flow exits{};
     /// A branch on a variant test of a sum that needs a drop, held in a slot
     /// or in a payload or member of one: what each side learns.
-    std::optional<place> tested_place;
-    std::string tested_variant;
+    std::optional<place> tested_place{};
+    std::string tested_variant{};
     /// A branch on a drop flag: the flag, and the values it gives back to the
     /// `then` side.
-    std::optional<storage_id> tested_flag;
-    std::vector<storage_id> flagged;
+    std::optional<storage_id> tested_flag{};
+    std::vector<storage_id> flagged{};
     /// A branch on a drop flag whose value is known on this path: the side
     /// that runs. The other cannot be reached.
-    std::optional<bool> known_side;
+    std::optional<bool> known_side{};
   };
 
   [[nodiscard]] static auto continues_dead_path(op_kind kind) -> bool {

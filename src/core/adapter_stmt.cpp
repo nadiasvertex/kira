@@ -712,13 +712,13 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
   for (std::size_t i = 0; i < decl.params.size(); ++i) {
     const auto *pattern = decl.params[i].pattern.get();
     const auto *binding = ast::as<const ast::binding_pattern>(pattern);
-    const auto name =
+    const auto param_name =
         binding != nullptr ? binding->name : std::format("<param {}>", i);
     if (binding == nullptr) {
       destructured.push_back(i);
     }
-    made->params.push_back(param{.symbol = declare(name, sig.params[i], true),
-                                 .name = name,
+    made->params.push_back(param{.symbol = declare(param_name, sig.params[i], true),
+                                 .name = param_name,
                                  .type = sig.params[i],
                                  .origin = pattern,
                                  .span = decl.params[i].span});

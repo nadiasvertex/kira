@@ -66,16 +66,16 @@ inline constexpr cause_id k_no_cause = 0;
 /// for it.
 struct cause {
   /// Where in source the constraint came from.
-  source_location where;
+  source_location where{};
   /// What the checker was doing: "argument 2 of `push`", "the `else` branch",
   /// "the declared return type". A sentence fragment, lowercase, no period —
   /// it is printed inside a larger sentence.
-  std::string reason;
+  std::string reason{};
   /// How the required side should be described to a user, when the type
   /// spelling alone would not explain it ("the element type of `xs`").
-  std::string expected_desc;
+  std::string expected_desc{};
   /// The same for the offered side.
-  std::string found_desc;
+  std::string found_desc{};
   /// The enclosing constraint, forming the context stack. `k_no_cause` at the
   /// outermost frame.
   cause_id parent = k_no_cause;

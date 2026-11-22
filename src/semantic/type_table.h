@@ -120,13 +120,13 @@ struct bound_trait_ref {
 /// this kind, not a distinct runtime representation.
 struct type_entry {
   type_kind kind = type_kind::unknown_kind;
-  std::string name;                     ///< Builtin/user/parameter name.
-  std::string module_name;              ///< Owning module for user types.
+  std::string name{};                     ///< Builtin/user/parameter name.
+  std::string module_name{};              ///< Owning module for user types.
   const ast::type_decl *decl = nullptr; ///< Declaration for user types.
-  std::vector<type_id> args;            ///< Element/parameter/generic args.
+  std::vector<type_id> args{};            ///< Element/parameter/generic args.
   type_id result = k_unknown_type;      ///< fn result or ref/ptr/array inner.
   bool is_mut = false;                  ///< Mutability for ref/ptr types.
-  std::optional<uint64_t> array_size;   ///< Array length when statically known.
+  std::optional<uint64_t> array_size{};   ///< Array length when statically known.
   /// The *kind* of a type parameter or constructor, measured as an arity —
   /// kinds are arities and nothing more (no currying, no kind polymorphism).
   /// For `type_param_kind`: 0 for an ordinary `T`, n for a declared
@@ -138,13 +138,13 @@ struct type_entry {
   /// that mentions it is a `symbolic_value_kind` over its variable — so this
   /// is what lets a bare one met in type position be turned into that slot.
   bool is_value_param = false;
-  std::vector<bound_trait_ref> existential_bound; ///< `existential_kind` only.
+  std::vector<bound_trait_ref> existential_bound{}; ///< `existential_kind` only.
   /// The value of a `const_value_kind` / `symbolic_value_kind` slot, always
   /// in canonical form — constant for the former, open for the latter. One
   /// field rather than two so every consumer (compatibility, display,
   /// substitution, the solver) reads a value slot exactly one way regardless
   /// of whether it happened to close.
-  linear_poly value;
+  linear_poly value{};
   /// The `where` predicate of a `refinement_kind`, an expression over `self`
   /// (the value being constrained) and the declaration's value parameters.
   /// Borrowed from the AST — never owned; refinements are checker-level

@@ -34,7 +34,7 @@ struct method_entry {
   /// known-consuming trait method (`into_iterator::into_iter`) without a
   /// general by-value-`self` convention to key off — see `receiver_mode`
   /// in `ownership_cfg.cpp`.
-  std::string trait_name;
+  std::string trait_name{};
   /// File the method was written in. Every per-call instance of this method
   /// is re-checked, and name resolution reads imports out of the file being
   /// checked — so an instance checked under the *caller's* file cannot see
@@ -47,7 +47,7 @@ struct method_entry {
   /// higher-kinded trait default monomorphized for one impl carries its
   /// trait's constructor parameter here (`F := option`), so re-checking a
   /// per-call instance of it resolves `F[A]` the same way its own check did.
-  type_scope fixed_type_params;
+  type_scope fixed_type_params{};
   /// Type parameters of the `impl` or `extend` block this method was declared
   /// in, or null for a trait default. Needed because a block's *own* generic
   /// parameters (`impl[T] get_it[T] for holder[T]`, `extend[T] holder[T]`)

@@ -1,0 +1,34 @@
+module codegen_stress.bracketed_static_def_call
+
+# A bracketed call of a `static def` (`width[int64]()`) takes the same path
+# as any explicit generic call and folds to the value its body returns. A
+# local with the same name shadows the `static def`, as a local shadows any
+# function, so `width[i]()` indexes the local list and calls what it holds.
+#
+#   width[int64]()   8 (folded at compile time)
+#   width[i]()       two() = 2, through the shadowing local
+#   8 * 5 + 2        42
+#
+# expect: 42
+
+static def width[T]() -> int32:
+    if T.name() == "int64":
+        return 8
+    return 4
+
+def one() -> int32:
+    return 1
+
+def two() -> int32:
+    return 2
+
+def folded() -> int32:
+    return width[int64]()
+
+def shadowed() -> int32:
+    let i: usize = 1
+    let width = [one, two]
+    return width[i]()
+
+def main() -> int32:
+    return folded() * 5 + shadowed()

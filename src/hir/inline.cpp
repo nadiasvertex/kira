@@ -313,7 +313,6 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
                                     clone_all(n.args, rename));
   }
   case hir_node_kind::hir_stack_buffer: {
-    const auto &n = dynamic_cast<const hir_stack_buffer &>(node);
     return hir::make<hir_stack_buffer>(span, type);
   }
   case hir_node_kind::hir_container_data: {
@@ -822,8 +821,7 @@ struct caller_state {
 
 class inliner {
 public:
-  inliner(const template_table &templates, const type_table &types)
-      : templates_(templates), types_(types) {}
+  explicit inliner(const template_table &templates) : templates_(templates) {}
 
   auto rewrite(hir_node &node, caller_state &state, size_t depth) -> void {
     if (node.kind == hir_node_kind::hir_lambda) {
@@ -934,7 +932,6 @@ private:
   }
 
   const template_table &templates_;
-  const type_table &types_;
 };
 
 } // namespace
@@ -955,7 +952,7 @@ auto inline_small_calls(ptr_vec<hir_module> &modules, const type_table &types)
   }
 
   auto stats = inline_stats{};
-  auto pass = inliner(templates, types);
+  auto pass = inliner(templates);
   for (auto &module : modules) {
     for (auto &fn : module->functions) {
       if (fn->is_coroutine() || fn->body == nullptr) {

@@ -1,0 +1,13 @@
+module ownership.bound_mut_call_on_let
+
+# A `mut self` call through a bound changes its receiver, which a `let`
+# binding does not allow.
+trait counter:
+    def bump(mut self) -> int64
+
+def f[C](c: C) -> int64 where C: counter:
+    let k = c
+    return k.bump()
+
+def main() -> int32:
+    return 0

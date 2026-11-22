@@ -1,0 +1,129 @@
+module codegen_stress.call_forms_matrix
+
+# Every call form runs the same scenario: bare, module-qualified, type
+# static, static on a builtin type, trait static through a bound, static on a
+# generic type, method, and UFCS.
+#
+# `positions` calls a function `pair(a, b) = a * 10 + b` through each form
+# with arguments of its own, so a dropped, swapped or mis-bound argument gives
+# a different number rather than a compile error. `explicit_binding` calls
+# `ident[int64](big)` through each form that can take type arguments and
+# divides the result, which only type-checks and runs right if every form
+# instantiates `ident` for `int64`.
+#
+# Both backends resolve calls from the same checker output and would agree on
+# a wrongly resolved callee, so `# expect:` is computed by hand.
+#
+# positions, value times weight 1..9:
+#   bare 12, qualified 34, type static 56, builtin static 78,
+#   trait static on point 91, trait static on int64 901 (a different impl),
+#   generic type 25, method 13, UFCS 24
+#   12 + 68 + 168 + 312 + 455 + 5406 + 175 + 104 + 216 = 6916
+# explicit_binding: 3 from each of 7 forms, weight 1..7: 3 * 28 = 84
+# main: 6916 + 84 * 10000 = 846916
+
+# expect: 846916
+
+module util:
+    pub def pair(a: int32, b: int32) -> int32:
+        return a * 10 + b
+
+    pub def ident[T](v: T) -> T:
+        return v
+
+type point = { pub x: int32 }
+
+type wrap[T] = { pub v: T }
+
+trait maker:
+    static def make(a: int32, b: int32) -> self
+    def value(self) -> int32
+
+impl maker for point:
+    static def make(a: int32, b: int32) -> point:
+        return point { x: a * 10 + b }
+
+    def value(self) -> int32:
+        return self.x
+
+impl maker for int64:
+    static def make(a: int32, b: int32) -> int64:
+        return int64(a) * 100 + int64(b)
+
+    def value(self) -> int32:
+        return self as int32
+
+extend point:
+    static def pair(a: int32, b: int32) -> int32:
+        return a * 10 + b
+
+    static def ident[T](v: T) -> T:
+        return v
+
+    def m_pair(self, a: int32, b: int32) -> int32:
+        return a * 10 + b + self.x - 1
+
+    def m_ident[T](self, v: T) -> T:
+        return v
+
+extend int64:
+    static def pair(a: int32, b: int32) -> int32:
+        return a * 10 + b
+
+    static def ident[T](v: T) -> T:
+        return v
+
+extend[T] wrap[T]:
+    static def pair(a: int32, b: int32) -> int32:
+        return a * 10 + b
+
+    static def ident[U](v: U) -> U:
+        return v
+
+def pair(a: int32, b: int32) -> int32:
+    return a * 10 + b
+
+def ident[T](v: T) -> T:
+    return v
+
+def u_pair(p: point, a: int32, b: int32) -> int32:
+    return a * 10 + b
+
+def u_ident[T](p: point, v: T) -> T:
+    return v
+
+def via_bound[T: maker]() -> int32:
+    return T.make(9, 1).value()
+
+def positions() -> int32:
+    let p = point { x: 1 }
+    let bare = pair(1, 2)
+    let qualified = util.pair(3, 4)
+    let type_static = point.pair(5, 6)
+    let builtin_static = int64.pair(7, 8)
+    let trait_point = via_bound[point]()
+    let trait_int64 = via_bound[int64]()
+    let generic_type = wrap[int32].pair(2, 5)
+    let method = p.m_pair(1, 3)
+    let ufcs = p.u_pair(2, 4)
+    return bare + qualified * 2 + type_static * 3 + builtin_static * 4 + trait_point * 5 + trait_int64 * 6 + generic_type * 7 + method * 8 + ufcs * 9
+
+def explicit_binding() -> int32:
+    let p = point { x: 1 }
+    # A literal argument would be the better check, because it fits only if
+    # `T` is `int64`. Every form refuses `ident[int64](3000000000)` today
+    # ("does not fit in `int32`"), so each form takes an `int64` value. This
+    # is a compiler gap (todo 70), not a property of these forms; `check_test`
+    # pins it.
+    let big: int64 = 3000000000
+    let a = ident[int64](big) / 1000000000
+    let b = util.ident[int64](big) / 1000000000
+    let c = point.ident[int64](big) / 1000000000
+    let d = int64.ident[int64](big) / 1000000000
+    let e = wrap[int32].ident[int64](big) / 1000000000
+    let f = p.m_ident[int64](big) / 1000000000
+    let g = p.u_ident[int64](big) / 1000000000
+    return (a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6 + g * 7) as int32
+
+def main() -> int64:
+    return int64(positions()) + int64(explicit_binding()) * 10000

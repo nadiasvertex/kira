@@ -9,13 +9,13 @@ namespace cinder::hir {
 
 /// What the pass decided for the local one function returns.
 struct nrvo_decision {
-  std::string function;
+  std::string function{};
   /// The source name of the returned local, empty for a temporary.
-  std::string local;
+  std::string local{};
   /// Whether the local's storage became the function's result storage.
   bool applied = false;
   /// Why it did not, when it did not; empty otherwise.
-  std::string reason;
+  std::string reason{};
 };
 
 /// Named return value optimization over a function in storage form.

@@ -2,7 +2,9 @@
 #include <array>
 #include <iterator>
 #include <format>
+#include <optional>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -11,6 +13,7 @@
 #include "src/parser/ast_traversal.h"
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
+#include "src/semantic/instance_substitution.h"
 #include "src/semantic/linear_poly.h"
 
 /// Expressions, places and calls. Each construct reads the record the checker
@@ -38,6 +41,33 @@ namespace {
     expr = ast::cast<const ast::group_expr>(*expr).inner.get();
   }
   return expr;
+}
+
+/// A template's `signature` restated at `args`, one per parameter in
+/// `params`. A value parameter's argument (a constant, `n + 1`, or another
+/// value parameter) is also substituted into the polynomials that mention
+/// it, as an instance's answers are.
+[[nodiscard]] auto template_signature(semantic::type_table &types,
+                                      type_id signature,
+                                      const std::vector<type_id> &params,
+                                      const std::vector<type_id> &args)
+    -> type_id {
+  auto subst = semantic::detail::instance_subst{};
+  for (size_t i = 0; i < params.size() && i < args.size(); ++i) {
+    subst.params.emplace(params[i], args[i]);
+    const auto var =
+        semantic::poly_param_var(types.entry(params[i]).name, params[i]);
+    const auto &arg = types.entry(args[i]);
+    if (arg.kind == type_kind::const_value_kind ||
+        arg.kind == type_kind::symbolic_value_kind) {
+      subst.values.emplace(var, arg.value);
+    } else if (arg.kind == type_kind::type_param_kind) {
+      subst.values.emplace(var, semantic::poly_variable(semantic::poly_param_var(
+                                    arg.name, args[i])));
+    }
+  }
+  return semantic::detail::substitute_type(
+      types, [](type_id id) -> type_id { return id; }, subst, signature);
 }
 
 } // namespace
@@ -1887,28 +1917,52 @@ auto body_builder::callee_of(const semantic::resolved_callee &resolved,
     return fail("missing record: resolved_callees", "a callee with no decl",
                 span);
   }
-  // Inside a template, a callee that is itself a template is solved per
-  // instance: the template records no arguments to substitute its
-  // signature with (`defer_to_instances`). A template calling itself is
-  // the exception: its parameters are its own.
-  auto own_params = false;
-  if (templates_ != nullptr && !generic_params_.empty() &&
-      templates_->contains(resolved.decl)) {
-    if (resolved.decl != decl_) {
-      return fail("missing record: resolved_callees (deferred to instances)",
-                  std::format("a generic body calls the template `{}`; "
-                              "only its instances record the arguments",
-                              resolved.decl->name),
-                  span);
+  if (resolved.bound.has_value()) {
+    return trait_method_callee(resolved, span);
+  }
+  // Inside a template, a callee that is itself a template (the template
+  // itself included) is called at the arguments the checker recorded, in
+  // this body's parameters (`template_args`), and its signature is restated
+  // under them. A call it recorded none for is solved per instance only.
+  const std::vector<type_id> *template_params = nullptr;
+  if (templates_ != nullptr && !generic_params_.empty()) {
+    if (const auto found = templates_->find(resolved.decl);
+        found != templates_->end()) {
+      if (resolved.template_args.size() != found->second.size()) {
+        return fail("missing record: resolved_callees (deferred to instances)",
+                    std::format("a generic body calls the template `{}` with "
+                                "no recorded arguments; only its instances "
+                                "record them",
+                                resolved.decl->name),
+                    span);
+      }
+      template_params = &found->second;
     }
-    own_params = true;
   }
-  CORE_TRY(sig, signature_of(*resolved.decl));
+  // A template callee's signature is read in its own parameters, which are
+  // open there and not in this body.
+  auto saved_open = std::optional<std::unordered_set<type_id>>{};
+  if (template_params != nullptr) {
+    saved_open = std::exchange(
+        open_params_, std::unordered_set<type_id>(template_params->begin(),
+                                                  template_params->end()));
+  }
+  auto sig_result = signature_of(*resolved.decl);
+  if (saved_open.has_value()) {
+    open_params_ = std::move(*saved_open);
+  }
+  if (!sig_result.has_value()) {
+    return std::unexpected(std::move(sig_result.error()));
+  }
+  const auto &sig = *sig_result;
   auto target = callee{};
-  if (own_params) {
-    target.generic_args = generic_params_;
-  }
   target.signature = sig.fn_type;
+  if (template_params != nullptr) {
+    target.generic_args = resolved.template_args;
+    target.signature = template_signature(checked_.types, sig.fn_type,
+                                          *template_params,
+                                          resolved.template_args);
+  }
   target.receiver = sig.receiver;
   target.owner_module = resolved.owner_module;
   target.impl_target = resolved.impl_target_type;
@@ -1926,6 +1980,57 @@ auto body_builder::callee_of(const semantic::resolved_callee &resolved,
   if (const auto tmpl = checked_.ownership.instance_templates.find(resolved.decl);
       tmpl != checked_.ownership.instance_templates.end()) {
     target.instance_of = tmpl->second;
+    if (const auto args = checked_.ownership.instance_generic_args.find(resolved.decl);
+        args != checked_.ownership.instance_generic_args.end()) {
+      target.generic_args = args->second;
+    }
+  }
+  return target;
+}
+
+auto body_builder::trait_method_callee(const semantic::resolved_callee &resolved,
+                                       source_span span) -> result<callee> {
+  const auto &bound = *resolved.bound;
+  const auto entry = checked_.trait_method_signatures.find(resolved.decl);
+  if (entry == checked_.trait_method_signatures.end()) {
+    return fail("missing record: trait_method_signatures",
+                std::format("the trait method `{}` has no declared signature",
+                            resolved.decl->name),
+                span);
+  }
+  const auto &declared = entry->second;
+  // The trait's signature, with `Self`, the trait's parameters and the
+  // method's own replaced by the bound's subject, its arguments and the
+  // call's. A count that does not match is left for the verifier to
+  // report (C9).
+  auto args = std::vector<type_id>{bound.self_type};
+  args.insert(args.end(), bound.trait_args.begin(), bound.trait_args.end());
+  args.insert(args.end(), resolved.template_args.begin(),
+              resolved.template_args.end());
+  auto target = callee{};
+  target.kind = callee::form::trait_method;
+  target.decl = resolved.decl;
+  target.name = resolved.decl->name;
+  target.owner_module = declared.owner_module;
+  target.trait_name = declared.trait_name;
+  target.generic_args = resolved.template_args;
+  target.self_type = bound.self_type;
+  target.trait_args = bound.trait_args;
+  target.signature = template_signature(checked_.types, declared.signature,
+                                        declared.generic_params, args);
+  switch (declared.receiver) {
+  case semantic::trait_receiver::none:
+    target.receiver = receiver_mode::none;
+    break;
+  case semantic::trait_receiver::shared:
+    target.receiver = receiver_mode::shared;
+    break;
+  case semantic::trait_receiver::exclusive:
+    target.receiver = receiver_mode::exclusive;
+    break;
+  case semantic::trait_receiver::consuming:
+    target.receiver = receiver_mode::consuming;
+    break;
   }
   return target;
 }
@@ -2136,28 +2241,6 @@ auto body_builder::builtin_method(const ast::call_expr &call,
   return std::nullopt;
 }
 
-auto body_builder::same_module_callee(const ast::call_expr &call)
-    -> std::optional<result<callee>> {
-  const auto *ident = ast::as<const ast::ident_expr>(call.callee.get());
-  if (ident == nullptr || is_variant_ident(*ident) ||
-      checked_.resolved_callees.contains(&call) ||
-      lookup(ident->name).has_value() ||
-      checked_.ownership.generic_lambda_refs.contains(ident)) {
-    return std::nullopt;
-  }
-  const auto *found =
-      functions_ == nullptr ? nullptr : (*functions_)(module_name_, ident->name);
-  if (found == nullptr) {
-    return std::nullopt;
-  }
-  return callee_of(semantic::resolved_callee{.decl = found,
-                                             .owner_module = module_name_,
-                                             .impl_target_type = {},
-                                             .receiver = nullptr,
-                                             .trait_name = {}},
-                   call.span);
-}
-
 auto body_builder::function_value(const ast::expr &source, type_id fn_type)
     -> result<ptr<expr>> {
   // Calling a function value does not consume it (C4). A temporary is
@@ -2360,26 +2443,20 @@ auto body_builder::call_of(const ast::call_expr &call) -> result<ptr<expr>> {
       return fail("missing record: resolved_callees",
                   "a call with no resolved callee and no `fn` type", call.span);
     }
-    if (auto same_module = same_module_callee(call)) {
-      CORE_TRY(found, std::move(*same_module));
-      target = std::move(found);
-    } else {
-      if (const auto *ident =
-              ast::as<const ast::ident_expr>(call.callee.get());
-          ident != nullptr && !lookup(ident->name).has_value() &&
-          !checked_.ownership.generic_lambda_refs.contains(ident)) {
-        return fail("missing record: resolved_callees",
-                    std::format("bare call of `{}`, which names no local and "
-                                "no function of this module",
-                                ident->name),
-                    call.span);
-      }
+    if (const auto *ident = ast::as<const ast::ident_expr>(call.callee.get());
+        ident != nullptr && !lookup(ident->name).has_value() &&
+        !checked_.ownership.generic_lambda_refs.contains(ident)) {
+      return fail("missing record: resolved_callees",
+                  std::format("bare call of `{}`, which names no local and "
+                              "has no callee record",
+                              ident->name),
+                  call.span);
+    }
     CORE_TRY(fn_type, settle(strip_refs(callee_type->second), call.span));
     CORE_TRY(fn_value, function_value(*call.callee, fn_type));
     target.kind = callee::form::value;
     target.signature = fn_type;
     target.value = std::move(fn_value);
-    }
   }
 
   const auto params = checked_.types.entry(target.signature).args;

@@ -257,11 +257,7 @@ auto lower_program(std::span<const semantic::parsed_module> inputs,
     std::string_view module;   ///< Empty for any module.
     std::string_view function; ///< Empty for any function.
   };
-  static constexpr auto known = std::array{
-      // No record holds the generic arguments an instance was made with
-      // (a phase 5 debt of spec/unified-checker-plan.md).
-      known_violation{.rule = "C8", .module = "", .function = ""},
-  };
+  static constexpr auto known = std::array<known_violation, 0>{};
   if (std::getenv("CINDER_CORE_VERIFY") != nullptr) {
     for (const auto &v : core::verify(program, checked)) {
       if (std::ranges::any_of(known, [&](const known_violation &k) {

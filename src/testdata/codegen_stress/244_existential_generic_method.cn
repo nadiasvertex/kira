@@ -1,0 +1,28 @@
+module codegen_stress.existential_generic_method
+
+# A generic method called on an existential receiver names an instance for
+# the hidden type and the method's own argument. `make` hides a `counter`
+# behind `some reader`, and `read[U]` is generic over its own `U`, so the
+# call must reach a compiled instance of `counter`'s `read`, not the
+# template.
+#
+# read on a counter of 40 hands 40 to the lambda, which adds 2.
+
+# expect: 42
+
+trait reader:
+    def read[U](self, f: fn(int32) -> U) -> U
+
+type counter = { n: int32 }
+
+impl reader for counter:
+    def read[U](self, f: fn(int32) -> U) -> U:
+        return f(self.n)
+
+def make() -> some reader:
+    return counter { n: 40 }
+
+def main() -> int32:
+    let c = make()
+    let x = c.read((v: int32) => int64(v) + 2)
+    return int32(x)

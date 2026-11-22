@@ -81,7 +81,7 @@ struct open_region {
   enum class kind : uint8_t { conditional, loop, block };
   kind what = kind::block;
   /// `loop`, `block`: the forward jumps that leave it.
-  std::vector<size_t> exits;
+  std::vector<size_t> exits{};
   /// `loop`: where the back edge returns to.
   size_t header = 0;
   /// `conditional`: the jump taken when the condition is false, the jump over
@@ -97,8 +97,8 @@ public:
                    const hir::storage_function &function, hir::storage_env &env,
                    const std::unordered_map<std::string, uint16_t> &index,
                    const std::unordered_map<std::string, uint32_t> &statics)
-      : entry_(entry), module_(module), fn_(function), env_(env), index_(index),
-        statics_(statics) {}
+      : entry_(entry), module_(module), fn_(function), env_(env), statics_(statics),
+        index_(index) {}
 
   /// The function-table key of a function of this module.
   [[nodiscard]] auto key(std::string_view name) const -> std::string {

@@ -103,19 +103,19 @@ struct module_context {
   llvm::LLVMContext &ctx;
   llvm::Module &module;
   hir::storage_env &env;
-  llvm::Function *panic_fn;
+  llvm::Function *panic_fn{};
   /// The program's entry module: its functions are named plainly, any other
   /// module's `module::name` (`hir::program_function_name`).
-  std::string entry;
+  std::string entry{};
   /// Every function of the program by its program-wide name.
-  std::unordered_map<std::string, llvm::Function *> functions;
+  std::unordered_map<std::string, llvm::Function *> functions{};
   /// Every module's statics by name: their bytes, and the alignment the
   /// bytes were given.
   struct static_storage {
     llvm::GlobalVariable *bytes = nullptr;
     size_t align = 1;
   };
-  std::unordered_map<std::string, static_storage> statics;
+  std::unordered_map<std::string, static_storage> statics{};
 };
 
 [[nodiscard]] auto layout_of(module_context &mc, type_id type,
@@ -1571,7 +1571,8 @@ private:
       return std::unexpected(resume.error());
     }
     auto *start = llvm::BasicBlock::Create(mc_.ctx, "start", llvm_fn_);
-    auto *table = builder_.CreateSwitch(*resume, start, op.depth);
+    auto *table = builder_.CreateSwitch(*resume, start,
+                                       static_cast<unsigned>(op.depth));
     for (size_t point = 1; point <= op.depth; ++point) {
       auto *block = llvm::BasicBlock::Create(
           mc_.ctx, std::format("resume.{}", point), llvm_fn_);

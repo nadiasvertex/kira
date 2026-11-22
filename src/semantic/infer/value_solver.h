@@ -54,12 +54,12 @@ enum class value_answer : uint8_t {
 struct value_solution {
   value_answer answer = value_answer::underdetermined;
   /// For `solved`: the unknown's name, as it appears in the polynomial.
-  std::string var;
+  std::string var{};
   /// For `solved`: what it must equal — a constant, or a polynomial over the
   /// rigid variables (`n := m + 1`).
-  linear_poly value;
+  linear_poly value{};
   /// For `unsatisfiable`: why, phrased for a diagnostic.
-  std::string detail;
+  std::string detail{};
 };
 
 /// Solves `a = b` for its flexible variables, holding the rigid ones fixed.

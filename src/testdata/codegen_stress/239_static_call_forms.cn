@@ -1,0 +1,40 @@
+module codegen_stress.static_call_forms
+
+# Static calls on a generic type, on a user type through a trait, and on a
+# builtin type through a trait, each written with and without the type's
+# arguments: `wrap[int32].new(5)`, `wrap.new(6)`, `point.make(1, 2)`,
+# `int64.one()`. Item `238` runs the same scenario through every call form;
+# this file adds the generic-type forms and a literal that only fits when the
+# impl's parameter is bound to `int64` first.
+#
+# 5 + 6 * 10 + 12 * 1000 + 1 * 100000 = 112065
+
+# expect: 112065
+
+use std.traits.one
+use std.traits.zero
+
+type wrap[T] = { pub v: T }
+
+extend[T] wrap[T]:
+    static def new(v: T) -> wrap[T]:
+        return wrap { v: v }
+
+type point = { pub x: int32 }
+
+trait maker:
+    static def make(a: int32, b: int32) -> self
+
+impl maker for point:
+    static def make(a: int32, b: int32) -> point:
+        return point { x: a * 10 + b }
+
+def unit_plus_zero[T: one + zero + add]() -> T:
+    return T.one() + T.zero()
+
+def main() -> int32:
+    let explicit = wrap[int32].new(5).v
+    let inferred = wrap.new(6).v
+    let made = point.make(1, 2).x
+    let total = unit_plus_zero[int64]()
+    return explicit + inferred * 10 + made * 1000 + (total as int32) * 100000

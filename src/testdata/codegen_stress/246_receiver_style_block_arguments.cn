@@ -1,0 +1,27 @@
+module codegen_stress.receiver_style_block_arguments
+
+# Two calls of one receiver-style generic method on receivers with
+# different block arguments name two instances. `pick` takes its receiver
+# as its first parameter rather than `self`, is generic over its own `U`
+# and, through its block, over `T`. Both calls solve `U` to `int64`, so an
+# instance named by `U` alone would be shared, and the second call would
+# run the first body, which takes an `fn(int32) -> int64`.
+#
+# x = 40, y = 5000000000, so main returns 40 + 2.
+
+# expect: 42
+
+type bag[T] = { v: T }
+
+extend[T: copy] bag[T]:
+    def pick[U](b: bag[T], f: fn(T) -> U) -> U:
+        return f(b.v)
+
+def main() -> int32:
+    let a = bag[int32] { v: 40 }
+    let b = bag[int64] { v: 5000000000 }
+    let x = a.pick((v: int32) => int64(v))
+    let y = b.pick((v: int64) => v)
+    if y == 5000000000:
+        return int32(x) + 2
+    return 1

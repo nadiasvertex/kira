@@ -154,12 +154,18 @@ auto evaluator::call_function(
 
 auto evaluator::try_eval_ordinary_call(
     const ast::func_decl &fn, const ast::call_expr &call,
-    std::vector<std::pair<std::string, value>> type_args)
-    -> std::optional<value> {
+    std::vector<std::pair<std::string, value>> type_args,
+    const ast::expr *receiver) -> std::optional<value> {
   const auto saved = set_silent(true);
   auto args = std::vector<value>{};
-  args.reserve(call.args.size());
-  auto ok = call.args.size() == fn.params.size();
+  args.reserve(fn.params.size());
+  auto ok = call.args.size() + (receiver != nullptr ? 1 : 0) ==
+            fn.params.size();
+  if (ok && receiver != nullptr) {
+    auto evaluated = evaluate(*receiver);
+    ok = !evaluated.is_error();
+    args.push_back(std::move(evaluated));
+  }
   for (const auto &arg : call.args) {
     if (!ok || arg.name.has_value() || arg.value == nullptr) {
       ok = false;

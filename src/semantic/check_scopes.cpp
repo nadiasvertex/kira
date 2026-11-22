@@ -206,7 +206,7 @@ auto checker::push_type_params(const std::vector<ast::type_param> &params)
     }
     // The type-parameter analog of `session_.const_param_slots_`: while
     // checking a monomorphized copy of a generic method
-    // (`instantiate_hk_method`), each of its *type* parameters is bound to the
+    // (`find_or_check_generic_instance`), each of its *type* parameters is bound to the
     // concrete type the call solved for it instead of an abstract `type_param`.
     if (const auto bound = session_.type_param_slots_.find(param.name);
         !param.is_value_param && bound != session_.type_param_slots_.end()) {
@@ -1410,8 +1410,14 @@ auto checker::try_fold_comptime_only_call(const ast::call_expr &call,
     -> const ast::literal_expr * {
   // The call runs the instance its type arguments name.
   auto type_args = type_param_comptime_values(decl.type_params, type_slots);
-  const auto result =
-      comptime_eval_.try_eval_ordinary_call(decl, call, std::move(type_args));
+  // A UFCS call's receiver is the first argument (`check_call` records it
+  // before folding).
+  const auto found = session_.resolved_callees_.find(&call);
+  const auto *receiver = found != session_.resolved_callees_.end()
+                             ? found->second.receiver
+                             : nullptr;
+  const auto result = comptime_eval_.try_eval_ordinary_call(
+      decl, call, std::move(type_args), receiver);
   if (!result.has_value()) {
     return nullptr;
   }

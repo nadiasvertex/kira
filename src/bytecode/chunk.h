@@ -90,19 +90,19 @@ struct function_abi {
 };
 
 struct bytecode_function {
-  std::string name;
+  std::string name{};
   uint16_t param_count = 0;
   uint32_t register_count = 0;
-  std::vector<uint8_t> code;
-  std::vector<slot_value> constants;
+  std::vector<uint8_t> code{};
+  std::vector<slot_value> constants{};
   /// String-literal bytes referenced by `op_str_const_data` (opcodes.h).
   /// Kept separate from `constants` (which only holds scalar `slot_value`s)
   /// since a string's bytes have no fixed width — this function outlives
   /// any VM run built from it, so a `str` descriptor's data can point
   /// directly at one of these entries without copying its bytes.
-  std::vector<std::string> string_constants;
+  std::vector<std::string> string_constants{};
   /// Indexed by `op_host_call`'s `site` operand.
-  std::vector<host_site> host_sites;
+  std::vector<host_site> host_sites{};
   /// Total bytes of frame-local storage this function's `uninit[T, N]`
   /// buffers need (`op_stack_alloc`). Reserved once, on frame entry, rather
   /// than grown per allocation: a buffer's address must stay valid for the
@@ -112,15 +112,15 @@ struct bytecode_function {
   uint32_t stack_byte_size = 0;
   /// The calling convention of an inline-value function; see `function_abi`.
   /// `param_count` counts the hidden result address when there is one.
-  std::optional<function_abi> abi;
+  std::optional<function_abi> abi{};
   /// Where the code came from, for reporting a failure at a source line: the
   /// module and top-level HIR function it was compiled from (a lambda's or a
   /// generator step's enclosing function, for one of those), and, in code
   /// order, the source span each run of instructions was compiled from.
   /// Spans are byte offsets into that function's file.
-  std::string source_module;
-  std::string source_function;
-  std::vector<span_entry> spans;
+  std::string source_module{};
+  std::string source_function{};
+  std::vector<span_entry> spans{};
 };
 
 /// The span the instruction at `offset` in `fn` was compiled from, or an
@@ -134,8 +134,8 @@ struct bytecode_function {
 /// project's functions aren't first-class values yet, so there's no need
 /// for anything more dynamic than a fixed table).
 struct bytecode_module {
-  std::string module_name;
-  std::vector<bytecode_function> functions;
+  std::string module_name{};
+  std::vector<bytecode_function> functions{};
   /// The bytes of every module's statics, laid out
   /// at offsets the compiler chose (`op_global_addr`), each at its type's
   /// alignment. The `vm` allocates them zeroed and 16-byte aligned.
@@ -143,7 +143,7 @@ struct bytecode_module {
   /// The function that builds each module's statics
   /// (`hir::k_static_init_name`), in module order. A host runs each once,
   /// on the `vm` it will use, before anything else.
-  std::vector<uint16_t> static_initializers;
+  std::vector<uint16_t> static_initializers{};
 };
 
 /// Reads a little-endian-encoded operand back out of a `bytecode_function`'s

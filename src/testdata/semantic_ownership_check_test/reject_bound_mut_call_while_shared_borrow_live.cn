@@ -1,0 +1,16 @@
+module ownership.bound_mut_call_while_shared_borrow_live
+
+# A `mut self` call through a bound borrows its receiver mutably, which
+# conflicts with a `&` borrow of it still in use.
+trait counter:
+    def bump(mut self) -> int64
+    def peek(self) -> int64
+
+def f[C](c: C) -> int64 where C: counter:
+    var k = c
+    let r = &k
+    let n = k.bump()
+    return n + r.peek()
+
+def main() -> int32:
+    return 0

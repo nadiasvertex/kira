@@ -7,7 +7,7 @@ module codegen_stress.type_param_static_dispatch
 # Neither backend learns that a type parameter was involved: `C.make` is
 # named after the type `C` was solved to, so lowering sees an ordinary impl
 # member on a concrete type, exactly as it does for any other monomorphized
-# instance (`semantic::checker::resolve_type_param_static`).
+# instance (`semantic::checker::find_static_callee`).
 
 # The static member is a trait's, which is what lets a generic body call it
 # through `C` at all: a body may only use what its bounds promise.

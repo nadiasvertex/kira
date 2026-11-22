@@ -1,6 +1,6 @@
 # Unified type checker plan
 
-Status: accepted, 2026-11-15. Phases 1 to 3 are complete; phase 3 finished on 2026-11-19. Phase 4 is in progress: its done-when programs pass (2026-11-20), and two debts remain.
+Status: accepted, 2026-11-15. Phases 1 to 3 are complete; phase 3 finished on 2026-11-19. Phase 4 is done (2026-11-20); its remaining debts moved to phase 12. Phase 5 is done (2026-11-22); its remaining debts moved to phase 12.
 
 The type-checking bugs in [todo.md](todo.md) share three structural causes. The checker
 hands later stages about 85 side tables keyed by AST node, and each later stage decides
@@ -169,14 +169,14 @@ Each phase leaves the tree green and removes the code it replaces.
 | 2. Core and verifier (done) | Define the core. Build it from the AST and the current side tables with an adapter. Write the verifier and run it over the corpus and the standard library. | Done 2026-11-15: every concrete function of the corpus and the standard library builds and verifies, except five (item 39). About a third of the generic templates build; the rest wait for phase 5. See "Phase 2 results". | 38 to 41 found here; cause of 32 located |
 | 3. Lowering reads the core (done) | HIR lowering takes the core as input. Refusals move into the adapter as user diagnostics or become assertions. Compile-time execution lowers from the same core. Lower `await yield` and a named `on` block. | Done 2026-11-19: lowering reads no AST node and only the type table, shapes, drop plans and drop schedule from the checker; the verifier runs in every test build. See "Phase 3 results". | 15, 26 (stale message), 36, 40 |
 | 4. Places and patterns (done) | One place function and one pattern elaboration, emitting core directly. Add the mutable dereference trait. A binding through a `&mut` subject is writable without `mut`. | Done 2026-11-20: compound assignment to a list element, `replace(&mut xs[i], v)`, `*guard += 1`, and or-pattern bindings run on both tiers with `# expect:`. Raw pointer weakening (item 38) moved to phase 12. See "Phase 4 results". | 12, 21, 22, 33, 37 |
-| 5. Calls and names | One call pipeline emitting core directly. One lookup for a variant name, used by construction and by patterns, in which a user's variant shadows the prelude's. | The 17 entry points are gone; qualified, static, and trait-static calls share tests. | 8, 9, 27, 35, 41 |
+| 5. Calls and names (done) | One call pipeline emitting core directly. One lookup for a variant name, used by construction and by patterns, in which a user's variant shadows the prelude's. | Done 2026-11-22: the 17 entry points are gone; qualified, static, trait-static and bound calls share tests. The remaining templates and adapter-derived names moved to phase 12. See "Phase 5 progress". | 8, 9, 27, 35, 41 |
 | 6. Equality and predicates | One type equality and one satisfaction query. | The `bool`-index program is rejected; `implements[T, copy]` works. | 14, 32 |
 | 7. Ownership graph on the core | Rebuild the ownership graph from the core with field-level places. Check generated code. Reject moves out of `self` in every body. Record loan origins for diagnostics. | Existing ownership tests pass on the new graph; a derived impl that moves out of `self` gets a diagnostic; the item 34 program names the closure. | 16, 23, 34, 39 |
 | 8. Summaries and escape | Infer function summaries, apply them at calls, check stores through parameters, carry argument borrows in generator and task values, and decide closure capture by escape. | The `known_gaps` programs for items 30 and 31 are rejected; an escaping closure moves its captures with no `move` keyword. | 19, 30, 31 |
 | 9. Drop glue and task results | One drop-glue rule for every owner. `get()` and `errors()` return borrows. | Corpus programs for a droppable zero-sized capture and a second `get()` of a `list` result pass with `# max-live-blocks: 0` on both tiers. | 20, 29 |
 | 10. Compile-time values | One static value representation covering user sum types and partial reads. | `static for` over a list of variants unrolls. | 25, 26 |
 | 11. Owned strings | Add `string`, with `str` as its view. Change interpolation, `show`, and the allocating `std.string` methods to return it. Update chapters 7 and 14 and the standard library. | A loop that formats a value on every pass runs with `# max-live-blocks: 0` on both tiers; corpus 110 and 167 drop their allowances. | 24 |
-| 12. Remove the adapter | The elaborator emits all core directly. Delete the side tables and the lowering view. Update the specification chapters the phases changed, and implementation chapters 62 and 63. | `checked_types` no longer exists. | 38 (pointer weakening) |
+| 12. Remove the adapter | The elaborator emits all core directly. Delete the side tables and the lowering view. Update the specification chapters the phases changed, and implementation chapters 62 and 63. | `checked_types` no longer exists. | 38 (pointer weakening); templates and names left by phase 5 |
 
 Phase 2 located the cause of item 32. The checker records `conn[true]` and `conn[false]`
 as the same type, `conn[_]`: a `bool` index is left as an unknown slot instead of a value.
@@ -206,10 +206,10 @@ phase removes.
 | Debt | Removed in |
 |---|---|
 | `cell[T]` and `&T` convert through intrinsic calls the adapter inserts (item 38). Removed in phase 4 with the cell types. | Phase 4 (done) |
-| A bare call to a function of the same module has no callee record; the adapter looks the name up. Recording it in the checker changes ownership checking and lowering, which both branch on whether the record exists. | Phase 5 |
-| No record holds the generic arguments an instance was made with, so verifier rule C8 is allow-listed for every call to an instance. | Phase 5 |
-| About 250 templates do not build. Most defer a call, an operator, or a cast to their instances and have no record of their own. Implicit generics and reads of a value parameter have no core form yet. | Phase 5 |
-| The task type of an `async def` and the `std.fmt` helpers interpolation calls are derived by the adapter. | Phase 5 |
+| A bare call to a function of the same module has no callee record; the adapter looks the name up. Recording it in the checker changes ownership checking and lowering, which both branch on whether the record exists. | Phase 5 (done) |
+| No record holds the generic arguments an instance was made with, so verifier rule C8 is allow-listed for every call to an instance. | Phase 5 (done) |
+| About 250 templates do not build. Most defer a call, an operator, or a cast to their instances and have no record of their own. Implicit generics and reads of a value parameter have no core form yet. Phase 5 built about 150 of them; the rest moved to phase 12. | Phase 12 |
+| The task type of an `async def` and the `std.fmt` helpers interpolation calls are derived by the adapter. | Phase 12 |
 | The verifier does not check that a generic call meets the callee's bounds, or that a `match` is exhaustive. | Phase 6 |
 | Closure capture modes and pattern binding modes are read from the ownership check's own graph. | Phase 7 |
 | `for` over a borrowed collection of `copy` elements moves out of a reference (item 39). | Phase 7 |
@@ -276,9 +276,9 @@ Phase 3 added these debts.
 | A core `match` records which source form it came from (`if let`, `while let`, `for`, and so on), because storage lowering depends on the HIR shape each form has today. | When storage lowering accepts one match shape |
 | Core nodes carry the AST node they came from, as the key into the drop schedule. | Phase 7, when the ownership check runs on the core |
 | `for` over a borrowed collection is `into_iter(bitwise_copy(xs))`, an intrinsic that duplicates a value without making an owner (item 39). | Phase 7 |
-| A call the checker ran at compile time (a `static if` condition calling a `static def`) has no callee record, so the adapter finds the callee by its bare name (`core::function_lookup`) when it builds compile-time code. | Phase 5 |
+| A call the checker ran at compile time (a `static if` condition calling a `static def`) has no callee record, so the adapter finds the callee by its bare name (`core::function_lookup`) when it builds compile-time code. | Phase 5 (done) |
 | The adapter interns function and reference types while building compile-time code during checking, so the elaboration snapshot depends on which path lowered compile-time code. | Phase 12 |
-| The verifier skips rule C8 everywhere (item 65's A4 entry was removed in phase 4). | Phase 5 |
+| The verifier skips rule C8 everywhere (item 65's A4 entry was removed in phase 4). | Phase 5 (done) |
 | The reference pass lowering runs on each function (`make_references_explicit`) still reads `node_types` and `is_copy`, and storage lowering names a type's own `drop` through its declaration. | Phase 4 (done for the reference pass) |
 
 ## Phase 4 results
@@ -373,9 +373,25 @@ These were agreed on 2026-11-15.
 
 ## Phase 5 progress
 
-Items 8, 9, 27 and 35 are closed, each with a corpus program checked with `# expect:` (235 to 237). Phase 5 is not done: the debts below and the entry points remain.
+Phase 5 is done (2026-11-22). Items 8, 9, 27 and 35 are closed, each with a corpus program checked with `# expect:` (235 to 237), and the call entry points are gone.
 
 - **One variant lookup.** `@some`, `@ok` and `@err` patterns parse as ordinary constructor patterns; the `option_pattern` and `result_pattern` AST nodes are gone. Construction and patterns look a variant up in one order: the expected or subject type's variants, then the module's sum types, then the prelude's. A user sum type may name its variants `@ok` or `@none` (item 35). Chapter 10 states the rule.
 - **One free-function lookup.** `find_function_callee` finds the function a bare name or a module path names (module, import, wildcard import, prelude; full path, child module, imported module), and `check_function_call` records it and checks the call, binding bracketed type arguments the same way on every form (item 8). Explicit-generic calls to an imported function now get a callee record, as other imported calls do.
-- **Static calls on a builtin type.** `int64.zero()` resolves through `resolve_type_param_static`, as `T.zero()` does once `T` is solved (item 9). A missing static on a type name, and a `self` method called on a type name, are errors; before, they reached lowering.
+- **Static calls on a builtin type.** `int64.zero()` resolves through `find_static_callee`, as `T.zero()` does once `T` is solved (item 9). A missing static on a type name, and a `self` method called on a type name, are errors; before, they reached lowering.
 - **Run-time calls of a `static def`.** Both call paths fold through `fold_static_call`, so `score(3)` in ordinary code is its value, and a call in a block `static for` that reads the loop binding is folded per iteration (item 27). A call whose arguments are unknown at compile time is an error. Calls inside compile-time expressions (`comptime_expr_depth_`) are left to the evaluator. Chapter 31 states the rule.
+- **Every free-function call has a callee record.** A bare call to a function of the same module now records its callee, as every other form does, so the adapter's name lookup for it (`same_module_callee`) is gone, and so is the lookup for a call the checker ran at compile time. The ownership check then reads such a call's signature instead of assuming every argument reaches the result. That exposed one rule the signature does not state: a call to an `async def` or a `generator def` returns a task or a generator whose frame holds every argument, so its result carries every argument's borrows (`result_borrow_params`).
+- **Instances carry their generic arguments.** The checker records each instance's arguments in template-parameter order (`instance_generic_args`), and the adapter puts them on the callee, so verifier rule C8 holds with no allow-list. Three requests for a method instance (the `into_iter` and `next` a `for` loop calls on a generic type, and a higher-kinded method) did not pass the impl block's parameters, so those instances had no arguments for the block's `T`; they now pass them.
+
+- **One call pipeline.** The 17 call entry points are gone. Finders (`find_function_callee`, `find_static_callee`, `find_method_callee`, `find_bound_callee`, function values) produce a `call_callee`, and `check_call` runs the same stages for every form: signature, explicit arguments, argument checks, generic solving, instance naming. A call that waits for its instances is deferred and replayed by one `defer_call` and one `replay_call`. Free, qualified, static, method, trait-static and bound calls share the `test_call_forms_*` tests and corpus programs 238 to 250. Chapter 63 describes the pipeline. `check_conversion_call` stays outside it, as conversions are a builtin construct, not a call.
+- **Template callee records.** A template's call records carry its template arguments (`resolved_callee::template_args`). A call through a bound records a `trait_method` callee whose signature comes from the trait (`checked_types::trait_method_signatures`), and the ownership check reads the receiver mode from the trait. Index dispatch, `from_array`, `for` loops and `deref` steps in templates carry template arguments too. Verifier rules C2, C6, C9 and C10 check these records. Recording bound calls closed four ownership holes, each with a rejection test.
+- **Category bounds carry no borrow.** A type parameter bounded by a category (`numeric`, `integer`, ...) admits only builtin scalars, so it carries no borrow, and a category refuses a reference argument such as `&int32`. Chapter 14 states the rule.
+- **Templates built.** 331 of 434 templates now build in the core, up from about 180.
+
+Phase 5 leaves these debts.
+
+| Debt | Removed in |
+|---|---|
+| About 100 templates do not build. Most read `operator_dispatches`, are implicit generic templates, or read a value parameter; none of these have a core form yet. | Phase 12 |
+| The adapter derives an `async def`'s task type and finds the `std.fmt` helpers interpolation calls by name. | Phase 12 |
+
+Open items found in this phase: 68 (module-path form), 75 to 80. Item 80 is a soundness hole: a template can spawn a task with a value that is `share` but not `send`, because the carrier check treats a type parameter as carrying nothing and instances do not recheck it.

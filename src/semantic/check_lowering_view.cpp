@@ -661,6 +661,8 @@ auto checker::project_signature(const ast::func_decl &decl) -> void {
                signature.result = lowering_type(signature.result);
              });
   copy_entry(instance_templates_, view.ownership.instance_templates, &decl);
+  copy_entry(instance_generic_args_, view.ownership.instance_generic_args,
+             &decl);
   lowering_view_state_.problem = saved_problem;
 }
 
@@ -1219,6 +1221,7 @@ auto checker::refresh_lowering_view_tables() -> void {
   }
   if (view.ownership.instance_templates.size() != instance_templates_.size()) {
     view.ownership.instance_templates = instance_templates_;
+    view.ownership.instance_generic_args = instance_generic_args_;
   }
   if (lowering_view_state_.derived_type_count == session_.types_.count()) {
     return;

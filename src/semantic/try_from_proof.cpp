@@ -10,7 +10,7 @@ namespace cinder::semantic::detail {
 /// inside a function generic over `n`) — which means no runtime check can be
 /// generated *here*, because the value it would compare against does not
 /// exist until the enclosing template is monomorphized. The instances
-/// `instantiate_generic_function` makes of it are where the check does get
+/// `name_generic_call` makes of it are where the check does get
 /// built, with `n` a real number.
 auto refinement_constants(const type_table &types, const type_entry &entry)
     -> std::optional<std::unordered_map<std::string, int64_t>> {

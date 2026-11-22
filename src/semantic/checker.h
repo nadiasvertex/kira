@@ -111,7 +111,7 @@ struct value_binding {
   type_id type = k_unknown_type;
   /// For a `let` of a `fn` or `task` value: what it carries. See
   /// `checker::carried_by`.
-  carried_values carried;
+  carried_values carried{};
   binding_origin origin = binding_origin::let_binding;
   source_span
       span; ///< Where the binding was introduced, for "declared here" notes.
@@ -125,10 +125,10 @@ struct value_binding {
 /// regardless of whether the callee came from a `func_decl`, a trait method,
 /// or a `fn(...)`-typed value.
 struct fn_param_info {
-  std::string name;
+  std::string name{};
   type_id type = k_unknown_type;
   bool has_default = false;
-  source_span span;
+  source_span span{};
   /// The declaration's default-value expression, when it has one — carried
   /// through to `call_argument_mapping::defaults_by_param` so a call that
   /// omits this argument can lower the default in the caller's place.
@@ -579,7 +579,7 @@ private:
 
     std::vector<synthesized_method> synthesized_trait_defaults_;
 
-    /// Every const-generic instance `instantiate_generic_function` produced
+    /// Every const-generic instance `name_generic_call` produced
     /// (see `const_generic_instance` in types.h). The clones themselves are
     /// owned by `session_.synthesized_decls_`, the same way trait-default
     /// clones are.
@@ -595,8 +595,8 @@ private:
     /// literal `3` — there is no runtime parameter to load it from).
     type_scope const_param_slots_;
 
-    /// While checking a monomorphized copy of a generic *method* (higher-
-    /// kinded trait impls — `instantiate_hk_method`): each type parameter
+    /// While checking a monomorphized copy of a generic *method*
+    /// (`find_or_check_generic_instance`): each type parameter
     /// name bound to the concrete type the call solved for it. The type
     /// analog of `session_.const_param_slots_`, consulted by
     /// `push_type_params`.
@@ -627,7 +627,7 @@ private:
 
     std::unordered_map<std::string, int64_t> const_param_values_;
 
-    /// Nesting depth of `instantiate_generic_function`, bounding a template
+    /// Nesting depth of `name_generic_call`, bounding a template
     /// that instantiates itself at an ever-changing constant (`f[n]` calling
     /// `f[n + 1]`) — which would otherwise never stop.
     size_t instantiation_depth_ = 0;
@@ -784,12 +784,12 @@ private:
     std::string functor_owner_module_;
 
     /// See `checked_types::folded_comptime_calls`'s doc comment. Populated by
-    /// `try_fold_comptime_only_call`, from `instantiate_generic_function`.
+    /// `try_fold_comptime_only_call`, from `name_generic_call`.
     std::unordered_map<const ast::call_expr *, const ast::literal_expr *>
         folded_comptime_calls_;
 
     /// The type parameters each call to a comptime-only generic `static def`
-    /// solved to, recorded by `instantiate_generic_function` (in the caller's
+    /// solved to, recorded by `name_generic_call` (in the caller's
     /// own type parameters when the caller is generic). Compile-time code runs
     /// the template body, so the evaluator binds these (`comptime_call_type_
     /// args`) for `T.name()` and for a method on a `T` value to read.
@@ -917,15 +917,15 @@ private:
   struct capture_barrier {
     size_t scope_floor = 0;
     const ast::lambda_expr *lambda = nullptr;
-    std::optional<std::unordered_map<std::string, ast::capture_mode>> allowed;
+    std::optional<std::unordered_map<std::string, ast::capture_mode>> allowed{};
     /// Listed names the body actually read, filled in as it is checked.
-    std::unordered_set<std::string> used;
+    std::unordered_set<std::string> used{};
     /// Listed names already diagnosed, so the "captured but never used"
     /// warning doesn't pile a second complaint onto a broken entry.
-    std::unordered_set<std::string> invalid;
+    std::unordered_set<std::string> invalid{};
     /// What the closure captures, and whether some capture hides what it
     /// carries (`opaque`). See `carried_by`.
-    std::vector<carried_value> carried;
+    std::vector<carried_value> carried{};
     bool opaque = false;
   };
 
@@ -933,9 +933,9 @@ private:
   /// `check_function_impl` saves this whole value on entry and restores it
   /// on exit.
   struct function_state {
-    std::vector<std::unordered_map<std::string, value_binding>> scopes_;
+    std::vector<std::unordered_map<std::string, value_binding>> scopes_{};
 
-    std::vector<capture_barrier> capture_barriers_;
+    std::vector<capture_barrier> capture_barriers_{};
 
     /// One entry per `async:` or `on(...)` body being checked: where it began
     /// in `scopes_`, and the outer locals it has read so far, which cross to
@@ -949,16 +949,16 @@ private:
       size_t scope_floor = 0;
       std::vector<task_capture_use> captured;
     };
-    std::vector<task_boundary> task_boundaries_;
+    std::vector<task_boundary> task_boundaries_{};
 
-    std::vector<type_scope> type_params_;
+    std::vector<type_scope> type_params_{};
 
     type_id self_type_ = k_unknown_type;
 
     /// Associated-type names in scope for `self.<name>` references, valid
     /// while checking a trait's or impl's own members (see `check_trait_decl`
     /// and `check_impl_decl`).
-    type_scope self_assoc_types_;
+    type_scope self_assoc_types_{};
 
     type_id return_type_ = k_unknown_type;
 
@@ -1010,7 +1010,7 @@ private:
     /// `pattern_binding` for `match`, `if let`, `while let` and `for`.
     /// Empty otherwise, and the bindings are aliases
     /// (`check_owning_pattern`).
-    std::optional<binding_origin> owning_pattern_origin_;
+    std::optional<binding_origin> owning_pattern_origin_{};
     /// Whether the pattern being checked reached its value through a shared
     /// reference somewhere above it, which makes its aliases read-only.
     bool pattern_through_shared_ = false;
@@ -1086,7 +1086,7 @@ private:
 
     type_id existential_underlying_ = k_unknown_type;
 
-    std::unordered_set<std::string> reported_undefined_;
+    std::unordered_set<std::string> reported_undefined_{};
 
     /// Everything known about the values in scope at the point currently being
     /// checked — value-parameter domains, refined parameters' predicates, array
@@ -1094,11 +1094,11 @@ private:
     /// per function by `collect_function_facts`, extended and truncated
     /// lexically by `fact_scope`. This is the left-hand side of every proof the
     /// compiler attempts; see `src/semantic/reason.h`.
-    fact_set facts_;
+    fact_set facts_{};
 
     /// Locals bound to `T.name()`, so `let n = T.name()` followed by
     /// `static if n == "int8"` narrows `T` the same way the direct form does.
-    type_scope type_name_aliases_;
+    type_scope type_name_aliases_{};
 
     /// The template currently being checked, or `nullptr` outside one.
     const ast::func_decl *current_template_ = nullptr;
@@ -1448,7 +1448,7 @@ private:
     /// `impl <hk-trait> for <ctor>` target. Everywhere else a bare generic
     /// name keeps its historical meaning (an instantiation with unknown
     /// arguments), so ordinary code is untouched.
-    std::optional<size_t> expected_ctor_arity;
+    std::optional<size_t> expected_ctor_arity{};
     /// Set alongside `existential_allowed` when resolving a `generator
     /// def`'s own return type. `some iterator[T]` there is pure syntactic
     /// sugar `check_function` substitutes for the concrete `generator[T]`
@@ -1583,9 +1583,9 @@ private:
   /// `share` where it was found rather than only `send`, and the innermost
   /// named type holding it, if any.
   struct concurrency_offense {
-    type_id type;
+    type_id type{};
     bool need_share = false;
-    std::optional<type_id> holder;
+    std::optional<type_id> holder{};
   };
 
   /// The part that keeps values of `id` from crossing to another task
@@ -1615,6 +1615,11 @@ private:
   /// function, or a `let` of one of those. Null when that origin is out of
   /// sight.
   auto carried_by(const ast::expr &expr) -> carried_values;
+  /// Whether a method-syntax `async` call's task borrows its receiver
+  /// through `&` (`self`, a `&T` first parameter) rather than taking it by
+  /// value or through `&mut`; empty when the call has no callee record.
+  auto receiver_is_shared_borrow(const ast::call_expr &call) const
+      -> std::optional<bool>;
   /// The expression `carried_by` last lost sight of, for the diagnostic.
   const ast::expr *hidden_carrier_ = nullptr;
 
@@ -1801,7 +1806,11 @@ private:
   struct explicit_generic_arg {
     const ast::expr *value = nullptr;     ///< Written in expression position.
     const ast::type_expr *type = nullptr; ///< Written in type position.
-    source_span span;                     ///< Span of the argument itself.
+    source_span span{};                     ///< Span of the argument itself.
+    /// `type` already resolved where the call was written. A call through
+    /// a bound solves under the bound's `self` (`find_bound_callee`), and a
+    /// `self` in its brackets is still the caller's own.
+    std::optional<type_id> resolved{};
   };
 
   /// A call's explicit compile-time arguments, in written order. Empty when
@@ -2055,24 +2064,280 @@ private:
                                const generic_call_context *generic = nullptr)
       -> void;
 
-  /// What `check_call_against_decl` needs to know about a method call
-  /// (`p.tag(3)`) beyond the declaration: the method's table entry, the
-  /// impl target's display name, and the receiver. Absent for a free
-  /// function.
-  struct method_call_site {
-    const method_entry *method = nullptr;
-    std::string_view target_type_name;
-    const ast::expr *receiver = nullptr;
-    type_id receiver_type = k_unknown_type;
+  // ------------------------------------------------------------------
+  //  One call pipeline
+  //
+  //  A callee finder fills a `call_callee`; `check_call` runs the stages
+  //  below over it. Slice 1 of phase 5 moves the free-function forms (bare,
+  //  imported, module path, `f[A](...)`) and UFCS onto it; slice 2 the
+  //  static members (`find_static_callee`).
+  // ------------------------------------------------------------------
+
+  /// How the receiver of a method-syntax call reaches the callee.
+  enum class receiver_use : std::uint8_t {
+    none,        ///< No receiver: free function, static member, function value.
+    self_param,  ///< `x.m(...)` on a `self` method; `self` is not in `params`.
+    first_param, ///< UFCS, or a receiver-style method: the receiver fills the
+                 ///< first declared parameter, which `params` leaves out.
   };
 
-  auto check_call_against_decl(const ast::call_expr &call,
-                               const ast::func_decl &decl,
-                               const module_members *owner,
-                               file_id_type decl_file, bool skip_self,
-                               const explicit_generic_args &explicit_args = {},
-                               const method_call_site *method_site = nullptr)
+  enum class callee_form : std::uint8_t {
+    free_function, ///< A module-level `def`, by any path, or through UFCS.
+    member,        ///< A method or static of an impl, `extend`, or trait default.
+    bound_member,  ///< A trait method reached through a bound on a type parameter.
+    fn_value,      ///< A closure, `fn`-typed value, or generic lambda copy.
+  };
+
+  /// What a callee finder found. The pipeline looks nothing up again.
+  struct call_callee {
+    callee_form form = callee_form::free_function;
+    const ast::func_decl *decl = nullptr;   ///< Null for `fn_value`.
+    const module_members *owner = nullptr;
+    file_id_type decl_file{};               ///< The file `decl` was written in.
+    const method_entry *method = nullptr;   ///< `member`: block parameters,
+                                            ///< target pattern, fixed bindings,
+                                            ///< trait name, file.
+    const ast::trait_decl *trait = nullptr; ///< `bound_member`.
+    std::vector<type_id> trait_args{};        ///< `bound_member`: the fact's arguments.
+    receiver_use receiver = receiver_use::none;
+    const ast::expr *receiver_expr = nullptr;
+    /// The receiver's type after `deref` steps, or the type a static is called
+    /// on (`list[int32]`, a solved `C`, `int64`). Unknown for a bare-named
+    /// generic target (`box.make(40)`), whose block parameters solve from the
+    /// arguments.
+    type_id self_type = k_unknown_type;
+    std::string target_name{};                ///< For records and instance names.
+    explicit_generic_args explicit_args{};    ///< Brackets, from any spelling.
+    const ast::expr *callee_node = nullptr; ///< Gets the callee's `fn` type.
+    std::string display_name{};               ///< `f`, `box.make`, `T.zero`.
+    type_id fn_type = k_unknown_type;       ///< `fn_value` only.
+    bool opaque_result = false;             ///< Existential receiver: a result
+                                            ///< equal to the hidden type is
+                                            ///< reported as the existential.
+  };
+
+  /// The callee's signature as this call sees it, before solving.
+  struct call_signature {
+    std::vector<fn_param_info> params;           ///< Written arguments fill these.
+    std::optional<fn_param_info> receiver_param; ///< `first_param` only.
+    std::vector<fn_param_info> all_params;       ///< Declaration order, for preconditions.
+    /// Block parameters then the method's own, the order of
+    /// `instance_generic_args` and of the core callee's `generic_args`.
+    std::vector<const ast::type_param *> generic_params;
+    /// Block parameters from `self_type`; a `bound_member`'s trait
+    /// parameters from its fact (its `self` is read as the bound's type
+    /// parameter, so it needs no slot); the UFCS receiver's bindings.
+    param_subst seed;
+    /// A receiver-style member's own parameters as its receiver answers
+    /// them (`bind`'s `A` from an `option[int32]`). Kept out of `seed`,
+    /// which naming reads as the block's solution.
+    param_subst receiver_bindings;
+    bool generic = false;
+  };
+
+  /// Stage 1. Reads params under `decl_file`, with the block's parameters in
+  /// scope; for a `first_param` receiver, splits off the first parameter and
+  /// seeds the callee's parameters from the receiver's type.
+  auto callee_signature(const call_callee &callee) -> call_signature;
+
+  /// Stage 1 for a `bound_member`: the trait method's parameters with `self`
+  /// read as the bound's type parameter, and the trait's parameters seeded
+  /// with the fact's arguments.
+  auto bound_callee_signature(const call_callee &callee) -> call_signature;
+
+  /// Runs `body` with `self` naming a `bound_member`'s type parameter, as
+  /// the trait's signatures are written, and with `trait_file` in the
+  /// trait's module and file. Solving and bound checks stay in the caller's
+  /// file, where their diagnostics belong.
+  template <typename Body>
+  auto in_bound_scope(const call_callee &callee, bool trait_file, Body body)
+      -> decltype(body());
+
+  /// Stage 2. Brackets: rejected with one message when the callee has no
+  /// compile-time parameters; otherwise kept for solving.
+  auto bind_explicit_args(const ast::call_expr &call, const call_callee &callee,
+                          const call_signature &sig) -> bool;
+
+  /// Stage 3. `check_call_args_against` with a `generic_call_context`
+  /// whenever `sig.generic`, and `check_call_preconditions`. Returns the
+  /// value bindings the arguments determined.
+  auto check_call_arguments(const ast::call_expr &call,
+                            const call_callee &callee, call_signature &sig)
+      -> value_bindings;
+
+  /// Stage 3 for a `fn_value`: positional arguments only, against the
+  /// parameter types the `fn` type lists.
+  auto check_fn_value_arguments(const ast::call_expr &call,
+                                const call_callee &callee,
+                                const call_signature &sig) -> value_bindings;
+
+  /// Stage 4. Solves the callee's compile-time parameters: a free function's
+  /// through `solve_generic_call`; a member's block parameters from
+  /// `self_type` (already in `sig.seed`) or the arguments, which are added to
+  /// `sig.seed`, then its own parameters, the arguments against the solution
+  /// and the bounds. Empty when `!sig.generic` or when solving failed (and
+  /// said why).
+  auto solve_call_callee(const ast::call_expr &call, const call_callee &callee,
+                         call_signature &sig, const value_bindings &solved)
+      -> std::optional<generic_solution>;
+
+  /// Stage 4 for a `member` or `bound_member`: the block's parameters (none
+  /// for a bound member, whose trait's are in the seed), then the method's
+  /// own, then the arguments against the solution and the bounds.
+  auto solve_member_callee(const ast::call_expr &call,
+                           const call_callee &callee, call_signature &sig,
+                           const value_bindings &solved)
+      -> std::optional<generic_solution>;
+
+  /// Reports a self method's block parameter that the receiver's type does
+  /// not mention (`extend[T, U] wrap[T]`): no receiver can say what it is.
+  auto report_block_param_not_on_receiver(source_span span,
+                                          const ast::type_param &type_param,
+                                          std::string_view method,
+                                          bool trait_method) -> void;
+
+  /// Stage 5 for a `bound_member`: the result under the solution, and the
+  /// callee left to each instance, which names the impl's method.
+  auto name_bound_call(const ast::call_expr &call, const call_callee &callee,
+                       const call_signature &sig,
+                       const std::optional<generic_solution> &solution)
       -> type_id;
+  /// The template's record of a call through a bound
+  /// (`resolved_callee::bound`): the trait method, its own arguments, and
+  /// the bound's `Self` and trait arguments. `nullopt` when the trait method
+  /// has no `trait_method_signatures` entry, or an argument is unsettled;
+  /// the call then has no record and the template does not build as core.
+  auto bound_call_record(const call_callee &callee,
+                         const std::optional<generic_solution> &solution)
+      -> std::optional<resolved_callee>;
+
+  /// Stage 5. Records the callee, names its instance, and returns the call's
+  /// type, reading the result type under `decl_file` after the arguments.
+  auto name_call(const ast::call_expr &call, const call_callee &callee,
+                 const call_signature &sig,
+                 const std::optional<generic_solution> &solution) -> type_id;
+
+  /// The pipeline, for every callee form: free functions, members (static,
+  /// self and receiver-style), members through a bound, and function values.
+  auto check_call(const ast::call_expr &call, const call_callee &callee)
+      -> type_id;
+
+  /// Whether a member call names an instance of its block: a generic block,
+  /// or a non-generic one over an applied target (`impl_needs_instance`).
+  auto member_needs_block_instance(const call_callee &callee) -> bool;
+
+  /// The type a member call's block is instantiated at: `self_type`, or the
+  /// block's target pattern under the solved block parameters.
+  auto member_target(const call_callee &callee, const param_subst &block)
+      -> type_id;
+
+  /// Stage 5 for a solved member call outside a template: names the
+  /// instance now, or once the solution's leaves settle.
+  auto name_member_solution(const ast::call_expr &call,
+                            const call_callee &callee, const param_subst &block,
+                            const generic_solution &solution,
+                            bool check_bounds) -> void;
+
+  /// Names one concrete member instance and records it as the call's
+  /// callee; null when its bounds fail or it cannot be built (reported).
+  auto name_member_instance(const ast::call_expr &call,
+                            const call_callee &callee, type_id target,
+                            const param_subst &block,
+                            const generic_solution &solution,
+                            bool check_bounds) -> const ast::func_decl *;
+
+  /// The solution a member instance is named and built with: the block's
+  /// value parameters carried in, and for a member generic only through its
+  /// block, the suffix `$mangle(target)` plus `discriminator`.
+  auto member_instance_solution(const call_callee &callee, type_id target,
+                                const param_subst &block,
+                                const generic_solution &solution,
+                                std::string_view discriminator = {})
+      -> generic_solution;
+
+  /// The naming stage's instance: `display(target)::m$own` for a member
+  /// with its own parameters, `entry(target).name::m$mangle(target)` for
+  /// one generic only through its block. Checks nothing and records
+  /// nothing; null when the instance cannot be built (reported).
+  auto member_instance(const ast::node &site, const call_callee &callee,
+                       type_id target, const param_subst &block,
+                       const generic_solution &named)
+      -> const ast::func_decl *;
+
+  /// A call in a template written in its parameters, named by each
+  /// instance (`replay_call`). `solution` is the template's solution of a
+  /// free function's own parameters; a member is solved again.
+  /// Inside a template, the generic arguments of a call to a template
+  /// callee (`resolved_callee::template_args`): the block's parameters from
+  /// `block`, then the callee's own from `solution`, in the caller's
+  /// parameters. `nullopt` when any of them is unsettled, and for an
+  /// implicit-generic callee, which has no parameter to receive one.
+  auto template_call_args(const call_callee &callee, const param_subst &block,
+                          const generic_solution &solution)
+      -> std::optional<std::vector<type_id>>;
+
+  /// Inside a template, `template_call_args` for a dispatch record's callee:
+  /// `method` of a generic impl reached on `target` (an index, a `for` loop,
+  /// a list literal, a `deref` step), whose block arguments come from
+  /// matching its target pattern against `target`, and whose own come from
+  /// `own`. Empty outside a template, for a target that mentions no
+  /// template parameter, and when an argument has not settled.
+  auto dispatch_template_args(const method_entry &method, type_id target,
+                              const generic_solution &own)
+      -> std::vector<type_id>;
+
+  /// After an instance replays a template's call that recorded
+  /// `template_args`: queues the arguments the instance's call must name its
+  /// callee's instance at (the template's, under the instance's answers) for
+  /// `check_replayed_template_args`.
+  auto check_replayed_args(const ast::call_expr &call,
+                           const ast::call_expr &clone, instance_subst &subst)
+      -> void;
+
+  /// After a flush, once the instances it made are recorded: each queued
+  /// replay that named an instance of the template's callee named it at the
+  /// expected arguments (`instance_generic_args`). A mismatch is a checker
+  /// bug, asserted. Consumes the queue; runs at the end of `run_impl` and
+  /// again after `take_checked_types`' flush, which replays more calls.
+  auto check_replayed_template_args() -> void;
+
+  struct replayed_template_call {
+    const ast::call_expr *clone = nullptr;
+    const ast::func_decl *callee_template = nullptr;
+    std::vector<type_id> expected;
+  };
+  std::vector<replayed_template_call> replayed_template_calls_;
+
+  auto defer_call(const ast::call_expr &call, const call_callee &callee,
+                  std::optional<generic_solution> solution) -> void;
+
+  /// The instance half of every deferred call: rebuilds the callee on the
+  /// instance's types (a method is looked up again on the receiver) and
+  /// runs stages 1, 4 and 5 from the arguments' recorded types, checking
+  /// nothing again.
+  auto replay_call(const ast::call_expr &clone, const call_callee &tmpl,
+                   const std::optional<generic_solution> &solution,
+                   instance_subst &subst) -> void;
+
+  /// `tmpl` on the instance's clone and types; `nullopt` when the instance
+  /// leaves nothing to name (the receiver is still generic, or has no such
+  /// method).
+  auto instance_callee(const call_callee &tmpl, instance_subst &subst)
+      -> std::optional<call_callee>;
+
+  /// Resolves each bracket in a type position where the call is written,
+  /// so a replay reads the type rather than the expression: an instance
+  /// has no scope to resolve a template's `T` in.
+  auto resolve_bracket_types(call_callee &callee) -> void;
+
+  /// The `call_callee` for `method` called with method syntax on a receiver
+  /// of type `self_type`: a self method takes the receiver as `self`; any
+  /// other member found this way is called with the written arguments
+  /// alone.
+  auto method_call_callee(const method_entry &method,
+                          const ast::field_expr &field, type_id self_type,
+                          std::string target_name,
+                          explicit_generic_args explicit_args) -> call_callee;
 
   // ==========================================================================
   //  check_generic_calls.cpp
@@ -2435,7 +2700,7 @@ private:
     file_id_type decl_file = 0;
     /// The types this call checked its arguments against; an unannotated
     /// parameter's entry is this call's private copy of its leaf.
-    std::vector<type_id> call_params;
+    std::vector<type_id> call_params{};
     file_id_type file = 0;
     const module_members *module = nullptr;
     /// The receiver of a UFCS call (`x.probe()`) or of a method call
@@ -2445,8 +2710,8 @@ private:
     /// Set when the callee is a method of a non-generic `impl`/`extend` block
     /// rather than a free function: its instance is named for the block's
     /// target and checked with `self` bound to `self_type`.
-    std::optional<method_entry> method;
-    std::string target_type_name;
+    std::optional<method_entry> method{};
+    std::string target_type_name{};
     type_id self_type = k_unknown_type;
     /// Set when the method's block is itself generic (`extend[T] box[T]`):
     /// the instance is named for the receiver too, and the block's
@@ -2501,8 +2766,14 @@ private:
   /// See `checked_types::instance_templates`.
   std::unordered_map<const ast::func_decl *, const ast::func_decl *>
       instance_templates_;
+  /// See `ownership_results::instance_generic_args`.
+  std::unordered_map<const ast::func_decl *, std::vector<type_id>>
+      instance_generic_args_;
   /// See `ownership_results::consuming_receivers`.
   std::unordered_set<const ast::func_decl *> consuming_receivers_;
+  /// See `checked_types::trait_method_signatures`.
+  std::unordered_map<const ast::func_decl *, trait_method_signature>
+      trait_method_signatures_;
 
   /// A body's inferred return type that was still open when the body
   /// ended; the implicit generic's result type if it is open on the
@@ -2553,10 +2824,6 @@ private:
   std::vector<pending_open_result> pending_open_results_;
 
   auto finish_open_results(bool last = false) -> void;
-
-  auto signature_param_type(const ast::func_decl &decl,
-                            const module_members *owner, size_t index)
-      -> type_id;
 
   auto flush_deferred() -> void;
 
@@ -2635,6 +2902,9 @@ private:
   auto drop_all_dead_records(const instance_subst &subst) -> void;
 
   auto instance_subst_for(const pending_instance &item) -> instance_subst;
+  static auto instance_answer(const pending_instance &item,
+                              const std::string &name)
+      -> std::optional<type_id>;
 
   auto substitute_instance(pending_instance &item) -> void;
 
@@ -2672,6 +2942,9 @@ private:
   auto preliminary_type_bindings(const ast::call_expr &call,
                                  const std::vector<fn_param_info> &params,
                                  const generic_call_context &generic)
+      -> param_subst;
+
+  auto explicit_type_bindings(const generic_call_context &generic)
       -> param_subst;
 
   [[nodiscard]] static auto
@@ -2755,24 +3028,18 @@ private:
                          const generic_solution &solution,
                          const type_scope *fixed = nullptr) -> bool;
 
-  auto instantiate_generic_function(
-      const ast::call_expr &call, const ast::func_decl &decl,
-      const module_members *owner, file_id_type decl_file,
-      const value_bindings &solved, const std::vector<fn_param_info> &params,
-      const explicit_generic_args &explicit_args,
-      const ast::expr *ufcs_receiver = nullptr) -> std::optional<type_id>;
+  /// Stage 5's generic half for a free function: defers a template's call to
+  /// its instances, waits for open leaves, or names the concrete instance.
+  /// `nullopt` leaves the call to be recorded against the template.
+  auto name_generic_call(const ast::call_expr &call, const call_callee &callee,
+                         const generic_solution &solution)
+      -> std::optional<type_id>;
 
   auto solution_is_open(const generic_solution &solution) -> bool;
 
   auto when_solution_settles(
       const ast::func_decl &decl, const generic_solution &solution,
       std::function<void(const generic_solution &)> name_instance) -> void;
-
-  auto defer_generic_call(const ast::call_expr &call,
-                          const ast::func_decl &decl,
-                          const module_members *owner, file_id_type decl_file,
-                          const generic_solution &solution,
-                          const ast::expr *ufcs_receiver) -> void;
 
   auto substitute_solution(const ast::func_decl &decl,
                            const generic_solution &solution,
@@ -2813,16 +3080,6 @@ private:
   // ==========================================================================
 
   auto mangle_type_for_instance(type_id id) -> std::string;
-
-  auto instantiate_hk_method(const ast::call_expr &call,
-                             const method_entry &method,
-                             std::string_view target_type_name,
-                             param_subst &bindings,
-                             const resolved_callee &callee,
-                             const explicit_generic_args &explicit_args = {},
-                             const value_bindings &solved = {},
-                             type_id self_type = k_unknown_type,
-                             const type_scope *extra_fixed = nullptr) -> bool;
 
   auto check_call_preconditions(const ast::call_expr &call,
                                 const ast::func_decl &decl,
@@ -3246,6 +3503,11 @@ private:
 
   auto mentions_unknown(type_id id) -> bool;
 
+  /// Whether `id` holds no `unknown`, error, or inference variable anywhere.
+  /// Unlike `mentions_unknown`, an applied type parameter (`F[A]`) and a
+  /// type parameter are settled: they are the caller's own terms.
+  auto is_settled_type(type_id id) -> bool;
+
   auto substitute_solved(type_id id, const param_subst &bindings) -> type_id;
 
   auto type_has_trait(const type_entry &instance, std::string_view trait_name)
@@ -3264,10 +3526,6 @@ private:
   // ==========================================================================
   //  check_calls.cpp
   // ==========================================================================
-
-  auto check_call_against_fn_type(const ast::call_expr &call,
-                                  const type_entry &fn_entry,
-                                  std::string_view callee_name) -> type_id;
 
   auto builtin_method_result(const type_entry &object, std::string_view name)
       -> type_id;
@@ -3293,17 +3551,6 @@ private:
                                    std::string_view discriminator = {})
       -> const ast::func_decl *;
 
-  auto record_instance_method_callee(const ast::call_expr &call,
-                                     const method_entry &method,
-                                     std::string_view target_type_name,
-                                     const ast::expr &receiver) -> void;
-
-  auto check_generic_instance_method_call(
-      const ast::call_expr &call, const method_entry &method,
-      std::string_view target_type_name, const ast::expr &receiver,
-      type_id receiver_type, const explicit_generic_args &explicit_args = {})
-      -> std::optional<type_id>;
-
   auto impl_needs_instance(const method_entry &method,
                            const type_entry &receiver) -> bool;
 
@@ -3314,54 +3561,16 @@ private:
                               const param_subst &bindings,
                               generic_solution &solution) -> void;
 
-  auto defer_impl_method_call(const ast::call_expr &call, type_id receiver_type)
-      -> void;
-
-  auto method_field_of(const ast::call_expr &call,
-                       explicit_generic_args &explicit_args)
-      -> const ast::field_expr *;
-
-  auto template_impl_method_call(const ast::call_expr &call,
-                                 const method_entry &method,
-                                 const type_entry &receiver_entry,
-                                 const ast::expr &receiver,
-                                 type_id receiver_type)
-      -> std::optional<type_id>;
-
-  auto check_impl_generic_method_call(const ast::call_expr &call,
-                                      const method_entry &method,
-                                      const type_entry &receiver_entry,
-                                      const ast::expr &receiver,
-                                      type_id receiver_type)
-      -> std::optional<type_id>;
-
-  auto finish_impl_generic_method_call(
-      const ast::call_expr &call, const method_entry &method,
-      std::string_view receiver_name, const ast::expr &receiver,
-      type_id receiver_type, const param_subst &bindings,
-      const type_scope &scoped_params, const generic_solution &solution)
-      -> std::optional<type_id>;
-
-  auto check_impl_generic_static_call(const ast::call_expr &call,
-                                      const method_entry &method,
-                                      type_id target, param_subst &bindings)
-      -> const ast::func_decl *;
-
   auto receiver_fills_first_param(const method_entry &method,
                                   const type_entry &instance) -> bool;
-
-  auto check_receiver_call(const ast::call_expr &call,
-                           const method_entry &method,
-                           std::string_view target_type_name,
-                           const ast::expr &receiver, type_id receiver_type,
-                           const explicit_generic_args &explicit_args = {})
-      -> type_id;
 
   auto method_explicit_generic_args(const ast::field_expr &field)
       -> explicit_generic_args;
 
+  /// Rejects brackets (`explicit_args`, written at `span`) on a callee
+  /// `decl` that has no compile-time parameters to fill.
   auto check_method_accepts_generic_args(
-      const ast::field_expr &field, const ast::func_decl &decl,
+      source_span span, const ast::func_decl &decl,
       const explicit_generic_args &explicit_args) -> bool;
 
   // ==========================================================================
@@ -3453,21 +3662,37 @@ private:
   auto resolve_applied_type_receiver(const ast::expr &object)
       -> std::optional<type_id>;
 
-  auto resolve_type_param_static(const ast::call_expr &call,
-                                 const ast::field_expr &field, type_id target,
-                                 const std::string &fn_name)
-      -> std::optional<type_id>;
+  /// What `find_static_callee` found: nothing (not a static form), a callee
+  /// for `check_call`, or the call's type when the finder answered the call
+  /// itself (a reported missing static, or a static through a bound).
+  using static_callee = std::variant<std::monostate, call_callee, type_id>;
+
+  /// What `find_method_callee` found: nothing (a builtin method the
+  /// compiler answers itself), a callee for `check_call`, or the call's
+  /// type when the finder answered the call (a reported missing method, a
+  /// refused `x.drop()`, a derived method, a `fn` field, UFCS, or a
+  /// receiver-style method).
+  using method_callee = std::variant<std::monostate, call_callee, type_id>;
+
+  /// The method a `receiver.m(...)` call names on a struct, sum, opaque or
+  /// existential receiver, or through a builtin's impl or `extend` block.
+  /// `object` is the receiver's type after `deref` steps; `handle` the type
+  /// before them.
+  auto find_method_callee(const ast::call_expr &call,
+                          const ast::field_expr &field, type_id object,
+                          type_id handle, bool via_deref) -> method_callee;
+
+  /// The static member a `Type.f(...)` call names: on an applied type
+  /// (`wrap[int32].make`), a prelude constructor (`option.pure`), a type
+  /// parameter (`T.zero()`), a builtin scalar (`int64.zero()`) or a bare type
+  /// name, generic or not (`box.make(40)`, `point.make`).
+  auto find_static_callee(const ast::call_expr &call,
+                          const ast::field_expr &field) -> static_callee;
 
   auto report_missing_type_param_static(const ast::field_expr &field,
                                         const std::string &param_name,
                                         type_id target,
                                         const std::string &fn_name) -> void;
-
-  auto check_bare_generic_static_call(const ast::call_expr &call,
-                                      const ast::field_expr &field,
-                                      const method_entry &method,
-                                      const std::string &type_name)
-      -> std::optional<type_id>;
 
   auto infer_qualified_call(const ast::call_expr &call,
                             const ast::field_expr &field)
@@ -3484,14 +3709,11 @@ private:
   /// ...), a builtin conversion call, a bare variant spelling, or an
   /// undefined-name error.
   /// A free function a callee names, together with where it came from: the
-  /// module that owns it and the file it was declared in. `record` is false
-  /// only for a bare call to a function of the current module, which has no
-  /// callee record yet (a phase 5 debt in spec/unified-checker-plan.md).
+  /// module that owns it and the file it was declared in.
   struct callable_lookup {
     const ast::func_decl *decl = nullptr;
     const module_members *owner = nullptr;
     file_id_type file_id{};
-    bool record = true;
   };
 
   /// The free function a bare name calls: one of the current module's, then
@@ -3514,9 +3736,10 @@ private:
   auto report_unfoldable_static_call(const ast::call_expr &call,
                                      const ast::func_decl &decl) -> void;
 
-  /// Reports `T.name(...)` where the type `type_name` has no static function
-  /// `name`, saying so differently when `name` is a method taking `self`.
-  auto report_missing_type_static(const ast::field_expr &field,
+  /// Reports `T.name(...)` where `type`, spelled `type_name`, has no static
+  /// function `name`, saying so differently when `name` is a method taking
+  /// `self`.
+  auto report_missing_type_static(const ast::field_expr &field, type_id type,
                                   const std::string &type_name) -> void;
 
   /// The module path `object` spells when it is the left side of a
@@ -3562,10 +3785,6 @@ private:
       -> std::optional<type_id>;
 
   auto infer_slice_from_raw_parts_call(const ast::call_expr &call)
-      -> std::optional<type_id>;
-
-  auto infer_comptime_generic_call(const ast::call_expr &call,
-                                   const ast::index_expr &index)
       -> std::optional<type_id>;
 
   auto infer_implements_call(const ast::call_expr &call)
@@ -4107,6 +4326,11 @@ private:
 
   auto instantiate_from_array_for(const ast::array_expr &array, type_id target,
                                   uint64_t length) -> void;
+  /// In a template, records the arguments of a list literal's call to its
+  /// target's `from_array` template (`template_args`: the target's block
+  /// arguments, then the length).
+  auto record_template_from_array(const ast::array_expr &array,
+                                  type_id target, uint64_t length) -> void;
 
   auto resolve_array_literal_conversion(const ast::array_expr &array,
                                         type_id &target)
@@ -4284,30 +4508,18 @@ private:
   //  check_bounds.cpp
   // ==========================================================================
 
-  auto check_bound_method_call(const ast::call_expr &call,
-                               const ast::field_expr &field, type_id receiver,
-                               const explicit_generic_args &explicit_args,
-                               bool static_call = false) -> type_id;
-
-  auto find_method_on(type_id target, std::string_view name)
-      -> const method_entry *;
+  /// The trait method a call through a bound on the type parameter
+  /// `receiver` names: `x.cmp(y)` with `x: T`, or `T.zero()` when
+  /// `static_call`. Empty when no bound or more than one provides it, which
+  /// is reported here, with the arguments typed loosely.
+  auto find_bound_callee(const ast::call_expr &call,
+                         const ast::field_expr &field, type_id receiver,
+                         bool static_call) -> std::optional<call_callee>;
 
   auto
   solve_values_from_argument_types(const ast::call_expr &call,
                                    const std::vector<fn_param_info> &params,
                                    value_bindings &solved) -> void;
-
-  auto replay_open_method_call(const ast::call_expr &call,
-                               const method_entry &method,
-                               std::string_view receiver_name,
-                               const ast::expr &receiver, type_id target)
-      -> void;
-
-  auto replay_method_call(const ast::call_expr &call,
-                          const ast::field_expr &field, type_id target,
-                          bool static_call,
-                          const explicit_generic_args &explicit_args = {})
-      -> void;
 
   auto report_unbound_method(const ast::field_expr &field,
                              const std::string &receiver_name,
@@ -4362,6 +4574,22 @@ private:
       -> void;
 
   auto check_trait_decl(const ast::trait_decl &decl) -> void;
+  /// Records `method`'s signature in the trait's own terms
+  /// (`trait_method_signatures_`), unless a parameter or the result does not
+  /// settle there: an associated type (`self.item`) reads as unknown with
+  /// the trait's associated types out of scope, and leaves no entry. Runs
+  /// inside `check_trait_decl`, with `self` and the trait's parameters in
+  /// scope.
+  auto record_trait_method_signature(const ast::trait_decl &trait,
+                                     const ast::func_decl &method) -> void;
+  /// `record_trait_method_signature` for a call through a bound reached
+  /// before the trait's own module is checked: sets up the scope
+  /// `check_trait_decl` would (the trait's module and file, `self`, the
+  /// trait's parameters) around it.
+  auto record_trait_method_signature_early(const ast::trait_decl &trait,
+                                           const ast::func_decl &method,
+                                           const module_members *owner,
+                                           file_id_type file) -> void;
 
   auto check_concept_decl(const ast::concept_decl &decl) -> void;
 
