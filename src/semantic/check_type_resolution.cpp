@@ -110,6 +110,19 @@ auto checker::value_arg_name(const ast::node &node)
   return std::nullopt;
 }
 
+namespace {
+
+/// Whether `node` is the literal `true` or `false`.
+auto is_bool_literal(const ast::node &node) -> bool {
+  if (node.kind != ast::node_kind::literal_expr) {
+    return false;
+  }
+  const auto kind = ast::cast<const ast::literal_expr>(node).lit_kind;
+  return kind == token_kind::kw_true || kind == token_kind::kw_false;
+}
+
+} // namespace
+
 /// Resolves one argument written for a declared *value* parameter
 /// (`n: usize`, `S: conn_state`). A sum-typed parameter takes a variant
 /// name; an integer-typed one takes an expression in the linear fragment.
@@ -156,11 +169,63 @@ auto checker::resolve_value_arg(const ast::node &node,
     return k_error_type;
   }
 
+  if (session_.types_.is_boolean(declared)) {
+    return resolve_bool_value_arg(node, param, ctx, span);
+  }
+
   const auto poly = value_poly(node, ctx);
   if (!poly.has_value()) {
+    if (is_bool_literal(node) && session_.types_.is_integer(declared)) {
+      if (!ctx.quiet) {
+        auto diag = diagnostic(
+            diagnostic_level::error,
+            std::format("the `{}` parameter takes a `{}`, not a `bool`",
+                        param.name, session_.types_.display(declared)),
+            file_.file_id_);
+        diag.with_label(span, "this is a `bool`");
+        emit_diag(diag);
+        mark_error();
+      }
+      return k_error_type;
+    }
     return k_unknown_type;
   }
   return session_.types_.symbolic_value(declared, *poly);
+}
+
+/// A `bool` value argument is `true`, `false`, or the name of a value in
+/// scope (a `bool` value parameter). It is interned as the closed value 1 or
+/// 0, so `conn[true]` and `conn[false]` are two types and compare by the
+/// same value rule as a `usize` index. Arithmetic has no meaning here, so
+/// anything else is an error rather than an unknown slot that would match
+/// every index.
+auto checker::resolve_bool_value_arg(const ast::node &node,
+                                     const ast::type_param &param,
+                                     const resolve_ctx &ctx, source_span span)
+    -> type_id {
+  const auto bool_type = session_.types_.bool_type();
+  if (is_bool_literal(node)) {
+    const auto &literal = ast::cast<const ast::literal_expr>(node);
+    return session_.types_.const_value(
+        bool_type, literal.lit_kind == token_kind::kw_true ? 1 : 0);
+  }
+  if (value_arg_name(node).has_value()) {
+    if (const auto poly = value_poly(node, ctx)) {
+      return session_.types_.symbolic_value(bool_type, *poly);
+    }
+  }
+  if (!ctx.quiet) {
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("the `{}` parameter takes a `bool`, written `true` or "
+                    "`false`",
+                    param.name),
+        file_.file_id_);
+    diag.with_label(span, "not `true`, `false` or a `bool` parameter");
+    emit_diag(diag);
+    mark_error();
+  }
+  return k_error_type;
 }
 
 /// A copy of `ctx` that reports nothing — used when resolving a type purely

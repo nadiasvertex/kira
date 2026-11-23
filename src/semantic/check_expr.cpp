@@ -945,7 +945,9 @@ auto checker::resolve_loop_iterable(const ast::expr &iterable_expr,
   const auto iterable = demand_shape(infer_expr(iterable_expr, k_unknown_type));
   if (!mentions_type_var(iterable)) {
     defer_loop_route(iterable_expr, site, iterable);
-    return resolve_loop_route(iterable_expr, iterable, &site, out);
+    const auto element = resolve_loop_route(iterable_expr, iterable, &site, out);
+    require_copied_elements(iterable_expr, iterable, out);
+    return element;
   }
   const auto element =
       resolve_loop_route(iterable_expr, iterable, nullptr, out);
@@ -957,11 +959,41 @@ auto checker::resolve_loop_iterable(const ast::expr &iterable_expr,
           auto routed = iterator_loop_dispatch{};
           (void)resolve_loop_route(iterable_expr, settled, &site, routed);
           if (routed.decl != nullptr) {
+            require_copied_elements(iterable_expr, settled, routed);
             out = std::move(routed);
           }
         });
   }
   return element;
+}
+
+/// A loop over a reference to a collection copies each element out
+/// (`iterator_loop_dispatch::copy_elements`), so the elements must be
+/// `copy`: a loop by value over what a reference only borrows would move
+/// every element out of it.
+auto checker::require_copied_elements(const ast::expr &iterable_expr,
+                                      type_id iterable,
+                                      const iterator_loop_dispatch &route)
+    -> void {
+  if (!route.copy_elements || session_.types_.is_unknown(route.element_type) ||
+      route.element_type == k_error_type || value_is_copy(route.element_type)) {
+    return;
+  }
+  const auto *named = ast::as<const ast::ident_expr>(&iterable_expr);
+  const auto spelled = named != nullptr ? std::format("`{}`", named->name)
+                                        : std::string("this collection");
+  error_with_help(
+      iterable_expr.span,
+      std::format("cannot iterate over {} by value", spelled),
+      std::format("{} is a `{}`: it only borrows the collection, and a loop "
+                  "over it by value would move every element out",
+                  spelled, session_.types_.display(iterable)),
+      named != nullptr
+          ? std::format("iterate over borrowed elements instead with "
+                        "`for x in {}.iter()`",
+                        named->name)
+          : std::string("iterate over borrowed elements instead with "
+                        "`.iter()`"));
 }
 
 /// A template's loop over something written in its parameters, routed by
@@ -1032,8 +1064,26 @@ auto checker::resolve_loop_route(const ast::expr &iterable_expr,
     element = borrowed->element_type;
     out = std::move(*borrowed);
   } else if (auto into = try_resolve_into_iterator(iterable, site)) {
-    element = into->element_type;
-    out = std::move(*into);
+    // A reference to a collection: `into_iter` would consume what the
+    // reference only borrows, so the loop takes the borrowing `iter` and
+    // copies each element out (todo 39).
+    auto shared =
+        !session_.types_.is_unknown(iterable) &&
+                session_.types_.entry(iterable).kind == type_kind::ref_kind
+            ? try_resolve_iter_borrow(strip_refs(iterable), false, site)
+            : std::nullopt;
+    const auto yielded = shared.has_value() ? shared->element_type
+                                            : k_unknown_type;
+    if (shared.has_value() && !session_.types_.is_unknown(yielded) &&
+        session_.types_.entry(yielded).kind == type_kind::ref_kind) {
+      element = session_.types_.entry(yielded).result;
+      shared->element_type = element;
+      shared->copy_elements = true;
+      out = std::move(*shared);
+    } else {
+      element = into->element_type;
+      out = std::move(*into);
+    }
   } else if (auto iter = try_resolve_iterator(iterable, site)) {
     out = std::move(*iter);
   }

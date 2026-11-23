@@ -1718,30 +1718,34 @@ auto checker::infer_implements_call(const ast::call_expr &call)
   }
   const auto &trait_name =
       ast::cast<const ast::ident_expr>(*trait_arg.value).name;
-  if (!find_trait_decl_by_name(trait_name).has_value()) {
+  auto named = ast::named_type{};
+  named.span = trait_arg.value->span;
+  named.path = {trait_name};
+  const auto term = resolve_satisfaction_term(named, current_resolve_ctx());
+  if (!term.has_value()) {
     error_with_help(
         trait_arg.span,
-        std::format("`{}` does not name a known trait here", trait_name),
-        "expected a trait here",
-        "`implements[T, Trait]`'s `Trait` has to name a trait that is in "
-        "scope.");
+        std::format("`{}` does not name a trait or concept here", trait_name),
+        "expected a trait or concept here",
+        "`implements[T, C]`'s `C` has to name a trait or a concept (such "
+        "as `copy`) that is in scope.");
     return k_error_type;
   }
   record_expr_type(*base, k_unknown_type);
   // The answer is a constant of the concrete type: lowering emits it in
   // place of the call (`fold_implements`). A template's answer waits for
-  // each instance's type.
+  // each instance's type. The term is resolved here, where it is written,
+  // so each instance asks about the same trait or concept.
   if (const auto type = explicit_type_argument(t_arg)) {
     if (mentions_template_param(*type)) {
       defer_to_instances(call,
-                         [this, &call, trait_name, type = *type](
-                             instance_subst &subst) -> void {
+                         [this, &call, term = *term,
+                          type = *type](instance_subst &subst) -> void {
                            fold_implements(*clone_of(subst, &call),
-                                           substitute_type(type, subst),
-                                           trait_name);
+                                           substitute_type(type, subst), term);
                          });
     } else {
-      fold_implements(call, *type, trait_name);
+      fold_implements(call, *type, *term);
     }
   }
   return session_.types_.builtin("bool");

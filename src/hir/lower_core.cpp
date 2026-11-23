@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "src/core/ownership.h"
 #include "src/hir/lower_core_lowerer.h"
 #include "src/hir/reference_check.h"
 #include "src/hir/tail_calls.h"
@@ -90,8 +91,9 @@ auto core_lowerer::function(const core::function &source)
   // (`hir_function::owns_receiver`); the core's `self` is the value.
   const auto consuming = source.receiver == core::receiver_mode::consuming;
   // The drop schedule is keyed by AST node, and computed from the
-  // declaration's ownership CFG.
-  drops_.start(compute_drop_schedule(*source.decl, checked_));
+  // function's ownership graphs.
+  drops_.start(compute_drop_schedule(core::ownership_graphs(source, checked_),
+                                     checked_));
   // The parameters' scope is the function's own (keyed by the declaration);
   // their drop flags are declared before anything else runs.
   push_scope();

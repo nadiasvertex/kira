@@ -14,11 +14,12 @@
 #include "src/parser/source_location.h"
 #include "src/semantic/checker_results.h"
 
-/// The control-flow graph the ownership checker (`check_ownership`) runs its
-/// dataflow over. One `function_cfg` is built per function or lambda body,
-/// straight from the AST, and records — in evaluation order — every event
-/// that matters to ownership: each access to a local (read, move, borrow,
-/// write, end of scope) and each flow of borrows from one holder to another.
+/// The control-flow graph the ownership checker (`check_graph`) runs its
+/// dataflow over. One `function_cfg` is built per function, lambda or task
+/// body, from the typed core (`core::ownership_graphs`), and records — in
+/// evaluation order — every event that matters to ownership: each access to
+/// a local (read, move, borrow, write, end of scope) and each flow of
+/// borrows from one holder to another.
 ///
 /// The model is deliberately small:
 ///
@@ -124,6 +125,11 @@ struct loan_info {
   /// a value that is not `copy` (ch. 16), rather than a `&`/`&mut` entry.
   bool implicit = false;
   source_span span = source_span::dummy();
+  /// A `capture` loan only: the name of the closure the capture was made
+  /// for, when a `let` binds it. A value that later carries the loan (the
+  /// result of a call the closure was passed to) is not the closure, so a
+  /// conflict names the closure by this.
+  std::string carrier{};
 };
 
 enum class access_kind : std::uint8_t {
@@ -164,7 +170,6 @@ enum class move_block : std::uint8_t {
   borrowed,      ///< The root only borrows its value (`self`, a reference).
   own_drop,      ///< A field of a type with its own `drop`.
   fill,          ///< `[v; n]` duplicates `v`, which is not `copy`.
-  iterated,      ///< `for x in r`: `into_iter` would consume what `r` borrows.
   overlapping, ///< A non-`copy` name bound by a pattern whose bindings overlap.
   captured,    ///< A closure's capture: the closure keeps it between calls.
 };
@@ -289,48 +294,29 @@ struct basic_block {
 struct owned_capture {
   std::string name;
   type_id type = k_unknown_type;
-  /// The capture-list entry, or the body's first use of the name. A use of
-  /// a generic lambda names the one copy it was checked against
-  /// (`checked_types::generic_lambda_refs`).
+  /// Unused: null.
   const void *node = nullptr;
-};
-
-/// A value a lambda without a capture list borrows from the enclosing
-/// function (ch. 16): a value that is not `copy`, which the body does not
-/// consume. `is_mut` when the body changes it.
-struct borrowed_capture {
-  std::string name;
-  /// The body's first use of the name; a use of a generic lambda names the
-  /// one copy it was checked against (`checked_types::generic_lambda_refs`).
-  const void *node = nullptr;
-  bool is_mut = false;
 };
 
 /// A value an `async:` or `on(...)` block captures from the enclosing
 /// function. The block runs as a task of its own, built as a function whose
 /// parameters are these captures. A `moved` capture is one the body
 /// consumes: it moves into the task, which owns it as a local of its own
-/// graph declared by `node` (the capture's first reference in the body), and
-/// drops it there. Any other capture is lent to the task: the task value
-/// holds a shared loan of it until it is dropped or awaited.
+/// graph declared by `node` (its `core::capture`), and drops it there. Any
+/// other capture is lent to the task: the task value holds a shared loan of
+/// it until it is dropped or awaited.
 struct task_capture {
   std::string name;
   type_id type = k_unknown_type;
   bool moved = false;
   const void *node = nullptr;
-  /// The capture's first reference in the body.
+  /// The task block.
   source_span span = source_span::dummy();
 };
 
-/// The key of the exit a task block takes when it is dropped before its body
-/// first runs, as `generator_start` is for a function.
-[[nodiscard]] auto task_block_start(const ast::expr &block) -> const void *;
-
 struct function_cfg {
-  /// The top-level patterns whose bindings own the parts they bind
-  /// (`owns_pattern_bindings`), and those whose arm owns the whole subject
-  /// (`arm_owns_subject`) — what `hir::lowerer` reads.
-  std::set<const void *> owning_patterns;
+  /// The `match` arms (by `match_arm::origin`) whose bindings overlap, so
+  /// the arm owns the whole subject as a `<subject>` local.
   std::set<const void *> owning_subjects;
   /// Where an owning pattern leaves a droppable part unbound: its `_`
   /// patterns, and its struct patterns whose `..` skips a droppable field.
@@ -342,28 +328,14 @@ struct function_cfg {
   /// `hir::make_references_explicit` drops it there, finding both through
   /// `hir_node::origin`.
   std::map<const void *, const void *> temporary_ends;
-  /// The references to a reified static global (`checked_types::
-  /// static_global_refs`) whose value is used by value, so the reader owns
-  /// it. `hir::lowerer` builds a fresh value for each instead of handing out
-  /// the global, which a drop would free.
-  std::set<const void *> owned_static_reads;
   /// The top-level owning patterns whose subject is still owned by the path
   /// where the pattern misses (`let else`, `if let`, `while let`).
   std::set<const void *> unmatched_drops;
-  /// The `for` statements and comprehension clauses whose loop variables own
-  /// the elements they bind (`for_variable_owns`, `clause_variable_owns`).
-  std::set<const void *> owning_loops;
-  /// The keys (a loop's `iterable` member) of loops that hold an iterator
-  /// they must drop (`loop_handle_type`).
-  std::set<const void *> loop_handles;
   /// The calls whose receiver is consumed by `into_iter`.
   std::set<const void *> consuming_calls;
   /// The droppable values each lambda moves into its environment, in
   /// capture order, keyed by the `ast::lambda_expr`.
   std::map<const void *, std::vector<owned_capture>> owned_captures;
-  /// The values each lambda without a capture list borrows, keyed by the
-  /// `ast::lambda_expr`. Every other implicit capture is by value.
-  std::map<const void *, std::vector<borrowed_capture>> borrowed_captures;
   /// What each `async:` or `on(...)` block captures, in first-reference
   /// order, keyed by the block's expression.
   std::map<const void *, std::vector<task_capture>> task_captures;
@@ -371,16 +343,5 @@ struct function_cfg {
   std::vector<loan_info> loans;
   std::vector<basic_block> blocks; ///< `blocks[0]` is the entry.
 };
-
-/// The key of the exit a `generator def` takes when it is dropped before
-/// its body first runs. A generator dropped while suspended at a `yield`
-/// exits there instead, keyed by the `ast::yield_expr`.
-[[nodiscard]] auto generator_start(const ast::func_decl &decl) -> const void *;
-
-/// Builds the CFG of `decl`'s body, followed by one CFG per lambda or nested
-/// function written inside it.
-[[nodiscard]] auto build_function_cfgs(const ast::func_decl &decl,
-                                       const checked_types &checked)
-    -> std::vector<function_cfg>;
 
 } // namespace cinder::semantic::ownership

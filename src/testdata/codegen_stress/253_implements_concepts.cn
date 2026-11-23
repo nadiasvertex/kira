@@ -1,0 +1,65 @@
+module codegen_stress.implements_concepts
+
+# `implements[T, C]` where `C` is a concept as well as a trait (todo item
+# 14). It asks the same question a bound `T: C` asks. No user type is
+# `copy` (ch. 14), so `pt` and `boxed` are not; `str` is.
+#
+#   is_copy[int32]()            1
+#   is_copy[list[int32]]()      0
+#   is_copy[pt]()               0
+#   implements[str, copy]()     16
+#   is_num[int64]()             32
+#   is_num[str]()               0
+#   implements[int32, eq]()     128
+#   weight(&5) + weight(&p)     1 + 10, times 1000
+#   rate(&p) + rate(&3)         7 + 0, times 100000
+#
+# `rate`'s taken branch calls `x.score()`, which only `T: score` allows, so
+# it also checks that `static if implements[T, score]()` narrows `T`.
+#
+# 1 + 16 + 32 + 128 + 11000 + 700000 = 711177
+
+# expect: 711177
+
+static pure def is_copy[T]() -> bool:
+    return implements[T, copy]()
+
+static pure def is_num[T]() -> bool:
+    return implements[T, numeric]()
+
+trait score:
+    def score(self) -> int32
+
+type pt = { x: int32 }
+
+impl score for pt:
+    def score(self) -> int32:
+        return self.x
+
+type boxed = { xs: list[int32] }
+
+def bit(b: bool, v: int32) -> int32:
+    if b:
+        return v
+    return 0
+
+def weight[T](x: &T) -> int32:
+    static if implements[T, copy]():
+        return 1
+    else:
+        return 10
+
+def rate[T](x: &T) -> int32:
+    static if implements[T, score]():
+        return x.score()
+    else:
+        return 0
+
+def main() -> int32:
+    let p = pt { x: 7 }
+    var r = bit(is_copy[int32](), 1) + bit(is_copy[list[int32]](), 2)
+    r = r + bit(is_copy[pt](), 4) + bit(implements[str, copy](), 16)
+    r = r + bit(is_num[int64](), 32) + bit(is_num[str](), 64)
+    r = r + bit(implements[int32, eq](), 128)
+    r = r + 1000 * (weight(&5) + weight(&p))
+    return r + 100000 * (rate(&p) + rate(&3))

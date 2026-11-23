@@ -192,35 +192,21 @@ auto core_lowerer::drop_glue(const core::lambda &source,
   // Last captured, first dropped, as an ordinary scope drops.
   auto stmts = ptr_vec<hir_node>{};
   for (const auto &capture : std::views::reverse(owned->second)) {
-    // The captures the record names: the copy of a generic lambda the use
-    // `node` was checked against; else the local `name`, which for a
-    // generic lambda's name is every copy made for it.
+    // The capture the record names: the local `name`, which for a generic
+    // lambda's name is every copy made for it.
     auto parts = std::vector<std::pair<symbol_id, type_id>>{};
-    const auto &copies = drops_.schedule().generic_lambda_copies;
-    const auto copy = capture.node != nullptr ? copies.find(capture.node)
-                                              : copies.end();
-    if (copy != copies.end()) {
-      for (const auto &held : source.captures) {
-        const auto key = binding_keys_.find(held.from.root.symbol);
-        if (key != binding_keys_.end() && key->second == copy->second) {
-          parts.emplace_back(symbols_.at(held.symbol), capture.type);
-          break;
-        }
+    for (const auto &held : source.captures) {
+      if (held.from.root.name == capture.name) {
+        parts.emplace_back(symbols_.at(held.symbol), capture.type);
+        break;
       }
-    } else {
+    }
+    if (parts.empty()) {
       for (const auto &held : source.captures) {
-        if (held.from.root.name == capture.name) {
-          parts.emplace_back(symbols_.at(held.symbol), capture.type);
-          break;
-        }
-      }
-      if (parts.empty()) {
-        for (const auto &held : source.captures) {
-          const auto type = hir_type(held.type);
-          if (base_name(held.from.root.name) == capture.name &&
-              checked_.drop.drop_plans.contains(type)) {
-            parts.emplace_back(symbols_.at(held.symbol), type);
-          }
+        const auto type = hir_type(held.type);
+        if (base_name(held.from.root.name) == capture.name &&
+            checked_.drop.drop_plans.contains(type)) {
+          parts.emplace_back(symbols_.at(held.symbol), type);
         }
       }
     }

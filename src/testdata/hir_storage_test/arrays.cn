@@ -48,8 +48,8 @@ def walk(b: bag) -> unit:
 def first_of(xs: &list[noisy]) -> option[&noisy]:
     return @some(&xs[0])
 
-# A loop over a borrowed list of `copy` elements gives `into_iter` a bitwise
-# copy of the list, and the iterator it returns owns nothing.
+# A loop over a borrowed list of `copy` elements walks it with `iter` and
+# copies each element out of the `&int64` it yields.
 def total(xs: &list[int64]) -> int64:
     var sum: int64 = 0
     for x in xs:

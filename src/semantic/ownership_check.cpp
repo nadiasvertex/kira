@@ -355,12 +355,10 @@ private:
     if (state.moved_at[a.local].has_value() && cfg_.locals[a.local].movable) {
       moved = a.local;
     }
-    // A part access checks only the root itself: the part's own field path
-    // local is accessed separately.
+    // A use of a part is a use of everything it is a part of: the field
+    // paths above it and the local at its root.
     for (auto up = cfg_.locals[a.local].parent;
-         !moved.has_value() && !a.projected && up != k_no_local &&
-         cfg_.locals[up].role == local_role::field_path;
-         up = cfg_.locals[up].parent) {
+         !moved.has_value() && up != k_no_local; up = cfg_.locals[up].parent) {
       if (state.moved_at[up].has_value()) {
         moved = up;
       }
@@ -454,6 +452,32 @@ private:
     return true;
   }
 
+  /// Whether `a` and `b` are the same place, or one is a field path below
+  /// the other: a loan of `p.a` conflicts with an access to `p` or to
+  /// `p.a.b`, and not with one to `p.b`.
+  [[nodiscard]] auto overlaps(local_id a, local_id b) const -> bool {
+    const auto below = [&](local_id part, local_id whole) -> bool {
+      for (auto at = part; at != k_no_local; at = cfg_.locals[at].parent) {
+        if (at == whole) {
+          return true;
+        }
+      }
+      return false;
+    };
+    return below(a, b) || below(b, a);
+  }
+
+  /// Whether `part` is `whole` or a field path below it.
+  [[nodiscard]] auto overlaps_below(local_id part, local_id whole) const
+      -> bool {
+    for (auto at = part; at != k_no_local; at = cfg_.locals[at].parent) {
+      if (at == whole) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   auto check_conflict(const access_event &a, const forward_state &state,
                       const live_set &live) -> void {
     auto best_loan = k_no_loan;
@@ -465,7 +489,8 @@ private:
       }
       for (const auto l : state.contents[h]) {
         const auto &loan = cfg_.loans[l];
-        if (loan.root != a.local || l == a.exempt || !conflicts(a.kind, loan)) {
+        if (!overlaps(loan.root, a.local) || l == a.exempt ||
+            !conflicts(a.kind, loan)) {
           continue;
         }
         const auto rank = holder_rank(cfg_.locals[h].role);
@@ -508,11 +533,18 @@ private:
     if (info.role == local_role::crew_tasks) {
       return std::string("a task spawned into this crew");
     }
+    if (loan.origin == loan_origin::capture && !loan.carrier.empty()) {
+      return std::format("the closure `{}`", loan.carrier);
+    }
     if (loan.origin == loan_origin::capture ||
         type_kind_of(info.type) == type_kind::fn_kind) {
       return std::format("the closure `{}`", info.name);
     }
-    if (loan.origin == loan_origin::view || checked_.types.is_view(info.type)) {
+    auto referent = info.type;
+    while (type_kind_of(referent) == type_kind::ref_kind) {
+      referent = checked_.types.entry(referent).result;
+    }
+    if (loan.origin == loan_origin::view || checked_.types.is_view(referent)) {
       return std::format("the view `{}` of `{}`", info.name, root);
     }
     if (type_kind_of(info.type) == type_kind::ref_kind) {
@@ -528,7 +560,10 @@ private:
 
   auto report_conflict(const access_event &a, const loan_info &loan,
                        local_id holder) -> void {
-    const auto &root = cfg_.locals[a.local].name;
+    // The place both touch: the one of the two that contains the other.
+    const auto &root = overlaps_below(a.local, loan.root)
+                           ? cfg_.locals[loan.root].name
+                           : cfg_.locals[a.local].name;
     const auto role = cfg_.locals[holder].role;
     if (a.kind == access_kind::storage_dead) {
       if (cfg_.locals[a.local].role == local_role::temporary) {
@@ -660,16 +695,6 @@ private:
       label = "this value would be duplicated into every element";
       help = "build the elements one at a time instead, for example with a "
              "loop that pushes a fresh value each time";
-      break;
-    case move_block::iterated:
-      message = std::format("cannot iterate over `{}` by value", m.place);
-      label = std::format("`{}` is a `{}`: it only borrows the collection, "
-                          "and a loop over it by value would move every "
-                          "element out",
-                          m.place, m.owner);
-      help = std::format("iterate over borrowed elements instead with "
-                         "`for x in {}.iter()`",
-                         m.place);
       break;
     case move_block::overlapping:
       message =
@@ -879,9 +904,6 @@ private:
     d.with_note("at most one `&mut` borrow of a value may exist at a time, and "
                 "a `&mut` borrow cannot coexist with any `&` borrow; any "
                 "number of `&` borrows are fine");
-    d.with_note("borrows are compared at whole-variable granularity, so two "
-                "borrows of different fields of the same variable also "
-                "conflict here");
     d.with_help(std::format(
         "pass a single borrow of `{0}` to this call, or compute the other "
         "argument into a local first so the two borrows no longer overlap",
@@ -990,12 +1012,20 @@ private:
       diag_.emit(d);
       return;
     }
+    // A closure's borrow can outlive the closure through a value made from
+    // it (a call result): name both.
+    const auto carried_on = is_capture && !loan.carrier.empty() &&
+                            loan.carrier != info.name;
     d.with_secondary_label(
         loan.span,
-        std::format("{} borrows `{}` here, and is still used later",
-                    is_capture ? std::format("the closure `{}`", info.name)
-                               : std::format("`{}`", info.name),
-                    root));
+        carried_on
+            ? std::format("the closure `{}` borrows `{}` here, and `{}` keeps "
+                          "that borrow and is still used later",
+                          loan.carrier, root, info.name)
+            : std::format("{} borrows `{}` here, and is still used later",
+                          is_capture ? std::format("the closure `{}`", info.name)
+                                     : std::format("`{}`", info.name),
+                          root));
     if (is_capture && loan.implicit) {
       d.with_note(std::format(
           "a closure borrows each value it uses that is not `copy`, for as "
@@ -1134,72 +1164,12 @@ private:
   }
 };
 
-auto check_decl(const ast::func_decl &decl, const checked_types &checked,
-                diagnostic_bag &diag, file_id_type file_id) -> void {
-  if (decl.modifiers.is_intrinsic) {
-    return;
-  }
-  for (const auto &cfg : ownership::build_function_cfgs(decl, checked)) {
-    ownership_checker(cfg, checked, diag, file_id).run();
-  }
-}
-
-auto walk_item(const ast::node &item, const checked_types &checked,
-               diagnostic_bag &diag, file_id_type file_id) -> void {
-  const auto walk_items = [&](const auto &items) -> void {
-    for (const auto &child : items) {
-      if (child != nullptr) {
-        walk_item(*child, checked, diag, file_id);
-      }
-    }
-  };
-  switch (item.kind) {
-  case ast::node_kind::func_decl:
-    check_decl(ast::cast<const ast::func_decl>(item), checked, diag, file_id);
-    return;
-  case ast::node_kind::impl_decl:
-    walk_items(ast::cast<const ast::impl_decl>(item).items);
-    return;
-  case ast::node_kind::trait_decl:
-    walk_items(ast::cast<const ast::trait_decl>(item).items);
-    return;
-  case ast::node_kind::extend_decl:
-    walk_items(ast::cast<const ast::extend_decl>(item).items);
-    return;
-  case ast::node_kind::sub_module_decl:
-    walk_items(ast::cast<const ast::sub_module_decl>(item).items);
-    return;
-  default:
-    return;
-  }
-}
-
 } // namespace
 
-auto check_ownership(const std::vector<parsed_module> &inputs,
-                     const checked_types &checked, diagnostic_bag &diag,
-                     std::vector<bool> &file_has_errors,
-                     unsigned skip_from_fileid) -> void {
-  for (const auto &input : inputs) {
-    if (static_cast<unsigned>(input.file_id) >= skip_from_fileid ||
-        input.ast_file == nullptr) {
-      continue;
-    }
-    if (static_cast<std::size_t>(input.file_id) < file_has_errors.size() &&
-        file_has_errors[input.file_id]) {
-      continue;
-    }
-    const auto errors_before = diag.error_count();
-    for (const auto &item : input.ast_file->items) {
-      if (item != nullptr) {
-        walk_item(*item, checked, diag, input.file_id);
-      }
-    }
-    if (diag.error_count() > errors_before &&
-        static_cast<std::size_t>(input.file_id) < file_has_errors.size()) {
-      file_has_errors[input.file_id] = true;
-    }
-  }
+auto ownership::check_graph(const function_cfg &cfg,
+                            const checked_types &checked, diagnostic_bag &diag,
+                            file_id_type file_id) -> void {
+  ownership_checker(cfg, checked, diag, file_id).run();
 }
 
 namespace {

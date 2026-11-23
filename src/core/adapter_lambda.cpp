@@ -3,12 +3,13 @@
 // A lambda's body is built in scopes of its own. A name it uses that is
 // declared outside it becomes a capture the first time it is used: a fresh
 // symbol inside the body, with `from` naming the outer place (rule E10).
-// How each capture holds its value comes from the written capture list,
-// or, without one, from the ownership checker's record of what the closure
-// borrows; everything else is copied when `copy` and moved otherwise, as
-// lowering captures it.
+// How each capture holds its value comes from the written capture list.
+// Without one, a `copy` value is copied, and any other is borrowed unless
+// the body consumes it, mutably when the body changes it; that is settled
+// from the built body (`settle_captures`). A `move` lambda moves each.
 
 #include <algorithm>
+#include <unordered_set>
 #include <format>
 #include <string>
 #include <utility>
@@ -20,70 +21,12 @@ namespace cinder::core {
 
 using semantic::type_kind;
 
-auto body_builder::load_capture_records() -> void {
-  if (borrowed_captures_.has_value()) {
-    return;
-  }
-  auto records = borrowed_records{};
-  auto tasks = task_records{};
-  auto owned_reads = std::unordered_set<const void *>{};
-  if (decl_ != nullptr) {
-    for (auto &cfg :
-         semantic::ownership::build_function_cfgs(*decl_, checked_)) {
-      for (auto &[lambda, list] : cfg.borrowed_captures) {
-        records.insert_or_assign(lambda, std::move(list));
-      }
-      for (auto &[block, list] : cfg.task_captures) {
-        tasks.insert_or_assign(block, std::move(list));
-      }
-      owned_reads.insert(cfg.owned_static_reads.begin(),
-                         cfg.owned_static_reads.end());
-    }
-  }
-  borrowed_captures_ = std::move(records);
-  task_captures_ = std::move(tasks);
-  owned_static_reads_ = std::move(owned_reads);
-}
-
-auto body_builder::owned_static_reads()
-    -> const std::unordered_set<const void *> & {
-  load_capture_records();
-  return *owned_static_reads_;
-}
-
-auto body_builder::borrowed_captures() -> const borrowed_records & {
-  load_capture_records();
-  return *borrowed_captures_;
-}
-
-auto body_builder::task_captures() -> const task_records & {
-  load_capture_records();
-  return *task_captures_;
-}
-
 auto body_builder::capture_mode_of(const lambda_frame &frame,
                                    const std::string &name, type_id type)
     -> capture::mode {
   const auto base = name.substr(0, name.find('#'));
-  if (frame.source == nullptr) {
-    // A task block: the ownership checker's `task_capture` records which
-    // locals the task owns (moved in); the others are lent to it.
-    const auto &records = task_captures();
-    if (const auto found = records.find(frame.task_key);
-        found != records.end()) {
-      const auto entry = std::ranges::find(
-          found->second, base, &semantic::ownership::task_capture::name);
-      if (entry != found->second.end() && entry->moved) {
-        return checked_.is_copy(type) ? capture::mode::copy
-                                      : capture::mode::move;
-      }
-    }
-    return checked_.is_copy(type) ? capture::mode::copy
-                                  : capture::mode::borrow;
-  }
-  const auto &lambda = *frame.source;
-  if (lambda.captures.has_value()) {
-    for (const auto &entry : *lambda.captures) {
+  if (frame.source != nullptr && frame.source->captures.has_value()) {
+    for (const auto &entry : *frame.source->captures) {
       if (entry.name != base) {
         continue;
       }
@@ -98,29 +41,267 @@ auto body_builder::capture_mode_of(const lambda_frame &frame,
         break;
       }
     }
-  } else if (!lambda.is_move) {
-    // The ownership checker's `borrow_capture`: a non-`copy` local the body
-    // does not consume is borrowed, mutably when the body changes it.
-    const auto &records = borrowed_captures();
-    if (const auto found = records.find(&lambda); found != records.end()) {
-      const auto entry =
-          std::ranges::find(found->second, base,
-                            &semantic::ownership::borrowed_capture::name);
-      if (entry != found->second.end()) {
-        return entry->is_mut ? capture::mode::borrow_mut
-                             : capture::mode::borrow;
+  }
+  // A `copy` value is copied. Any other is moved for now: a task block, or
+  // a lambda that is not `move`, settles it once its body is built
+  // (`settle_captures`).
+  return checked_.is_copy(type) ? capture::mode::copy : capture::mode::move;
+}
+
+namespace {
+
+/// What a body does with one capture of the lambda or task being settled:
+/// whether it consumes it (a move of it or a part of it, a binding that
+/// moves out of it, a nested closure that moves it in) or changes it (an
+/// assignment, a `&mut`, a nested closure that borrows it mutably).
+struct capture_effects {
+  bool consumed = false;
+  bool written = false;
+};
+
+class capture_scan {
+public:
+  explicit capture_scan(symbol_id capture) { names_.insert(capture); }
+
+  auto scan(block &b) -> void { block_of(b); }
+
+  [[nodiscard]] auto effects() const -> capture_effects { return effects_; }
+
+  /// The `alias` bindings rooted at the capture: what a downgrade to a
+  /// shared borrow must make read-only.
+  [[nodiscard]] auto aliases() const -> const std::vector<pattern_binding *> & {
+    return aliases_;
+  }
+
+private:
+  std::unordered_set<symbol_id> names_;
+  capture_effects effects_;
+  std::vector<pattern_binding *> aliases_;
+
+  [[nodiscard]] auto rooted(const place &p) const -> bool {
+    return p.root.kind == place_root::origin::local &&
+           names_.contains(p.root.symbol);
+  }
+
+  auto place_parts(place &p) -> void {
+    if (p.root.value != nullptr) {
+      expr_of(*p.root.value);
+    }
+    for (auto &step : p.path) {
+      if (step.subscript != nullptr) {
+        expr_of(*step.subscript);
       }
     }
   }
-  // A `copy` value moved is copied.
-  return checked_.is_copy(type) ? capture::mode::copy : capture::mode::move;
+
+  auto block_of(block &b) -> void {
+    for (auto &s : b.statements) {
+      stmt_of(*s);
+    }
+    if (b.result != nullptr) {
+      expr_of(*b.result);
+    }
+  }
+
+  auto stmt_of(stmt &s) -> void {
+    switch (s.kind) {
+    case node_kind::let:
+      if (auto &value = static_cast<let &>(s).value; value != nullptr) {
+        expr_of(*value);
+      }
+      return;
+    case node_kind::assign: {
+      auto &a = static_cast<assign &>(s);
+      if (rooted(a.target)) {
+        effects_.written = true;
+      }
+      place_parts(a.target);
+      if (a.value != nullptr) {
+        expr_of(*a.value);
+      }
+      return;
+    }
+    case node_kind::expr_stmt:
+      expr_of(*static_cast<expr_stmt &>(s).value);
+      return;
+    case node_kind::while_loop: {
+      auto &loop = static_cast<while_loop &>(s);
+      if (loop.condition != nullptr) {
+        expr_of(*loop.condition);
+      }
+      block_of(*loop.body);
+      if (loop.step != nullptr) {
+        block_of(*loop.step);
+      }
+      return;
+    }
+    case node_kind::return_stmt:
+    case node_kind::yield_stmt:
+      if (auto &value = static_cast<jump &>(s).value; value != nullptr) {
+        expr_of(*value);
+      }
+      return;
+    case node_kind::contract_check:
+      if (auto &c = static_cast<contract_check &>(s).condition; c != nullptr) {
+        expr_of(*c);
+      }
+      return;
+    default:
+      return;
+    }
+  }
+
+  auto each(ptr_vec<expr> &list) -> void {
+    for (auto &e : list) {
+      expr_of(*e);
+    }
+  }
+
+  auto expr_of(expr &e) -> void {
+    switch (e.kind) {
+    case node_kind::use: {
+      auto &u = static_cast<use &>(e);
+      if (u.how == use::mode::move && rooted(u.from)) {
+        effects_.consumed = true;
+      }
+      place_parts(u.from);
+      return;
+    }
+    case node_kind::borrow: {
+      auto &b = static_cast<borrow &>(e);
+      if (b.is_mut && rooted(b.of)) {
+        effects_.written = true;
+      }
+      place_parts(b.of);
+      return;
+    }
+    case node_kind::call: {
+      auto &c = static_cast<call &>(e);
+      if (c.target.value != nullptr) {
+        expr_of(*c.target.value);
+      }
+      each(c.args);
+      return;
+    }
+    case node_kind::primitive:
+      each(static_cast<primitive &>(e).operands);
+      return;
+    case node_kind::cast:
+      if (auto &o = static_cast<cast &>(e).operand; o != nullptr) {
+        expr_of(*o);
+      }
+      return;
+    case node_kind::tuple_init:
+    case node_kind::array_init:
+    case node_kind::struct_init:
+      each(static_cast<aggregate_init &>(e).elements);
+      return;
+    case node_kind::variant_init:
+      each(static_cast<variant_init &>(e).payload);
+      return;
+    case node_kind::lambda:
+      // The nested body names its own captures; what it takes from here is
+      // in its capture list.
+      for (auto &c : static_cast<lambda &>(e).captures) {
+        if (rooted(c.from)) {
+          effects_.consumed =
+              effects_.consumed || c.how == capture::mode::move;
+          effects_.written =
+              effects_.written || c.how == capture::mode::borrow_mut;
+        }
+        place_parts(c.from);
+      }
+      return;
+    case node_kind::block:
+      block_of(static_cast<block &>(e));
+      return;
+    case node_kind::if_expr: {
+      auto &i = static_cast<if_expr &>(e);
+      if (i.condition != nullptr) {
+        expr_of(*i.condition);
+      }
+      block_of(*i.then_branch);
+      if (i.else_branch != nullptr) {
+        block_of(*i.else_branch);
+      }
+      return;
+    }
+    case node_kind::match_expr: {
+      auto &m = static_cast<match_expr &>(e);
+      const auto subject_rooted = rooted(m.subject);
+      place_parts(m.subject);
+      for (auto &arm : m.arms) {
+        for (auto &alt : arm.alternatives) {
+          for (auto &b : alt.bindings) {
+            if (!subject_rooted) {
+              continue;
+            }
+            if (b.how == pattern_binding::mode::move) {
+              effects_.consumed = true;
+            } else if (b.how == pattern_binding::mode::alias) {
+              names_.insert(b.symbol);
+              aliases_.push_back(&b);
+            }
+          }
+        }
+        if (arm.guard != nullptr) {
+          expr_of(*arm.guard);
+        }
+        block_of(*arm.body);
+      }
+      return;
+    }
+    case node_kind::await_expr:
+      if (auto &t = static_cast<await_expr &>(e).task; t != nullptr) {
+        expr_of(*t);
+      }
+      return;
+    case node_kind::host_call:
+      each(static_cast<host_call &>(e).args);
+      return;
+    default:
+      return;
+    }
+  }
+};
+
+} // namespace
+
+auto body_builder::settle_captures(lambda &made, bool task) const -> void {
+  for (auto &c : made.captures) {
+    if (c.how != capture::mode::move || checked_.is_copy(c.type)) {
+      continue;
+    }
+    auto scan = capture_scan(c.symbol);
+    scan.scan(*made.body);
+    const auto effects = scan.effects();
+    // A task's body runs once, so a capture it consumes moves in; a task
+    // borrows any other (a write to one is the ownership check's to
+    // report). A lambda borrows it, mutably when the body changes it
+    // (ch. 16): a closure can be called again, so its body may never move a
+    // capture out, and the ownership check reports one that tries.
+    // A task that writes through a captured `&mut` takes the reference:
+    // borrowing it would leave the owner reading what the task writes.
+    const auto mut_ref =
+        !checked_.types.is_unknown(c.type) &&
+        checked_.types.entry(c.type).kind == semantic::type_kind::ref_kind &&
+        checked_.types.entry(c.type).is_mut;
+    if (task && (effects.consumed || (effects.written && mut_ref))) {
+      continue;
+    }
+    c.how = effects.written && !task ? capture::mode::borrow_mut
+                                     : capture::mode::borrow;
+    if (c.how == capture::mode::borrow && !effects.written) {
+      for (auto *alias : scan.aliases()) {
+        alias->writable = false;
+      }
+    }
+  }
 }
 
 auto body_builder::capture_into(lambda_frame &frame, const std::string &name,
                                 const local_info &outer) -> local_info {
-  // A task block's name with no `task_capture` record is lent, as lowering
-  // treats it: the records only decide which captures move in. (A name a
-  // nested task uses has no record on the enclosing task.)
+  // A name a written capture list does not hold is reported.
   if (frame.source != nullptr && frame.source->captures.has_value() &&
       !frame.unlisted.has_value()) {
     const auto base = name.substr(0, name.find('#'));
@@ -261,6 +442,11 @@ auto body_builder::lambda_of(const ast::lambda_expr &lambda)
   }
   made->captures = std::move(frame.captures);
   made->body = std::move(*body);
+  // An implicit capture, or a bare `name` in a capture list, follows the
+  // borrow-or-move rule unless the lambda is `move` (ch. 16).
+  if (!lambda.is_move) {
+    settle_captures(*made, /*task=*/false);
+  }
   return ptr<expr>(std::move(made));
 }
 

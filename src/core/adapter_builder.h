@@ -16,7 +16,6 @@
 #include "src/core/nodes.h"
 #include "src/parser/ast.h"
 #include "src/semantic/checker_results.h"
-#include "src/semantic/ownership_cfg.h"
 
 /// Internal to the adapter (`adapter.h`): the per-function builder that turns
 /// one declaration's AST and the checker's side tables into a core function.
@@ -247,11 +246,10 @@ public:
   [[nodiscard]] auto static_value(const ast::expr &ref)
       -> std::optional<result<ptr<expr>>>;
   /// Whether the read `ref` of a reified static is a fresh value of its
-  /// own: one the reader owns (`owned_static_reads`), or any read in a
-  /// compile-time expression.
+  /// own wherever it is read: any read in a compile-time expression. A
+  /// match subject that is a whole static the match may move out of is
+  /// always one (`subject_of`).
   [[nodiscard]] auto fresh_static_read(const ast::expr &ref) -> bool;
-  [[nodiscard]] auto owned_static_reads()
-      -> const std::unordered_set<const void *> &;
   /// The fresh value of the reified static `name` (`static_global_defs`).
   [[nodiscard]] auto static_global_value(const std::string &name,
                                          source_span span) -> result<ptr<expr>>;
@@ -392,6 +390,9 @@ public:
     type_id subject_type = k_unknown_type;
     /// The `deref` steps `subject_of` added (`match_expr::subject_derefs`).
     std::size_t subject_derefs = 0;
+    /// A destructuring parameter's pattern: a by-value parameter is always
+    /// mutable, so every name it binds is too.
+    bool parameter = false;
   };
   /// One arm alternative for `pattern` against a subject of type `subject`.
   [[nodiscard]] auto alternative_of(const ast::node &pattern, type_id subject,
@@ -490,9 +491,12 @@ public:
                                   const loop_body &body, source_span span)
       -> result<ptr<expr>>;
   /// `while_loop{null, match next: @some(patterns) => body, _ => break}`.
+  /// With `copied`, `next` yields `&element_type` and the patterns bind the
+  /// element it refers to, by copy (`iterator_loop_dispatch::copy_elements`).
   [[nodiscard]] auto next_loop(ptr<expr> next, type_id element_type,
                                std::span<const ast::node *const> patterns,
-                               const loop_body &body, source_span span)
+                               const loop_body &body, source_span span,
+                               bool copied = false)
       -> result<ptr<stmt>>;
   /// `while counter < bound (or <=): body`, stepping `counter` by one.
   [[nodiscard]] auto counting_loop(const let &counter, ptr<expr> bound,
@@ -666,11 +670,6 @@ public:
     /// A name the body uses that its written capture list does not hold.
     std::optional<std::string> unlisted;
   };
-  /// The ownership checker's capture records for the function being built:
-  /// what each lambda without a capture list borrows.
-  using borrowed_records =
-      std::unordered_map<const void *,
-                         std::vector<semantic::ownership::borrowed_capture>>;
   [[nodiscard]] auto lambda_of(const ast::lambda_expr &lambda)
       -> result<ptr<expr>>;
   /// Captures `outer` (found outside `frame`) into `frame` as `name`.
@@ -679,15 +678,10 @@ public:
   [[nodiscard]] auto capture_mode_of(const lambda_frame &frame,
                                      const std::string &name, type_id type)
       -> capture::mode;
-  [[nodiscard]] auto borrowed_captures() -> const borrowed_records &;
-  /// The ownership checker's `task_capture` records: what each `async:` or
-  /// `on(...)` block of the function being built captures, and whether it
-  /// owns it.
-  using task_records =
-      std::unordered_map<const void *,
-                         std::vector<semantic::ownership::task_capture>>;
-  [[nodiscard]] auto task_captures() -> const task_records &;
-  auto load_capture_records() -> void;
+  /// Decides each capture `capture_mode_of` left as a provisional move
+  /// from what the built body does with it: moved when the body consumes
+  /// it, else borrowed (mutably, for a lambda whose body changes it).
+  auto settle_captures(lambda &made, bool task) const -> void;
   /// `let f = <generic lambda>`: one local per copy the checker made.
   [[nodiscard]] auto generic_lambda_let(const ast::let_stmt &let,
                                         const ast::lambda_expr &written,
@@ -712,9 +706,6 @@ public:
   /// While a default argument is built at a call: the callee declaring it,
   /// whose parameters the default may not name.
   const ast::func_decl *default_of_ = nullptr;
-  /// The reads of a reified static the reader owns
-  /// (`function_cfg::owned_static_reads`), loaded with the capture records.
-  std::optional<std::unordered_set<const void *>> owned_static_reads_;
   std::string module_name_;
   std::vector<std::unordered_map<std::string, local_info>> scopes_;
   /// Set while `alternatives_of` builds an alternative; a nested `|` met
@@ -722,8 +713,6 @@ public:
   or_choices *or_choices_ = nullptr;
   std::vector<lambda_frame> lambdas_;
   const ast::func_decl *decl_ = nullptr;
-  std::optional<borrowed_records> borrowed_captures_;
-  std::optional<task_records> task_captures_;
   /// Each generic lambda's name, to the local names of its copies.
   std::unordered_map<std::string, std::vector<std::string>>
       generic_lambda_names_;

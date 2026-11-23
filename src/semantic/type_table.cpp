@@ -253,10 +253,15 @@ auto type_table::param_app(type_id head, std::vector<type_id> args) -> type_id {
 /// const generic arguments are the same type iff they carry the same
 /// literal value of the same underlying type.
 auto type_table::const_value(type_id underlying, uint64_t value) -> type_id {
+  // A `bool` index is the value 0 or 1, so it compares by the same rule as
+  // any other closed value; only its spelling differs.
+  auto name = underlying == bool_type() ? std::string(value != 0 ? "true"
+                                                                 : "false")
+                                        : std::to_string(value);
   return intern(
       std::format("c:{}:{}", underlying, value),
       type_entry{.kind = type_kind::const_value_kind,
-                 .name = std::to_string(value),
+                 .name = std::move(name),
                  .result = underlying,
                  .value = poly_constant(static_cast<int64_t>(value))});
 }

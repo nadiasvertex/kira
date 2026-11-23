@@ -75,7 +75,7 @@ Trait.requires() -> list[str]     # names of traits a trait's own `requires` cla
 - `T.kind()` works on concrete types and on type parameters in generic bodies, on both backends. The checker computes the answer and lowering emits it as a constant (`fold_type_reflection` in `src/semantic/check_reflection.cpp`). `match` on the result works. `==` against a `type_kind` variant does not, because `type_kind` has no `eq` impl.
 - `is_data_member` exists as a `field_info` field (`f.is_data_member`), always `true`, not as the method `is_data_member()` this chapter specifies. Calling it as a method type-checks and then fails in lowering.
 - `member.type_of()` does not exist. `field_info` carries only the rendered `type_name` string.
-- `T.traits()` type-checks but cannot be lowered, so it fails at compile time. It needs a checker-side fold over the trait-impl table (`traits_by_type_key_`), as `implements[T, Trait]` now has (`fold_implements`).
+- `T.traits()` type-checks but cannot be lowered, so it fails at compile time. It needs a checker-side fold over the trait-impl table (`traits_by_type_key_`), as `implements[T, C]` has (`fold_implements`, which asks `checker::satisfies`).
 - `Trait.requires()` does not parse. `requires` is a keyword, and the parser rejects it as a name after `.`.
 
 ## See also

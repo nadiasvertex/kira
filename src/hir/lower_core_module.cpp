@@ -236,11 +236,20 @@ auto lower_program(std::span<const semantic::parsed_module> inputs,
                    std::unordered_map<file_id_type, std::string>
                        file_module_names,
                    const lowering_options &options) -> lowered_program {
-  auto out = lowered_program{
-      .core = core::adapt_program(
+  return lower_adapted_program(
+      core::adapt_program(
           inputs, file_has_errors, checked,
           core::adapt_options{.contract_checks = options.contract_checks}),
-      .hir = {}};
+      checked, std::move(file_module_names), options);
+}
+
+auto lower_adapted_program(core::adapted_program core,
+                           semantic::checked_types &checked,
+                           std::unordered_map<file_id_type, std::string>
+                               file_module_names,
+                           const lowering_options &options)
+    -> lowered_program {
+  auto out = lowered_program{.core = std::move(core), .hir = {}};
   auto program = std::vector<const core::module *>{};
   program.reserve(out.core.modules.size());
   for (const auto &module : out.core.modules) {

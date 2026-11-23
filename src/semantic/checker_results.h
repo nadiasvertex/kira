@@ -145,7 +145,8 @@ struct resolved_callee {
   /// method, a plain free function, or an unresolved call. Lets a caller
   /// identify a specific, known-consuming trait method
   /// (`into_iterator::into_iter`) without a general by-value-`self`
-  /// convention to key off — see `receiver_mode` in `ownership_cfg.cpp`.
+  /// convention to key off — see the consuming receiver of `core::callee`
+  /// (`src/core/ownership.cpp`).
   std::string trait_name{};
   /// Inside a template, for a callee that is itself a template: its generic
   /// arguments in its template parameter order (the enclosing block's, then
@@ -315,6 +316,12 @@ struct iterator_loop_dispatch {
   /// `for x in &mut v` reaches: it borrows the collection rather than
   /// consuming it, so the loop moves nothing out of a reference.
   bool adapter_borrows = false;
+  /// Set when the loop's iterable is a reference to a collection whose own
+  /// route is the consuming `into_iter` (`for x in xs` with
+  /// `xs: &list[int32]`): the loop calls the borrowing `iter` instead, and
+  /// each element is copied out of the `&T` it yields. `element_type` is
+  /// then the copied `T`, which the checker requires to be `copy`.
+  bool copy_elements = false;
   /// Inside a template, when `decl` or `adapter_decl` is itself a template:
   /// its arguments in the template's parameters
   /// (`resolved_callee::template_args`). Empty everywhere else.
@@ -407,6 +414,10 @@ struct synthesized_method {
 struct synthesized_item_splice {
   const ast::impl_decl *impl = nullptr;
   std::string owner_module;
+  /// A `deriving` clause's impl only: the deriving type's span. The impl's
+  /// own spans are in `src/std/deriving.cn`, so a diagnostic in it is
+  /// reported here instead.
+  std::optional<source_span> derived_from{};
 };
 
 /// One monomorphized instance of a function generic over compile-time *value*

@@ -32,8 +32,8 @@ struct method_entry {
   /// override of a required/provided trait method; empty for an `extend`
   /// block or any other inherent method. Lets a caller identify a specific,
   /// known-consuming trait method (`into_iterator::into_iter`) without a
-  /// general by-value-`self` convention to key off — see `receiver_mode`
-  /// in `ownership_cfg.cpp`.
+  /// general by-value-`self` convention to key off — see the consuming
+  /// receiver of `core::callee` (`src/core/ownership.cpp`).
   std::string trait_name{};
   /// File the method was written in. Every per-call instance of this method
   /// is re-checked, and name resolution reads imports out of the file being

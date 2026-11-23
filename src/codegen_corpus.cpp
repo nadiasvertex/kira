@@ -30,6 +30,8 @@
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/storage_compile.h"
 #include "src/comptime_vm/backend.h"
+#include "src/core/adapter.h"
+#include "src/core/ownership.h"
 #include "src/hir/inline.h"
 #include "src/hir/link.h"
 #include "src/hir/lower_core.h"
@@ -48,7 +50,6 @@
 #include "src/runtime/value_layout.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
-#include "src/semantic/ownership_check.h"
 #include "src/testing/stdlib_fixtures.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
@@ -60,6 +61,7 @@ namespace {
 
 namespace fs = std::filesystem;
 namespace bc = cinder::bytecode;
+namespace core = cinder::core;
 namespace hir = cinder::hir;
 namespace semantic = cinder::semantic;
 namespace llvm_codegen = cinder::llvm_codegen;
@@ -257,8 +259,8 @@ auto inlined_call_sites = size_t{0};
 /// Every module, as the driver lowers it (`hir::lower_program`): the
 /// program's own module first, then the rest in the core's order. Empty,
 /// with the reason in `why`, when a module cannot be lowered.
-auto lower(std::span<const semantic::parsed_module> parsed,
-           const std::vector<bool> &file_has_errors,
+auto lower(core::adapted_program adapted,
+           std::span<const semantic::parsed_module> parsed,
            semantic::checked_types &checked, file_id_type file_id,
            const std::string &name, std::string &why)
     -> hir::ptr_vec<hir::hir_module> {
@@ -270,7 +272,7 @@ auto lower(std::span<const semantic::parsed_module> parsed,
                       : cinder::testing::module_name_of(*file.ast_file));
   }
   auto lowered =
-      hir::lower_program(parsed, file_has_errors, checked, std::move(names));
+      hir::lower_adapted_program(std::move(adapted), checked, std::move(names));
   if (!lowered.hir.failures.empty()) {
     const auto &first = lowered.hir.failures.front();
     why = std::format("HIR: `{}` in `{}`: {}", first.item, first.module,
@@ -317,20 +319,21 @@ auto load(const fs::path &path, const std::string &text, std::string &why,
     why = "does not check";
     return nullptr;
   }
-  // The driver holds every program to the ownership rules (ch. 14), and the
-  // storage form's drops rely on them, so a corpus program is checked too.
-  semantic::check_ownership(parsed, out->checked, out->diag, file_has_errors,
-                            std::numeric_limits<unsigned>::max());
-  if (out->diag.error_count() != 0) {
-    why = "ownership: " + out->diag.diagnostics().front().message;
-    return nullptr;
-  }
   auto name = cinder::testing::module_name_of(*out->ast_file);
   if (name.empty()) {
     name = "sample";
   }
-  out->modules =
-      lower(parsed, file_has_errors, out->checked, *file_id, name, why);
+  // The driver holds every program to the ownership rules (ch. 14), and the
+  // storage form's drops rely on them, so a corpus program is checked too.
+  auto adapted = core::adapt_program(parsed, file_has_errors, out->checked);
+  core::check_ownership(adapted, out->checked, out->diag, file_has_errors,
+                        std::numeric_limits<unsigned>::max());
+  if (out->diag.error_count() != 0) {
+    why = "ownership: " + out->diag.diagnostics().front().message;
+    return nullptr;
+  }
+  out->modules = lower(std::move(adapted), parsed, out->checked, *file_id,
+                       name, why);
   if (out->modules.empty()) {
     return nullptr;
   }

@@ -792,6 +792,52 @@ auto checker::with_else(type_id param, const type_domain &then_domain)
 /// The forms read are the ones `std.limits` and `std.traits` are written
 /// in: `T.name() == "lit"` (directly or through a `let` alias), `or`,
 /// `not`, and the category predicates `is_integer[T]()` and friends.
+/// `implements[T, C]()` with `T` a parameter of the code being checked:
+/// that parameter and what `C` names. Reports nothing; the call's own check
+/// does.
+auto checker::implements_subject_of(const ast::expr &condition)
+    -> std::optional<std::pair<type_id, satisfaction_term>> {
+  if (condition.kind == ast::node_kind::group_expr) {
+    const auto &group = ast::cast<const ast::group_expr>(condition);
+    return group.inner != nullptr ? implements_subject_of(*group.inner)
+                                  : std::nullopt;
+  }
+  if (condition.kind != ast::node_kind::call_expr) {
+    return std::nullopt;
+  }
+  const auto &call = ast::cast<const ast::call_expr>(condition);
+  auto explicit_args = explicit_generic_args{};
+  const auto *base = call.callee != nullptr
+                         ? explicit_generic_callee(*call.callee, explicit_args)
+                         : nullptr;
+  if (base == nullptr || base->kind != ast::node_kind::ident_expr ||
+      ast::cast<const ast::ident_expr>(*base).name != "implements" ||
+      explicit_args.size() != 2 || !call.args.empty() ||
+      explicit_args[0].value == nullptr ||
+      explicit_args[0].value->kind != ast::node_kind::ident_expr ||
+      explicit_args[1].value == nullptr ||
+      explicit_args[1].value->kind != ast::node_kind::ident_expr) {
+    return std::nullopt;
+  }
+  const auto param = lookup_type_param(
+      ast::cast<const ast::ident_expr>(*explicit_args[0].value).name);
+  if (!param.has_value() || !is_rigid_param(*param)) {
+    return std::nullopt;
+  }
+  // Read for narrowing only, so not kept: the call's own check resolves
+  // the name again and reports what is wrong with it.
+  auto named = ast::named_type{};
+  named.span = explicit_args[1].value->span;
+  named.path = {ast::cast<const ast::ident_expr>(*explicit_args[1].value).name};
+  auto ctx = current_resolve_ctx();
+  ctx.quiet = true;
+  auto term = resolve_satisfaction_term(named, ctx);
+  if (!term.has_value()) {
+    return std::nullopt;
+  }
+  return std::pair{*param, std::move(*term)};
+}
+
 auto checker::narrowing_of(const ast::expr &condition)
     -> std::optional<narrowing> {
   if (condition.kind == ast::node_kind::group_expr) {
@@ -874,6 +920,15 @@ auto checker::narrowing_of(const ast::expr &condition)
     return std::nullopt;
   }
   if (condition.kind == ast::node_kind::call_expr) {
+    // `implements[T, numeric]()` says what `is_numeric[T]()` says.
+    if (const auto implied = implements_subject_of(condition);
+        implied.has_value() && implied->second.concept_decl != nullptr) {
+      if (const auto members =
+              category_members(implied->second.concept_decl->name)) {
+        return with_else(implied->first, *members);
+      }
+      return std::nullopt;
+    }
     // `is_integer[T]()`: a generic call whose one bracket argument names
     // an in-scope parameter.
     const auto &call = ast::cast<const ast::call_expr>(condition);
@@ -1441,6 +1496,62 @@ auto checker::satisfies_concept(type_id subject,
   });
 }
 
+/// Resolves one bound term to what it names: the built-in `copy`, a trait
+/// (with its arguments resolved in `ctx`), or a concept. `nullopt` when it
+/// names none of these.
+auto checker::resolve_satisfaction_term(const ast::named_type &named,
+                                        const resolve_ctx &ctx)
+    -> std::optional<satisfaction_term> {
+  if (named.path.empty()) {
+    return std::nullopt;
+  }
+  if (names_copy(named)) {
+    return satisfaction_term{.is_copy = true, .trait_args = {}};
+  }
+  if (const auto trait = find_trait_decl_by_name(named.path.back());
+      trait.has_value() && *trait != nullptr) {
+    return satisfaction_term{.trait = *trait,
+                             .trait_args =
+                                 resolve_type_args(named.type_args, ctx)};
+  }
+  if (const auto concept_ref = find_concept_decl_by_name(named.path.back());
+      concept_ref.has_value() && concept_ref->decl != nullptr) {
+    return satisfaction_term{.trait_args = {},
+                             .concept_decl = concept_ref->decl};
+  }
+  return std::nullopt;
+}
+
+/// The one satisfaction query. A bound at a call, a bound an impl's own
+/// parameters carry, and `implements[T, C]()` all ask it, so a trait and a
+/// concept are answered the same way everywhere.
+auto checker::satisfies(type_id subject, const satisfaction_term &term)
+    -> bool {
+  if (term.is_copy) {
+    return type_is_copy(subject);
+  }
+  if (term.trait != nullptr) {
+    return satisfies_trait(subject, *term.trait, term.trait_args);
+  }
+  if (term.concept_decl != nullptr) {
+    return satisfies_concept(subject, *term.concept_decl);
+  }
+  return true;
+}
+
+/// A satisfaction term spelled for a diagnostic.
+auto checker::describe_satisfaction_term(const satisfaction_term &term)
+    -> std::string {
+  if (term.trait != nullptr) {
+    return display_fact(
+        type_fact{.trait = term.trait, .args = term.trait_args});
+  }
+  if (term.concept_decl != nullptr) {
+    return term.concept_decl->name;
+  }
+  return "copy";
+}
+
 /// The terms of `bound` (written in `ctx` and the current module) that
 /// `subject` does not satisfy, spelled for a diagnostic. Empty when every
 /// term holds, or names nothing this compiler can check.
@@ -1451,29 +1562,10 @@ auto checker::bound_holds(type_id subject, const ast::type_expr &bound,
     if (term->kind != ast::node_kind::named_type) {
       continue;
     }
-    const auto &named = ast::cast<const ast::named_type>(*term);
-    if (named.path.empty()) {
-      continue;
-    }
-    if (names_copy(named)) {
-      if (!type_is_copy(subject)) {
-        missing.emplace_back("copy");
-      }
-      continue;
-    }
-    if (const auto trait = find_trait_decl_by_name(named.path.back());
-        trait.has_value() && *trait != nullptr) {
-      const auto args = resolve_type_args(named.type_args, ctx);
-      if (!satisfies_trait(subject, **trait, args)) {
-        missing.push_back(
-            display_fact(type_fact{.trait = *trait, .args = args}));
-      }
-      continue;
-    }
-    if (const auto concept_ref = find_concept_decl_by_name(named.path.back());
-        concept_ref.has_value() && concept_ref->decl != nullptr &&
-        !satisfies_concept(subject, *concept_ref->decl)) {
-      missing.push_back(concept_ref->decl->name);
+    const auto resolved =
+        resolve_satisfaction_term(ast::cast<const ast::named_type>(*term), ctx);
+    if (resolved.has_value() && !satisfies(subject, *resolved)) {
+      missing.push_back(describe_satisfaction_term(*resolved));
     }
   }
   return missing;

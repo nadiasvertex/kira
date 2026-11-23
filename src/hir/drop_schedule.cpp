@@ -186,12 +186,11 @@ auto require_parts(flag_plan &plan,
 
 } // namespace
 
-auto compute_drop_schedule(const ast::func_decl &decl,
-                           const semantic::checked_types &checked)
-    -> drop_schedule {
+auto compute_drop_schedule(
+    const std::vector<semantic::ownership::function_cfg> &graphs,
+    const semantic::checked_types &checked) -> drop_schedule {
   auto schedule = drop_schedule{};
-  for (const auto &cfg :
-       semantic::ownership::build_function_cfgs(decl, checked)) {
+  for (const auto &cfg : graphs) {
     const auto facts = semantic::ownership::drop_facts_of(cfg);
     auto plan = flag_plan(cfg, facts);
 
@@ -227,41 +226,18 @@ auto compute_drop_schedule(const ast::func_decl &decl,
         schedule.owned_bindings.insert(local.node);
       }
     }
-    schedule.owning_patterns.insert(cfg.owning_patterns.begin(),
-                                    cfg.owning_patterns.end());
     schedule.owning_subjects.insert(cfg.owning_subjects.begin(),
                                     cfg.owning_subjects.end());
     schedule.leftover_drops.insert(cfg.leftover_drops.begin(),
                                    cfg.leftover_drops.end());
     schedule.unmatched_drops.insert(cfg.unmatched_drops.begin(),
                                     cfg.unmatched_drops.end());
-    schedule.owning_loops.insert(cfg.owning_loops.begin(),
-                                 cfg.owning_loops.end());
-    schedule.loop_handles.insert(cfg.loop_handles.begin(),
-                                 cfg.loop_handles.end());
     schedule.consuming_calls.insert(cfg.consuming_calls.begin(),
                                     cfg.consuming_calls.end());
     schedule.temporary_ends.insert(cfg.temporary_ends.begin(),
                                    cfg.temporary_ends.end());
-    schedule.owned_static_reads.insert(cfg.owned_static_reads.begin(),
-                                       cfg.owned_static_reads.end());
     schedule.owned_captures.insert(cfg.owned_captures.begin(),
                                    cfg.owned_captures.end());
-    for (const auto &[lambda, captures] : cfg.owned_captures) {
-      for (const auto &capture : captures) {
-        if (capture.node == nullptr) {
-          continue;
-        }
-        if (const auto copy =
-                checked.ownership.generic_lambda_refs.find(capture.node);
-            copy != checked.ownership.generic_lambda_refs.end()) {
-          schedule.generic_lambda_copies.insert_or_assign(capture.node,
-                                                          copy->second);
-        }
-      }
-    }
-    schedule.borrowed_captures.insert(cfg.borrowed_captures.begin(),
-                                      cfg.borrowed_captures.end());
     schedule.task_captures.insert(cfg.task_captures.begin(),
                                   cfg.task_captures.end());
 

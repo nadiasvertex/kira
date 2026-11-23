@@ -1,7 +1,7 @@
 # inference snapshot
-# 3055 interned types
+# 3058 interned types
 
-## node_types (34536)
+## node_types (34562)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -8622,19 +8622,27 @@ std/iter.cn:92:12 [field] fn(I) -> C
 std/iter.cn:92:12 [call] C
 std/iter.cn:92:24 [ident] I
 std/iter.cn:123:17 [binding_pat] &list[T]
+std/iter.cn:123:17 [binding_pat] &list[int32]
 std/iter.cn:123:17 [binding_pat] &list[test_case]
 std/iter.cn:123:34 [named_type] list_iter[T]
+std/iter.cn:123:34 [named_type] list_iter[int32]
 std/iter.cn:123:34 [named_type] list_iter[test_case]
 std/iter.cn:124:12 [struct_literal] list_iter[T]
+std/iter.cn:124:12 [struct_literal] list_iter[int32]
 std/iter.cn:124:12 [struct_literal] list_iter[test_case]
 std/iter.cn:124:29 [ident] &list[T]
+std/iter.cn:124:29 [ident] &list[int32]
 std/iter.cn:124:29 [ident] &list[test_case]
 std/iter.cn:124:37 [literal] usize
 std/iter.cn:124:37 [literal] usize
+std/iter.cn:124:37 [literal] usize
 std/iter.cn:124:45 [ident] &list[T]
+std/iter.cn:124:45 [ident] &list[int32]
 std/iter.cn:124:45 [ident] &list[test_case]
 std/iter.cn:124:45 [field] fn(_) -> usize
 std/iter.cn:124:45 [field] fn(_) -> usize
+std/iter.cn:124:45 [field] fn(_) -> usize
+std/iter.cn:124:45 [call] usize
 std/iter.cn:124:45 [call] usize
 std/iter.cn:124:45 [call] usize
 std/iter.cn:132:21 [binding_pat] &mut list[T]
@@ -8658,39 +8666,57 @@ std/iter.cn:143:34 [ident] list[T]
 std/iter.cn:143:42 [literal] usize
 std/iter.cn:143:50 [ident] usize
 std/iter.cn:146:14 [binding_pat] &mut list_iter[T]
+std/iter.cn:146:14 [binding_pat] &mut list_iter[int32]
 std/iter.cn:146:14 [binding_pat] &mut list_iter[test_case]
 std/iter.cn:146:27 [named_type] option[&T]
+std/iter.cn:146:27 [named_type] option[&int32]
 std/iter.cn:146:27 [named_type] option[&test_case]
 std/iter.cn:147:12 [module_path] usize
 std/iter.cn:147:12 [module_path] usize
+std/iter.cn:147:12 [module_path] usize
 std/iter.cn:147:12 [binary] bool
 std/iter.cn:147:12 [binary] bool
+std/iter.cn:147:12 [binary] bool
+std/iter.cn:147:23 [module_path] usize
 std/iter.cn:147:23 [module_path] usize
 std/iter.cn:147:23 [module_path] usize
 std/iter.cn:148:20 [ident] option[&T]
+std/iter.cn:148:20 [ident] option[&int32]
 std/iter.cn:148:20 [ident] option[&test_case]
 std/iter.cn:149:13 [binding_pat] usize
 std/iter.cn:149:13 [binding_pat] usize
+std/iter.cn:149:13 [binding_pat] usize
+std/iter.cn:149:17 [module_path] usize
 std/iter.cn:149:17 [module_path] usize
 std/iter.cn:149:17 [module_path] usize
 std/iter.cn:150:9 [module_path] usize
 std/iter.cn:150:9 [module_path] usize
+std/iter.cn:150:9 [module_path] usize
+std/iter.cn:150:19 [module_path] usize
 std/iter.cn:150:19 [module_path] usize
 std/iter.cn:150:19 [module_path] usize
 std/iter.cn:150:19 [binary] usize
 std/iter.cn:150:19 [binary] usize
+std/iter.cn:150:19 [binary] usize
+std/iter.cn:150:29 [literal] usize
 std/iter.cn:150:29 [literal] usize
 std/iter.cn:150:29 [literal] usize
 std/iter.cn:151:16 [call] option[&T]
+std/iter.cn:151:16 [call] option[&int32]
 std/iter.cn:151:16 [call] option[&test_case]
 std/iter.cn:151:22 [unary] &T
+std/iter.cn:151:22 [unary] &int32
 std/iter.cn:151:22 [unary] &test_case
 std/iter.cn:151:23 [ident] &mut list_iter[T]
+std/iter.cn:151:23 [ident] &mut list_iter[int32]
 std/iter.cn:151:23 [ident] &mut list_iter[test_case]
 std/iter.cn:151:23 [field] &list[T]
+std/iter.cn:151:23 [field] &list[int32]
 std/iter.cn:151:23 [field] &list[test_case]
 std/iter.cn:151:23 [index] &T
+std/iter.cn:151:23 [index] &int32
 std/iter.cn:151:23 [index] &test_case
+std/iter.cn:151:32 [ident] usize
 std/iter.cn:151:32 [ident] usize
 std/iter.cn:151:32 [ident] usize
 std/iter.cn:153:19 [binding_pat] &list_iter[T]
@@ -34541,7 +34567,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 
 ## struct_pattern_field_types (0)
 
-## struct_literal_field_types (262)
+## struct_literal_field_types (265)
 ?:467 nanos uint64
 ?:592 nanos uint64
 ?:724 nanos uint64
@@ -34672,9 +34698,12 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4664 inner I
 ?:4675 pred fn(&T) -> bool
 ?:4685 src &list[T]
+?:4685 src &list[int32]
 ?:4685 src &list[test_case]
 ?:4694 at usize
 ?:4694 at usize
+?:4694 at usize
+?:4701 end usize
 ?:4701 end usize
 ?:4701 end usize
 ?:4775 inner *mut mutex_block[T]
@@ -34805,7 +34834,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56596 inner I
 ?:56607 f fn(&T) -> T
 
-## call_argument_mappings (1132)
+## call_argument_mappings (1133)
 003_collections_lambdas.cn:11:19 [call] (=arg)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
@@ -35432,6 +35461,7 @@ std/io.cn:417:22 [call] ()
 std/iter.cn:92:12 [call] (it=arg)
 std/iter.cn:124:45 [call] ()
 std/iter.cn:124:45 [call] ()
+std/iter.cn:124:45 [call] ()
 std/iter.cn:133:13 [call] ()
 std/iter.cn:142:13 [call] ()
 std/iter.cn:176:22 [call] ()
@@ -35939,7 +35969,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (1061)
+## resolved_callees (1062)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:22:5 [call] stress.dependent_types::concat args=[T, m, n]
 027_dependent_and_refinement_types.cn:26:5 [call] stress.dependent_types::concat args=[T, k + 1, 2]
@@ -36499,6 +36529,7 @@ std/io.cn:417:13 [call] std.intrinsics::rt_close
 std/io.cn:417:22 [call] std.io::async_file::fd_arg recv
 std/iter.cn:92:12 [call] std.iter::from_iter trait=from_iter args=[I] bound=C[T]
 std/iter.cn:124:45 [call] std.list::list::len recv args=[T]
+std/iter.cn:124:45 [call] std.list::list::len$list_int32_ recv
 std/iter.cn:124:45 [call] std.list::list::len$list_test_case_ recv
 std/iter.cn:133:13 [call] std.list::list::len recv args=[T]
 std/iter.cn:142:13 [call] std.list::list::len recv args=[T]
@@ -37114,7 +37145,7 @@ std/unicode.cn:288:23 [binary] std.string::str::add recv
 089_elaboration_snapshot_gaps.cn:72:8 [binary] ordering
 110_instances_by_substitution.cn:68:12 [binary] ordering
 
-## index_dispatches (72)
+## index_dispatches (73)
 003_collections_lambdas.cn:11:23 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.cn:43:17 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.cn:59:19 [index] std.list::list::at$list_int32_$usize recv
@@ -37178,6 +37209,7 @@ std/algo.cn:1960:40 [index] std.list::list::at$list__usize__usize__$usize recv
 std/algo.cn:1961:34 [index] std.list::list::at$list__usize__usize__$usize recv
 std/algo.cn:1966:40 [index] std.list::list::at$list__usize__usize__$usize recv
 std/iter.cn:151:23 [index] std.list::list::at recv args=[T]
+std/iter.cn:151:23 [index] std.list::list::at$list_int32_$usize recv
 std/iter.cn:151:23 [index] std.list::list::at$list_test_case_$usize recv
 std/iter.cn:162:27 [index] std.list::list::at recv args=[T]
 std/iter.cn:197:23 [index] std.list::list::at recv args=[T]
@@ -37199,7 +37231,7 @@ std/algo.cn:1762:13 [index] std.list::list::set_at$list_usize_$usize recv
 std/algo.cn:1768:13 [index] std.list::list::set_at recv args=[T]
 std/algo.cn:1769:13 [index] std.list::list::set_at$list_usize_$usize recv
 
-## index_mut_dispatches (72)
+## index_mut_dispatches (73)
 003_collections_lambdas.cn:11:23 [index] std.list::list::at_mut$list_int32_$usize recv
 052_element_assignment.cn:43:17 [index] std.list::list::at_mut$list_int32_$usize recv
 052_element_assignment.cn:59:19 [index] std.list::list::at_mut$list_int32_$usize recv
@@ -37263,6 +37295,7 @@ std/algo.cn:1960:40 [index] std.list::list::at_mut$list__usize__usize__$usize re
 std/algo.cn:1961:34 [index] std.list::list::at_mut$list__usize__usize__$usize recv
 std/algo.cn:1966:40 [index] std.list::list::at_mut$list__usize__usize__$usize recv
 std/iter.cn:151:23 [index] std.list::list::at_mut recv args=[T]
+std/iter.cn:151:23 [index] std.list::list::at_mut$list_int32_$usize recv
 std/iter.cn:151:23 [index] std.list::list::at_mut$list_test_case_$usize recv
 std/iter.cn:162:27 [index] std.list::list::at_mut recv args=[T]
 std/iter.cn:197:23 [index] std.list::list::at_mut recv args=[T]
@@ -37273,7 +37306,7 @@ std/unicode.cn:260:18 [index] std.list::list::at_mut$list_uint32_$usize recv
 std/unicode.cn:261:58 [index] std.list::list::at_mut$list_uint32_$range_usize_ recv
 std/unicode.cn:281:18 [index] std.list::list::at_mut$list_uint32_$usize recv
 
-## index_ref_dispatches (67)
+## index_ref_dispatches (68)
 003_collections_lambdas.cn:11:23 [index] std.list::list::at_ref$list_int32_$usize recv
 052_element_assignment.cn:43:17 [index] std.list::list::at_ref$list_int32_$usize recv
 052_element_assignment.cn:59:19 [index] std.list::list::at_ref$list_int32_$usize recv
@@ -37333,6 +37366,7 @@ std/algo.cn:1960:40 [index] std.list::list::at_ref$list__usize__usize__$usize re
 std/algo.cn:1961:34 [index] std.list::list::at_ref$list__usize__usize__$usize recv
 std/algo.cn:1966:40 [index] std.list::list::at_ref$list__usize__usize__$usize recv
 std/iter.cn:151:23 [index] std.list::list::at_ref recv args=[T]
+std/iter.cn:151:23 [index] std.list::list::at_ref$list_int32_$usize recv
 std/iter.cn:151:23 [index] std.list::list::at_ref$list_test_case_$usize recv
 std/iter.cn:162:27 [index] std.list::list::at_ref recv args=[T]
 std/iter.cn:197:23 [index] std.list::list::at_ref recv args=[T]
@@ -37475,7 +37509,7 @@ std/deriving.cn:93:39 [call] money
 ?:1987 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:1987 [for_stmt] next=::list_into_iter::next$list_into_iter_money_ elem=money owner=std.iter adapter=::list::into_iter$list_money_ -> list_into_iter[money]
 ?:1987 [for_stmt] next=list_into_iter::next elem=T owner=std.iter adapter=list::into_iter -> list_into_iter[T]
-?:2436 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
+?:2436 [for_stmt] next=::list_iter::next$list_iter_int32_ elem=int32 owner=std.iter adapter=::iter$int32 -> list_iter[int32]
 ?:2986 [for_stmt] next=::map_iter::next$map_iter_counter__int32__int32_ elem=int32 owner=codegen_stress.generic_impl_iterator_adapter
 ?:3115 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:3267 [for_stmt] next=::doubler::next$doubler_map_iter_counter__int32__int32__ elem=int32 owner=codegen_stress.generic_impl_iterator_adapter
@@ -38754,7 +38788,7 @@ write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (2249)
+## borrow_bearing_types (2252)
 &(T0, T1)
 &(T0, T1, T2)
 &(T0, T1, T2, T3)
@@ -39007,6 +39041,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &mut list_into_iter[test_suite]
 &mut list_iter[T]
 &mut list_iter[T]
+&mut list_iter[int32]
 &mut list_iter[test_case]
 &mut list_iter_mut[T]
 &mut map_iter[I, T, U]
@@ -40691,6 +40726,7 @@ list_iter[T]
 list_iter[T]
 list_iter[T]
 list_iter[_]
+list_iter[int32]
 list_iter[test_case]
 list_iter_mut
 list_iter_mut[T]
@@ -40757,6 +40793,7 @@ n
 option[&T]
 option[&T]
 option[&_]
+option[&int32]
 option[&mut T]
 option[&mut T]
 option[&mut _]
@@ -41084,7 +41121,7 @@ std.io::file_handle::read_exact
 std.io::file_handle::read_to_end
 std.io::file_handle::write_all
 
-## const_generic_instances (280)
+## const_generic_instances (282)
 codegen_stress.bound_driven_inference::filter$counter$int32
 codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_
 codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32
@@ -41155,6 +41192,7 @@ std.algo::binary_search$uint32
 std.algo::partition_point$uint32
 std.derive::derive_eq$money
 std.derive::derive_show$money
+std.iter::iter$int32
 std.iter::iter$test_case
 std.iter::list_into_iter::drop$list_into_iter__int64__int32__
 std.iter::list_into_iter::drop$list_into_iter_int32_
@@ -41166,6 +41204,7 @@ std.iter::list_into_iter::next$list_into_iter_int32_
 std.iter::list_into_iter::next$list_into_iter_int64_
 std.iter::list_into_iter::next$list_into_iter_money_
 std.iter::list_into_iter::next$list_into_iter_test_suite_
+std.iter::list_iter::next$list_iter_int32_
 std.iter::list_iter::next$list_iter_test_case_
 std.list::list::as_mut_ptr$list__int64__int32__
 std.list::list::as_mut_ptr$list_int32_
@@ -41372,7 +41411,7 @@ stress.dependent_types::safe_get$int32$8
 codegen_stress.instances_by_substitution impl@2089
 codegen_stress.instances_by_substitution impl@4283
 
-## synthesized_decls (286)
+## synthesized_decls (288)
 alloc$_int64__int32_
 alloc$_usize__usize_
 alloc$field_info
@@ -41496,6 +41535,7 @@ holder::pick$4$int32
 holder::scale$holder_int32_
 holder::scale$holder_int64_
 identity$int32
+iter$int32
 iter$test_case
 list::as_mut_ptr$list__int64__int32__
 list::as_mut_ptr$list_int32_
@@ -41617,6 +41657,7 @@ list_into_iter::next$list_into_iter_int32_
 list_into_iter::next$list_into_iter_int64_
 list_into_iter::next$list_into_iter_money_
 list_into_iter::next$list_into_iter_test_suite_
+list_iter::next$list_iter_int32_
 list_iter::next$list_iter_test_case_
 map$counter$int32$int32
 map$filter_iter_counter__int32_$int32$int32

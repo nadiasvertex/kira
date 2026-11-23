@@ -1,0 +1,21 @@
+module report_bool_value_index_wrong_kind
+
+type conn[open: bool] = { fd: int32 }
+type arr[n: usize] = { fd: int32 }
+
+def numbered(c: conn[1]) -> int32:
+    return c.fd
+
+def unbound(c: conn[x + 1]) -> int32:
+    return c.fd
+
+def counted(v: arr[true]) -> int32:
+    return v.fd
+
+def flag[b: bool]() -> bool:
+    return b
+
+def main() -> int32:
+    if flag[1]():
+        return 1
+    return 0

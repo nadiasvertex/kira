@@ -79,6 +79,7 @@ cc_library(
         "//src/core",
         # `core::gap`.
         "//src/core:adapter",
+        "//src/core:ownership",
         # `is_compiler_operation`.
         "//src/core:verify",
         "//src/parser:parser",

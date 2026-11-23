@@ -417,10 +417,6 @@ auto core_lowerer::let_into(const core::let &source, ptr_vec<hir_node> &out)
     adapter.consumes_receiver = true;
     adapter.receiver_by_value =
         target.receiver == core::receiver_mode::consuming;
-    adapter.receiver_borrowed =
-        adapter.receiver_by_value && !adapter.args.empty() &&
-        checked_.types.entry(adapter.args.front()->type).kind ==
-            semantic::type_kind::ref_kind;
   }
   out.push_back(hir::make<hir_let>(source.span, symbol, source.name,
                               std::move(*value), source.is_mut));

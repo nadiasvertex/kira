@@ -2890,51 +2890,40 @@ private:
       }
     }
     // A callee that owns its receiver takes the value `&v` names, moved in.
-    // A borrowed one (`receiver_borrowed`) is copied out of the reference.
     const hir_expr *owned_receiver = nullptr;
-    auto borrowed_receiver = std::optional<type_id>{};
     if (call.receiver_by_value && !call.args.empty()) {
       const auto &first = *call.args.front();
-      if (call.receiver_borrowed) {
-        borrowed_receiver = env_.pointee(first.type);
-        if (!borrowed_receiver.has_value()) {
-          return malformed(call.span,
-                           "a borrowed receiver that is not a reference");
-        }
-      } else {
-        // `&v`, or a block that binds a temporary and ends in `&tmp`, whose
-        // statements run first.
-        const auto *address = &first;
-        if (first.kind == hir_node_kind::hir_block) {
-          const auto &block = as<hir_block>(first);
-          const auto *tail =
-              block.stmts.empty() ||
-                      block.stmts.back()->kind != hir_node_kind::hir_expr_stmt
-                  ? nullptr
-                  : as<hir_expr_stmt>(*block.stmts.back()).expr.get();
-          if (tail != nullptr) {
-            for (size_t i = 0; i + 1 < block.stmts.size(); ++i) {
-              if (auto ok = lower_stmt(*block.stmts[i]); !ok.has_value()) {
-                return ok;
-              }
+      // `&v`, or a block that binds a temporary and ends in `&tmp`, whose
+      // statements run first.
+      const auto *address = &first;
+      if (first.kind == hir_node_kind::hir_block) {
+        const auto &block = as<hir_block>(first);
+        const auto *tail =
+            block.stmts.empty() ||
+                    block.stmts.back()->kind != hir_node_kind::hir_expr_stmt
+                ? nullptr
+                : as<hir_expr_stmt>(*block.stmts.back()).expr.get();
+        if (tail != nullptr) {
+          for (size_t i = 0; i + 1 < block.stmts.size(); ++i) {
+            if (auto ok = lower_stmt(*block.stmts[i]); !ok.has_value()) {
+              return ok;
             }
-            address = tail;
           }
+          address = tail;
         }
-        if (address->kind != hir_node_kind::hir_unary ||
-            (as<hir_unary>(*address).op != ast::unary_op::addr_of &&
-             as<hir_unary>(*address).op != ast::unary_op::addr_of_mut)) {
-          return refuse(call.span, "a consumed receiver that is not a place");
-        }
-        owned_receiver = as<hir_unary>(*address).operand.get();
       }
+      if (address->kind != hir_node_kind::hir_unary ||
+          (as<hir_unary>(*address).op != ast::unary_op::addr_of &&
+           as<hir_unary>(*address).op != ast::unary_op::addr_of_mut)) {
+        return refuse(call.span, "a consumed receiver that is not a place");
+      }
+      owned_receiver = as<hir_unary>(*address).operand.get();
     }
     auto params = std::vector<type_id>{};
     for (size_t i = 0; i < call.args.size(); ++i) {
       params.push_back(
-          i == 0 && owned_receiver != nullptr       ? owned_receiver->type
-          : i == 0 && borrowed_receiver.has_value() ? *borrowed_receiver
-                                                    : call.args[i]->type);
+          i == 0 && owned_receiver != nullptr ? owned_receiver->type
+                                              : call.args[i]->type);
     }
     auto signature = classify_signature(env_.layouts, params, call.type);
     if (!signature.has_value()) {
@@ -2979,27 +2968,7 @@ private:
           i == 0 && owned_receiver != nullptr ? *owned_receiver : *call.args[i];
       const auto &param = signature->params[i];
       auto lowered = call_argument{.source_index = i, .cls = param.cls};
-      if (i == 0 && borrowed_receiver.has_value()) {
-        if (!is_indirect(param.cls)) {
-          return refuse(call.span, "a borrowed receiver passed in a register");
-        }
-        const auto reference = new_temp(arg.type, arg.span);
-        if (auto ok = lower_into(arg, whole(reference)); !ok.has_value()) {
-          return ok;
-        }
-        const auto slot =
-            new_slot(storage_class::outgoing_argument, *borrowed_receiver, "",
-                     k_invalid_symbol_id, arg.span, false);
-        outgoing.push_back(slot);
-        lowered.slot = whole(slot);
-        auto copy = storage_op{.kind = op_kind::copy_into};
-        copy.dest = lowered.slot;
-        copy.source = project(whole(reference),
-                              projection{.kind = projection_kind::deref},
-                              *borrowed_receiver);
-        copy.shallow = true;
-        emit(std::move(copy), arg.span);
-      } else if (is_indirect(param.cls) && !env_.is_copy(arg.type) &&
+      if (is_indirect(param.cls) && !env_.is_copy(arg.type) &&
                  std::ranges::contains(call.lent_args, i)) {
         // A task block only borrows this capture: it gets a bitwise copy
         // that owns nothing, and the owner keeps the value.
@@ -3069,14 +3038,6 @@ private:
     emit(std::move(op), call.span);
     if (crew_task) {
       // The crew owns the task; this local only names it.
-      out_.slots[dest.base].owns_nothing = true;
-    }
-    if (borrowed_receiver.has_value()) {
-      if (!dest.steps.empty() ||
-          out_.slots[dest.base].cls != storage_class::frame_local) {
-        return refuse(call.span, "an iterator over a borrowed collection that "
-                                 "is not a local");
-      }
       out_.slots[dest.base].owns_nothing = true;
     }
     for (const auto slot : outgoing) {

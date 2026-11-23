@@ -127,7 +127,8 @@ auto body_builder::binding_of(const std::string &name, const void *key,
                                       : pattern_binding::mode::move;
   }
   const auto declared_mut =
-      is_mut && !checked_.immutable_pattern_bindings.contains(key);
+      context.parameter ||
+      (is_mut && !checked_.immutable_pattern_bindings.contains(key));
   made.writable = made.how == pattern_binding::mode::alias
                       ? access.writable && (declared_mut || access.through_ref)
                       : declared_mut;
@@ -423,6 +424,13 @@ auto body_builder::bind_all(const std::vector<pattern_binding> &bindings)
 auto body_builder::subject_of(const ast::expr &subject,
                               binding_context &context) -> result<place> {
   CORE_TRY(p, place_of(subject));
+  // A whole static that is not `copy` is matched as a fresh value of its
+  // own, which the match may move out of: the static keeps its value.
+  if (p.root.kind == place_root::origin::global && p.path.empty() &&
+      !checked_.is_copy(p.type())) {
+    CORE_TRY(value, static_global_value(p.root.name, subject.span));
+    p = temporary(std::move(value));
+  }
   while (is_ref(p.type())) {
     add_deref(p);
     ++context.subject_derefs;

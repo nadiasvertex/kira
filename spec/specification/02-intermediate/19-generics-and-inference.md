@@ -119,7 +119,7 @@ A generic body is checked **once**, against the facts its signature declares —
 5. **`static if` narrows.** A condition that mentions a type parameter is checked for the facts it establishes, and its taken branch is checked under them:
    - `T.name() == "int8"`, `is_same[T, int8]()` (directly or through a `let` alias of `T.name()`) — equality; each disjunct of an `or` narrows its own branch;
    - `is_integer[T]()` and the other category predicates — the matching category bound;
-   - `implements[T, Tr]()` — `Tr`;
+   - `implements[T, C]()` — `C`, when `C` is a trait or a category concept;
    - anything else — no facts.
 
    Both branches of a type-dependent `static if` are checked, each under its own facts; the code after a branch that returns is checked under the negation. For a condition that does not mention a type parameter, the branch not taken is not type-checked ([31](../03-advanced/31-compile-time-execution.md)).
@@ -131,7 +131,7 @@ An instance is made by substitution: its types are the template's with the type 
 Implemented in `src/semantic/check.cpp`:
 
 - Solving: `solve_call` is the one entry point for a generic call. Sources are added in the order above — arguments (`solve_from_argument_types`), bounds (`solve_from_bounds`), the expected type (`solve_from_expected_type`) — and all feed the one unifier (`match_params`, over `infer::match_pattern`). A solution is keyed by the parameter's identity (`param_subst`), never its spelling.
-- Bounded generics: facts (`record_declared_facts`), bound-checked methods and operators (`check_bound_method_call`, `check_bound_arithmetic`), category bounds (`check_literal_as_param`, `check_cast_with_param`), `static if` narrowing (`narrowing_of`), call-site bound checks (`check_call_bounds`), instances by substitution (`substitute_instance`).
+- Bounded generics: facts (`record_declared_facts`), bound-checked methods and operators (`check_bound_method_call`, `check_bound_arithmetic`), category bounds (`check_literal_as_param`, `check_cast_with_param`), `static if` narrowing (`narrowing_of`; `implements_subject_of` for `implements[T, C]()`, which gives the taken branch `T: C` for a trait and the category's types for a category concept, and narrows nothing for `copy` or another concept), call-site bound checks (`check_call_bounds`), instances by substitution (`substitute_instance`).
 - Explicit type arguments on method calls: `method_explicit_generic_args` — brackets on a method call are honored, not discarded.
 - Static dispatch through a type parameter: `type_param_slots_` holds the active per-instantiation binding used to resolve a qualified path whose base names a type parameter.
 

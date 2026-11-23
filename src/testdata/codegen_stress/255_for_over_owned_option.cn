@@ -1,0 +1,41 @@
+module codegen_stress.for_over_owned_option
+
+# expect: 120
+# max-live-blocks: 0
+
+# A `for` over an owned `option` runs its body once on `@some` and not at all
+# on `@none` (spec/todo.md item 54). The payload's binding owns the value it
+# takes, so its `list` drops at the end of the iteration; on `@none` there is
+# nothing to drop. A comprehension over an option does the same. Every pass
+# of the outer loop builds fresh lists, so a payload that is never dropped
+# leaves blocks behind.
+
+type boxed = { id: int32, data: list[int32] }
+
+def mk(id: int32) -> boxed:
+    return boxed { id: id, data: [id, id] }
+
+def maybe(id: int32) -> option[boxed]:
+    if id % 2 == 0:
+        return @none
+    return @some(mk(id))
+
+def pass(i: int32) -> int32:
+    var total: int32 = 0
+    for b in maybe(i):
+        total = total + b.id + b.data[1]
+    let o: option[boxed] = @some(mk(i))
+    for b in o:
+        total = total + b.id
+    let ids = for b in maybe(i) => b.data[0]
+    if ids.len() > 0:
+        total = total + ids[0]
+    return total
+
+def main() -> int32:
+    var sum: int32 = 0
+    var i: int32 = 0
+    while i < 10:
+        sum = sum + pass(i)
+        i += 1
+    return sum

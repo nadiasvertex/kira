@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/semantic/infer/value_solver.h"
 
 namespace cinder::semantic::detail {
 
@@ -125,8 +126,34 @@ auto checker::value_slot_conflict(type_id expected, type_id found)
   const auto &found_entry = session_.types_.entry(found);
 
   if (is_value_kind(expected_entry.kind) && is_value_kind(found_entry.kind)) {
-    if (session_.types_.compatible(expected, found)) {
+    if (value_slots_hold(expected, found)) {
       return std::nullopt;
+    }
+    if (session_.types_.compatible(expected, found)) {
+      // Satisfiable, but only by choosing a value for a parameter of this
+      // code, which stands for every value its callers may pass.
+      auto fixed = std::vector<std::string>{};
+      for (const auto *slot : {&expected_entry, &found_entry}) {
+        for (const auto &term : slot->value.terms) {
+          fixed.push_back(poly_var_spelling(term.var));
+        }
+      }
+      std::ranges::sort(fixed);
+      fixed.erase(std::ranges::unique(fixed).begin(), fixed.end());
+      return std::format(
+          "`{}` and `{}` are equal only for some values of `{}`. `{}` is a "
+          "parameter of this code, so it stands for any value a caller "
+          "passes, and the two are not known to be equal.",
+          expected_entry.name, found_entry.name, join_strings(fixed, "`, `"),
+          join_strings(fixed, "`, `"));
+    }
+    if (session_.types_.is_boolean(expected_entry.result) &&
+        expected_entry.kind == type_kind::const_value_kind &&
+        found_entry.kind == type_kind::const_value_kind) {
+      return std::format(
+          "This value's `bool` index is `{}`, but `{}` is required here. The "
+          "index is part of the type, so use a value whose type has `{}`.",
+          found_entry.name, expected_entry.name, expected_entry.name);
     }
     if (expected_entry.kind == type_kind::const_variant_kind ||
         found_entry.kind == type_kind::const_variant_kind) {
@@ -458,6 +485,61 @@ auto checker::solve_leaves(type_id expected, type_id found) -> void {
   (void)leaf_engine_.unify(expected, found, infer::k_no_cause);
 }
 
+/// Whether each value slot of `expected` equals the matching slot of `found`
+/// with the value parameters of the code being checked held fixed (ch. 33:
+/// a rigid parameter is never chosen to make a value fit). `compatible`
+/// answers whether some values would make two slots equal, which is right
+/// for a callee's own parameters a call is solving and wrong for the
+/// caller's: `only4(v)` with `v: arr[n]` would otherwise pass in the
+/// generic body and fail in its instance `arr[3]`. A variable that is not a
+/// parameter of this code stays flexible, so a callee's signature still
+/// matches here.
+auto checker::value_slots_hold(type_id expected, type_id found) -> bool {
+  if (expected == found || session_.types_.is_unknown(expected) ||
+      session_.types_.is_unknown(found) || expected == k_error_type ||
+      found == k_error_type) {
+    return true;
+  }
+  const auto want_id = session_.types_.strip_refinement(expected);
+  const auto got_id = session_.types_.strip_refinement(found);
+  const auto want = session_.types_.entry(want_id); // copy: solving interns
+  const auto got = session_.types_.entry(got_id);
+  if (is_value_kind(want.kind) && is_value_kind(got.kind)) {
+    if (want.kind == type_kind::const_variant_kind ||
+        got.kind == type_kind::const_variant_kind) {
+      return want_id == got_id;
+    }
+    const auto is_unsigned = [&](const type_entry &slot) -> bool {
+      return session_.types_.is_integer(slot.result) &&
+             !is_signed_integer_name(session_.types_.entry(slot.result).name);
+    };
+    const auto unsigned_domain = is_unsigned(want) || is_unsigned(got);
+    const auto solution = infer::solve_value_equation(
+        want.value, got.value, unsigned_domain,
+        [&](std::string_view var) -> bool {
+          const auto identity = poly_var_identity(var);
+          return !identity.has_value() || !is_rigid_param(*identity);
+        });
+    return solution.answer != infer::value_answer::unsatisfiable;
+  }
+  if (want.kind != got.kind) {
+    if (want.kind == type_kind::ref_kind) {
+      return value_slots_hold(want.result, found);
+    }
+    if (got.kind == type_kind::ref_kind) {
+      return value_slots_hold(expected, got.result);
+    }
+    return true;
+  }
+  for (size_t i = 0; i < want.args.size() && i < got.args.size(); ++i) {
+    if (!value_slots_hold(want.args[i], got.args[i])) {
+      return false;
+    }
+  }
+  return want.result == want_id || got.result == got_id ||
+         value_slots_hold(want.result, got.result);
+}
+
 /// `compatible`, but teaching the leaf unknowns first.
 ///
 /// `type_mismatch` is the chokepoint for a value meeting a declared type,
@@ -468,7 +550,10 @@ auto checker::solve_leaves(type_id expected, type_id found) -> void {
 /// function that says what `out` holds.
 auto checker::agrees(type_id expected, type_id found) -> bool {
   solve_leaves(expected, found);
-  return session_.types_.compatible(settle(expected), settle(found));
+  expected = settle(expected);
+  found = settle(found);
+  return session_.types_.compatible(expected, found) &&
+         value_slots_hold(expected, found);
 }
 
 /// Whether `id` is a borrow of something a load has to be spelled for —
@@ -580,12 +665,13 @@ static auto nested_indirection_conflict(const type_table &types,
 }
 
 auto checker::type_mismatch(source_span span, type_id expected, type_id found,
-                            std::string_view context, const ast::expr *value)
-    -> void {
+                            std::string_view context, const ast::expr *value,
+                            bool rigid_values) -> void {
   solve_leaves(expected, found);
   expected = settle(expected);
   found = settle(found);
-  if (session_.types_.compatible(expected, found)) {
+  if (session_.types_.compatible(expected, found) &&
+      (!rigid_values || value_slots_hold(expected, found))) {
     check_narrowing(expected, found, value, span, context);
     return;
   }

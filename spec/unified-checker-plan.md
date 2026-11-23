@@ -1,6 +1,6 @@
 # Unified type checker plan
 
-Status: accepted, 2026-11-15. Phases 1 to 3 are complete; phase 3 finished on 2026-11-19. Phase 4 is done (2026-11-20); its remaining debts moved to phase 12. Phase 5 is done (2026-11-22); its remaining debts moved to phase 12.
+Status: accepted, 2026-11-15. Phases 1 to 3 are complete; phase 3 finished on 2026-11-19. Phase 4 is done (2026-11-20); its remaining debts moved to phase 12. Phase 5 is done (2026-11-22); its remaining debts moved to phase 12. Phase 6 is done (2026-11-22); its remaining debts moved to phase 12. Phase 7 is done (2026-11-22); its remaining debts moved to phases 8 and 12.
 
 The type-checking bugs in [todo.md](todo.md) share three structural causes. The checker
 hands later stages about 85 side tables keyed by AST node, and each later stage decides
@@ -170,8 +170,8 @@ Each phase leaves the tree green and removes the code it replaces.
 | 3. Lowering reads the core (done) | HIR lowering takes the core as input. Refusals move into the adapter as user diagnostics or become assertions. Compile-time execution lowers from the same core. Lower `await yield` and a named `on` block. | Done 2026-11-19: lowering reads no AST node and only the type table, shapes, drop plans and drop schedule from the checker; the verifier runs in every test build. See "Phase 3 results". | 15, 26 (stale message), 36, 40 |
 | 4. Places and patterns (done) | One place function and one pattern elaboration, emitting core directly. Add the mutable dereference trait. A binding through a `&mut` subject is writable without `mut`. | Done 2026-11-20: compound assignment to a list element, `replace(&mut xs[i], v)`, `*guard += 1`, and or-pattern bindings run on both tiers with `# expect:`. Raw pointer weakening (item 38) moved to phase 12. See "Phase 4 results". | 12, 21, 22, 33, 37 |
 | 5. Calls and names (done) | One call pipeline emitting core directly. One lookup for a variant name, used by construction and by patterns, in which a user's variant shadows the prelude's. | Done 2026-11-22: the 17 entry points are gone; qualified, static, trait-static and bound calls share tests. The remaining templates and adapter-derived names moved to phase 12. See "Phase 5 progress". | 8, 9, 27, 35, 41 |
-| 6. Equality and predicates | One type equality and one satisfaction query. | The `bool`-index program is rejected; `implements[T, copy]` works. | 14, 32 |
-| 7. Ownership graph on the core | Rebuild the ownership graph from the core with field-level places. Check generated code. Reject moves out of `self` in every body. Record loan origins for diagnostics. | Existing ownership tests pass on the new graph; a derived impl that moves out of `self` gets a diagnostic; the item 34 program names the closure. | 16, 23, 34, 39 |
+| 6. Equality and predicates (done) | One type equality and one satisfaction query. | Done 2026-11-22: the `bool`-index program is rejected, and `implements[T, copy]` works. See "Phase 6 results". | 14, 32 |
+| 7. Ownership graph on the core (done) | Rebuild the ownership graph from the core with field-level places. Check generated code. Reject moves out of `self` in every body. Record loan origins for diagnostics. | Done 2026-11-22: the ownership tests pass on the graph built from the core, derived and spliced impls are checked, and the item 34 program names the closure. The AST-walking builder is deleted. See "Phase 7 results". | 16, 23, 34, 39 |
 | 8. Summaries and escape | Infer function summaries, apply them at calls, check stores through parameters, carry argument borrows in generator and task values, and decide closure capture by escape. | The `known_gaps` programs for items 30 and 31 are rejected; an escaping closure moves its captures with no `move` keyword. | 19, 30, 31 |
 | 9. Drop glue and task results | One drop-glue rule for every owner. `get()` and `errors()` return borrows. | Corpus programs for a droppable zero-sized capture and a second `get()` of a `list` result pass with `# max-live-blocks: 0` on both tiers. | 20, 29 |
 | 10. Compile-time values | One static value representation covering user sum types and partial reads. | `static for` over a list of variants unrolls. | 25, 26 |
@@ -210,9 +210,9 @@ phase removes.
 | No record holds the generic arguments an instance was made with, so verifier rule C8 is allow-listed for every call to an instance. | Phase 5 (done) |
 | About 250 templates do not build. Most defer a call, an operator, or a cast to their instances and have no record of their own. Implicit generics and reads of a value parameter have no core form yet. Phase 5 built about 150 of them; the rest moved to phase 12. | Phase 12 |
 | The task type of an `async def` and the `std.fmt` helpers interpolation calls are derived by the adapter. | Phase 12 |
-| The verifier does not check that a generic call meets the callee's bounds, or that a `match` is exhaustive. | Phase 6 |
-| Closure capture modes and pattern binding modes are read from the ownership check's own graph. | Phase 7 |
-| `for` over a borrowed collection of `copy` elements moves out of a reference (item 39). | Phase 7 |
+| The verifier does not check that a generic call meets the callee's bounds, or that a `match` is exhaustive. The core carries no bounds or impl table, so the verifier cannot ask the satisfaction query phase 6 built. | Phase 12 |
+| Closure capture modes and pattern binding modes are read from the ownership check's own graph. | Phase 7 (done) |
+| `for` over a borrowed collection of `copy` elements moves out of a reference (item 39). | Phase 7 (done) |
 
 ## Phase 3 results
 
@@ -274,8 +274,8 @@ Phase 3 added these debts.
 | Debt | Removed in |
 |---|---|
 | A core `match` records which source form it came from (`if let`, `while let`, `for`, and so on), because storage lowering depends on the HIR shape each form has today. | When storage lowering accepts one match shape |
-| Core nodes carry the AST node they came from, as the key into the drop schedule. | Phase 7, when the ownership check runs on the core |
-| `for` over a borrowed collection is `into_iter(bitwise_copy(xs))`, an intrinsic that duplicates a value without making an owner (item 39). | Phase 7 |
+| Core nodes carry the AST node they came from, as the key into the drop schedule. The ownership check now runs on the core, but the drop schedule is still keyed by these origins. | Phase 12 |
+| `for` over a borrowed collection is `into_iter(bitwise_copy(xs))`, an intrinsic that duplicates a value without making an owner (item 39). | Phase 7 (done) |
 | A call the checker ran at compile time (a `static if` condition calling a `static def`) has no callee record, so the adapter finds the callee by its bare name (`core::function_lookup`) when it builds compile-time code. | Phase 5 (done) |
 | The adapter interns function and reference types while building compile-time code during checking, so the elaboration snapshot depends on which path lowered compile-time code. | Phase 12 |
 | The verifier skips rule C8 everywhere (item 65's A4 entry was removed in phase 4). | Phase 5 (done) |
@@ -395,3 +395,47 @@ Phase 5 leaves these debts.
 | The adapter derives an `async def`'s task type and finds the `std.fmt` helpers interpolation calls by name. | Phase 12 |
 
 Open items found in this phase: 68 (module-path form), 75 to 80. Item 80 is a soundness hole: a template can spawn a task with a value that is `share` but not `send`, because the carrier check treats a type parameter as carrying nothing and instances do not recheck it.
+
+## Phase 6 results
+
+Phase 6 is done (2026-11-22). Items 14 and 32 are closed, each with a corpus program checked with `# expect:` (252 and 253) and rejection tests in `check_test`.
+
+- **`bool` value indices.** A `bool` index is interned as the closed value 1 or 0 and displayed as `true` or `false`, so `conn[true]` and `conn[false]` are different types and compare by the rule for any closed value (item 32). A generic over `[open: bool]` gets one instance per state, and its body reads `open` as that instance's constant. A number in a `bool` slot and a `bool` in a number slot are errors, in a type (`conn[1]`, `arr[true]`) and in brackets (`flag[1]()`). A mismatch between two states gets help that names them. Chapter 33 states the rule.
+- **Rigid value parameters.** Where a value meets a declared type, value slots are compared with the enclosing generic declaration's value parameters held rigid (`value_slots_hold`), as chapter 33 requires. `type_table::compatible` treats every value variable as solvable, so `only4(v)` with `v: arr[n]` passed in the template and the instance `arr[3]` failed in lowering with an internal error. The same hole let `conn[o]` pass as `conn[true]`. A call's own value parameters are still solved by `match_value_params`.
+- **One satisfaction query.** A bound and `implements[T, C]()` are resolved into one `satisfaction_term` and answered by `checker::satisfies`: `copy`, a trait with its arguments, or a concept. `implements` therefore accepts a concept, including `copy` and the category concepts (item 14), and a name that is neither is an error. Before, `implements` read the coherence table and knew only traits.
+- **`implements` narrows.** `static if implements[T, Tr]()` checks its taken branch with `T: Tr`, and `implements[T, numeric]()` narrows as `is_numeric[T]()` does. Chapter 19 stated this rule, but only the category predicates and name tests narrowed.
+
+Phase 6 leaves these debts.
+
+| Debt | Removed in |
+|---|---|
+| The verifier does not check bounds or `match` exhaustiveness (moved from phase 2). The core carries no bounds or impl table. | Phase 12 |
+| `type_table::compatible` still treats rigid value variables as solvable; the checker adds the rigid check on top of it. `type_mismatch` and `agrees` (returns) ask it; other callers of `compatible` keep the old answer. One equality with rigidity from the context replaces both once the elaborator emits the core. | Phase 12 |
+| `static if implements[T, copy]()` and other non-category concepts narrow nothing. `copy` facts are kept per function (`copy_type_params_`) and read by the ownership check, so a branch-scoped `copy` needs that check to read scoped facts. | Phase 12 |
+| A call to a generic declaration from inside its own body (a recursive call) skips the rigid check for all its arguments, because its signature names the caller's own value parameters. Those are solved apart by `match_value_params`, which does not report a failure. | Phase 12 |
+| `resolve_value_arg` still returns an unknown slot for an integer argument outside the polynomial fragment (chapter 33's conformance gap). | Phase 12 |
+
+## Phase 7 results
+
+Phase 7 is done (2026-11-22). The ownership check builds its graphs from the typed core (`src/core/ownership.cpp`), and the AST-walking builder (`src/semantic/ownership_cfg.cpp`) is deleted. The check itself, `semantic::ownership::check_graph`, is unchanged in shape; the drop schedule reads the same graphs. Items 16, 23, 34 and 39 are closed, and items 54 and 55 closed with them. The driver now builds the core before the ownership check rather than after it.
+
+- **Field-level places.** A loan is rooted at the deepest field path of the place it borrows, stopping at a dereference, an element or a variant payload. Borrows of different fields of one local do not conflict, and a move checks the loans of every enclosing path. An element borrow covers the whole collection.
+- **`self` (item 16).** `self` is a reference in every method. A move of a non-`copy` part out of anything reached through a reference, including `self`, is rejected in ordinary and generic bodies; in a generic body a type parameter counts as non-`copy` unless a bound says otherwise.
+- **Generated code (item 23).** Every function the adapter builds is checked once, as its template when it has one: user code, the standard library, derived impls and impls made by an item splice. A diagnostic in a derived impl is placed at the `deriving` clause with a note that says so.
+- **Loan origins (item 34).** A capture loan records the closure that holds it. A conflict on a value a closure borrowed names that closure even when a call result keeps the borrow alive, and the label names the value that keeps it.
+- **Loops over borrowed collections (item 39).** `for x in xs` with `xs: &C`, where `C`'s own route is the consuming `into_iter`, calls the borrowing `iter` and copies each element out of the `&T` it yields. The checker requires `T` to be `copy`. The `bitwise_copy` intrinsic and HIR's `receiver_borrowed` flag are deleted. Corpus program 254 checks the result with `# expect:`.
+- **Loops over owned options (item 54).** The graph owns the payload binding of a `for` or comprehension over an owned `option`, and lowering drops it at the end of the iteration. Corpus program 255 checks the result and the drops.
+- **Guarded loops over owned elements (item 55).** A guarded `for` body is a scope keyed by its guard, so the loop variable drops whether the guard keeps the element or skips it. Corpus program 256 checks the result and the drops.
+- **Capture modes.** The adapter settles each capture's mode from the body it built. A lambda that is not `move` borrows every capture, mutably when its body writes it. A task block moves in a capture it consumes or writes through as a `&mut`, and borrows any other.
+- **Other rules the new graph enforces.** A write or `&mut` through a `&T`, a `*T` or a shared view is rejected; a name a pattern binds by value cannot be changed through `&mut`; a store through `v[i] = x` and a `mut self` receiver are two-phase borrows; a raw pointer result carries no borrow.
+
+The known_gaps programs for items 16, 23, 34, 54 and 55 are deleted. The cases of 16, 23 and 34 are now tests in `ownership_check_test`, and those of 54 and 55 are corpus programs 255 and 256. Gap 31 changed: with item 39 fixed, the program compiles and runs, so its record now shows the unsound result instead of the code generation refusal that hid it.
+
+Phase 7 leaves these debts.
+
+| Debt | Removed in |
+|---|---|
+| A function the adapter cannot build (about 100 templates, and functions with an adapter gap) is not ownership-checked. | Phase 12 |
+| The drop schedule is keyed by the AST nodes the core records as `origin` (moved from phase 3). | Phase 12 |
+| Function summaries, stores through parameters, borrows held by generator and task values, and closure escape are not implemented. A call result still carries the borrows of every argument its signature lets reach it. | Phase 8 |
+| A `for` over a borrowed collection of `copy` elements can bind only a name or `_`: the core has no test of a reference's referent, so a destructuring head is reported as a feature not built yet. | Phase 12 |

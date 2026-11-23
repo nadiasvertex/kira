@@ -705,8 +705,10 @@ auto checker::resolve_deriving_traits(const ast::type_decl &decl,
     add_synthesized_impl(impl_ref{.decl = impl,
                                   .module_name = file_.module_name_,
                                   .file_id = owner_file});
-    session_.synthesized_item_splices_.push_back(synthesized_item_splice{
-        .impl = impl, .owner_module = file_.module_name_});
+    session_.synthesized_item_splices_.push_back(
+        synthesized_item_splice{.impl = impl,
+                                .owner_module = file_.module_name_,
+                                .derived_from = decl.span});
     session_.derived_trait_impls_[&decl].push_back(impl);
     session_.derived_impl_origin_spans_[impl] = decl.span;
   }

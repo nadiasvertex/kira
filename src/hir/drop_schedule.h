@@ -86,37 +86,20 @@ struct drop_schedule {
   std::size_t flag_count = 0;
   /// The nodes that declare a `whole` local (`local_info::node`).
   std::unordered_set<const void *> owned_bindings;
-  /// The top-level patterns (a `let`, `if let`, `while let`, `match` arm or
-  /// destructuring parameter) whose bindings own the parts they bind, so a
-  /// `_` or `..` in them leaves a part to drop.
-  std::unordered_set<const void *> owning_patterns;
   /// The `match` arm, `let` and `if let`/`while let` patterns whose bindings
   /// overlap, so the arm owns the whole subject as a `<subject>` local.
   std::unordered_set<const void *> owning_subjects;
   /// `function_cfg::leftover_drops` and `unmatched_drops`.
   std::unordered_set<const void *> leftover_drops;
   std::unordered_set<const void *> unmatched_drops;
-  /// `function_cfg::owning_loops`, `loop_handles` and `consuming_calls`.
-  std::unordered_set<const void *> owning_loops;
-  std::unordered_set<const void *> loop_handles;
+  /// `function_cfg::consuming_calls`.
   std::unordered_set<const void *> consuming_calls;
   /// `function_cfg::temporary_ends`.
   std::unordered_map<const void *, const void *> temporary_ends;
-  /// `function_cfg::owned_static_reads`.
-  std::unordered_set<const void *> owned_static_reads;
   /// `function_cfg::owned_captures`: what each lambda's drop glue drops.
   std::unordered_map<const void *,
                      std::vector<semantic::ownership::owned_capture>>
       owned_captures;
-  /// For each owned capture whose `node` is a use of a generic lambda, the
-  /// one copy of it that use was checked against
-  /// (`checked_types::generic_lambda_refs`).
-  std::unordered_map<const void *, const void *> generic_lambda_copies;
-  /// `function_cfg::borrowed_captures`: what each lambda without a capture
-  /// list borrows instead of copying.
-  std::unordered_map<const void *,
-                     std::vector<semantic::ownership::borrowed_capture>>
-      borrowed_captures;
   /// `function_cfg::task_captures`: what each `async:` or `on(...)` block's
   /// task captures, and which captures it owns.
   std::unordered_map<const void *,
@@ -125,16 +108,16 @@ struct drop_schedule {
 };
 
 /// Computes the drop schedule for one function body, including every lambda
-/// nested inside it (a lambda is lowered inline, as part of its enclosing
-/// function). What is still owned at each exit comes from the ownership
-/// checker's own control-flow graph and move passes
-/// (`semantic::ownership::drop_facts_of`), so a value only lent to a
-/// `&`/`&mut` parameter is still dropped, one moved on every path is not,
-/// and one moved on some paths is dropped under a drop flag. A pattern
-/// binding has no place to set a flag, so one moved on some paths only
-/// leaks on the others.
-[[nodiscard]] auto compute_drop_schedule(const ast::func_decl &decl,
-                                         const semantic::checked_types &checked)
-    -> drop_schedule;
+/// and task body nested inside it (each is lowered inline, as part of its
+/// enclosing function), from that function's ownership graphs
+/// (`core::ownership_graphs`). What is still owned at each exit comes from
+/// the ownership checker's move passes (`semantic::ownership::drop_facts_of`)
+/// over the same graphs, so a value only lent to a `&`/`&mut` parameter is
+/// still dropped, one moved on every path is not, and one moved on some
+/// paths is dropped under a drop flag. A pattern binding has no place to set
+/// a flag, so one moved on some paths only leaks on the others.
+[[nodiscard]] auto compute_drop_schedule(
+    const std::vector<semantic::ownership::function_cfg> &graphs,
+    const semantic::checked_types &checked) -> drop_schedule;
 
 } // namespace cinder::hir

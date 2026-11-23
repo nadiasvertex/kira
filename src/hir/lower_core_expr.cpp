@@ -402,18 +402,6 @@ auto core_lowerer::intrinsic_call(const core::call &source)
   const auto type_operand = [&]() -> type_id {
     return source.target.generic_args.front();
   };
-  // Todo 39: `into_iter(bitwise_copy(xs))` is the old lowerer's adapter
-  // call on the reference itself, marked `receiver_borrowed` (`let_into`):
-  // the backends copy what it refers to. HIR has no other form of it.
-  if (name == "bitwise_copy") {
-    if (wrong_operands(1)) {
-      return refuse_operands();
-    }
-    if (for_adapter_ == nullptr) {
-      return refuse("bitwise_copy outside a for loop's adapter", source.span);
-    }
-    return expr(*source.args.front());
-  }
   if (name == "stack_buffer") {
     if (wrong_operands(0)) {
       return refuse_operands();

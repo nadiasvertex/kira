@@ -1314,9 +1314,13 @@ private:
 
   auto report_missing_deref(const ast::expr &value, type_id found) -> void;
 
+  /// `rigid_values` false leaves value slots to the caller: a call checks
+  /// them against its callee's own parameters itself.
   auto type_mismatch(source_span span, type_id expected, type_id found,
-                     std::string_view context, const ast::expr *value = nullptr)
-      -> void;
+                     std::string_view context, const ast::expr *value = nullptr,
+                     bool rigid_values = true) -> void;
+
+  auto value_slots_hold(type_id expected, type_id found) -> bool;
 
   // ==========================================================================
   //  check_scopes.cpp
@@ -1575,6 +1579,9 @@ private:
   [[nodiscard]] auto is_sum_like(type_id id) const -> bool;
 
   auto value_is_copy(type_id id) -> bool;
+  auto require_copied_elements(const ast::expr &iterable_expr,
+                               type_id iterable,
+                               const iterator_loop_dispatch &route) -> void;
 
   auto value_is_copy(type_id id, std::unordered_set<type_id> &visiting) -> bool;
 
@@ -1690,6 +1697,16 @@ private:
   /// What a `static if` condition says about one type parameter: the domain
   /// in its branch, and — when the parameter's domain was already finite, so
   /// that "everything but these" is a set — the domain in its `else`.
+  /// One term of a bound or of an `implements[T, C]()` query, resolved
+  /// where it was written: the built-in `copy`, a trait with its arguments,
+  /// or a concept.
+  struct satisfaction_term {
+    bool is_copy = false;
+    const ast::trait_decl *trait = nullptr;
+    std::vector<type_id> trait_args;
+    const ast::concept_decl *concept_decl = nullptr;
+  };
+
   struct narrowing {
     type_id param = k_unknown_type;
     type_domain then_domain;
@@ -1703,6 +1720,9 @@ private:
   auto with_else(type_id param, const type_domain &then_domain) -> narrowing;
 
   auto narrowing_of(const ast::expr &condition) -> std::optional<narrowing>;
+
+  auto implements_subject_of(const ast::expr &condition)
+      -> std::optional<std::pair<type_id, satisfaction_term>>;
 
   /// The `std.traits` traits every member of `domain` implements — what a
   /// category bound promises beyond its literals and builtin operators.
@@ -1744,6 +1764,10 @@ private:
 
   auto resolve_value_arg(const ast::node &node, const ast::type_param &param,
                          const resolve_ctx &ctx, source_span span) -> type_id;
+  auto resolve_bool_value_arg(const ast::node &node,
+                              const ast::type_param &param,
+                              const resolve_ctx &ctx, source_span span)
+      -> type_id;
 
   auto quiet_ctx(const resolve_ctx &ctx) -> resolve_ctx;
 
@@ -2918,6 +2942,10 @@ private:
 
   auto expr_as_named_type(const ast::expr &arg) -> ast::ptr<ast::named_type>;
 
+  auto explicit_value_kind_fits(const explicit_generic_arg &arg,
+                                const ast::func_decl &decl,
+                                const ast::type_param &param,
+                                type_id underlying) -> bool;
   auto explicit_value_argument(const ast::expr &arg) -> std::optional<int64_t>;
 
   auto value_param_underlying(const ast::type_param &param,
@@ -3019,6 +3047,16 @@ private:
 
   auto satisfies_concept(type_id subject, const ast::concept_decl &concept_decl)
       -> bool;
+
+
+  auto resolve_satisfaction_term(const ast::named_type &named,
+                                 const resolve_ctx &ctx)
+      -> std::optional<satisfaction_term>;
+
+  auto satisfies(type_id subject, const satisfaction_term &term) -> bool;
+
+  auto describe_satisfaction_term(const satisfaction_term &term)
+      -> std::string;
 
   auto bound_holds(type_id subject, const ast::type_expr &bound,
                    const resolve_ctx &ctx) -> std::vector<std::string>;
@@ -4815,10 +4853,10 @@ private:
   auto reflect_module_call(const ast::call_expr &call, std::string_view method,
                            std::string_view module) -> type_id;
 
-  /// Records whether `type` has an impl of the trait named `trait_name`, as
-  /// what the `implements[T, Trait]()` call `call` evaluates to.
+  /// Records whether `type` satisfies `term` (a trait or a concept), as
+  /// what the `implements[T, C]()` call `call` evaluates to.
   auto fold_implements(const ast::call_expr &call, type_id type,
-                       std::string_view trait_name) -> void;
+                       const satisfaction_term &term) -> void;
 
   /// Records `value`, of `type`, as what `call` evaluates to.
   auto record_reflection_fold(const ast::call_expr &call,

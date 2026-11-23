@@ -37,7 +37,6 @@ cc_library(
         "method_instances.cpp",
         "method_resolution.cpp",
         "module_index.cpp",
-        "ownership_cfg.cpp",
         "ownership_check.cpp",
         "narrowing.cpp",
         "predicates.cpp",
@@ -121,6 +120,8 @@ cc_test(
     ],
     deps = [
         "//src/comptime_vm",
+        "//src/core:adapter",
+        "//src/core:ownership",
         ":semantic",
         "//src/parser:parser",
         "//src/testing",

@@ -1,8 +1,7 @@
-# todo: 34
-# tier: both
-# currently-error: cannot borrow `other` while the closure `r` is still in use
-# want: rejected with "cannot borrow `other` while the closure `f` is still in use", because `r`, the result of `apply`, keeps the borrow that `f` holds on `other`.
-module known_gaps.callback_capture_origin
+module ownership.callback_capture_origin
+
+# `r`, the result of `apply`, keeps the borrow that the closure `f` holds on
+# `other`, so the conflict names `f` (todo 34).
 
 def apply(part: slice[int32], f: fn(slice[int32]) -> slice[int32]) -> slice[int32]:
     return f(part)

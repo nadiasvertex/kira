@@ -16,9 +16,8 @@
 //   t.get()                 task_get(&t)
 //   k.errors()              crew_errors[task](&k, new, push)  -> list[E]
 //
-// A task body's captures come from the ownership checker's `task_capture`
-// records: one it consumes is moved in, any other is lent (a copy for a copy
-// type). A `return`, `break`, `continue` or `?` that leaves a crew ends it
+// A task body's captures are settled from its built body: one it consumes
+// is moved in, any other is lent (a copy for a copy type). A `return`, `break`, `continue` or `?` that leaves a crew ends it
 // first, as lowering's `emit_crew_exits` does.
 
 #include <format>
@@ -42,8 +41,8 @@ auto body_builder::task_block_of(const void *key,
   made->return_type = declared;
   // The drop schedule names the task's captures and its drops by the block.
   made->origin = key;
-  made->task_start = semantic::ownership::task_block_start(
-      *static_cast<const ast::expr *>(key));
+  // The span's address is a key no other exit uses.
+  made->task_start = &static_cast<const ast::expr *>(key)->span;
 
   push_scope();
   lambdas_.push_back(lambda_frame{.source = nullptr,
@@ -71,6 +70,7 @@ auto body_builder::task_block_of(const void *key,
   }
   made->captures = std::move(frame.captures);
   made->body = std::move(*built);
+  settle_captures(*made, /*task=*/true);
   auto args = ptr_vec<expr>{};
   args.push_back(ptr<expr>(std::move(made)));
   return intrinsic_call("task_block", task_of(declared), std::move(args), {},

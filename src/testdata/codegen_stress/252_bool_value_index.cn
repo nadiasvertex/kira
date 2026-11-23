@@ -1,0 +1,38 @@
+module codegen_stress.bool_value_index
+
+# A `bool` value parameter (todo item 32). Each index is the value `true` or
+# `false`, so `conn[true]` and `conn[false]` are two types, a generic over
+# `[open: bool]` gets one instance per state, and the body reads `open` as
+# that instance's constant.
+#
+#   state(conn[true] { fd: 1 })    1 + 100   101
+#   state(conn[false] { fd: 2 })   2           2
+#   flag[true]()                   + 1000   1000
+#   flag[false]()                  + 5000      0
+#   state(reopen(conn[false] 7))   7 + 100   107
+#
+# 101 + 2 + 1000 + 107 = 1210
+
+# expect: 1210
+
+type conn[open: bool] = { fd: int32 }
+
+def state[open: bool](c: conn[open]) -> int32:
+    if open:
+        return c.fd + 100
+    return c.fd
+
+def flag[b: bool]() -> bool:
+    return b
+
+def reopen[open: bool](c: conn[open]) -> conn[true]:
+    return conn[true] { fd: c.fd }
+
+def main() -> int32:
+    var total = state(conn[true] { fd: 1 }) + state(conn[false] { fd: 2 })
+    if flag[true]():
+        total = total + 1000
+    if flag[false]():
+        total = total + 5000
+    let r = reopen(conn[false] { fd: 7 })
+    return total + state(r)

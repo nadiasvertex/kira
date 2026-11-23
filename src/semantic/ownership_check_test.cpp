@@ -8,7 +8,8 @@
 #include <vector>
 
 #include "analysis.h"
-#include "ownership_check.h"
+#include "src/core/adapter.h"
+#include "src/core/ownership.h"
 #include "src/comptime_vm/backend.h"
 #include "src/parser/parser.h"
 #include "src/testing/test_assert.h"
@@ -161,16 +162,17 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
 
   auto comptime = cinder::comptime_vm::vm_backend{};
 
-  const auto checked = cinder::semantic::validate_semantics(
+  auto checked = cinder::semantic::validate_semantics(
       parsed_modules, diag, file_has_errors,
-
       cinder::semantic::semantic_options{.comptime = &comptime});
 
-  // Mirror the driver: one ownership pass over the checked result, run only
-  // over the user's own files (`stdlib_boundary` skips the injected prelude).
-  cinder::semantic::check_ownership(parsed_modules, checked, diag,
-                                    file_has_errors,
-                                    static_cast<unsigned>(stdlib_boundary));
+  // Mirror the driver: the core is built from the checked result and one
+  // ownership pass runs over it, only over the user's own files
+  // (`stdlib_boundary` skips the injected prelude).
+  const auto adapted =
+      cinder::core::adapt_program(parsed_modules, file_has_errors, checked);
+  cinder::core::check_ownership(adapted, checked, diag, file_has_errors,
+                                static_cast<unsigned>(stdlib_boundary));
 
   return analyzed_session{
       .diagnostics =
@@ -984,6 +986,52 @@ auto test_consuming_loop_over_borrow_is_rejected() -> void {
              analyzed.diagnostics);
 }
 
+/// `self` is a reference, so a method may not move a non-`copy` part out
+/// of it, in an ordinary body and in a generic one (todo 16).
+auto test_method_moving_out_of_self_is_rejected() -> void {
+  for (const auto *file : {"reject_method_moves_out_of_self.cn",
+                           "reject_generic_method_moves_out_of_self.cn"}) {
+    const auto analyzed = analyze_test_data_file(file);
+    expect_diagnostic(analyzed, "cannot move out of `v`",
+                      std::string("expected the move out of `self` in ") +
+                          file + " to be rejected");
+    expect_diagnostic(analyzed, "`self` is only borrowed by this method",
+                      "expected the label to say `self` is only borrowed");
+    expect(analyzed.error_count == 1,
+           std::string("expected only the move out of `self`:\n") +
+               analyzed.diagnostics);
+  }
+}
+
+/// An impl made by an item splice is ownership-checked like written code
+/// (todo 23).
+auto test_spliced_impl_moving_out_of_self_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_spliced_impl_moves_out_of_self.cn");
+  expect_diagnostic(analyzed, "cannot move out of `self.inner`",
+                    "expected the spliced impl's move out of `self` to be "
+                    "rejected");
+  expect(analyzed.error_count == 1,
+         std::string("expected only the spliced move:\n") +
+             analyzed.diagnostics);
+}
+
+/// A closure's borrow kept alive by a call result names the closure that
+/// made it, and the value that keeps it (todo 34).
+auto test_callback_capture_names_the_closure() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_callback_capture_origin.cn");
+  expect_diagnostic(analyzed,
+                    "cannot borrow `other` while the closure `f` is still in "
+                    "use",
+                    "expected the conflict to name the closure `f`");
+  expect_diagnostic(analyzed, "and `r` keeps that borrow",
+                    "expected the label to name `r` as what keeps the borrow");
+  expect(analyzed.error_count == 1,
+         std::string("expected only the closure conflict:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_overlapping_owned_binding_is_rejected() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_overlapping_owned_binding.cn");
@@ -1458,6 +1506,9 @@ auto main() -> int {
     test_moves_out_of_places_are_rejected();
     test_outlived_temporaries_are_rejected();
     test_consuming_loop_over_borrow_is_rejected();
+    test_method_moving_out_of_self_is_rejected();
+    test_spliced_impl_moving_out_of_self_is_rejected();
+    test_callback_capture_names_the_closure();
     test_overlapping_owned_binding_is_rejected();
     test_reuse_after_move_capture_is_rejected();
     test_reuse_after_plain_value_capture_is_accepted();

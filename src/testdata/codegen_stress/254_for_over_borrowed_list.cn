@@ -1,0 +1,27 @@
+module codegen_stress.for_over_borrowed_list
+
+# A `for` over a `&list` of `copy` elements walks the list with `iter` and
+# copies each element out of the `&int64` it yields (todo 39). The list is
+# not moved or dropped by the loop, so it can be read again afterward.
+
+def weighted(xs: &list[int64]) -> int64:
+    var sum: int64 = 0
+    var i: int64 = 1
+    for x in xs:
+        sum = sum + x * i
+        i = i + 1
+    return sum
+
+def count(xs: &list[int64]) -> int64:
+    var n: int64 = 0
+    for _ in xs:
+        n = n + 1
+    return n
+
+def main() -> int32:
+    let xs: list[int64] = [5, 7, 11]
+    let first = weighted(&xs)
+    let again = weighted(&xs)
+    return (first + again + count(&xs) + xs[2]) as int32
+
+# expect: 118

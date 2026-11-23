@@ -342,10 +342,6 @@ struct hir_call : hir_expr {
   /// (`hir_function::owns_receiver`), so the storage form moves the receiver
   /// into the call instead of passing its address.
   bool receiver_by_value = false;
-  /// With `receiver_by_value`: the first argument is a reference to the
-  /// receiver, which a `for` loop over a borrowed collection only borrows.
-  /// The callee gets a bitwise copy, and what it returns owns nothing.
-  bool receiver_borrowed = false;
   /// The arguments, by index, that a task block's call only lends to the
   /// task (`hir_param::lent`).
   std::vector<size_t> lent_args;

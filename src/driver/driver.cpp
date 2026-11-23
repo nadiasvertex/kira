@@ -19,7 +19,8 @@
 #include "src/hir/inline.h"
 #include "src/hir/reference_check.h"
 #include "src/semantic/analysis.h"
-#include "src/semantic/ownership_check.h"
+#include "src/core/adapter.h"
+#include "src/core/ownership.h"
 #include "src/util/path.h"
 #include "src/util/str.h"
 #include "src/version.h"
@@ -387,26 +388,31 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     }
   }
 
-  if (!effective_cfg.parse_only) {
+  // Lowering: the adapter builds the typed core from the checker's side
+  // tables, the ownership check runs over it, and HIR is lowered from it.
+  // Only for a program with no errors.
+  auto lowered = std::optional<hir::lowered_program>{};
+  if (!effective_cfg.parse_only && session_diagnostics.error_count() == 0) {
+    auto adapted = core::adapt_program(
+        semantic_inputs, file_has_errors, checked,
+        core::adapt_options{.contract_checks = effective_cfg.contract_checks});
     // The standard library is held to the same ownership rules as user code
     // (ch. 14): drops rely on no value having two owners.
     static_cast<void>(stdlib_start);
-    semantic::check_ownership(semantic_inputs, checked, session_diagnostics,
-                              file_has_errors,
-                              std::numeric_limits<unsigned>::max());
-  }
-
-  // Lowering: the adapter builds the typed core from the checker's side
-  // tables, and HIR is lowered from it. Only for a program with no errors.
-  auto lowered = std::optional<hir::lowered_program>{};
-  if (!effective_cfg.parse_only && session_diagnostics.error_count() == 0) {
-    auto file_module_names = std::unordered_map<file_id_type, std::string>{};
-    for (const auto &parsed : parsed_inputs) {
-      file_module_names.try_emplace(parsed.file_id, hir_module_name(parsed));
+    core::check_ownership(adapted, checked, session_diagnostics,
+                          file_has_errors,
+                          std::numeric_limits<unsigned>::max());
+    if (session_diagnostics.error_count() == 0) {
+      auto file_module_names =
+          std::unordered_map<file_id_type, std::string>{};
+      for (const auto &parsed : parsed_inputs) {
+        file_module_names.try_emplace(parsed.file_id, hir_module_name(parsed));
+      }
+      lowered = hir::lower_adapted_program(
+          std::move(adapted), checked, std::move(file_module_names),
+          hir::lowering_options{.contract_checks =
+                                    effective_cfg.contract_checks});
     }
-    lowered = hir::lower_program(
-        semantic_inputs, file_has_errors, checked, std::move(file_module_names),
-        hir::lowering_options{.contract_checks = effective_cfg.contract_checks});
   }
   // The core verified, when asked for (`cli_config::core_check`). Its
   // findings go to the report only.

@@ -124,4 +124,14 @@ lower_program(std::span<const semantic::parsed_module> inputs,
               std::unordered_map<file_id_type, std::string> file_module_names,
               const lowering_options &options = {}) -> lowered_program;
 
+/// Lowers a core the adapter already built (`core::adapt_program`), as
+/// `lower_program` lowers the one it builds: for a caller that checks the
+/// core first (`core::check_ownership`).
+[[nodiscard]] auto
+lower_adapted_program(core::adapted_program core,
+                      semantic::checked_types &checked,
+                      std::unordered_map<file_id_type, std::string>
+                          file_module_names,
+                      const lowering_options &options = {}) -> lowered_program;
+
 } // namespace cinder::hir

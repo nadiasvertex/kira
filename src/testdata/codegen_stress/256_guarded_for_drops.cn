@@ -1,0 +1,34 @@
+module codegen_stress.guarded_for_drops
+
+# expect: 360
+# max-live-blocks: 0
+
+# A guarded `for` over owned elements drops every element, whether the guard
+# keeps it or skips it (spec/todo.md item 55). The loop variable's scope
+# encloses the guard, so the element drops at the end of the iteration on
+# both paths. A guarded comprehension does the same. Every pass builds fresh
+# lists, so an element that is never dropped leaves blocks behind.
+
+type boxed = { id: int32, data: list[int32] }
+
+def mk(id: int32) -> boxed:
+    return boxed { id: id, data: [id] }
+
+def pass() -> int32:
+    var xs: list[boxed] = [mk(1), mk(2), mk(3)]
+    var total: int32 = 0
+    for b in xs if b.id != 2:
+        total = total + b.id + b.data[0]
+    var ys: list[boxed] = [mk(4), mk(5), mk(6)]
+    let kept = for b in ys if b.id != 5 => b.data[0]
+    for k in kept:
+        total = total + k
+    return total
+
+def main() -> int32:
+    var sum: int32 = 0
+    var i: int32 = 0
+    while i < 20:
+        sum = sum + pass()
+        i += 1
+    return sum

@@ -43,12 +43,12 @@ Each predicate is a `static pure def name[T]() -> bool`, evaluated at compile ti
 ```cinder
 is_same[A, B]() -> bool          # A and B intern to the same type_id
 is_convertible[From, To]() -> bool   # `into[To]` is implemented for From, or From == To
-implements[T, Trait]() -> bool   # T has an impl of Trait (kind-* trait only)
+implements[T, C]() -> bool       # T satisfies the trait or concept C
 ```
 
 - `is_same[A, B]` is `type_table` id equality — the same notion of sameness [Higher-Kinded Traits](../../03-advanced/37-higher-kinded-traits.md) relies on for substitution normalization. It is reflexive, symmetric, and requires no bound on `A`/`B`.
 - `is_convertible[From, To]` is `is_same[From, To] or implements[From, into[To]]()`; it does not attempt an actual conversion.
-- `implements[T, Trait]` answers a coherence-table lookup at compile time — the same lookup `check.cpp`'s impl-coherence pass performs, exposed as a queryable boolean rather than only a pass/fail obligation on a bound list. It accepts only a kind-`*` trait name; a higher-kinded trait or a `concept` is diagnosed (concepts are structural by construction — see [Concepts](../../03-advanced/35-concepts.md) — so "does `T` implement concept `C`" is written as the bound `T: C` directly, never through `implements`).
+- `implements[T, C]` answers the same satisfaction query a bound `T: C` asks, at compile time, as a boolean rather than a pass/fail obligation. `C` is a kind-`*` trait (with its arguments, as in `into[To]`) or a concept, including `copy` and the category concepts, so `implements[T, copy]()` and `implements[T, numeric]()` work. A higher-kinded trait, or a name that is neither a trait nor a concept, is diagnosed.
 
 ## Type transformations
 

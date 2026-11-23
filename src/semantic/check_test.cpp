@@ -1403,6 +1403,60 @@ auto test_accepts_static_for_inline_as_function_tail() -> void {
                    analyzed.diagnostics);
 }
 
+auto test_reports_bool_value_index_mismatch() -> void {
+  // Todo item 32: a `bool` value index was an unknown slot (`conn[_]`), so
+  // `conn[false]` passed where `conn[true]` was required and lowering failed.
+  const auto analyzed =
+      analyze_test_data_file("report_bool_value_index_mismatch.cn");
+  expect(analyzed.error_count == 1,
+         "expected one error for the wrong typestate:\n" + analyzed.diagnostics);
+  expect_diagnostic(analyzed,
+                    "expected `conn[true]`, found `conn[false]`",
+                    "expected the bool indices to be compared as values");
+  expect_diagnostic(analyzed, "`bool` index is `false`",
+                    "expected the bool-index help");
+}
+
+auto test_reports_bool_value_index_wrong_kind() -> void {
+  // A number where a `bool` index goes, a `bool` where a number goes, and a
+  // `bool` parameter's explicit argument written as a number.
+  const auto analyzed =
+      analyze_test_data_file("report_bool_value_index_wrong_kind.cn");
+  expect(analyzed.error_count == 4,
+         "expected four errors:\n" + analyzed.diagnostics);
+  expect_diagnostic(analyzed,
+                    "the `open` parameter takes a `bool`, written `true` or "
+                    "`false`",
+                    "expected `conn[1]` and `conn[x + 1]` to be rejected");
+  expect_diagnostic(analyzed, "the `n` parameter takes a `usize`, not a `bool`",
+                    "expected `arr[true]` to be rejected");
+  expect_diagnostic(analyzed, "`flag`'s compile-time argument `b` takes a `bool`",
+                    "expected `flag[1]()` to be rejected");
+}
+
+auto test_reports_rigid_value_index_not_chosen() -> void {
+  // Ch. 33: a generic body's value parameter stands for every value, so
+  // `conn[o]` is not a `conn[true]` and `arr[n]` is not an `arr[4]`. These
+  // used to pass the checker and fail in lowering of the instance.
+  const auto analyzed =
+      analyze_test_data_file("report_rigid_value_index_not_chosen.cn");
+  expect(analyzed.error_count == 2,
+         "expected two errors, and none for `same_size`:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "expected `conn[true]`, found `conn[o]`",
+                    "expected the rigid bool index to be held fixed");
+  expect_diagnostic(analyzed, "expected `arr[4]`, found `arr[n]`",
+                    "expected the rigid usize index to be held fixed");
+}
+
+auto test_reports_implements_unknown_name() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_implements_unknown_name.cn");
+  expect(analyzed.error_count == 1, "expected one error:\n" + analyzed.diagnostics);
+  expect_diagnostic(analyzed, "`nothing` does not name a trait or concept here",
+                    "expected `implements` to ask for a trait or concept");
+}
+
 auto test_reports_static_for_field_info_unknown_field() -> void {
   // A `static for` over `T.fields()` types its loop variable as the
   // `std.traits.field_info` struct, so a misspelled descriptor field is
@@ -5947,6 +6001,10 @@ auto main() -> int {
       {"test_reports_static_for_inline_unbuildable_value", test_reports_static_for_inline_unbuildable_value},
       {"test_accepts_static_for_inline_runtime_yield", test_accepts_static_for_inline_runtime_yield},
       {"test_reports_static_for_field_info_unknown_field", test_reports_static_for_field_info_unknown_field},
+      {"test_reports_bool_value_index_mismatch", test_reports_bool_value_index_mismatch},
+      {"test_reports_bool_value_index_wrong_kind", test_reports_bool_value_index_wrong_kind},
+      {"test_reports_rigid_value_index_not_chosen", test_reports_rigid_value_index_not_chosen},
+      {"test_reports_implements_unknown_name", test_reports_implements_unknown_name},
       {"test_reports_splice_expr_wrong_fragment_kind", test_reports_splice_expr_wrong_fragment_kind},
       {"test_reports_hygiene_prevents_spliced_binding_leak", test_reports_hygiene_prevents_spliced_binding_leak},
       {"test_reports_splice_requires_quote_value", test_reports_splice_requires_quote_value},

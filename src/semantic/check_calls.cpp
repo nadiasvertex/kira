@@ -191,6 +191,16 @@ auto checker::check_call_args_against(
       }
     }
   }
+  // A recursive call's signature names the caller's own value parameters,
+  // which `value_slots_hold` would hold fixed; there the callee's are solved
+  // apart by `match_value_params` instead.
+  const auto callee_values_rigid =
+      generic != nullptr && generic->decl != nullptr &&
+      std::ranges::any_of(generic->decl->type_params,
+                          [&](const ast::type_param &param) -> bool {
+                            return param.is_value_param && !param.name.empty() &&
+                                   is_rigid_param(param_id(param));
+                          });
   // `hint` types the argument without being checked against: a literal
   // takes a bracketed `int64` from it, and a disagreement with the brackets
   // is left to `check_args_against_solution`, which says which bracket.
@@ -235,7 +245,8 @@ auto checker::check_call_args_against(
         return;
       }
     }
-    type_mismatch(item.value->span, shown, found, "for this argument");
+    type_mismatch(item.value->span, shown, found, "for this argument",
+                  nullptr, /*rigid_values=*/!callee_values_rigid);
     match_value_params(expected, found, solved_values);
     if (session_.types_.entry(expected).kind == type_kind::refinement_kind) {
       deferred.push_back(deferred_narrowing{

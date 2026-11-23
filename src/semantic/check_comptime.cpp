@@ -576,11 +576,28 @@ auto checker::check_narrowed_static_if(const ast::static_decl &decl,
   if (decl.if_condition == nullptr || decl.if_condition->has_error) {
     return std::nullopt;
   }
+  const auto unit = session_.types_.builtin("unit");
   const auto narrowed = narrowing_of(*decl.if_condition);
   if (!narrowed.has_value()) {
-    return std::nullopt;
+    // `implements[T, Tr]()`: the taken branch may use `T: Tr`. The other
+    // branch learns nothing, as `T` may still implement part of it.
+    const auto implied = implements_subject_of(*decl.if_condition);
+    if (!implied.has_value() || implied->second.trait == nullptr) {
+      return std::nullopt;
+    }
+    scoped_facts_.emplace_back(
+        implied->first,
+        std::vector{type_fact{.trait = implied->second.trait,
+                              .args = implied->second.trait_args}});
+    ++function_.in_speculative_static_branch_;
+    const auto if_type = check_body_nodes(decl.if_body, expected_tail);
+    scoped_facts_.pop_back();
+    const auto else_type = decl.else_body.empty()
+                               ? unit
+                               : check_body_nodes(decl.else_body, expected_tail);
+    --function_.in_speculative_static_branch_;
+    return std::pair{if_type, else_type};
   }
-  const auto unit = session_.types_.builtin("unit");
   const auto check_under =
       [&](const std::vector<ast::ptr<ast::node>> &body,
           const std::optional<type_domain> &domain) -> type_id {

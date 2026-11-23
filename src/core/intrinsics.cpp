@@ -631,29 +631,6 @@ auto op_crew_errors(const call_shape &c) -> verdict {
   return std::nullopt;
 }
 
-/// `bitwise_copy[T](&T) -> T`: the bytes of the referent as a value of its
-/// own, without making it an owner of what they point to. It exists for
-/// todo 39 only: a `for` over a borrowed collection hands the consuming
-/// `into_iter` such a copy, which the checker allows when the elements are
-/// `copy`, and the iterator it makes is never dropped. Phase 7 of
-/// spec/unified-checker-plan.md removes it, when that loop calls the
-/// borrowing `iter` instead.
-auto op_bitwise_copy(const call_shape &c) -> verdict {
-  if (auto e = c.arity(1)) {
-    return e;
-  }
-  if (c.entry(c.params[0]).kind != type_kind::ref_kind) {
-    return c.message(std::format("operand 0 is `{}`, expected `&T`", c.show(c.params[0])));
-  }
-  if (auto e = c.generic_count(1)) {
-    return e;
-  }
-  if (auto e = c.generic_is(c.entry(c.params[0]).result)) {
-    return e;
-  }
-  return c.result_is(c.generics[0]);
-}
-
 // ---------------------------------------------------------------------------
 //  The table
 // ---------------------------------------------------------------------------
@@ -696,7 +673,6 @@ constexpr auto k_operations = std::to_array<operation>({
     {"crew_spawn", op_crew_spawn},
     {"task_get", op_task_get},
     {"crew_errors", op_crew_errors},
-    {"bitwise_copy", op_bitwise_copy},
 });
 
 [[nodiscard]] auto find_operation(std::string_view name) -> const operation * {

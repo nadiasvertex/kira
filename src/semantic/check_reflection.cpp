@@ -229,13 +229,9 @@ auto checker::reflect_module_call(const ast::call_expr &call,
 }
 
 auto checker::fold_implements(const ast::call_expr &call, type_id type,
-                              std::string_view trait_name) -> void {
-  const auto entry =
-      session_.types_.entry(strip_refs(settle(type))); // copy: interned
-  const auto found = traits_by_type_key_.find(type_key_of(entry));
-  const auto has_trait = found != traits_by_type_key_.end() &&
-                         std::ranges::contains(found->second, trait_name);
-  record_reflection_fold(call, comptime::value::make_bool(has_trait),
+                              const satisfaction_term &term) -> void {
+  record_reflection_fold(call,
+                         comptime::value::make_bool(satisfies(settle(type), term)),
                          session_.types_.builtin("bool"));
 }
 

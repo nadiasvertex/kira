@@ -59,6 +59,21 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+# The ownership graph built from the core, and the ownership check over it
+# (spec/unified-checker-plan.md, phase 7).
+cc_library(
+    name = "ownership",
+    srcs = ["ownership.cpp"],
+    hdrs = ["ownership.h"],
+    deps = [
+        ":adapter",
+        ":core",
+        "//src/parser:parser",
+        "//src/semantic:semantic",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 cc_test(
     name = "nodes_test",
     srcs = ["nodes_test.cpp"],

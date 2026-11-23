@@ -118,8 +118,8 @@ auto body_builder::bind_element(place element,
 
 auto body_builder::next_loop(ptr<expr> next, type_id element_type,
                              std::span<const ast::node *const> patterns,
-                             const loop_body &body, source_span span)
-    -> result<ptr<stmt>> {
+                             const loop_body &body, source_span span,
+                             bool copied) -> result<ptr<stmt>> {
   // `while_loop{null, match next: @some(x) => body, _ => break}`
   const auto option_type = next->type;
   CORE_TRY(some, variant_index(option_type, "some", span));
@@ -134,12 +134,33 @@ auto body_builder::next_loop(ptr<expr> next, type_id element_type,
   alternative.test.variant_index = some;
   auto step = projection{};
   step.kind = projection::step::variant_payload;
-  step.type = element_type;
+  step.type = copied ? checked_.types.ref_to(element_type, false)
+                     : element_type;
   step.name = "some";
   auto path = std::vector<projection>{};
   path.push_back(std::move(step));
+  if (copied) {
+    auto through = projection{};
+    through.kind = projection::step::deref;
+    through.type = element_type;
+    path.push_back(std::move(through));
+  }
   CORE_TRY(part, head_test(patterns, element_type, path, context,
                            alternative.bindings));
+  if (copied) {
+    // The payload is the `&T`, and a name binds the `T` behind it. The core
+    // has no test of a reference's referent, so only a name or `_` can
+    // stand there.
+    if (part.kind != pattern_test::form::any) {
+      return fail_feature(
+          "for_stmt",
+          "destructuring the elements of a borrowed collection in a `for` "
+          "loop is not supported yet; bind each element to a name and "
+          "destructure it in the body",
+          span);
+    }
+    part.subject_type = path.front().type;
+  }
   alternative.test.parts.push_back(std::move(part));
   auto alternatives = std::vector<pattern_alternative>{};
   alternatives.push_back(std::move(alternative));
@@ -339,33 +360,8 @@ auto body_builder::loop_of(const ast::expr &iterable,
                       "the adapter does not take one parameter", span);
         }
         auto args = ptr_vec<expr>{};
-        if (!is_ref(params[0]) && is_ref(iterable_type) &&
-            !checked_.is_copy(params[0])) {
-          // Todo 39: the checker lets a borrowed collection of `copy`
-          // elements be copied into a consuming `into_iter` (the old
-          // lowerer's `receiver_borrowed`), and the iterator is never
-          // dropped. The copy is explicit here: `into_iter(bitwise_copy(
-          // xs))`. Removed with `bitwise_copy` in phase 7 of
-          // spec/unified-checker-plan.md.
-          if (dispatch->adapter_borrows ||
-              checked_.types.entry(iterable_type).result != params[0]) {
-            return fail("for over borrowed collection",
-                        "the collection is not the adapter's receiver", span);
-          }
-          if (!checked_.is_copy(element_type)) {
-            return fail("for over borrowed collection",
-                        "the elements are not `copy`", span);
-          }
-          CORE_TRY(borrowed, value_of(iterable));
-          auto copy_args = ptr_vec<expr>{};
-          copy_args.push_back(std::move(borrowed));
-          args.push_back(intrinsic_call("bitwise_copy", params[0],
-                                        std::move(copy_args), {params[0]},
-                                        span));
-        } else {
-          CORE_TRY(argument, argument(iterable, params[0], std::nullopt));
-          args.push_back(std::move(argument));
-        }
+        CORE_TRY(argument, argument(iterable, params[0], std::nullopt));
+        args.push_back(std::move(argument));
         handle = direct_call(std::move(adapter), std::move(args), span);
       } else {
         CORE_TRY(value, value_of(iterable));
@@ -392,8 +388,8 @@ auto body_builder::loop_of(const ast::expr &iterable,
       auto args = ptr_vec<expr>{};
       args.push_back(receiver_argument(local_root(*handle_let), params[0], span));
       auto next = direct_call(std::move(next_target), std::move(args), span);
-      CORE_TRY(loop,
-               next_loop(std::move(next), element_type, patterns, body, span));
+      CORE_TRY(loop, next_loop(std::move(next), element_type, patterns, body,
+                               span, dispatch->copy_elements));
       made->statements.push_back(std::move(handle_let));
       loop->origin = loop_key;
       made->statements.push_back(std::move(loop));
@@ -517,6 +513,9 @@ auto body_builder::guarded_body(const ast::expr *guard,
   check->condition = std::move(condition);
   check->then_branch = std::move(inner);
   auto made = make_node<block>(span, unit_type());
+  // The loop variable's scope, keyed apart from the body's own block: what
+  // it binds drops here whether the guard keeps the element or skips it.
+  made->origin = guard;
   made->statements.push_back(expr_stmt_of(std::move(check), span));
   return made;
 }

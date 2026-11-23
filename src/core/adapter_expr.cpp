@@ -669,6 +669,22 @@ auto body_builder::place_of(const ast::expr &source, place_access access)
     return fail("error node", "the expression carries a parse error",
                 source.span);
   }
+  // A static written to is named as the global it is, whatever its value's
+  // form: the ownership check rejects the write.
+  if (access == place_access::mutate) {
+    if (const auto named = checked_.static_refs.find(&source);
+        named != checked_.static_refs.end()) {
+      CORE_TRY(type, type_of(source));
+      auto p = place{};
+      p.root.kind = place_root::origin::global;
+      const auto global = checked_.static_global_refs.find(&source);
+      p.root.name = global != checked_.static_global_refs.end()
+                        ? global->second
+                        : named->second;
+      p.root.type = type;
+      return p;
+    }
+  }
   if (const auto *folded = static_fold(source)) {
     CORE_TRY(value, value_of(*folded));
     return temporary(std::move(value));
@@ -749,8 +765,9 @@ auto body_builder::place_of(const ast::expr &source, place_access access)
   }
   case ast::node_kind::field_expr: {
     const auto &field = ast::cast<const ast::field_expr>(source);
-    if (checked_.lowering.static_const_values.contains(&source) ||
-        checked_.lowering.static_struct_values.contains(&source)) {
+    if (access != place_access::mutate &&
+        (checked_.lowering.static_const_values.contains(&source) ||
+         checked_.lowering.static_struct_values.contains(&source))) {
       break;
     }
     if (field.object == nullptr) {
@@ -1097,7 +1114,8 @@ auto body_builder::unreadable_static(const ast::expr &ref) const
 }
 
 auto body_builder::fresh_static_read(const ast::expr &ref) -> bool {
-  return fresh_static_reads_ || owned_static_reads().contains(&ref);
+  static_cast<void>(ref);
+  return fresh_static_reads_;
 }
 
 auto body_builder::static_global_value(const std::string &name,

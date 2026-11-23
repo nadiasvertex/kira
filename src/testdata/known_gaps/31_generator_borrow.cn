@@ -1,6 +1,7 @@
 # todo: 31
 # tier: both
-# currently-error: an iterator over a borrowed collection that is not a local
+# currently-accepted
+# currently-result: 3
 # want: rejected, because the generator result borrows `xs`, so `xs.push(4)` conflicts while `g` is still used.
 module known_gaps.generator_borrow
 

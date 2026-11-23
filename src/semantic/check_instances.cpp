@@ -335,6 +335,11 @@ auto checker::expr_as_named_type(const ast::expr &arg)
 /// instantiates `f[4]`).
 auto checker::explicit_value_argument(const ast::expr &arg)
     -> std::optional<int64_t> {
+  if (const auto *literal = ast::as<const ast::literal_expr>(&arg);
+      literal != nullptr && (literal->lit_kind == token_kind::kw_true ||
+                             literal->lit_kind == token_kind::kw_false)) {
+    return literal->lit_kind == token_kind::kw_true ? 1 : 0;
+  }
   auto subst = predicate_subst{};
   for (const auto &[name, value] : session_.const_param_values_) {
     subst.values.emplace(name, poly_constant(value));
@@ -342,6 +347,33 @@ auto checker::explicit_value_argument(const ast::expr &arg)
   const auto poly = solver_poly(arg, subst);
   return poly.has_value() && poly->is_constant() ? std::optional{poly->constant}
                                                  : std::nullopt;
+}
+
+/// Whether a bracketed value argument is the kind of value its parameter
+/// takes: `true` or `false` for a `bool` parameter, and not one of those for
+/// a number. Reports the mismatch when it is not; both are constants, so
+/// without this `flag[1]()` would mean `flag[true]()`.
+auto checker::explicit_value_kind_fits(const explicit_generic_arg &arg,
+                                       const ast::func_decl &decl,
+                                       const ast::type_param &param,
+                                       type_id underlying) -> bool {
+  const auto *literal = ast::as<const ast::literal_expr>(arg.value);
+  const auto is_bool_literal =
+      literal != nullptr && (literal->lit_kind == token_kind::kw_true ||
+                             literal->lit_kind == token_kind::kw_false);
+  const auto wants_bool = session_.types_.is_boolean(underlying);
+  if (wants_bool == is_bool_literal ||
+      (wants_bool && literal == nullptr)) {
+    return true;
+  }
+  error_with_help(
+      arg.span,
+      std::format("`{}`'s compile-time argument `{}` takes a `{}`", decl.name,
+                  param.name, session_.types_.display(underlying)),
+      std::format("expected a `{}` here", session_.types_.display(underlying)),
+      wants_bool ? std::string("Write `true` or `false`.")
+                 : std::format("Write a number for `{}`.", param.name));
+  return false;
 }
 
 /// The type a value parameter's constants live in — `[n: usize]`'s `usize`.
@@ -361,8 +393,12 @@ auto checker::value_param_underlying(const ast::type_param &param,
                                      .use_type_param_stack = false,
                                      .quiet = true})
           : session_.types_.usize_type();
-  return session_.types_.is_integer(underlying) ? std::optional{underlying}
-                                                : std::nullopt;
+  // A `bool` value is the constant 0 or 1, so it names an instance and is
+  // read in a body the same way an integer constant is.
+  return session_.types_.is_integer(underlying) ||
+                 session_.types_.is_boolean(underlying)
+             ? std::optional{underlying}
+             : std::nullopt;
 }
 
 /// Substitutes leaf solutions into a call's solved bindings. A binding
@@ -438,6 +474,11 @@ auto checker::solve_generic_params(const ast::call_expr &call,
         // Written in type position (`.m[...]`), where the grammar parses a
         // `type_arg_list` — a type never folds to a constant, so this
         // parameter simply cannot be answered in that spelling.
+        if (explicit_arg->value != nullptr &&
+            !explicit_value_kind_fits(*explicit_arg, decl, param,
+                                      *underlying)) {
+          return std::nullopt;
+        }
         const auto constant =
             explicit_arg->value != nullptr
                 ? explicit_value_argument(*explicit_arg->value)

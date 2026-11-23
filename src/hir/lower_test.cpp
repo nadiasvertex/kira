@@ -1990,9 +1990,15 @@ auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
   // A guard stays a plain conditional wrapping the body. `continue` exists
   // now, so `if not guard: continue` would also be correct, but there is no
   // reason to spend a jump on what a conditional already expresses.
-  expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_if,
+  // The guarded body is a scope of its own (the loop variable drops there),
+  // so the `if` is that block's last expression.
+  const auto *wrapped = loop.body->stmts[1].get();
+  if (wrapped->kind == hir::hir_node_kind::hir_expr_stmt) {
+    wrapped = static_cast<const hir::hir_expr_stmt &>(*wrapped).expr.get();
+  }
+  expect(wrapped->kind == hir::hir_node_kind::hir_if,
          "expected the guard to wrap the body in a hir_if");
-  const auto &guarded = dynamic_cast<const hir::hir_if &>(*loop.body->stmts[1]);
+  const auto &guarded = dynamic_cast<const hir::hir_if &>(*wrapped);
   expect(guarded.branches.size() == 1, "expected a single guard branch");
   expect(guarded.else_body == nullptr,
          "expected no else branch on the guard conditional");

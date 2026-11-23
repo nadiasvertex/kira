@@ -2954,34 +2954,25 @@ auto test_arrays_forget_and_owned_receivers() -> void {
               "publish s0 @some", "return"});
   expect_verifies(*f, f->function("first_of"), "first_of");
 
-  // A borrowed list is copied bit for bit into `into_iter`, and the iterator
-  // it returns owns nothing, so nothing drops it.
+  // A borrowed list is walked with `iter`, which borrows it, and each
+  // element is copied out of the `&int64` the iterator yields. Nothing owns
+  // the list, so nothing drops it.
   const auto total = f->function("total");
   const auto total_ops = op_lines(*f, total);
-  expect(total_ops.size() > 3 && total_ops[1] == "compute s3 = copy s0" &&
-             total_ops[2] == "copy.shallow s4 <- s3.*" &&
-             total_ops[3] == "call s2 = list::into_iter$list_int64_(move s4)",
-         "expected a shallow copy of the borrowed list into `into_iter`");
-  expect(total.slots[2].owns_nothing,
-         "expected the iterator over a borrowed list to own nothing");
+  expect(std::ranges::find(total_ops, "call s2 = iter$int64(s0)") !=
+                 total_ops.end() &&
+             std::ranges::find(total_ops, "compute s6 = copy s3.@some.0.*") !=
+                 total_ops.end(),
+         "expected a loop over a borrowed list to copy elements out of `iter`");
+  expect(std::ranges::none_of(total_ops,
+                              [](const std::string &line) {
+                                return line.contains("into_iter");
+                              }),
+         "expected a loop over a borrowed list not to call `into_iter`");
   expect(std::ranges::none_of(
              total.ops, [](const hir::storage_op &op) { return op.is_drop; }),
          "expected nothing to drop the iterator over a borrowed list");
   expect_verifies(*f, total, "total");
-  auto owning = f->function("total");
-  owning.slots[2].owns_nothing = false;
-  expect_rejects(*f, owning, hir::verify_error_kind::leaked_value,
-                 "an iterator over a copied list that is never dropped");
-  auto deep = f->function("total");
-  deep.ops[find_op(deep, hir::op_kind::copy_into)].shallow = false;
-  expect_rejects(*f, deep, hir::verify_error_kind::not_copy,
-                 "a plain copy of a list out of a reference");
-  auto local = f->function("total");
-  local.slots[local.ops[find_op(local, hir::op_kind::copy_into)].dest.base]
-      .cls = hir::storage_class::frame_local;
-  expect_rejects(*f, local, hir::verify_error_kind::bad_operation,
-                 "a shallow copy into a local rather than an argument", {},
-                 "shallow copy");
 
   // A literal iterated directly is built in a temporary that moves into
   // `into_iter`; the iterator owns the list and drops it after the loop.

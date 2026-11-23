@@ -684,7 +684,8 @@ auto body_builder::function_of(const ast::func_decl &decl, std::string name,
   made->decl = &decl;
   made->expression_body = decl.body_expr != nullptr;
   if (sig.coroutine != coroutine_kind::none) {
-    made->start = semantic::ownership::generator_start(decl);
+    // The modifiers' address is a key no other exit uses.
+    made->start = &decl.modifiers;
   }
   made->return_type = sig.result;
   made->body_type = sig.body;
@@ -774,6 +775,7 @@ auto body_builder::destructured_body(
   auto context = binding_context{};
   context.subject_access = access_of(subject);
   context.subject_type = subject.type();
+  context.parameter = true;
   CORE_TRY(alternative, alternative_of(pattern, subject.type(), context));
   auto alternatives = std::vector<pattern_alternative>{};
   alternatives.push_back(std::move(alternative));
@@ -931,11 +933,6 @@ auto build_expression_function(semantic::checked_types &checked,
   auto builder = body_builder(checked, &functions);
   builder.compile_time_ = true;
   builder.fresh_static_reads_ = true;
-  // Nothing it owns is dropped and nothing it reads is borrowed by a
-  // closure the ownership check knows of: it has no declaration.
-  builder.owned_static_reads_.emplace();
-  builder.borrowed_captures_.emplace();
-  builder.task_captures_.emplace();
   CORE_TRY(type, builder.type_of(expr));
   auto made = make_node<function>();
   made->name = std::move(name);

@@ -1763,13 +1763,6 @@ auto test_c5_compiler_operations() -> void {
   bad(op_call(w, "needs_drop", {}, usize, {list}), "C5", "needs_drop: a result that is not `bool`");
   bad(op_call(w, "needs_drop", {}, boolean, {list, i32}), "C5", "needs_drop: two generic arguments");
 
-  // bitwise_copy (todo 39)
-  ok(op_call(w, "bitwise_copy", {ref_list}, list, {list}), "bitwise_copy: `&list` to `list`");
-  bad(op_call(w, "bitwise_copy", {list}, list, {list}), "C5", "bitwise_copy: a value operand");
-  bad(op_call(w, "bitwise_copy", {ref_list}, i32, {list}), "C5",
-      "bitwise_copy: a result that is not the referent");
-  bad(op_call(w, "bitwise_copy", {ref_list}, list), "C5", "bitwise_copy: no generic argument");
-
   // Strings.
   ok(op_call(w, "rt_str_concat", {str, str}, str), "rt_str_concat");
   bad(op_call(w, "rt_str_concat", {str, i32}, str), "C5", "rt_str_concat: a non-`str` operand");

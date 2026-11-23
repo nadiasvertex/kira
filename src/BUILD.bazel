@@ -355,6 +355,8 @@ cc_library(
     hdrs = ["codegen_corpus.h"],
     deps = [
         "//src/comptime_vm",
+        "//src/core:adapter",
+        "//src/core:ownership",
         "//src/bytecode:bytecode",
         "//src/bytecode:vm",
         "//src/bytecode_compiler:bytecode_compiler",

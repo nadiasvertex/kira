@@ -1268,8 +1268,13 @@ auto checker::record_const_param_reference(const ast::ident_expr &ident,
   }
   auto lit = ast::make<ast::literal_expr>();
   lit->span = ident.span;
-  lit->lit_kind = token_kind::int_lit;
-  lit->value = std::to_string(it->second);
+  if (session_.types_.is_boolean(type)) {
+    lit->lit_kind = it->second != 0 ? token_kind::kw_true : token_kind::kw_false;
+    lit->value = it->second != 0 ? "true" : "false";
+  } else {
+    lit->lit_kind = token_kind::int_lit;
+    lit->value = std::to_string(it->second);
+  }
   const auto *raw = lit.get();
   session_.synthesized_const_literals_.push_back(std::move(lit));
   record_expr_type(*raw, type);

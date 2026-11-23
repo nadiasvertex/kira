@@ -519,7 +519,7 @@ auto core_lowerer::match(const core::match_expr &source, type_id type)
           {pattern_step{.kind = core::projection::step::variant_payload,
                         .index = 0,
                         .name = "some"}},
-          false, stmts);
+          true, stmts);
       pop_scope();
       if (!done.has_value()) {
         return std::unexpected(done.error());
@@ -830,19 +830,39 @@ auto core_lowerer::while_let_into(const core::match_expr &source,
     if (test.parts.size() != 1) {
       return refuse("for loop with no element test", span);
     }
-    const auto element_type = hir_type(test.parts[0].subject_type);
-    const place_fn element = [subject, element_type, span]() -> ptr<hir_expr> {
-      return hir::make<hir_variant_payload>(span, element_type, subject(),
-                                            "some", 0);
+    const auto payload_type = hir_type(test.parts[0].subject_type);
+    // A loop over a borrowed collection of `copy` elements gets each `&T`
+    // from `iter` and binds the element it points at
+    // (`iterator_loop_dispatch::copy_elements`): the name's path goes
+    // through a dereference of the payload.
+    const auto &head_bindings = arm.alternatives.front().bindings;
+    const auto copied =
+        test.parts[0].kind == core::pattern_test::form::any &&
+        head_bindings.size() == 1 && head_bindings.front().path.size() == 2 &&
+        head_bindings.front().path[1].kind == core::projection::step::deref;
+    const auto element_type =
+        copied ? hir_type(head_bindings.front().type) : payload_type;
+    const place_fn element = [subject, element_type, payload_type, copied,
+                              span]() -> ptr<hir_expr> {
+      auto payload = ptr<hir_expr>(hir::make<hir_variant_payload>(
+          span, payload_type, subject(), "some", 0));
+      if (!copied) {
+        return payload;
+      }
+      return hir::make<hir_unary>(span, element_type, ast::unary_op::deref,
+                                  std::move(payload));
     };
+    auto prefix = std::vector<pattern_step>{
+        pattern_step{.kind = core::projection::step::variant_payload,
+                     .index = 0,
+                     .name = "some"}};
+    if (copied) {
+      prefix.push_back(pattern_step{.kind = core::projection::step::deref});
+    }
     push_scope();
     auto stmts = ptr_vec<hir_node>{};
-    auto done = loop_body_into(
-        arm, element, test.parts[0],
-        {pattern_step{.kind = core::projection::step::variant_payload,
-                      .index = 0,
-                      .name = "some"}},
-        true, stmts);
+    auto done = loop_body_into(arm, element, test.parts[0], std::move(prefix),
+                               true, stmts);
     pop_scope();
     if (!done.has_value()) {
       return done;

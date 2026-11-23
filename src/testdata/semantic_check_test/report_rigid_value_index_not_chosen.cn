@@ -1,0 +1,23 @@
+module report_rigid_value_index_not_chosen
+
+type conn[open: bool] = { fd: int32 }
+type arr[n: usize] = { fd: int32 }
+
+def only_open(c: conn[true]) -> int32:
+    return c.fd
+
+def only4(v: arr[4]) -> int32:
+    return v.fd
+
+def any_state[o: bool](c: conn[o]) -> int32:
+    return only_open(c)
+
+def any_size[n: usize](v: arr[n]) -> int32:
+    return only4(v)
+
+def same_size[n: usize](v: arr[n]) -> arr[n]:
+    return v
+
+def main() -> int32:
+    let s = same_size(arr[4] { fd: 1 })
+    return any_state(conn[false] { fd: 3 }) + any_size(arr[3] { fd: 3 }) + s.fd

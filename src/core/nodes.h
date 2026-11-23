@@ -384,9 +384,8 @@ struct lambda : expr {
   /// lambda's name in it stands for one capture per copy). Otherwise they
   /// are what the body uses, in the order it first uses them.
   bool capture_list = false;
-  /// The AST lambda the drop schedule names this closure by: what it
-  /// borrows (`borrowed_captures`) and what its drop glue drops
-  /// (`owned_captures`). The same as `origin`, except for a copy of a
+  /// The AST lambda the drop schedule names this closure by: what its
+  /// drop glue drops (`owned_captures`). The same as `origin`, except for a copy of a
   /// generic lambda, which has no `origin` of its own.
   const void *closure_origin = nullptr;
   /// A task block's body only: the drop schedule's key for the check that a
