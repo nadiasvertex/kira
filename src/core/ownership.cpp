@@ -237,6 +237,9 @@ private:
   block_id current_ = 0;
   block_id exit_ = 0;
   local_id return_slot_ = 0;
+  /// Each incoming loan points to the caller's storage, which stays live
+  /// after this graph exits even if its parameter binding is reassigned.
+  std::map<local_id, loan_id> incoming_mut_refs_;
   std::map<std::pair<local_id, std::string>, local_id> field_paths_;
   std::vector<temporary_frame> temporaries_;
   /// The `crew_tasks` holder of each open crew, by the crew's symbol.
@@ -286,6 +289,9 @@ private:
     goto_block(exit_);
     current_ = exit_;
     emit(use_event{.local = return_slot_});
+    for (const auto loan : std::views::values(incoming_mut_refs_)) {
+      emit(use_event{.local = cfg_.loans[loan].root});
+    }
     out_.push_back(std::move(cfg_));
   }
 
@@ -494,6 +500,15 @@ private:
   auto declare_param(const param &p) -> void {
     const auto local = declare(p.name, p.type, p.span, /*whole=*/true,
                                p.origin);
+    if (kind_of(p.type) == type_kind::ref_kind &&
+        checked_.types.entry(p.type).is_mut &&
+        bears(checked_.types.entry(p.type).result)) {
+      const auto storage = new_local(p.name, local_role::parameter_storage,
+                                     p.type, p.span, false);
+      const auto incoming = new_loan(storage, true, loan_origin::borrow, p.span);
+      incoming_mut_refs_.emplace(local, incoming);
+      flow(local, value{.loans = {incoming}, .sources = {}}, /*replace=*/true);
+    }
     symbols_.insert_or_assign(p.symbol, sym{.kind = sym::form::local,
                                             .local = local,
                                             .alias = {},
@@ -2480,6 +2495,15 @@ private:
       }
     } else {
       access_place(r, access_kind::write_part, a.span);
+    }
+    if (const auto it = incoming_mut_refs_.find(r.local);
+        it != incoming_mut_refs_.end() && !v.empty() && through_ref &&
+        reborrows(r)) {
+      emit(flow_event{.dest = cfg_.loans[it->second].root,
+                      .loans = v.loans,
+                      .sources = v.sources,
+                      .through = r.local,
+                      .incoming = it->second});
     }
     flow(r.local, v, /*replace=*/false);
   }

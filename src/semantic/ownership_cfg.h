@@ -54,6 +54,7 @@ enum class local_role : std::uint8_t {
   join_temp,    ///< The value an `if`/`match`/block expression produces.
   subject_temp, ///< A `match`/`if let`/destructuring subject.
   return_slot,  ///< The value the function returns.
+  parameter_storage, ///< Caller storage reached through a mutable parameter.
   field_path,   ///< A field of an owning local reached through fields only
                 ///< (`j.output`, `j.a.b`), tracked so a partial move of it
                 ///< is known. Its `parent` is the path one field shorter.
@@ -192,6 +193,10 @@ struct flow_event {
   std::vector<loan_id> loans;
   std::vector<local_id> sources;
   bool replace = false;
+  /// A store to caller storage applies on paths where the parameter still
+  /// carries the incoming reference. A whole-parameter rebind can kill it.
+  local_id through = k_no_local;
+  loan_id incoming = k_no_loan;
 };
 
 /// A use of a temporary holder with no access of its own — the point a call

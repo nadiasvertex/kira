@@ -203,6 +203,17 @@ auto test_stored_borrow_is_accepted() -> void {
              analyzed.diagnostics);
 }
 
+auto test_borrow_stored_through_parameter() -> void {
+  const auto rejected =
+      analyze_test_data_file("reject_local_borrow_through_parameter.cn");
+  expect_diagnostic(rejected, "cannot store a borrow of the local `n` through parameter `out`",
+                    "expected the caller's slot to outlive the callee's local");
+  const auto accepted = analyze_test_data_file("accept_borrow_through_parameter.cn");
+  expect(accepted.error_count == 0,
+         "expected caller data and stores through a rebound parameter to pass:\n" +
+             accepted.diagnostics);
+}
+
 auto test_assign_while_reference_live_is_rejected() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_assign_while_reference_live.cn");
@@ -1451,6 +1462,7 @@ auto test_task_block_borrows_are_accepted() -> void {
 auto main() -> int {
   try {
     test_stored_borrow_is_accepted();
+    test_borrow_stored_through_parameter();
     test_assign_while_reference_live_is_rejected();
     test_assign_while_aggregate_holds_reference_is_rejected();
     test_returning_a_borrow_of_a_local_is_rejected();

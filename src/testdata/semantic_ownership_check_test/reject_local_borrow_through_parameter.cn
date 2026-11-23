@@ -1,0 +1,10 @@
+module ownership.local_borrow_through_parameter
+
+type slot = { entry: &int32 }
+
+def fill(out: &mut slot, stop: bool) -> unit:
+    if stop:
+        let n: int32 = 5
+        let ref_to_n = &n
+        *out = slot { entry: ref_to_n }
+        return

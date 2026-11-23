@@ -445,5 +445,13 @@ Phase 7 leaves these debts.
 Generator frames now carry argument borrows even when their yielded elements are scalars
 (item 31). The ownership tests cover a direct call, a wrapper, a generator stored in a
 tuple, and returning a generator that borrows a local. A separate task case checks the
-same conflict before an await. Function summaries, stores through parameters (item 30),
-and closure escape (item 19) remain open.
+same conflict before an await.
+
+For item 30, the ownership graph tracks direct assignments through an incoming `&mut`
+parameter. Storing a value that borrows a block-local into the caller's storage is
+diagnosed even on an early return. The regression tests also cover storing a borrow
+from another parameter and rebinding the destination parameter to local storage.
+
+Stores performed by callees (including the four item 30 probes), stores through local
+reference aliases, function summary inference and metadata, and closure escape (item 19)
+remain open.

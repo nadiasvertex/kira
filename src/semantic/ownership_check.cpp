@@ -188,6 +188,10 @@ auto forward_step(const event &e, const function_cfg &cfg, forward_state &state)
       state.contents[a->local].clear();
     }
   } else if (const auto *f = std::get_if<flow_event>(&e)) {
+    if (f->through != k_no_local &&
+        !std::ranges::binary_search(state.contents[f->through], f->incoming)) {
+      return;
+    }
     auto next = f->replace ? loan_set{} : state.contents[f->dest];
     auto direct = f->loans;
     std::ranges::sort(direct);
@@ -572,6 +576,16 @@ private:
       }
       if (role == local_role::return_slot) {
         report_returned_borrow(a, loan, root);
+      } else if (role == local_role::parameter_storage) {
+        auto d = diagnostic(diagnostic_level::error,
+                            std::format("cannot store a borrow of the local `{}` "
+                                        "through parameter `{}`",
+                                        root, cfg_.locals[holder].name),
+                            file_id_);
+        d.with_label(loan.span, std::format("`{}` is borrowed here", root));
+        d.with_secondary_label(a.span, "this local is dropped when its scope ends");
+        d.with_note("the caller can still read the stored borrow after the function returns");
+        diag_.emit(d);
       } else {
         report_outlived(a, loan, holder, root);
       }
