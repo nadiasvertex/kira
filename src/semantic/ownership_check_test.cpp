@@ -416,6 +416,24 @@ auto test_named_tasks_keep_their_borrows_is_rejected() -> void {
          "rejected");
 }
 
+auto test_suspended_frames_keep_argument_borrows() -> void {
+  for (const auto *file : {"reject_generator_borrow.cn",
+                           "reject_wrapped_generator_borrow.cn",
+                           "reject_aggregate_generator_borrow.cn",
+                           "reject_task_argument_borrow.cn"}) {
+    const auto analyzed = analyze_test_data_file(file);
+    expect_diagnostic(analyzed, "cannot borrow `xs`",
+                      std::string(file) + ": expected the frame to retain its argument borrow");
+  }
+  const auto returned = analyze_test_data_file("reject_return_generator_borrow.cn");
+  expect_diagnostic(returned, "cannot return a borrow of the local `xs`",
+                    "expected a returned generator to retain its local argument borrow");
+  const auto accepted = analyze_test_data_file("accept_generator_borrow.cn");
+  expect(accepted.error_count == 0,
+         "expected disjoint mutation and mutation after the frame's scope to pass:\n" +
+             accepted.diagnostics);
+}
+
 auto test_reading_while_crew_task_holds_mut_is_rejected() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_crew_read_while_task_mut.cn");
@@ -1463,6 +1481,7 @@ auto main() -> int {
     test_two_mut_borrows_across_nested_call_are_rejected();
     test_two_mut_borrows_in_crew_tasks_are_rejected();
     test_named_tasks_keep_their_borrows_is_rejected();
+    test_suspended_frames_keep_argument_borrows();
     test_reading_while_crew_task_holds_mut_is_rejected();
     test_crew_shared_reads_and_disjoint_mut_are_accepted();
     test_shared_borrows_across_nested_call_are_accepted();

@@ -1,0 +1,16 @@
+module accept_generator_borrow
+
+generator def each(xs: &list[int32]) -> some iterator[int32]:
+    for x in xs:
+        yield x
+
+def main() -> int32:
+    var xs: list[int32] = [1, 2, 3]
+    var ys: list[int32] = [4]
+    var a: int32 = 0
+    if true:
+        var g = each(&xs)
+        ys.push(5)
+        a = g.next() or else 0
+    xs.push(4)
+    return a

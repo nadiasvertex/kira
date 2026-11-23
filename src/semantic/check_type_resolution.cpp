@@ -482,8 +482,8 @@ auto checker::variant_payload_types(const type_entry &instance,
 
 /// Whether values of `id` can carry a borrow — see `checked_types::
 /// borrow_bearing_types`: a view, a reference, a callable (a closure may
-/// hold `&`/`&mut` captures), a `task` (it holds its arguments' borrows until
-/// it finishes), or a type parameter other than one a category bounds to
+/// hold `&`/`&mut` captures), a generator or task (its frame holds its arguments'
+/// borrows), or a type parameter other than one a category bounds to
 /// builtin scalars (`T: numeric`), directly or through a
 /// pointer inner type, array/tuple element, generic argument, struct
 /// field, or sum-variant payload. `str` is deliberately not a view here.
@@ -515,7 +515,8 @@ auto checker::type_carries_borrow(type_id id,
   }
   if (session_.types_.is_view(id) || e.kind == type_kind::ref_kind ||
       e.kind == type_kind::fn_kind || e.kind == type_kind::param_app_kind ||
-      (e.kind == type_kind::builtin_generic_kind && e.name == "task")) {
+      (e.kind == type_kind::builtin_generic_kind &&
+       (e.name == "generator" || e.name == "task"))) {
     return true;
   }
   if (e.result != k_unknown_type &&

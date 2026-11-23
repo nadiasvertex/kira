@@ -1,0 +1,13 @@
+module reject_aggregate_generator_borrow
+
+generator def each(xs: &list[int32]) -> some iterator[int32]:
+    for x in xs:
+        yield x
+
+def main() -> int32:
+    var xs: list[int32] = [1, 2, 3]
+    let pair = (each(&xs), 1)
+    xs.push(4)
+    let (g0, n) = pair
+    var g = g0
+    return (g.next() or else 0) + n

@@ -32,6 +32,11 @@ generator def fibonacci() -> some iterator[uint64]:
 
 `generator def` produces `some iterator[T]` — the same trait an ordinary hand-written `next()` implementation satisfies (see [Traits](18-traits.md)). Nothing about calling a generator differs from calling any other iterator; `for x in fibonacci().take(10)` works whether `fibonacci`'s `next()` was written by hand or generated from a `yield`-based body. `generator` only changes how a body is *written*, never how the result is *used*.
 
+A generator or task frame holds its arguments, including any borrows they carry. If
+`g = each(&xs)` yields integers, a later `g.next()` still needs the borrow of `xs`.
+Calling `xs.push(4)` before that use is an ownership error.
+
+
 `async` and `generator` are two surface names over one coroutine lowering, so they compose the same way other prefixes do:
 
 ```cinder

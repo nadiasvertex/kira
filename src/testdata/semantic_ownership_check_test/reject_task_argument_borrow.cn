@@ -1,0 +1,10 @@
+module reject_task_argument_borrow
+
+async def peek(xs: &list[int32]) -> int32:
+    return xs.len() as int32
+
+async def main() -> int32:
+    var xs: list[int32] = [1, 2, 3]
+    let t = peek(&xs)
+    xs.push(4)
+    return await t

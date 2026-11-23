@@ -1,6 +1,6 @@
 # Unified type checker plan
 
-Status: accepted, 2026-11-15. Phases 1 to 3 are complete; phase 3 finished on 2026-11-19. Phase 4 is done (2026-11-20); its remaining debts moved to phase 12. Phase 5 is done (2026-11-22); its remaining debts moved to phase 12. Phase 6 is done (2026-11-22); its remaining debts moved to phase 12. Phase 7 is done (2026-11-22); its remaining debts moved to phases 8 and 12.
+Status: accepted, 2026-11-15. Phases 1 to 3 are complete; phase 3 finished on 2026-11-19. Phase 4 is done (2026-11-20); its remaining debts moved to phase 12. Phase 5 is done (2026-11-22); its remaining debts moved to phase 12. Phase 6 is done (2026-11-22); its remaining debts moved to phase 12. Phase 7 is done (2026-11-22); its remaining debts moved to phases 8 and 12. Phase 8 is in progress.
 
 The type-checking bugs in [todo.md](todo.md) share three structural causes. The checker
 hands later stages about 85 side tables keyed by AST node, and each later stage decides
@@ -439,3 +439,11 @@ Phase 7 leaves these debts.
 | The drop schedule is keyed by the AST nodes the core records as `origin` (moved from phase 3). | Phase 12 |
 | Function summaries, stores through parameters, borrows held by generator and task values, and closure escape are not implemented. A call result still carries the borrows of every argument its signature lets reach it. | Phase 8 |
 | A `for` over a borrowed collection of `copy` elements can bind only a name or `_`: the core has no test of a reference's referent, so a destructuring head is reported as a feature not built yet. | Phase 12 |
+
+## Phase 8 progress
+
+Generator frames now carry argument borrows even when their yielded elements are scalars
+(item 31). The ownership tests cover a direct call, a wrapper, a generator stored in a
+tuple, and returning a generator that borrows a local. A separate task case checks the
+same conflict before an await. Function summaries, stores through parameters (item 30),
+and closure escape (item 19) remain open.

@@ -1,0 +1,9 @@
+module reject_return_generator_borrow
+
+generator def each(xs: &list[int32]) -> some iterator[int32]:
+    for x in xs:
+        yield x
+
+def bad():
+    let xs: list[int32] = [1, 2, 3]
+    return each(&xs)

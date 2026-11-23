@@ -1,0 +1,14 @@
+module reject_wrapped_generator_borrow
+
+generator def each(xs: &list[int32]) -> some iterator[int32]:
+    for x in xs:
+        yield x
+
+def wrap(xs: &list[int32]):
+    return each(xs)
+
+def main() -> int32:
+    var xs: list[int32] = [1, 2, 3]
+    var g = wrap(&xs)
+    xs.push(4)
+    return g.next() or else 0
