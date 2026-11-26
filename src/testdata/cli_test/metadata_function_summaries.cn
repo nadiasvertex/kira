@@ -1,0 +1,17 @@
+module sample.summaries
+
+def pick(a: &list[int32], b: &list[int32]) -> &int32:
+    if b.len() > 5:
+        return &a[1]
+    return &a[0]
+
+def fill(out: &mut list[&int32], x: &int32) -> unit:
+    out.push(x)
+
+def main() -> int32:
+    let a: list[int32] = [1, 2]
+    let b: list[int32] = [3]
+    let n: int32 = 4
+    var out: list[&int32] = []
+    fill(&mut out, &n)
+    return *pick(&a, &b) + *out[0]

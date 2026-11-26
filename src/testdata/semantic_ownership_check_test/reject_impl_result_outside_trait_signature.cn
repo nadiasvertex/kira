@@ -1,0 +1,14 @@
+module ownership.impl_result_outside_trait_signature
+
+trait getter[T]:
+    def get(self) -> T
+
+type holder = { n: int32 }
+
+impl getter[&int32] for holder:
+    def get(self) -> &int32:
+        return &self.n
+
+def main() -> int32:
+    let h = holder { n: 4 }
+    return *h.get()

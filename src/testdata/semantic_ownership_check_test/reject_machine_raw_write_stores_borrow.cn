@@ -1,0 +1,43 @@
+module ownership.machine_raw_write_stores_borrow
+
+# `put` writes what `m.make(h)` returns through a raw pointer from
+# `s.raw()`. A raw pointer result carries no borrow, so only the write
+# itself says where the value may land. `put`'s signature says nothing
+# reaches `s` from `h` (a `slot[T]` holds only `T`s), but the bound call can
+# make a `T` from what `h` holds, so the write stores a borrow of `n` where
+# `s` points.
+use std.mem
+
+type slot[T] = { p: *mut T }
+
+extend[T] slot[T]:
+    machine def raw(self) -> *mut T:
+        return self.p
+
+trait maker[T]:
+    def make(self, h: &held) -> T
+
+type refs = { tag: int32 }
+
+type held = { r: &int32 }
+
+impl maker[&int32] for refs:
+    def make(self, h: &held) -> &int32:
+        return h.r
+
+machine def put[T, M](s: &mut slot[T], m: M, h: &held) -> unit where M: maker[T]:
+    let p = s.raw()
+    p[0] = m.make(h)
+
+def fill(s: &mut slot[&int32]) -> unit:
+    let n: int32 = 3
+    let h = held{ r: &n }
+    put(s, refs{ tag: 0 }, &h)
+
+machine def new_slot() -> slot[&int32]:
+    return slot[&int32]{ p: std.mem.alloc[&int32](1) }
+
+def main() -> int32:
+    var s = new_slot()
+    fill(&mut s)
+    return 0

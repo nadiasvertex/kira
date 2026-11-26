@@ -1,0 +1,16 @@
+module ownership.result_borrows_one_argument
+
+# `pick`'s body returns a borrow of `a` only, so its inferred summary lets
+# the result borrow `a` and not `b`: changing `b` while `r` is live is fine.
+
+def pick(a: &list[int32], b: &list[int32]) -> &int32:
+    if b.len() > 5:
+        return &a[1]
+    return &a[0]
+
+def main() -> int32:
+    let a: list[int32] = [1, 2]
+    var b: list[int32] = [3]
+    let r = pick(&a, &b)
+    b.push(4)
+    return *r

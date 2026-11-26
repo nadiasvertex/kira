@@ -1,6 +1,6 @@
 # Unified type checker plan
 
-Status: accepted, 2026-11-15. Phases 1 to 3 are complete; phase 3 finished on 2026-11-19. Phase 4 is done (2026-11-20); its remaining debts moved to phase 12. Phase 5 is done (2026-11-22); its remaining debts moved to phase 12. Phase 6 is done (2026-11-22); its remaining debts moved to phase 12. Phase 7 is done (2026-11-22); its remaining debts moved to phases 8 and 12. Phase 8 is in progress.
+Status: accepted, 2026-11-15. Phases 1 to 3 are complete; phase 3 finished on 2026-11-19. Phase 4 is done (2026-11-20); its remaining debts moved to phase 12. Phase 5 is done (2026-11-22); its remaining debts moved to phase 12. Phase 6 is done (2026-11-22); its remaining debts moved to phase 12. Phase 7 is done (2026-11-22); its remaining debts moved to phases 8 and 12. Phase 8 is done (2026-11-26); its remaining debts moved to phase 12.
 
 The type-checking bugs in [todo.md](todo.md) share three structural causes. The checker
 hands later stages about 85 side tables keyed by AST node, and each later stage decides
@@ -440,18 +440,24 @@ Phase 7 leaves these debts.
 | Function summaries, stores through parameters, borrows held by generator and task values, and closure escape are not implemented. A call result still carries the borrows of every argument its signature lets reach it. | Phase 8 |
 | A `for` over a borrowed collection of `copy` elements can bind only a name or `_`: the core has no test of a reference's referent, so a destructuring head is reported as a feature not built yet. | Phase 12 |
 
-## Phase 8 progress
+## Phase 8 results
 
-Generator frames now carry argument borrows even when their yielded elements are scalars
-(item 31). The ownership tests cover a direct call, a wrapper, a generator stored in a
-tuple, and returning a generator that borrows a local. A separate task case checks the
-same conflict before an await.
+Phase 8 is done (2026-11-26). Each function has an inferred summary, calls apply it, stores through parameters are checked, and an escaping closure moves its captures. Items 19 and 30 are closed; item 31 closed earlier in the phase. The four item 30 programs are now tests in `ownership_check_test`, and item 19's is corpus program 257, checked with `# expect:` and `# max-live-blocks:`.
 
-For item 30, the ownership graph tracks direct assignments through an incoming `&mut`
-parameter. Storing a value that borrows a block-local into the caller's storage is
-diagnosed even on an early return. The regression tests also cover storing a borrow
-from another parameter and rebinding the destination parameter to local storage.
+- **Summaries.** A summary says which parts of each argument the result may borrow, which parts of one argument the body may store where another points, and which parts a task spawned outside a `crew` may borrow. A part is what the argument holds or, for a reference, the place it points at. The graph gives each parameter tokens for its parts, and the summary is read off the state at the function's exit. Summaries are inferred to a least fixed point over the whole program, standard library included, and the driver writes them to module metadata (schema 5, `FunctionSummary`).
+- **Calls.** A call applies its callee's summary. An instance whose template the adapter did not build has a summary of its own, and the union of those summaries stands for the template. A call with no body to infer from uses the summary its signature allows. Nothing is written through a `&`, and a borrow of an argument's place reaches a result or another argument only when that type can point at the place's type or a part of it. A type parameter holds only what arrived as that parameter for a call through a function value and for a function that was not built. A call through a bound reaches an impl the caller does not know, and its type parameters may hold anything an argument holds; they still cannot point at an argument's place, because an impl whose summary does not fit its trait method's signature is rejected.
+- **Machine code.** A `machine` body is held to its signature's summary, read with its type parameters rigid. A write through a raw pointer, and a value given to an intrinsic, may land in any storage the body has a mutable way into, so the graph stores it there.
+- **Closures.** A call through a function value assumes the closure keeps nothing it is given. A closure body that stores a borrow from its parameter in a captured place is rejected.
+- **Reference results.** What a call's `&T` result points at holds only what the arguments that reach it hold, so reading through the result, or reborrowing it, does not carry the borrow the result itself is. A `mutex_guard` method call through `deref_mut` depends on this.
+- **Cost.** Callees are inferred before their callers: a call asks for its callee's summary to be inferred before reading it, so most functions are built once. After closures escape, only their functions and the callers that read them are inferred again, from the bottom. Each unit's diagnostics and escaping closures are kept from its last build, so no pass rebuilds every graph after the fixed point. The lowering view used at compile time does not compute the type reach tables, which only the ownership check reads.
+- **Late types.** The checker classifies the types interned while it runs. The adapter interns a few more, such as `&fn(T) -> U` for a call through a held closure, and the ownership check reads those from their structure. A late struct or sum is held to bear borrows.
+- **Stores.** A store through a reference, at any depth, through a local alias, through a by-value argument holding a `&mut`, or into a closure's capture puts the stored borrows where the reference points. A borrow of a local stored where the caller can see it is rejected, and so is a borrow of what a parameter points at stored back into the same place.
+- **Generators and tasks.** A `yield` hands its value out like a return, so yielding a borrow of a local is rejected ("cannot yield a borrow"). A task spawned outside a `crew` keeps its borrows to the end of the function; one that borrows a local is rejected, and one that borrows a parameter is recorded in the summary. A closure or task body that spawns a task borrowing what it was given is rejected, since no summary records it.
+- **Escape (item 19).** A closure escapes when a borrow it captures by the implicit rule outlives the captured value. Its borrow captures become moves, in every copy of a generic lambda, and the summaries are inferred again. A later use of the moved value gets a note that names the closure.
 
-Stores performed by callees (including the four item 30 probes), stores through local
-reference aliases, function summary inference and metadata, and closure escape (item 19)
-remain open.
+Phase 8 leaves these debts.
+
+| Debt | Removed in |
+|---|---|
+| A summary records no moves of parameters; a by-value argument is moved at the call, which is enough for the caller. | Phase 12 |
+| A function the adapter cannot build has no body to infer from, so calls to it use its signature's summary (moved from phase 7). | Phase 12 |

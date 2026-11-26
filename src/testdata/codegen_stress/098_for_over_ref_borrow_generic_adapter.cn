@@ -31,16 +31,18 @@ def iter[T](c: &container[T]) -> container_iter[T]:
 trait iterator[T]:
     def next(mut self) -> option[T]
 
-impl[T] iterator[&int32] for container_iter[T]:
-    def next(mut self) -> option[&int32]:
+# `next` hands out a copy: an iterator's items may not borrow the iterator
+# itself, which generic code may drop while it keeps the items.
+impl[T] iterator[int32] for container_iter[T]:
+    def next(mut self) -> option[int32]:
         if self.done:
             return @none
         self.done = true
-        return @some(&self.cached)
+        return @some(self.cached)
 
 def main() -> int32:
     var c = container[int32] { data: 7, tag: 42 }
     var sum = 0
     for x in &c:
-        sum = sum + *x
+        sum = sum + x
     return sum

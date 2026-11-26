@@ -963,6 +963,29 @@ struct ownership_results {
   /// set can only hand back borrows that arrived through an argument typed
   /// with one of the result's type parameters.
   std::unordered_set<type_id> own_borrow_bearing_types;
+  /// The subset of `borrow_bearing_types` whose values can hold a way to
+  /// change storage they do not own: a `&mut`, a mutable view, a callable or
+  /// coroutine, or a type parameter. A store through a value outside it
+  /// cannot happen, so a store's target is found only through loans of
+  /// these.
+  std::unordered_set<type_id> mut_bearing_types;
+  /// The table size the three sets above were computed at. A type interned
+  /// later (the adapter makes `&fn(T) -> U` for a call through a held
+  /// closure) is in none of them, which says nothing about it.
+  std::size_t classified_types = 0;
+  /// For each type in `own_borrow_bearing_types`, what the references and
+  /// views in its own structure may point at, through every level of
+  /// indirection; `k_unknown_type` stands for anything (a callable's
+  /// environment, an unknown type). A type parameter contributes nothing: a
+  /// body generic in `T` cannot make a `T` that points anywhere. The
+  /// ownership check reads it, with `owned_components`, to decide whether a
+  /// value of a type can hold a borrow of an argument's place.
+  std::unordered_map<type_id, std::vector<type_id>> pointee_types;
+  /// For each type, the type itself and every type a value of it owns, in
+  /// fields, elements and payloads but not behind a reference or view;
+  /// `k_unknown_type` stands for anything. A borrow of part of a value
+  /// points at one of these.
+  std::unordered_map<type_id, std::vector<type_id>> owned_components;
   /// The type parameters declared with a `copy` bound, inline or in a
   /// `where` clause. Keyed like every type parameter, on the declaration that
   /// introduced it, so the set means the same thing in every body.
@@ -1114,6 +1137,12 @@ struct checked_types {
   /// typed core to build and verify calls through a bound (rule C9).
   std::unordered_map<const ast::func_decl *, trait_method_signature>
       trait_method_signatures{};
+
+  /// The trait method each method of a trait impl implements, by the impl
+  /// method's declaration. The ownership check reads it to hold an impl to
+  /// what the trait's signature lets a call through a bound assume.
+  std::unordered_map<const ast::func_decl *, const ast::func_decl *>
+      impl_trait_methods{};
 
   /// Whether a value of `id` copies rather than moves: `type_table::is_copy`,
   /// a type parameter bounded by `copy`, or a `copy` sum.

@@ -24,7 +24,7 @@ namespace fs = std::filesystem;
 constexpr std::string_view k_metadata_extension = ".kmeta";
 
 /// Schema version embedded in every emitted module metadata payload.
-constexpr uint32_t k_module_metadata_schema_version = 4;
+constexpr uint32_t k_module_metadata_schema_version = 5;
 
 } // namespace
 
@@ -180,7 +180,8 @@ constexpr uint32_t k_module_metadata_schema_version = 4;
 /// @param diagnostics Plain-text driver diagnostics buffer for I/O failures.
 [[nodiscard]] auto
 write_module_metadata(const fs::path &metadata_root, const ast::file &file,
-                      const fs::path &source_path, std::string &diagnostics)
+                      const fs::path &source_path, std::string &diagnostics,
+                      const semantic::ownership::summary_table *summaries)
     -> std::expected<std::string, std::monostate> {
   auto output_path = metadata_output_path(metadata_root, file, source_path);
   auto output_parent = output_path.parent_path();
@@ -203,7 +204,7 @@ write_module_metadata(const fs::path &metadata_root, const ast::file &file,
     return std::unexpected(std::monostate{});
   }
 
-  auto metadata = build_module_metadata(file, source_path);
+  auto metadata = build_module_metadata(file, source_path, summaries);
   if (!metadata.SerializeToOstream(&out) || !out.good()) {
     out.close();
     fs::remove(output_path, ec);
@@ -468,12 +469,87 @@ auto add_functor_instantiation_metadata(const ast::use_decl &decl,
                                           join_strings(arg_spellings, ", ")));
 }
 
+namespace {
+
+/// Records the ownership summary of `decl` under `name`, if it has one.
+auto add_function_summary(const ast::func_decl &decl, std::string name,
+                          const semantic::ownership::summary_table &summaries,
+                          metadata::v1::ModuleMetadata &metadata) -> void {
+  const auto found = summaries.find(&decl);
+  if (found == summaries.end()) {
+    return;
+  }
+  auto *out = metadata.add_function_summaries();
+  out->set_name(std::move(name));
+  for (std::size_t i = 0; i < found->second.params.size(); ++i) {
+    const auto &p = found->second.params[i];
+    auto *param = out->add_parameters();
+    if (i < decl.params.size()) {
+      if (const auto *binding = dynamic_cast<const ast::binding_pattern *>(
+              decl.params[i].pattern.get())) {
+        param->set_name(binding->name);
+      }
+    }
+    param->set_by_reference(p.by_reference);
+    param->set_result(p.result);
+    param->set_escapes(p.escapes);
+  }
+  for (const auto &stored : found->second.stores) {
+    auto *store = out->add_stores();
+    store->set_into(stored.into);
+    store->set_from(stored.from);
+    store->set_parts(stored.parts);
+  }
+}
+
+/// The name a method of an `impl` or `extend` block is recorded under.
+[[nodiscard]] auto method_owner_name(const ast::type_expr *target)
+    -> std::string {
+  if (const auto *named = dynamic_cast<const ast::named_type *>(target);
+      named != nullptr && !named->path.empty()) {
+    return named->path.back();
+  }
+  return "?";
+}
+
+/// Records the summaries of the functions and methods among `items`.
+auto add_function_summaries(
+    const std::vector<ast::ptr<ast::node>> &items,
+    const semantic::ownership::summary_table &summaries,
+    metadata::v1::ModuleMetadata &metadata) -> void {
+  for (const auto &item : items) {
+    if (const auto *fn = dynamic_cast<const ast::func_decl *>(item.get())) {
+      add_function_summary(*fn, fn->name, summaries, metadata);
+      continue;
+    }
+    const auto *impl = dynamic_cast<const ast::impl_decl *>(item.get());
+    const auto *extend = dynamic_cast<const ast::extend_decl *>(item.get());
+    if (impl == nullptr && extend == nullptr) {
+      continue;
+    }
+    const auto owner = method_owner_name(impl != nullptr
+                                             ? impl->for_type.get()
+                                             : extend->for_type.get());
+    for (const auto &member : impl != nullptr ? impl->items : extend->items) {
+      if (const auto *fn =
+              dynamic_cast<const ast::func_decl *>(member.get())) {
+        add_function_summary(*fn, std::format("{}::{}", owner, fn->name),
+                             summaries, metadata);
+      }
+    }
+  }
+}
+
+} // namespace
+
 /// Build the serialized metadata payload for one parsed source file.
 ///
 /// @param file Parsed AST for the source file.
 /// @param source_path Original source file path.
-[[nodiscard]] auto build_module_metadata(const ast::file &file,
-                                         const fs::path &source_path)
+/// @param summaries The ownership summaries to record, or null.
+[[nodiscard]] auto
+build_module_metadata(const ast::file &file, const fs::path &source_path,
+                      const semantic::ownership::summary_table *summaries)
     -> metadata::v1::ModuleMetadata {
   auto metadata = metadata::v1::ModuleMetadata{};
   metadata.set_schema_version(k_module_metadata_schema_version);
@@ -512,6 +588,9 @@ auto add_functor_instantiation_metadata(const ast::use_decl &decl,
     }
   }
 
+  if (summaries != nullptr) {
+    add_function_summaries(file.items, *summaries, metadata);
+  }
   return metadata;
 }
 } // namespace cinder::driver

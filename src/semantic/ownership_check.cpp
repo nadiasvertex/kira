@@ -42,6 +42,13 @@ using ownership::owned_local;
 using ownership::scope_exit_event;
 using ownership::scope_exit_owned;
 using ownership::shared_write_event;
+using ownership::store_event;
+using ownership::function_summary;
+using ownership::stored_borrow;
+using ownership::k_contents;
+using ownership::k_referent;
+using ownership::k_no_param;
+using ownership::summary_param;
 using ownership::static_write;
 using ownership::static_write_event;
 using ownership::task_capture_write_event;
@@ -116,6 +123,10 @@ auto live_step(const event &e, live_set &live) -> void {
     for (const auto source : f->sources) {
       live[source] = true;
     }
+  } else if (const auto *st = std::get_if<store_event>(&e)) {
+    for (const auto source : st->sources) {
+      live[source] = true;
+    }
   } else if (const auto *u = std::get_if<use_event>(&e)) {
     live[u->local] = true;
   }
@@ -180,6 +191,85 @@ auto moved_step(const access_event &a, const function_cfg &cfg,
   }
 }
 
+/// What a value made of `loans` and the current contents of `sources`
+/// carries: without the `identity` token rooted at `strip`, for a value read
+/// from behind that reference.
+auto carried(const std::vector<loan_id> &loans,
+             const std::vector<local_id> &sources, local_id strip,
+             const function_cfg &cfg, const forward_state &state) -> loan_set {
+  auto stored = loans;
+  std::ranges::sort(stored);
+  stored.erase(std::unique(stored.begin(), stored.end()), stored.end());
+  for (const auto source : sources) {
+    merge_into(stored, state.contents[source]);
+  }
+  if (strip != k_no_local) {
+    std::erase_if(stored, [&](loan_id loan) {
+      return cfg.loans[loan].identity && cfg.loans[loan].root == strip;
+    });
+  }
+  return stored;
+}
+
+/// Whether `part` is `whole` or a field path below it.
+auto is_within(local_id part, local_id whole, const function_cfg &cfg) -> bool {
+  for (auto at = part; at != k_no_local; at = cfg.locals[at].parent) {
+    if (at == whole) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// The storage a store reaches from `through`, one reference level at a
+/// time (`store_event`): the roots of the `&mut` loans each level carries.
+auto store_targets(const store_event &st, const function_cfg &cfg,
+                   const forward_state &state) -> std::vector<local_id> {
+  auto reached = std::vector<local_id>{};
+  auto level = st.through;
+  const auto levels = st.transitive ? cfg.locals.size() : st.depth;
+  for (std::size_t k = 0; k < levels && !level.empty(); ++k) {
+    auto next = std::vector<local_id>{};
+    for (const auto holder : level) {
+      for (const auto loan : state.contents[holder]) {
+        const auto &info = cfg.loans[loan];
+        if (!info.is_mut && !info.reserved_mut) {
+          continue;
+        }
+        if (std::ranges::find(reached, info.root) != reached.end() ||
+            std::ranges::find(next, info.root) != next.end()) {
+          continue;
+        }
+        next.push_back(info.root);
+      }
+    }
+    reached.insert(reached.end(), next.begin(), next.end());
+    level = std::move(next);
+  }
+  return reached;
+}
+
+auto store_step(const store_event &st, const function_cfg &cfg,
+                forward_state &state) -> void {
+  auto stored = carried(st.loans, st.sources, st.strip, cfg, state);
+  const auto targets = store_targets(st, cfg, state);
+  std::erase_if(stored, [&](loan_id loan) {
+    return std::ranges::any_of(targets, [&](local_id target) {
+      const auto root = cfg.loans[loan].root;
+      return is_within(root, target, cfg) || is_within(target, root, cfg);
+    });
+  });
+  if (stored.empty()) {
+    return;
+  }
+  for (const auto holder : st.through) {
+    merge_into(state.contents[holder], stored);
+  }
+  for (const auto target : targets) {
+    merge_into(state.contents[target], stored);
+  }
+}
+
 auto forward_step(const event &e, const function_cfg &cfg, forward_state &state)
     -> void {
   if (const auto *a = std::get_if<access_event>(&e)) {
@@ -188,18 +278,15 @@ auto forward_step(const event &e, const function_cfg &cfg, forward_state &state)
       state.contents[a->local].clear();
     }
   } else if (const auto *f = std::get_if<flow_event>(&e)) {
-    if (f->through != k_no_local &&
-        !std::ranges::binary_search(state.contents[f->through], f->incoming)) {
-      return;
+    auto stored = carried(f->loans, f->sources, f->strip, cfg, state);
+    auto &dest = state.contents[f->dest];
+    if (f->replace) {
+      dest = std::move(stored);
+    } else {
+      merge_into(dest, stored);
     }
-    auto next = f->replace ? loan_set{} : state.contents[f->dest];
-    auto direct = f->loans;
-    std::ranges::sort(direct);
-    merge_into(next, direct);
-    for (const auto source : f->sources) {
-      merge_into(next, state.contents[source]);
-    }
-    state.contents[f->dest] = std::move(next);
+  } else if (const auto *st = std::get_if<store_event>(&e)) {
+    store_step(*st, cfg, state);
   }
 }
 
@@ -235,10 +322,18 @@ public:
                     diagnostic_bag &diag, file_id_type file_id)
       : cfg_(cfg), checked_(checked), diag_(diag), file_id_(file_id) {}
 
-  auto run() -> void {
+  auto run() -> ownership::graph_result {
     compute_liveness();
     compute_forward();
     report();
+    auto out = ownership::graph_result{};
+    out.summary = summarize();
+    if (!cfg_.is_function) {
+      report_closure_spawns();
+      report_closure_parameter_stores();
+    }
+    out.escaping = std::move(escaping_);
+    return out;
   }
 
 private:
@@ -250,6 +345,7 @@ private:
   std::vector<forward_state> in_;
   std::set<local_id> reported_moves_;
   std::set<std::pair<local_id, loan_id>> reported_conflicts_;
+  std::set<const void *> escaping_;
 
   [[nodiscard]] auto local_count() const -> std::size_t {
     return cfg_.locals.size();
@@ -513,6 +609,200 @@ private:
   }
 
   // ------------------------------------------------------------------
+  //  Summary.
+  // ------------------------------------------------------------------
+
+  /// Which parameter's argument a loan at the exit stands for, and which
+  /// part of it: a token is the part it was made for; a borrow of a
+  /// reference parameter's referent is its `referent`, or its `contents`
+  /// when it reaches through a second reference (`loan_info::deep`).
+  [[nodiscard]] auto part_of(loan_id loan) const
+      -> std::optional<std::pair<std::uint32_t, std::uint8_t>> {
+    const auto &info = cfg_.loans[loan];
+    if (info.param != k_no_param) {
+      return std::pair{info.param,
+                       info.identity ? ownership::k_referent
+                                     : ownership::k_contents};
+    }
+    for (std::size_t j = 0; j < cfg_.parameters.size(); ++j) {
+      const auto &p = cfg_.parameters[j];
+      if (p.local == k_no_local || !overlaps_below(info.root, p.local)) {
+        continue;
+      }
+      const auto part = p.by_reference && !info.deep ? ownership::k_referent
+                                                     : ownership::k_contents;
+      return std::pair{static_cast<std::uint32_t>(j), part};
+    }
+    return std::nullopt;
+  }
+
+  /// The summary of a function's own graph, read off the state at its exit:
+  /// what reaches the returned value, what reaches each parameter's storage,
+  /// and what a task spawned outside a `crew` holds.
+  auto summarize() -> function_summary {
+    auto out = function_summary{};
+    out.params.resize(cfg_.parameters.size());
+    for (std::size_t j = 0; j < cfg_.parameters.size(); ++j) {
+      out.params[j].by_reference = cfg_.parameters[j].by_reference;
+      if (cfg_.coroutine && cfg_.parameters[j].storage != k_no_local) {
+        // The frame holds the argument for as long as the result lives.
+        out.params[j].result =
+            ownership::k_contents |
+            (cfg_.parameters[j].by_reference ? ownership::k_referent : 0);
+      }
+    }
+    if (cfg_.parameters.empty() || cfg_.exit >= in_.size() ||
+        !in_[cfg_.exit].reached) {
+      return out;
+    }
+    const auto &exit = in_[cfg_.exit];
+    for (const auto loan : exit.contents[cfg_.return_slot]) {
+      if (const auto part = part_of(loan)) {
+        out.params[part->first].result |= part->second;
+      }
+    }
+    if (cfg_.spawned != k_no_local) {
+      for (const auto loan : exit.contents[cfg_.spawned]) {
+        if (const auto part = part_of(loan)) {
+          out.params[part->first].escapes |= part->second;
+        }
+      }
+    }
+    for (std::size_t i = 0; i < cfg_.parameters.size(); ++i) {
+      const auto &into = cfg_.parameters[i];
+      if (into.storage == k_no_local) {
+        continue;
+      }
+      for (const auto loan : exit.contents[into.storage]) {
+        const auto part = part_of(loan);
+        if (!part.has_value()) {
+          continue;
+        }
+        if (part->first == i) {
+          if (cfg_.loans[loan].param == k_no_param &&
+              part->second == ownership::k_referent) {
+            report_self_store(loan, i);
+          }
+          continue;
+        }
+        const auto from = part->first;
+        const auto at = std::ranges::find_if(out.stores, [&](const auto &s) {
+          return s.into == i && s.from == from;
+        });
+        if (at != out.stores.end()) {
+          at->parts |= part->second;
+        } else {
+          out.stores.push_back(stored_borrow{
+              .into = static_cast<std::uint32_t>(i),
+              .from = from,
+              .parts = part->second});
+        }
+      }
+    }
+    std::ranges::sort(out.stores, [](const auto &a, const auto &b) {
+      return std::pair{a.into, a.from} < std::pair{b.into, b.from};
+    });
+    return out;
+  }
+
+  /// A task spawned outside a `crew` by a closure or task body that
+  /// borrows what the body was given. No summary records what a closure's
+  /// call lets escape, so the caller could not keep the borrowed value
+  /// alive for the task.
+  auto report_closure_spawns() -> void {
+    if (cfg_.spawned == k_no_local || cfg_.exit >= in_.size() ||
+        !in_[cfg_.exit].reached) {
+      return;
+    }
+    for (const auto loan : in_[cfg_.exit].contents[cfg_.spawned]) {
+      const auto &info = cfg_.loans[loan];
+      const auto &storage = cfg_.locals[info.root];
+      if (storage.role != local_role::parameter_storage ||
+          !reported_conflicts_.emplace(info.root, loan).second) {
+        continue;
+      }
+      auto d = diagnostic(
+          diagnostic_level::error,
+          std::format("a task started with `spawn()` in a closure borrows "
+                      "`{}`, which the closure does not own",
+                      storage.name),
+          file_id_);
+      d.with_label(info.span,
+                   std::format("`{}` comes from outside the closure here",
+                               storage.name));
+      d.with_note("a task started with `spawn()` outside a `crew` may run "
+                  "after the closure returns, and the closure's caller "
+                  "cannot tell that the task still borrows the value");
+      d.with_help("spawn the task into a `crew` (`crew c: c.spawn(t)`), or "
+                  "move the value into the task");
+      diag_.emit(d);
+    }
+  }
+
+  /// A closure that stores a borrow its caller gave it in a captured
+  /// place. A call through a function value assumes the closure keeps
+  /// nothing it is given (`graph_builder::call_summary`), so the caller
+  /// could change or drop the argument while the capture still borrows it.
+  auto report_closure_parameter_stores() -> void {
+    if (cfg_.exit >= in_.size() || !in_[cfg_.exit].reached) {
+      return;
+    }
+    for (local_id holder = 0; holder < cfg_.locals.size(); ++holder) {
+      const auto &into = cfg_.locals[holder];
+      if (into.role != local_role::parameter_storage || !into.capture) {
+        continue;
+      }
+      for (const auto loan : in_[cfg_.exit].contents[holder]) {
+        const auto &info = cfg_.loans[loan];
+        const auto &from = cfg_.locals[info.root];
+        if (from.role != local_role::parameter_storage || from.capture ||
+            !reported_conflicts_.emplace(info.root, loan).second) {
+          continue;
+        }
+        auto d = diagnostic(
+            diagnostic_level::error,
+            std::format("the closure stores a borrow from its parameter `{}` "
+                        "in the captured `{}`",
+                        from.name, into.name),
+            file_id_);
+        d.with_label(info.span,
+                     std::format("`{}` is given to the closure here",
+                                 from.name));
+        d.with_note("a caller of the closure cannot tell that the captured "
+                    "value now borrows its argument, and could change or "
+                    "drop the argument while the borrow is still held");
+        d.with_help("return the borrow, or pass the place it goes in as "
+                    "another parameter");
+        diag_.emit(d);
+      }
+    }
+  }
+
+  /// A borrow of what a parameter points at, stored where the parameter
+  /// points: the caller's value would borrow part of itself.
+  auto report_self_store(loan_id loan, std::size_t param) -> void {
+    const auto &info = cfg_.loans[loan];
+    if (!reported_conflicts_.emplace(info.root, loan).second) {
+      return;
+    }
+    const auto &name = cfg_.locals[cfg_.parameters[param].local].name;
+    auto d = diagnostic(
+        diagnostic_level::error,
+        std::format("cannot store a borrow of `{0}` in what `{0}` points at",
+                    name),
+        file_id_);
+    d.with_label(info.span,
+                 std::format("this borrows part of what `{}` points at, and "
+                             "the borrow is stored there too",
+                             name));
+    d.with_note("the caller's value would then borrow part of itself, and "
+                "could never be moved or changed while it does");
+    d.with_help("store an index or a copy of the value instead of a borrow "
+                "of it");
+    diag_.emit(d);
+  }
+
+  // ------------------------------------------------------------------
   //  Diagnostics.
   // ------------------------------------------------------------------
 
@@ -574,17 +864,48 @@ private:
         report_temporary_dropped(a, loan, holder);
         return;
       }
+      if (loan.origin == loan_origin::capture && loan.implicit &&
+          loan.closure != nullptr) {
+        // The closure outlives what it borrows by the borrow-or-move rule:
+        // it escapes, and moves the value instead (ch. 16).
+        escaping_.insert(loan.closure);
+      }
       if (role == local_role::return_slot) {
-        report_returned_borrow(a, loan, root);
+        report_returned_borrow(a, loan, root,
+                               /*yielded=*/holder != cfg_.return_slot);
       } else if (role == local_role::parameter_storage) {
-        auto d = diagnostic(diagnostic_level::error,
-                            std::format("cannot store a borrow of the local `{}` "
-                                        "through parameter `{}`",
-                                        root, cfg_.locals[holder].name),
-                            file_id_);
+        const auto &storage = cfg_.locals[holder];
+        auto d = diagnostic(
+            diagnostic_level::error,
+            std::format("cannot store a borrow of the local `{}` through {} "
+                        "`{}`",
+                        root, storage.capture ? "the captured" : "parameter",
+                        storage.name),
+            file_id_);
         d.with_label(loan.span, std::format("`{}` is borrowed here", root));
         d.with_secondary_label(a.span, "this local is dropped when its scope ends");
-        d.with_note("the caller can still read the stored borrow after the function returns");
+        d.with_note(storage.capture
+                        ? std::string("the stored borrow stays where the "
+                                      "closure's caller can read it after the "
+                                      "closure returns")
+                        : std::string("the caller can still read the stored "
+                                      "borrow after the function returns"));
+        diag_.emit(d);
+      } else if (role == local_role::spawned_tasks) {
+        auto d = diagnostic(
+            diagnostic_level::error,
+            std::format("a task started with `spawn()` borrows `{}`, which is "
+                        "dropped while the task may still run",
+                        root),
+            file_id_);
+        d.with_label(loan.span, std::format("`{}` is borrowed here", root));
+        d.with_secondary_label(a.span, std::format("`{}` is dropped here", root));
+        d.with_note("a task started with `spawn()` outside a `crew` runs until "
+                    "it finishes or the program ends, so it may outlive any "
+                    "local it borrows");
+        d.with_help("spawn the task into a `crew` (`crew c: c.spawn(t)`), "
+                    "which waits for its tasks before the borrowed values "
+                    "are dropped, or move the values into the task");
         diag_.emit(d);
       } else {
         report_outlived(a, loan, holder, root);
@@ -622,6 +943,14 @@ private:
                           "ownership away, and only `copy` types (the "
                           "scalars, `str`, `&T`, raw pointers and read-only "
                           "views) are copied implicitly"));
+    if (std::ranges::find(cfg_.escaping_lambdas, moved_at) !=
+        cfg_.escaping_lambdas.end()) {
+      d.with_note(std::format(
+          "the closure made here outlives `{0}` (it is returned, or stored "
+          "somewhere that lives longer), so it takes `{0}` instead of "
+          "borrowing it",
+          name));
+    }
     d.with_note("a move inside a loop, or in only one branch of an `if` or "
                 "`match`, still counts: the use is rejected if any path to "
                 "it has already moved the value");
@@ -1139,25 +1468,31 @@ private:
   }
 
   /// A returned value that borrows one of the function's own locals.
+  /// `yielded`: the value is handed out by `yield`, not `return`.
   auto report_returned_borrow(const access_event &a, const loan_info &loan,
-                              const std::string &root) -> void {
+                              const std::string &root, bool yielded) -> void {
     const auto is_capture = loan.origin == loan_origin::capture;
+    const auto *verb = yielded ? "yield" : "return";
     auto d = diagnostic(
         diagnostic_level::error,
         is_capture
-            ? std::format("cannot return a closure that borrows `{}`", root)
-            : std::format("cannot return a borrow of the local `{}`", root),
+            ? std::format("cannot {} a closure that borrows `{}`", verb, root)
+            : std::format("cannot {} a borrow of the local `{}`", verb, root),
         file_id_);
     d.with_label(loan.span,
                  std::format("`{}` is borrowed here, and the borrow is "
-                             "part of the returned value",
-                             root));
+                             "part of the {} value",
+                             root, yielded ? "yielded" : "returned"));
     d.with_secondary_label(
         a.span, std::format("`{}` belongs to this function, and is dropped "
                             "when it returns",
                             root));
-    d.with_note("a returned value outlives every local of the function that "
-                "returns it, so it cannot borrow one of them");
+    d.with_note(yielded
+                    ? "a yielded value can be kept after the generator "
+                      "resumes or finishes, so it cannot borrow one of the "
+                      "generator's locals"
+                    : "a returned value outlives every local of the function "
+                      "that returns it, so it cannot borrow one of them");
     d.with_help(
         is_capture && loan.implicit
             ? std::format("mark the lambda `move` so the closure owns `{0}` "
@@ -1182,8 +1517,8 @@ private:
 
 auto ownership::check_graph(const function_cfg &cfg,
                             const checked_types &checked, diagnostic_bag &diag,
-                            file_id_type file_id) -> void {
-  ownership_checker(cfg, checked, diag, file_id).run();
+                            file_id_type file_id) -> ownership::graph_result {
+  return ownership_checker(cfg, checked, diag, file_id).run();
 }
 
 namespace {

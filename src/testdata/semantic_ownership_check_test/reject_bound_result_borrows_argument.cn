@@ -1,0 +1,14 @@
+module ownership.bound_result_borrows_argument
+
+def first[I, U](it: I) -> U where I: iterator[U]:
+    var it2 = it
+    match it2.next():
+        @some(x) => return x
+        @none => panic("empty")
+
+def main() -> int32:
+    var xs: list[int32] = [7]
+    let a = first(xs.iter())
+    xs.clear()
+    xs.push(9)
+    return *a

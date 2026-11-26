@@ -1,0 +1,12 @@
+module ownership.store_through_alias_in_block
+
+type slot = { entry: &int32 }
+
+def main() -> int32:
+    let m: int32 = 1
+    var local = slot { entry: &m }
+    if true:
+        let n: int32 = 5
+        let alias = &mut local
+        *alias = slot { entry: &n }
+    return *local.entry

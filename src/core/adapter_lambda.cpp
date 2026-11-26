@@ -416,7 +416,10 @@ auto body_builder::lambda_of(const ast::lambda_expr &lambda)
     made->params.push_back(param{.symbol = declare(name, params[i], true),
                                  .name = name,
                                  .type = params[i],
-                                 .origin = pattern});
+                                 .origin = pattern,
+                                 .span = pattern != nullptr
+                                             ? pattern->span
+                                             : lambda.span});
   }
   const auto plain_body = [&]() -> result<ptr<block>> {
     if (lambda.body_expr != nullptr) {

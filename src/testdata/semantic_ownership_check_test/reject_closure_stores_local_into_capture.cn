@@ -1,0 +1,11 @@
+module ownership.closure_stores_local_into_capture
+
+def main() -> int32:
+    var out: list[&int32] = []
+    let m: int32 = 1
+    out.push(&m)
+    let f = () =>:
+        let n: int32 = 5
+        out.push(&n)
+    f()
+    return *out[1]

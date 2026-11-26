@@ -22,6 +22,44 @@ message ModuleMetadata {
   uint32 parser_error_count = 8;
   // Parameterized-module instantiations (`use m[args]`) requested by the file.
   repeated FunctorInstantiation functor_instantiations = 9;
+  // The ownership summary of each function and method the file declares
+  // (ch. 14, "Function summaries").
+  repeated FunctionSummary function_summaries = 10;
+}
+
+// What a call to one function does with its arguments' borrows, as the
+// ownership check inferred it from the body. A part set is a bit set:
+// 1 is what the argument holds (`contents`), 2 is the place a reference
+// argument points at (`referent`).
+message FunctionSummary {
+  // The function's name; a method's is `Type::name`.
+  string name = 1;
+  // One entry per parameter, receiver first.
+  repeated SummaryParameter parameters = 2;
+  // The borrows the body may store where a parameter points.
+  repeated StoredBorrow stores = 3;
+}
+
+// What one argument's borrows may reach.
+message SummaryParameter {
+  // The parameter's name.
+  string name = 1;
+  // Whether the argument is passed by reference.
+  bool by_reference = 2;
+  // The parts of the argument the returned value may borrow.
+  uint32 result = 3;
+  // The parts of the argument a task spawned outside a `crew` may borrow.
+  uint32 escapes = 4;
+}
+
+// Borrows from one argument the body may store where another points.
+message StoredBorrow {
+  // The index of the parameter stored into.
+  uint32 into = 1;
+  // The index of the parameter whose borrows are stored.
+  uint32 from = 2;
+  // The parts of the `from` argument stored.
+  uint32 parts = 3;
 }
 
 // One parameterized-module instantiation (`use audited[postgres] as db`).

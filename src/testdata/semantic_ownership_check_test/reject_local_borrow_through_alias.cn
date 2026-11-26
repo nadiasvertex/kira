@@ -1,0 +1,15 @@
+module ownership.local_borrow_through_alias
+
+type slot = { entry: &int32 }
+
+def fill(out: &mut slot) -> unit:
+    let alias = out
+    let n: int32 = 5
+    *alias = slot { entry: &n }
+
+def fill_branch(left: &mut slot, right: &mut slot, use_left: bool) -> unit:
+    var alias = &mut *right
+    if use_left:
+        alias = &mut *left
+    let inner: int32 = 7
+    *alias = slot { entry: &inner }

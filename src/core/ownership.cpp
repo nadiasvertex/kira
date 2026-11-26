@@ -16,12 +16,14 @@
 
 #include <algorithm>
 #include <format>
+#include <functional>
 #include <map>
 #include <optional>
 #include <ranges>
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -41,6 +43,15 @@ using semantic::ownership::access_kind;
 using semantic::ownership::assign_event;
 using semantic::ownership::block_id;
 using semantic::ownership::flow_event;
+using semantic::ownership::function_summary;
+using semantic::ownership::k_contents;
+using semantic::ownership::k_no_param;
+using semantic::ownership::k_referent;
+using semantic::ownership::parameter_tokens;
+using semantic::ownership::store_event;
+using semantic::ownership::stored_borrow;
+using semantic::ownership::summary_param;
+using semantic::ownership::summary_table;
 using semantic::ownership::function_cfg;
 using semantic::ownership::invalid_move_event;
 using semantic::ownership::k_no_loan;
@@ -67,6 +78,22 @@ using semantic::ownership::use_event;
 struct value {
   std::vector<loan_id> loans;
   std::vector<local_id> sources;
+  /// Read from behind a parameter's reference: the `identity` token of
+  /// this storage is not carried (`flow_event::strip`).
+  local_id strip = k_no_local;
+  /// A borrow's own loan, of the place it borrows: an argument's `referent`
+  /// rather than its `contents` (`function_summary`).
+  loan_id own = k_no_loan;
+  /// A reference that is a parameter's own value, or points behind it:
+  /// what it points at does not carry this storage's `identity` token.
+  local_id inside_strip = k_no_local;
+  /// A reference into what a call's reference result points at: what it
+  /// points at holds only what this holder holds (`referent_contents_`).
+  local_id inside_from = k_no_local;
+
+  [[nodiscard]] static auto from_holder(local_id holder) -> value {
+    return value{.loans = {}, .sources = {holder}};
+  }
 
   [[nodiscard]] auto empty() const -> bool {
     return loans.empty() && sources.empty();
@@ -129,6 +156,11 @@ struct capture_info {
   std::string name;
   capture::mode how = capture::mode::copy;
   type_id type = k_unknown_type;
+  /// What borrowing the captured place carries (its token and what it
+  /// holds), and what reading it carries; `k_no_local` when its type
+  /// carries no borrow.
+  local_id place = k_no_local;
+  local_id contents = k_no_local;
   /// The local it captures, in the enclosing graph, when it is one: what a
   /// write is checked against (`let`, read-only indirections).
   std::optional<local_info> outer;
@@ -138,17 +170,65 @@ struct capture_info {
   return std::string(name.substr(0, name.find('#')));
 }
 
+/// Whether a capture of `made` follows the borrow-or-move rule (ch. 16):
+/// the lambda has no capture list, or names it bare, not `&`/`&mut`.
+[[nodiscard]] auto follows_escape_rule(const lambda &made, const capture &c)
+    -> bool {
+  if (!made.capture_list) {
+    return true;
+  }
+  const auto *source =
+      static_cast<const ast::lambda_expr *>(made.closure_origin);
+  if (source == nullptr || !source->captures.has_value()) {
+    return false;
+  }
+  const auto name = base_name(c.from.root.name);
+  return std::ranges::any_of(*source->captures, [&](const auto &entry) {
+    return entry.name == name && entry.mode == ast::capture_mode::by_value;
+  });
+}
+
 class graph_builder {
 public:
   graph_builder(const semantic::checked_types &checked,
-                std::vector<function_cfg> &out, const graph_builder *outer)
-      : checked_(checked), out_(out), outer_(outer) {}
+                std::vector<function_cfg> &out, const graph_builder *outer,
+                graph_context &context)
+      : checked_(checked), out_(out), outer_(outer), context_(context) {}
+
+  /// The summary the `fn` type `signature` allows, if it is one.
+  [[nodiscard]] auto fn_summary(type_id signature) const
+      -> std::optional<function_summary> {
+    const auto shapes = fn_shapes(signature);
+    if (!shapes.has_value()) {
+      return std::nullopt;
+    }
+    return signature_summary(shapes->first, shapes->second,
+                             /*coroutine=*/false, /*rigid=*/false,
+                             /*rigid_places=*/true);
+  }
+
+  /// The summary `fn`'s signature allows (`signature_summary`), held
+  /// `rigid` in its type parameters or not.
+  [[nodiscard]] auto declared_summary(const function &fn, bool rigid) const
+      -> function_summary {
+    auto shapes = std::vector<param_shape>{};
+    for (const auto &p : fn.params) {
+      shapes.push_back(shape_of(p.type));
+    }
+    return signature_summary(shapes, fn.return_type,
+                             fn.coroutine != coroutine_kind::none, rigid,
+                             rigid);
+  }
 
   auto build_function(const function &fn) -> void {
     begin(fn.decl);
     for (const auto &p : fn.params) {
-      declare_param(p);
+      cfg_.parameters.push_back(
+          declare_param(p, static_cast<std::uint32_t>(cfg_.parameters.size())));
     }
+    cfg_.coroutine = fn.coroutine != coroutine_kind::none;
+    cfg_.is_function = true;
+    machine_ = fn.decl != nullptr && fn.decl->modifiers.is_machine;
     in_task_ = fn.coroutine == coroutine_kind::task;
     if (fn.coroutine != coroutine_kind::none && fn.start != nullptr) {
       // A generator or task dropped before it first runs returns at once.
@@ -164,10 +244,10 @@ public:
       symbols_.insert_or_assign(c.symbol, sym{.kind = sym::form::capture,
                                               .local = k_no_local,
                                               .alias = {},
-                                              .capture = capture_of(c)});
+                                              .capture = capture_of(c, made)});
     }
     for (const auto &p : made.params) {
-      declare_param(p);
+      static_cast<void>(declare_param(p, k_no_param));
     }
     finish(*made.body);
   }
@@ -182,8 +262,12 @@ public:
     begin(made.origin);
     for (const auto &c : made.captures) {
       if (c.how == capture::mode::move) {
+        // The task owns it, and is given it as a function is a parameter.
         const auto local =
             declare(c.from.root.name, c.type, made.span, /*whole=*/true, &c);
+        cfg_.captures.push_back(give_tokens(local, c.from.root.name, c.type,
+                                            made.span, k_no_param,
+                                            /*capture=*/true));
         symbols_.insert_or_assign(c.symbol, sym{.kind = sym::form::local,
                                                 .local = local,
                                                 .alias = {},
@@ -193,7 +277,7 @@ public:
       symbols_.insert_or_assign(c.symbol, sym{.kind = sym::form::capture,
                                               .local = k_no_local,
                                               .alias = {},
-                                              .capture = capture_of(c)});
+                                              .capture = capture_of(c, made)});
     }
     if (made.task_start != nullptr) {
       // A task dropped before it first runs returns at once.
@@ -228,6 +312,20 @@ private:
   const semantic::checked_types &checked_;
   std::vector<function_cfg> &out_;
   const graph_builder *outer_;
+  graph_context &context_;
+  /// What `yield` hands out: live after the body exits, like the result.
+  local_id yield_slot_ = k_no_local;
+  /// The `parameter_storage` of each parameter or owned capture's local.
+  std::unordered_map<local_id, local_id> storage_of_;
+  /// For a call's reference result, and the temporary a place reads it
+  /// through: a holder of what the place it points at may hold, which is
+  /// what the arguments that reach it hold.
+  std::unordered_map<local_id, local_id> referent_contents_;
+  /// The storages a token lets the body write through.
+  std::vector<local_id> writable_storages_;
+  /// The body is `machine` code, whose raw-pointer writes the graph does
+  /// not follow (`raw_store`).
+  bool machine_ = false;
   bool report_captures_ = true;
   bool task_block_ = false;
   bool in_task_ = false;
@@ -239,7 +337,7 @@ private:
   local_id return_slot_ = 0;
   /// Each incoming loan points to the caller's storage, which stays live
   /// after this graph exits even if its parameter binding is reassigned.
-  std::map<local_id, loan_id> incoming_mut_refs_;
+  std::vector<local_id> parameter_storage_;
   std::map<std::pair<local_id, std::string>, local_id> field_paths_;
   std::vector<temporary_frame> temporaries_;
   /// The `crew_tasks` holder of each open crew, by the crew's symbol.
@@ -270,6 +368,8 @@ private:
     exit_ = new_block();
     return_slot_ = new_local("the returned value", local_role::return_slot,
                              k_unknown_type, source_span::dummy(), false);
+    cfg_.exit = exit_;
+    cfg_.return_slot = return_slot_;
     push_scope(key);
   }
 
@@ -289,8 +389,14 @@ private:
     goto_block(exit_);
     current_ = exit_;
     emit(use_event{.local = return_slot_});
-    for (const auto loan : std::views::values(incoming_mut_refs_)) {
-      emit(use_event{.local = cfg_.loans[loan].root});
+    if (yield_slot_ != k_no_local) {
+      emit(use_event{.local = yield_slot_});
+    }
+    if (cfg_.spawned != k_no_local) {
+      emit(use_event{.local = cfg_.spawned});
+    }
+    for (const auto storage : parameter_storage_) {
+      emit(use_event{.local = storage});
     }
     out_.push_back(std::move(cfg_));
   }
@@ -366,7 +472,8 @@ private:
     emit(flow_event{.dest = dest,
                     .loans = v.loans,
                     .sources = v.sources,
-                    .replace = replace});
+                    .replace = replace,
+                    .strip = v.strip});
   }
 
   auto stash(local_id temp, const value &v) -> void {
@@ -393,9 +500,193 @@ private:
     return checked_.types.entry(type).kind;
   }
 
+  /// The checker classified `type` (`ownership_results::
+  /// classified_types`).
+  [[nodiscard]] auto classified(type_id type) const -> bool {
+    return static_cast<std::size_t>(type) <
+           checked_.ownership.classified_types;
+  }
+
+  enum class bearing : std::uint8_t { any, own, mut };
+
+  /// Whether `type` bears in the sense of `which` (the sets in
+  /// `ownership_results`). A type interned after the checker classified
+  /// the table (the adapter makes `&fn(T) -> U` for a call through a held
+  /// closure) is read from its structure; a struct or sum among them is
+  /// held to bear, since its fields need the checker's substitution.
+  [[nodiscard]] auto bears_as(type_id type, bearing which) const -> bool {
+    if (!known(type)) {
+      return true;
+    }
+    if (classified(type)) {
+      const auto &set =
+          which == bearing::any   ? checked_.ownership.borrow_bearing_types
+          : which == bearing::own ? checked_.ownership.own_borrow_bearing_types
+                                  : checked_.ownership.mut_bearing_types;
+      return set.contains(type);
+    }
+    const auto &e = checked_.types.entry(type);
+    switch (e.kind) {
+    case type_kind::type_param_kind:
+      return which != bearing::own;
+    case type_kind::ref_kind:
+      // Nothing is written through a `&` (ch. 14).
+      return which != bearing::mut || e.is_mut;
+    case type_kind::fn_kind:
+    case type_kind::param_app_kind:
+    case type_kind::struct_kind:
+    case type_kind::sum_kind:
+      return true;
+    default:
+      break;
+    }
+    if (checked_.types.is_view(type)) {
+      return which != bearing::mut || checked_.types.is_mut_view(type);
+    }
+    if (e.kind == type_kind::builtin_generic_kind &&
+        (e.name == "generator" || e.name == "task")) {
+      return true;
+    }
+    return (e.result != k_unknown_type && bears_as(e.result, which)) ||
+           std::ranges::any_of(e.args, [&](type_id arg) {
+             return bears_as(arg, which);
+           });
+  }
+
   [[nodiscard]] auto bears(type_id type) const -> bool {
-    return !known(type) ||
-           checked_.ownership.borrow_bearing_types.contains(type);
+    return bears_as(type, bearing::any);
+  }
+
+  /// A value of `type` may hold a `&mut` or `mut` view, so a callee given
+  /// it may store a borrow where it points.
+  [[nodiscard]] auto mut_bears(type_id type) const -> bool {
+    return bears_as(type, bearing::mut);
+  }
+
+  /// `type` itself is or holds a reference or view, apart from what its
+  /// type parameters stand for.
+  [[nodiscard]] auto own_bears(type_id type) const -> bool {
+    if (is_type_variable(type)) {
+      return false;
+    }
+    return bears_as(type, bearing::own);
+  }
+
+  /// An implicit generic's parameter type (`def first(a, b)`): a type
+  /// variable that stands for one of its type parameters.
+  [[nodiscard]] auto is_type_variable(type_id type) const -> bool {
+    return !known(type) && type != k_unknown_type &&
+           checked_.types.entry(type).kind == type_kind::type_var_kind;
+  }
+
+  /// A type a signature says nothing more about: unknown, or an
+  /// application of an abstract higher-kinded parameter.
+  [[nodiscard]] auto opaque(type_id type) const -> bool {
+    return !known(type) && !is_type_variable(type);
+  }
+
+  /// The type parameters `type` is made of, or `nullopt` when it is
+  /// opaque somewhere (`opaque`).
+  [[nodiscard]] auto type_params_of(type_id type) const
+      -> std::optional<std::set<type_id>> {
+    auto out = std::set<type_id>{};
+    auto pending = std::vector<type_id>{type};
+    while (!pending.empty()) {
+      const auto at = pending.back();
+      pending.pop_back();
+      if (opaque(at)) {
+        return std::nullopt;
+      }
+      const auto &e = checked_.types.entry(at);
+      if (e.kind == type_kind::type_param_kind ||
+          e.kind == type_kind::type_var_kind) {
+        out.insert(at);
+        continue;
+      }
+      if (e.kind == type_kind::existential_kind) {
+        return std::nullopt;
+      }
+      if (e.result != k_unknown_type) {
+        pending.push_back(e.result);
+      }
+      pending.insert(pending.end(), e.args.begin(), e.args.end());
+    }
+    return out;
+  }
+
+  /// Whether a value of `holder` may hold the borrows a value of `from`
+  /// holds. A holder whose own type holds no reference or view holds only
+  /// what arrived in its type parameters, so it may hold them only from a
+  /// value whose type mentions one of those parameters (or a callable or
+  /// coroutine, which may hold anything).
+  [[nodiscard]] auto may_hold_from(type_id holder, type_id from) const
+      -> bool {
+    if (own_bears(holder)) {
+      return true;
+    }
+    const auto params = type_params_of(holder);
+    if (!params.has_value()) {
+      return true;
+    }
+    auto pending = std::vector<type_id>{from};
+    auto seen = std::set<type_id>{};
+    while (!pending.empty()) {
+      const auto at = pending.back();
+      pending.pop_back();
+      if (!seen.insert(at).second) {
+        continue;
+      }
+      if (opaque(at)) {
+        return true;
+      }
+      const auto &e = checked_.types.entry(at);
+      if (e.kind == type_kind::type_param_kind ||
+          e.kind == type_kind::type_var_kind) {
+        if (params->contains(at)) {
+          return true;
+        }
+        continue;
+      }
+      if (e.kind == type_kind::fn_kind ||
+          e.kind == type_kind::existential_kind ||
+          (e.kind == type_kind::builtin_generic_kind &&
+           (e.name == "generator" || e.name == "task"))) {
+        return true;
+      }
+      if (e.result != k_unknown_type) {
+        pending.push_back(e.result);
+      }
+      pending.insert(pending.end(), e.args.begin(), e.args.end());
+    }
+    return false;
+  }
+
+  /// Whether a value of `holder` may hold a borrow of a place of type
+  /// `place` or of a part of one (`ownership_results::pointee_types`).
+  [[nodiscard]] auto may_point_into(type_id holder, type_id place) const
+      -> bool {
+    if (is_type_variable(holder)) {
+      return false;
+    }
+    if (opaque(holder) || opaque(place)) {
+      return true;
+    }
+    const auto pointees = checked_.ownership.pointee_types.find(holder);
+    if (pointees == checked_.ownership.pointee_types.end()) {
+      return own_bears(holder);
+    }
+    const auto parts = checked_.ownership.owned_components.find(place);
+    if (parts == checked_.ownership.owned_components.end()) {
+      return true;
+    }
+    const auto &within = parts->second;
+    if (std::ranges::binary_search(within, k_unknown_type)) {
+      return true;
+    }
+    return std::ranges::any_of(pointees->second, [&](type_id pointee) {
+      return pointee == k_unknown_type ||
+             std::ranges::binary_search(within, pointee);
+    });
   }
 
   [[nodiscard]] auto referent(type_id type) const -> type_id {
@@ -497,32 +788,115 @@ private:
     return local;
   }
 
-  auto declare_param(const param &p) -> void {
+  auto declare_param(const param &p, std::uint32_t index) -> parameter_tokens {
     const auto local = declare(p.name, p.type, p.span, /*whole=*/true,
                                p.origin);
-    if (kind_of(p.type) == type_kind::ref_kind &&
-        checked_.types.entry(p.type).is_mut &&
-        bears(checked_.types.entry(p.type).result)) {
-      const auto storage = new_local(p.name, local_role::parameter_storage,
-                                     p.type, p.span, false);
-      const auto incoming = new_loan(storage, true, loan_origin::borrow, p.span);
-      incoming_mut_refs_.emplace(local, incoming);
-      flow(local, value{.loans = {incoming}, .sources = {}}, /*replace=*/true);
-    }
     symbols_.insert_or_assign(p.symbol, sym{.kind = sym::form::local,
                                             .local = local,
                                             .alias = {},
                                             .capture = {}});
+    return give_tokens(local, p.name, p.type, p.span, index,
+                       /*capture=*/false);
   }
 
-  [[nodiscard]] auto capture_of(const capture &c) const -> capture_info {
+  /// Gives `local`, a parameter or a capture the body owns, what the caller
+  /// passes: a `contents` token for the borrows the value holds and, for a
+  /// reference, an `identity` token for the place it points at. Both are
+  /// rooted at a `parameter_storage` local that is live after the body
+  /// exits, so a borrow stored where the value points outlives the body.
+  auto give_tokens(local_id local, std::string_view name, type_id type,
+                   source_span span, std::uint32_t index, bool capture)
+      -> parameter_tokens {
+    auto out = parameter_tokens{.local = local,
+                                .storage = k_no_local,
+                                .contents = k_no_loan,
+                                .identity = k_no_loan,
+                                .by_reference =
+                                    kind_of(type) == type_kind::ref_kind};
+    if (!bears(type)) {
+      return out;
+    }
+    out.storage = new_storage(name, type, span, capture);
+    storage_of_.insert_or_assign(local, out.storage);
+    auto given = value{};
+    if (out.by_reference) {
+      out.identity = new_token(out.storage, checked_.types.entry(type).is_mut,
+                               index, /*identity=*/true, span);
+      given.loans.push_back(out.identity);
+    }
+    // Nothing is written through a `&` (ch. 14), so what a shared
+    // reference's referent holds is read only.
+    const auto writable =
+        !out.by_reference || checked_.types.entry(type).is_mut;
+    out.contents = new_token(out.storage,
+                             writable && mut_bears(referent_once(type)), index,
+                             /*identity=*/false, span);
+    given.loans.push_back(out.contents);
+    flow(local, given, /*replace=*/true);
+    return out;
+  }
+
+  auto new_storage(std::string_view name, type_id type, source_span span,
+                   bool capture) -> local_id {
+    const auto storage = new_local(base_name(name),
+                                   local_role::parameter_storage, type, span,
+                                   false);
+    cfg_.locals[storage].capture = capture;
+    parameter_storage_.push_back(storage);
+    return storage;
+  }
+
+  auto new_token(local_id storage, bool is_mut, std::uint32_t index,
+                 bool identity, source_span span) -> loan_id {
+    const auto token = new_loan(storage, is_mut, loan_origin::borrow, span);
+    if (is_mut && std::ranges::find(writable_storages_, storage) ==
+                      writable_storages_.end()) {
+      writable_storages_.push_back(storage);
+    }
+    cfg_.loans[token].param = index;
+    cfg_.loans[token].identity = identity;
+    return token;
+  }
+
+  /// What a reference type points at; any other type itself.
+  [[nodiscard]] auto referent_once(type_id type) const -> type_id {
+    return kind_of(type) == type_kind::ref_kind
+               ? checked_.types.entry(type).result
+               : type;
+  }
+
+  /// A capture of the lambda or task `made`. One whose type carries a
+  /// borrow is given tokens as a parameter is: borrowing the captured place
+  /// carries its `identity` token (mutable when the closure may write it)
+  /// and what it holds; reading it carries what it holds.
+  auto capture_of(const capture &c, const lambda &made) -> capture_info {
     auto info = capture_info{.name = base_name(c.from.root.name),
                              .how = c.how,
                              .type = c.type,
+                             .place = k_no_local,
+                             .contents = k_no_local,
                              .outer = std::nullopt};
     if (outer_ != nullptr) {
       info.outer = outer_->local_info_of(c.from.root.symbol);
     }
+    if (!bears(c.type)) {
+      return info;
+    }
+    const auto storage = new_storage(info.name, c.type, made.span,
+                                     /*capture=*/true);
+    const auto identity =
+        new_token(storage, c.how != capture::mode::borrow, k_no_param,
+                  /*identity=*/true, made.span);
+    const auto contents = new_token(storage, mut_bears(c.type), k_no_param,
+                                    /*identity=*/false, made.span);
+    info.contents = new_local(info.name, local_role::binding, c.type,
+                              made.span, false);
+    flow(info.contents, value{.loans = {contents}, .sources = {}},
+         /*replace=*/true);
+    info.place = new_local(info.name, local_role::binding, c.type, made.span,
+                           false);
+    flow(info.place, value{.loans = {identity, contents}, .sources = {}},
+         /*replace=*/true);
     return info;
   }
 
@@ -720,6 +1094,12 @@ private:
                                   local_role::call_temp, root_value.type,
                                   root_value.span, false);
       flow(temp, v, /*replace=*/true);
+      if (v.loans.empty() && v.sources.size() == 1) {
+        if (const auto inner = referent_contents_.find(v.sources.front());
+            inner != referent_contents_.end()) {
+          referent_contents_.insert_or_assign(temp, inner->second);
+        }
+      }
       projection_temps_.insert(temp);
       if (!called->args.empty() &&
           called->args.front()->kind == node_kind::borrow &&
@@ -849,13 +1229,20 @@ private:
 
   /// Whether `r` is reached through a reference it dereferences.
   [[nodiscard]] auto reborrows(const resolved_place &r) const -> bool {
+    return reference_derefs(r) > 0;
+  }
+
+  /// How many references `r` dereferences on the way to its place.
+  [[nodiscard]] auto reference_derefs(const resolved_place &r) const
+      -> std::size_t {
+    auto count = std::size_t{0};
     for (std::size_t i = 0; i < r.steps.size(); ++i) {
       if (r.steps[i].kind == projection::step::deref &&
           kind_of(type_before(r, i)) == type_kind::ref_kind) {
-        return true;
+        ++count;
       }
     }
-    return false;
+    return count;
   }
 
   /// Whether `c` is `xs[i]` read through `index` or `index_ref`.
@@ -907,7 +1294,7 @@ private:
     if (!temporaries_.back().temps.empty() && !produced.empty()) {
       const auto hold = new_temp(local_role::join_temp);
       flow(hold, produced, /*replace=*/true);
-      result = value{.loans = {}, .sources = {hold}};
+      result = value::from_holder(hold);
     }
     for (const auto temp : std::views::reverse(temporaries_.back().temps)) {
       access(temp, access_kind::storage_dead, cfg_.locals[temp].span);
@@ -1117,7 +1504,7 @@ private:
                                 .place = spell(r, r.steps.size()),
                                 .owner = r.name});
       }
-      return {};
+      return captured_value(r, /*borrowed=*/false);
     }
     if (moving && r.projection_temp && projection_statics_.contains(r.local)) {
       if (report_captures_) {
@@ -1136,14 +1523,69 @@ private:
         // Out of a variant payload or through a raw pointer: a move of
         // part of the local that is not tracked by path.
         access_place(r, access_kind::read, span);
-        return bears(r.type()) ? value{.loans = {}, .sources = {r.local}}
-                               : value{};
+        if (!bears(r.type())) {
+          return {};
+        }
+        // As for a read below: a part behind a parameter's reference is
+        // not that reference.
+        return value{.loans = {},
+                     .sources = {r.local},
+                     .strip = derefs_root(r) ? storage_of(r.local) : k_no_local,
+                     .own = k_no_loan,
+                     .inside_strip = derefs_root(r) ? storage_of(r.local)
+                                                    : k_no_local};
       }
     }
     access_place(r, moving ? access_kind::move : access_kind::read, span,
                  node);
-    return bears(r.type()) ? value{.loans = {}, .sources = {r.local}}
-                           : value{};
+    if (!bears(r.type())) {
+      return {};
+    }
+    // A part read from behind a parameter's reference is stored where the
+    // reference points, so it is not that reference.
+    // Nor does what such a part points at: a value never points at the
+    // place that holds it.
+    // What a call's reference result points at holds only what the
+    // arguments that reach it hold, not the borrows the reference is.
+    if (const auto inner = referent_contents_.find(r.local);
+        inner != referent_contents_.end() && derefs_root(r)) {
+      return value::from_holder(inner->second);
+    }
+    return value{.loans = {},
+                 .sources = {r.local},
+                 .strip = derefs_root(r) ? storage_of(r.local) : k_no_local,
+                 .own = k_no_loan,
+                 .inside_strip = r.steps.empty() || derefs_root(r)
+                                     ? storage_of(r.local)
+                                     : k_no_local};
+  }
+
+  /// The `parameter_storage` of a parameter or owned capture's local.
+  [[nodiscard]] auto storage_of(local_id local) const -> local_id {
+    const auto found = storage_of_.find(local);
+    return found != storage_of_.end() ? found->second : k_no_local;
+  }
+
+  /// Whether `r`'s first step dereferences its root's own reference.
+  [[nodiscard]] auto derefs_root(const resolved_place &r) const -> bool {
+    return !r.steps.empty() && r.steps.front().kind == projection::step::deref &&
+           kind_of(r.root_type) == type_kind::ref_kind;
+  }
+
+  /// What a capture's place carries in a lambda or task body: borrowed,
+  /// its token and what it holds; read, what it holds.
+  [[nodiscard]] auto captured_value(const resolved_place &r,
+                                    bool borrowed) const -> value {
+    const auto found = symbols_.find(r.capture);
+    if (found == symbols_.end() || !bears(r.type())) {
+      return {};
+    }
+    const auto &info = found->second.capture;
+    const auto holder = borrowed ? info.place : info.contents;
+    if (holder == k_no_local) {
+      return {};
+    }
+    return value{.loans = {}, .sources = {holder}};
   }
 
   // ------------------------------------------------------------------
@@ -1336,7 +1778,7 @@ private:
   /// The value of an expression whose parts were stashed in `temp`.
   auto compound_result(const expr &e, local_id temp) -> value {
     emit(use_event{.local = temp});
-    return bears(e.type) ? value{.loans = {}, .sources = {temp}} : value{};
+    return bears(e.type) ? value::from_holder(temp) : value{};
   }
 
   auto eval(const expr &e) -> value {
@@ -1417,7 +1859,7 @@ private:
         // cancelled while it does; lowering keys that check by the block.
         cancel_point(b.origin);
       }
-      return value{.loans = {}, .sources = {join}};
+      return value::from_holder(join);
     }
     case node_kind::if_expr:
       return eval_if(static_cast<const if_expr &>(e));
@@ -1475,8 +1917,12 @@ private:
                       /*projected_only=*/false);
       storing_ = storing;
       if (!checked_write) {
-        return {};
+        return r.kind == resolved_place::root::capture
+                   ? captured_value(r, /*borrowed=*/true)
+                   : value{};
       }
+    } else if (r.kind == resolved_place::root::capture) {
+      return captured_value(r, /*borrowed=*/true);
     } else if (r.kind != resolved_place::root::local) {
       return {};
     }
@@ -1490,11 +1936,26 @@ private:
     auto result = value{};
     const auto loan = new_loan(target, is_mut, origin, b.span);
     cfg_.loans[loan].reserved_mut = reserve;
+    const auto through = reference_derefs(r);
+    // Through two references (`&self.src[i]` with `src: &list[T]`), the
+    // place is one the root's referent points at, not part of the referent.
+    cfg_.loans[loan].deep = through > 1;
     result.loans.push_back(loan);
+    result.own = loan;
     // A borrow of a place reached through a reference (`&(*h.deref()).x`)
     // also carries what that reference borrows.
-    if (bears(r.type()) || reborrows(r)) {
+    if (bears(r.type()) || through > 0) {
       result.sources.push_back(r.local);
+    }
+    if (derefs_root(r)) {
+      result.inside_strip = storage_of(r.local);
+      if (through > 1) {
+        result.strip = result.inside_strip;
+      }
+      if (const auto inner = referent_contents_.find(r.local);
+          inner != referent_contents_.end() && through == 1) {
+        result.inside_from = inner->second;
+      }
     }
     return result;
   }
@@ -1523,107 +1984,265 @@ private:
     return it != checked_.node_types.end() ? it->second : k_unknown_type;
   }
 
-  [[nodiscard]] auto unknown_signature_type(type_id type) const -> bool {
-    return !known(type) &&
-           checked_.types.entry(type).kind != type_kind::type_var_kind;
+  /// One parameter as a summary sees it: a reference, with the type it
+  /// points at, or a value of `type`.
+  struct param_shape {
+    type_id type = k_unknown_type;
+    bool by_reference = false;
+    bool mut_reference = false;
+  };
+
+  [[nodiscard]] auto shape_of(type_id type) const -> param_shape {
+    if (kind_of(type) == type_kind::ref_kind) {
+      const auto &e = checked_.types.entry(type);
+      return param_shape{
+          .type = e.result, .by_reference = true, .mut_reference = e.is_mut};
+    }
+    return param_shape{.type = type, .by_reference = false,
+                       .mut_reference = false};
   }
 
-  [[nodiscard]] static auto is_type_parameter(type_kind kind) -> bool {
-    return kind == type_kind::type_param_kind ||
-           kind == type_kind::type_var_kind;
-  }
-
-  [[nodiscard]] auto collect_type_params(type_id type,
-                                         std::unordered_set<type_id> &params)
-      const -> bool {
-    if (unknown_signature_type(type)) {
-      return false;
+  /// The parameters and result of `fn_type`, receiver first.
+  [[nodiscard]] auto fn_shapes(type_id fn_type) const
+      -> std::optional<std::pair<std::vector<param_shape>, type_id>> {
+    if (kind_of(fn_type) == type_kind::ref_kind) {
+      fn_type = checked_.types.entry(fn_type).result;
     }
-    const auto &e = checked_.types.entry(type);
-    if (is_type_parameter(e.kind)) {
-      params.insert(type);
-      return true;
-    }
-    if (e.kind == type_kind::param_app_kind ||
-        e.kind == type_kind::existential_kind) {
-      return false;
-    }
-    if (e.result != k_unknown_type && !collect_type_params(e.result, params)) {
-      return false;
-    }
-    return std::ranges::all_of(
-        e.args, [&](type_id arg) { return collect_type_params(arg, params); });
-  }
-
-  [[nodiscard]] auto reaches_result(type_id type,
-                                    const std::unordered_set<type_id> &params)
-      const -> bool {
-    if (unknown_signature_type(type)) {
-      return true;
-    }
-    const auto &e = checked_.types.entry(type);
-    if (is_type_parameter(e.kind)) {
-      return params.contains(type);
-    }
-    if (e.kind == type_kind::param_app_kind ||
-        e.kind == type_kind::existential_kind) {
-      return true;
-    }
-    if (e.result != k_unknown_type && reaches_result(e.result, params)) {
-      return true;
-    }
-    return std::ranges::any_of(
-        e.args, [&](type_id arg) { return reaches_result(arg, params); });
-  }
-
-  /// The type parameters through which a call to `decl` can hand back a
-  /// borrow it was given; `nullopt` when any input's borrows may reach the
-  /// result.
-  [[nodiscard]] auto result_borrow_params(const ast::func_decl *decl) const
-      -> std::optional<std::unordered_set<type_id>> {
-    if (decl == nullptr || decl->modifiers.is_async ||
-        decl->modifiers.is_generator) {
+    if (kind_of(fn_type) != type_kind::fn_kind) {
       return std::nullopt;
+    }
+    const auto &e = checked_.types.entry(fn_type);
+    auto shapes = std::vector<param_shape>{};
+    for (const auto arg : e.args) {
+      shapes.push_back(shape_of(arg));
+    }
+    return std::pair{std::move(shapes), e.result};
+  }
+
+  /// The parameters and result `decl` declares, in its own type
+  /// parameters, receiver first.
+  [[nodiscard]] auto declared_shapes(const ast::func_decl &decl,
+                                     receiver_mode receiver) const
+      -> std::optional<std::pair<std::vector<param_shape>, type_id>> {
+    const auto implicit = checked_.ownership.implicit_signatures.find(&decl);
+    const auto has_implicit =
+        implicit != checked_.ownership.implicit_signatures.end();
+    auto shapes = std::vector<param_shape>{};
+    for (std::size_t i = 0; i < decl.params.size(); ++i) {
+      auto type = type_of(decl.params[i].pattern.get());
+      if (has_implicit && i < implicit->second.params.size() &&
+          implicit->second.params[i] != k_unknown_type) {
+        type = implicit->second.params[i];
+      }
+      auto shape = shape_of(type);
+      if (i == 0 && !shape.by_reference &&
+          (receiver == receiver_mode::shared ||
+           receiver == receiver_mode::exclusive)) {
+        // A lent receiver is passed by reference.
+        shape = param_shape{.type = type,
+                            .by_reference = true,
+                            .mut_reference =
+                                receiver == receiver_mode::exclusive};
+      }
+      shapes.push_back(shape);
     }
     auto result = k_unknown_type;
-    if (decl->return_type != nullptr) {
-      result = type_of(decl->return_type.get());
-    } else if (const auto implicit =
-                   checked_.ownership.implicit_signatures.find(decl);
-               implicit != checked_.ownership.implicit_signatures.end()) {
+    if (decl.return_type != nullptr) {
+      result = type_of(decl.return_type.get());
+    } else if (has_implicit) {
       result = implicit->second.result;
-    } else if (const auto it = checked_.inferred_return_types.find(decl);
+    } else if (const auto it = checked_.inferred_return_types.find(&decl);
                it != checked_.inferred_return_types.end()) {
       result = it->second;
-    }
-    if (unknown_signature_type(result) || result == semantic::k_error_type ||
-        checked_.ownership.own_borrow_bearing_types.contains(result)) {
+    } else {
       return std::nullopt;
     }
-    auto params = std::unordered_set<type_id>{};
-    if (!collect_type_params(result, params)) {
-      return std::nullopt;
-    }
-    return params;
+    return std::pair{std::move(shapes), result};
   }
 
-  /// Whether parameter `index` of `decl` can pass a borrow on to the
-  /// result.
-  [[nodiscard]] auto param_reaches_result(
-      const ast::func_decl *decl, std::size_t index,
-      const std::optional<std::unordered_set<type_id>> &flows) const -> bool {
-    if (!flows.has_value() || decl == nullptr ||
-        index >= decl->params.size()) {
-      return true;
+  /// Whether `type` mentions a type parameter, or is opaque somewhere.
+  [[nodiscard]] auto mentions_params(type_id type) const -> bool {
+    const auto params = type_params_of(type);
+    return !params.has_value() || !params->empty();
+  }
+
+  /// The summary a signature allows: what any body with these types could
+  /// do with its arguments' borrows (`spec/unified-checker-plan.md`,
+  /// Ownership on the core). Nothing is written through a `&` (ch. 14),
+  /// and a coroutine's frame holds every argument for as long as the
+  /// result lives. Otherwise a result, or an argument a store may reach,
+  /// may receive what another argument holds when its type can hold it
+  /// (`may_hold_from`), and the place a reference argument points at when
+  /// its type can point there (`may_point_into`).
+  ///
+  /// `rigid`: the body is known to be parametric in its type parameters,
+  /// so a `T` holds only what arrived as a `T`. That holds for a function
+  /// value, whose type is exact where it was made. A body that may call
+  /// through a bound can make a `T` from anything (`T.from(&n)`), so for
+  /// it a type parameter may hold and point at anything.
+  ///
+  /// `rigid_places`: a `T` still cannot point at the place a reference
+  /// argument names. That holds for a trait method called through a bound:
+  /// its trait's parameters are fixed by the impl before the call, and an
+  /// impl that returns a borrow of its receiver is rejected
+  /// (`check_trait_fit`).
+  [[nodiscard]] auto signature_summary(const std::vector<param_shape> &params,
+                                       type_id result, bool coroutine,
+                                       bool rigid, bool rigid_places) const
+      -> function_summary {
+    const auto holds = [&](type_id holder, type_id from) {
+      return (!rigid && (mentions_params(holder) || mentions_params(from))) ||
+             may_hold_from(holder, from);
+    };
+    const auto points = [&](type_id holder, type_id place) {
+      return (!rigid_places &&
+              (mentions_params(holder) || mentions_params(place))) ||
+             may_point_into(holder, place);
+    };
+    auto out = function_summary{};
+    const auto result_bears = coroutine || bears(result);
+    const auto result_owns = coroutine || own_bears(result) ||
+                             (!rigid_places && mentions_params(result));
+    const auto param_bears = [&](const param_shape &p) {
+      return p.by_reference || bears(p.type);
+    };
+    for (const auto &p : params) {
+      auto summarized = summary_param{};
+      summarized.by_reference = p.by_reference;
+      if (result_bears && param_bears(p)) {
+        const auto contents = coroutine || holds(result, p.type);
+        const auto referent = p.by_reference && result_owns &&
+                              (coroutine || points(result, p.type));
+        summarized.result = static_cast<std::uint8_t>(
+            (contents ? k_contents : 0) | (referent ? k_referent : 0));
+      }
+      out.params.push_back(summarized);
     }
-    auto type = type_of(decl->params[index].pattern.get());
-    const auto implicit = checked_.ownership.implicit_signatures.find(decl);
-    if (implicit != checked_.ownership.implicit_signatures.end() &&
-        index < implicit->second.params.size() &&
-        implicit->second.params[index] != k_unknown_type) {
-      type = implicit->second.params[index];
+    for (std::size_t i = 0; i < params.size(); ++i) {
+      if (params[i].by_reference ? !params[i].mut_reference
+                                 : !mut_bears(params[i].type)) {
+        continue;
+      }
+      for (std::size_t j = 0; j < params.size(); ++j) {
+        if (j == i || !param_bears(params[j])) {
+          continue;
+        }
+        const auto referent =
+            params[j].by_reference && points(params[i].type, params[j].type);
+        const auto contents = holds(params[i].type, params[j].type);
+        if (!referent && !contents) {
+          continue;
+        }
+        out.stores.push_back(stored_borrow{
+            .into = static_cast<std::uint32_t>(i),
+            .from = static_cast<std::uint32_t>(j),
+            .parts = static_cast<std::uint8_t>((contents ? k_contents : 0) |
+                                               (referent ? k_referent : 0))});
+      }
     }
-    return reaches_result(type, *flows);
+    return out;
+  }
+
+  /// The environment of a call through a function value: whatever the
+  /// closure holds, which its body may hand back or store, and store into.
+  /// A closure held in a place is called through a borrow of it, and the
+  /// body reaches what the closure holds, not the place it is held in.
+  [[nodiscard]] auto environment_shape(type_id value) const -> param_shape {
+    if (kind_of(value) == type_kind::ref_kind) {
+      return param_shape{.type = checked_.types.entry(value).result,
+                         .by_reference = true,
+                         .mut_reference = true};
+    }
+    return param_shape{.type = value, .by_reference = false,
+                       .mut_reference = true};
+  }
+
+  /// The summary a call applies, with one parameter per operand (a
+  /// function value's environment first, then the arguments): the callee's
+  /// inferred summary, or else the one its signature allows.
+  auto call_summary(const call &c) -> function_summary {
+    const auto value_call = c.target.value != nullptr;
+    const auto arity = c.args.size() + (value_call ? 1 : 0);
+    const auto *decl = c.target.kind == callee::form::function
+                           ? signature_decl(c.target)
+                           : nullptr;
+    // An instance's own summary when it has one (its template was not
+    // built), else its template's.
+    for (const auto *key : {c.target.kind == callee::form::function
+                                ? c.target.decl
+                                : nullptr,
+                            decl}) {
+      if (key == nullptr || context_.summaries == nullptr) {
+        continue;
+      }
+      if (context_.ensure) {
+        context_.ensure(key);
+      }
+      // Consulted even when absent: an instance may add it later.
+      context_.consulted.insert(key);
+      if (const auto found = context_.summaries->find(key);
+          found != context_.summaries->end()) {
+        if (found->second.params.size() == arity) {
+          return found->second;
+        }
+      }
+    }
+    const auto coroutine =
+        decl != nullptr && (decl->modifiers.is_async ||
+                            decl->modifiers.is_generator);
+    if (decl != nullptr) {
+      if (auto shapes = declared_shapes(*decl, c.target.receiver);
+          shapes.has_value() && shapes->first.size() == arity) {
+        // A function with no summary was not built. Were it generic, each
+        // instance the program runs would be built and stand for it, so it
+        // has none, and its type parameters are as its signature says.
+        return signature_summary(shapes->first, shapes->second, coroutine,
+                                 /*rigid=*/true, /*rigid_places=*/true);
+      }
+    }
+    auto shapes = fn_shapes(c.target.signature);
+    if (!shapes.has_value() && value_call) {
+      shapes = fn_shapes(c.target.value->type);
+    }
+    if (shapes.has_value() && value_call) {
+      shapes->first.insert(shapes->first.begin(),
+                           environment_shape(c.target.value->type));
+    }
+    if (shapes.has_value() && shapes->first.size() == arity) {
+      // A call through a bound reaches an impl the caller does not know.
+      auto out = signature_summary(
+          shapes->first, shapes->second, coroutine,
+          /*rigid=*/c.target.kind != callee::form::trait_method,
+          /*rigid_places=*/true);
+      if (value_call) {
+        // A closure keeps nothing it is given: its body may not store an
+        // argument in what it captures (`ownership_check`).
+        std::erase_if(out.stores,
+                      [](const stored_borrow &s) { return s.into == 0; });
+      }
+      return out;
+    }
+    // No signature to read: anything may reach anything.
+    auto fallback = std::vector<param_shape>{};
+    if (value_call) {
+      fallback.push_back(environment_shape(c.target.value->type));
+    }
+    for (const auto &arg : c.args) {
+      fallback.push_back(shape_of(arg->type));
+    }
+    return signature_summary(fallback, c.type, /*coroutine=*/true,
+                             /*rigid=*/false, /*rigid_places=*/false);
+  }
+
+  /// The holder of what tasks started with `spawn()` outside a `crew`
+  /// borrow, made on first use.
+  auto spawned_holder() -> local_id {
+    if (cfg_.spawned == k_no_local) {
+      cfg_.spawned = new_local("a task started with `spawn()`",
+                               local_role::spawned_tasks, k_unknown_type,
+                               source_span::dummy(), false);
+    }
+    return cfg_.spawned;
   }
 
   [[nodiscard]] static auto intrinsic_named(const call &c,
@@ -1658,25 +2277,20 @@ private:
 
   /// A call: the callee value, then each argument in order (the receiver
   /// first), then the call itself. Every borrow made along the way is held
-  /// by the call's temporary until the call runs. A two-phase `&mut`
-  /// receiver is only a shared reservation while the arguments run, and is
-  /// activated as a real `&mut` when the call does. The result carries the
-  /// borrows of only those arguments the callee's signature lets reach it.
+  /// by a temporary until the call runs. A two-phase `&mut` receiver is
+  /// only a shared reservation while the arguments run, and is activated as
+  /// a real `&mut` when the call does. The callee's summary then says which
+  /// parts of each argument reach the result, and which are stored where
+  /// another argument points.
   auto eval_call(const call &c) -> value {
     if (intrinsic_named(c, "task_block") && c.args.size() == 1 &&
         c.args.front()->kind == node_kind::lambda) {
       return eval_task_block(static_cast<const lambda &>(*c.args.front()));
     }
-    const auto temp = new_temp(local_role::call_temp);
-    const auto held = new_temp(local_role::call_temp);
-    const auto *decl = signature_decl(c.target);
+    const auto result = new_temp(local_role::call_temp);
     // A raw pointer carries no borrow: what it points at is the `machine`
     // code's to account for (ch. 38, Raw memory and ownership).
     const auto raw_result = kind_of(c.type) == type_kind::ptr_kind;
-    const auto flows = c.target.kind == callee::form::function ||
-                               c.target.kind == callee::form::trait_method
-                           ? result_borrow_params(decl)
-                           : std::nullopt;
     // A call made to reach another call's receiver (`ys[0].push(5)` calls
     // `at_mut` for `push`) is reported as that call.
     const auto via = std::exchange(receiver_of_, {});
@@ -1687,8 +2301,42 @@ private:
     const auto stores =
         c.target.trait_name == "index_set" ||
         method_spelling(c.target) == "set_at";
+    const auto summary = call_summary(c);
+    const auto offset = c.target.value != nullptr ? std::size_t{1} : 0;
+    // Each operand's borrows: all of them (`top`), and, for a reference
+    // parameter, those of what it points at (`rest`), without the borrow
+    // of the place itself.
+    struct operand {
+      local_id top = k_no_local;
+      local_id rest = k_no_local;
+    };
+    auto operands = std::vector<operand>(summary.params.size());
+    const auto hold = [&](std::size_t index, const value &v) -> void {
+      if (index >= operands.size()) {
+        return;
+      }
+      auto &o = operands[index];
+      if (o.top == k_no_local) {
+        o.top = new_temp(local_role::call_temp);
+        o.rest = summary.params[index].by_reference
+                     ? new_temp(local_role::call_temp)
+                     : o.top;
+      }
+      stash(o.top, v);
+      if (o.rest != o.top) {
+        if (v.inside_from != k_no_local) {
+          stash(o.rest, value::from_holder(v.inside_from));
+          return;
+        }
+        auto inside = value{.loans = {}, .sources = v.sources,
+                            .strip = v.inside_strip};
+        std::ranges::copy_if(v.loans, std::back_inserter(inside.loans),
+                             [&](loan_id loan) { return loan != v.own; });
+        stash(o.rest, inside);
+      }
+    };
     if (c.target.value != nullptr) {
-      stash(temp, eval(*c.target.value));
+      hold(0, eval(*c.target.value));
     }
     if (c.target.receiver == receiver_mode::consuming &&
         c.target.trait_name == "into_iterator" && c.origin != nullptr) {
@@ -1699,18 +2347,13 @@ private:
     struct activation {
       const borrow *receiver = nullptr;
       loan_id reservation = k_no_loan;
-      local_id into = 0;
+      std::size_t index = 0;
       bool stores = false; ///< `v[i] = x`: the activation writes `v`.
     };
     auto pending = std::optional<activation>{};
     for (std::size_t i = 0; i < c.args.size(); ++i) {
       const auto &arg = *c.args[i];
-      // A task spawned into a crew holds what it borrows until the crew
-      // ends, not through the handle `spawn` returns (ch. 28).
-      const auto into = !raw_result && !crew.has_value() &&
-                                param_reaches_result(decl, i, flows)
-                            ? temp
-                            : held;
+      const auto index = offset + i;
       const auto is_receiver = i == 0 && c.target.receiver != receiver_mode::none;
       if (arg.kind == node_kind::borrow) {
         const auto &b = static_cast<const borrow &>(arg);
@@ -1724,41 +2367,34 @@ private:
           auto reserved = eval_borrow(b, origin, method, k_no_loan,
                                       /*reserve=*/true, is_receiver && stores);
           receiver_of_.clear();
-          if (!reserved.loans.empty()) {
+          if (!reserved.loans.empty() && reserved.own != k_no_loan) {
             pending = activation{.receiver = &b,
-                                 .reservation = reserved.loans.front(),
-                                 .into = into,
+                                 .reservation = reserved.own,
+                                 .index = index,
                                  .stores = is_receiver && stores};
           }
-          stash(into, reserved);
+          hold(index, reserved);
           continue;
         }
         receiver_of_ = is_receiver && b.is_mut ? method : std::string{};
-        const auto element_read = i == 0 && !b.is_mut && reads_element(c);
-        index_read_ = element_read;
+        // `xs[0]` reads `xs`, though the index call borrows it to do so.
+        index_read_ = i == 0 && !b.is_mut && reads_element(c);
         auto lent = eval_borrow(b, origin, method, k_no_loan, false,
                                 is_receiver && stores);
         index_read_ = false;
         receiver_of_.clear();
-        // `xs[i]` by value is a copy of an element: it carries what the
-        // collection's contents carry, not the call's loan of `xs`.
-        if (const auto owner = local_of(b.of);
-            element_read && into == temp &&
-            kind_of(c.type) != type_kind::ref_kind && owner != k_no_local) {
-          stash(held, lent);
-          stash(temp, value{.loans = {}, .sources = {owner}});
-          continue;
-        }
-        stash(into, lent);
+        hold(index, lent);
         continue;
       }
       auto passed = eval(arg);
       if (crew.has_value() && i == 1) {
+        // A task spawned into a crew holds what it borrows until the crew
+        // ends, not through the handle `spawn` returns (ch. 28).
         if (const auto found = crews_.find(*crew); found != crews_.end()) {
           stash(found->second, passed);
         }
       }
-      stash(into, passed);
+      hold(index, passed);
     }
     if (pending.has_value()) {
       // The reservation becomes the `&mut` the call takes.
@@ -1769,15 +2405,46 @@ private:
             pending->stores ? access_kind::write_part : access_kind::borrow_mut,
             pending->receiver->span, nullptr, pending->reservation);
         auto activated = value{};
-        activated.loans.push_back(new_loan(target, true, loan_origin::receiver,
-                                           pending->receiver->span));
-        if (bears(r.type())) {
+        activated.own = new_loan(target, true, loan_origin::receiver,
+                                 pending->receiver->span);
+        activated.loans.push_back(activated.own);
+        if (bears(r.type()) || reborrows(r)) {
           activated.sources.push_back(r.local);
         }
-        stash(pending->into, activated);
+        if (derefs_root(r)) {
+          activated.inside_strip = storage_of(r.local);
+          if (reference_derefs(r) > 1) {
+            activated.strip = activated.inside_strip;
+          }
+        }
+        hold(pending->index, activated);
       }
     }
-    emit(use_event{.local = held});
+    // The crew intrinsics account for their tasks' borrows themselves.
+    if (!c.target.name.starts_with("crew_") ||
+        c.target.kind != callee::form::intrinsic) {
+      apply_summary(c, summary, operands, raw_result, result);
+    }
+    // An intrinsic in `machine` code may write a value it is given through
+    // a raw pointer (`ptr_write(p, x)`).
+    if (machine_ && c.target.kind == callee::form::intrinsic &&
+        !c.target.name.starts_with("crew_") &&
+        !c.target.name.starts_with("task_")) {
+      for (std::size_t index = 0; index < operands.size(); ++index) {
+        if (operands[index].top != k_no_local &&
+            !summary.params[index].by_reference) {
+          raw_store(value::from_holder(operands[index].top));
+        }
+      }
+    }
+    for (const auto &o : operands) {
+      if (o.top != k_no_local) {
+        emit(use_event{.local = o.top});
+      }
+      if (o.rest != o.top) {
+        emit(use_event{.local = o.rest});
+      }
+    }
     if (intrinsic_named(c, "crew_end")) {
       if (const auto symbol = crew_symbol(c).or_else([&] {
             return c.args.empty() || c.args.front()->kind != node_kind::use
@@ -1797,7 +2464,78 @@ private:
       // A task waits here, and may be cancelled while it does.
       cancel_point(c.origin);
     }
-    return compound_result(c, temp);
+    return compound_result(c, result);
+  }
+
+  template <typename Operands>
+  auto apply_summary(const call &c, const function_summary &summary,
+                     const Operands &operands, bool raw_result, local_id result)
+      -> void {
+    const auto parts = [&](std::size_t index, std::uint8_t which) {
+      auto sources = std::vector<local_id>{};
+      const auto &o = operands[index];
+      if (o.top == k_no_local) {
+        return sources;
+      }
+      if ((which & k_contents) != 0) {
+        sources.push_back(o.rest);
+      }
+      if ((which & k_referent) != 0 && o.top != o.rest) {
+        sources.push_back(o.top);
+      }
+      return sources;
+    };
+    for (const auto &stored : summary.stores) {
+      if (stored.into >= operands.size() || stored.from >= operands.size() ||
+          operands[stored.into].top == k_no_local) {
+        continue;
+      }
+      auto sources = parts(stored.from, stored.parts);
+      if (sources.empty()) {
+        continue;
+      }
+      emit(store_event{.through = {operands[stored.into].top},
+                       .loans = {},
+                       .sources = std::move(sources),
+                       .depth = 0,
+                       .transitive = true});
+    }
+    if (!raw_result && kind_of(c.type) == type_kind::ref_kind) {
+      // A result `&T` points into an argument's referent, whose parts hold
+      // what the argument holds, or into something an argument holds,
+      // whose parts are reached from there too.
+      auto inside = value{};
+      for (std::size_t j = 0; j < summary.params.size(); ++j) {
+        if (summary.params[j].result != 0 &&
+            operands[j].top != k_no_local) {
+          inside.sources.push_back(operands[j].rest);
+        }
+      }
+      const auto inner = new_temp(local_role::call_temp);
+      stash(inner, inside);
+      referent_contents_.insert_or_assign(result, inner);
+    }
+    for (std::size_t j = 0; j < summary.params.size(); ++j) {
+      if (!raw_result && summary.params[j].result != 0) {
+        stash(result, value{.loans = {},
+                            .sources = parts(j, summary.params[j].result),
+});
+      }
+      if (summary.params[j].escapes != 0) {
+        stash(spawned_holder(),
+              value{.loans = {},
+                    .sources = parts(j, summary.params[j].escapes),
+});
+      }
+    }
+    if (intrinsic_named(c, "task_spawn") && !operands.empty() &&
+        operands.front().top != k_no_local) {
+      // A task started outside a `crew` runs until it finishes or the
+      // program ends (ch. 28): what it holds must last that long.
+      stash(spawned_holder(), value{.loans = {},
+                                    .sources = {operands.front().rest},
+        });
+    }
   }
 
   // ------------------------------------------------------------------
@@ -1829,8 +2567,11 @@ private:
     const auto copy = generic_copy_of(made);
     const auto later_copy =
         copy.has_value() && generic_loans_.contains(copy->first);
+    if (made.closure_origin != nullptr) {
+      context_.lambdas.insert_or_assign(made.closure_origin, &made);
+    }
     {
-      auto nested = graph_builder(checked_, out_, this);
+      auto nested = graph_builder(checked_, out_, this, context_);
       nested.build_lambda(made, report_captures_ && !later_copy);
     }
     auto result = value{};
@@ -1863,6 +2604,9 @@ private:
         }
         access_place(r, movable(c.type) ? access_kind::move : access_kind::read,
                      span, made.closure_origin);
+        if (c.escapes) {
+          cfg_.escaping_lambdas.push_back(span);
+        }
         if (movable(c.type) && droppable(c.type)) {
           cfg_.owned_captures[made.closure_origin].push_back(owned_capture{
               .name = c.from.root.name, .type = c.type, .node = nullptr});
@@ -1890,7 +2634,8 @@ private:
                                    : access_kind::borrow_shared,
                          span);
         const auto loan = new_loan(target, is_mut, loan_origin::capture, span);
-        cfg_.loans[loan].implicit = !made.capture_list;
+        cfg_.loans[loan].implicit = follows_escape_rule(made, c);
+        cfg_.loans[loan].closure = made.closure_origin;
         if (bound_to != nullptr) {
           cfg_.loans[loan].carrier = *bound_to;
         }
@@ -1919,7 +2664,7 @@ private:
   /// holds a shared loan of each one that is not `copy`.
   auto eval_task_block(const lambda &made) -> value {
     {
-      auto nested = graph_builder(checked_, out_, this);
+      auto nested = graph_builder(checked_, out_, this, context_);
       nested.build_task(made, report_captures_);
     }
     auto result = value{};
@@ -1951,7 +2696,19 @@ private:
     if (made.origin != nullptr) {
       cfg_.task_captures[made.origin] = std::move(records);
     }
-    return result;
+    if (result.empty()) {
+      return result;
+    }
+    // The body may store one capture's borrows where another points, and
+    // is checked as a body with no summary: assume it does.
+    const auto task = new_temp(local_role::call_temp);
+    flow(task, result, /*replace=*/true);
+    emit(store_event{.through = {task},
+                     .loans = {},
+                     .sources = {task},
+                     .depth = 0,
+                     .transitive = true});
+    return value::from_holder(task);
   }
 
   // ------------------------------------------------------------------
@@ -1986,7 +2743,7 @@ private:
     }
     goto_block(end);
     current_ = end;
-    return value{.loans = {}, .sources = {join}};
+    return value::from_holder(join);
   }
 
   auto eval_branch(const block &b) -> value {
@@ -1995,7 +2752,7 @@ private:
     const auto join = new_temp(local_role::join_temp);
     flow(join, tail, /*replace=*/true);
     pop_scope();
-    return value{.loans = {}, .sources = {join}};
+    return value::from_holder(join);
   }
 
   /// Whether `pattern`'s bindings are disjoint parts of the subject, as
@@ -2205,7 +2962,7 @@ private:
         droppable(source_subject_type(m))) {
       cfg_.unmatched_drops.insert(m.origin);
     }
-    return value{.loans = {}, .sources = {join}};
+    return value::from_holder(join);
   }
 
   /// An arm body: its statements in the arm's scope, and a value written
@@ -2252,7 +3009,7 @@ private:
       cfg_.owning_subjects.insert(arm.origin);
       const auto whole = declare("<subject>", source_subject_type(m), arm.span,
                                  /*whole=*/true, arm.origin);
-      bind_value(whole, value{.loans = {}, .sources = {held}});
+      bind_value(whole, value::from_holder(held));
     }
     for (const auto &b : alt.bindings) {
       if (b.how == pattern_binding::mode::alias) {
@@ -2288,7 +3045,7 @@ private:
                                               .local = local,
                                               .alias = {},
                                               .capture = {}});
-      bind_value(local, value{.loans = {}, .sources = {held}});
+      bind_value(local, value::from_holder(held));
     }
   }
 
@@ -2406,7 +3163,14 @@ private:
     case node_kind::yield_stmt: {
       const auto &j = static_cast<const jump &>(s);
       if (j.value != nullptr) {
-        static_cast<void>(eval_full(*j.value));
+        // A yielded value outlives the body's locals, as a returned one
+        // does.
+        const auto yielded = eval_full(*j.value);
+        if (yield_slot_ == k_no_local) {
+          yield_slot_ = new_local("the yielded value", local_role::return_slot,
+                                  k_unknown_type, source_span::dummy(), false);
+        }
+        flow(yield_slot_, yielded, /*replace=*/false);
       }
       if (j.suspension != nullptr) {
         // Dropping the generator while it is suspended here resumes it
@@ -2463,6 +3227,9 @@ private:
     auto r = resolve(a.target);
     if (!check_write(r, static_write::assign, a.span, {},
                      /*projected_only=*/true)) {
+      if (r.kind == resolved_place::root::capture) {
+        store_into_capture(r, v);
+      }
       return;
     }
     if (r.steps.empty()) {
@@ -2496,29 +3263,66 @@ private:
     } else {
       access_place(r, access_kind::write_part, a.span);
     }
-    if (const auto it = incoming_mut_refs_.find(r.local);
-        it != incoming_mut_refs_.end() && !v.empty() && through_ref &&
-        reborrows(r)) {
-      emit(flow_event{.dest = cfg_.loans[it->second].root,
-                      .loans = v.loans,
-                      .sources = v.sources,
-                      .through = r.local,
-                      .incoming = it->second});
-    }
     flow(r.local, v, /*replace=*/false);
+    if (std::ranges::any_of(
+            std::views::iota(std::size_t{0}, r.steps.size()),
+            [&](std::size_t i) {
+              return kind_of(type_before(r, i)) == type_kind::ptr_kind;
+            })) {
+      raw_store(v);
+    }
+    const auto derefs = reference_derefs(r);
+    if (derefs > 0 && !v.empty()) {
+      // A store through a reference reaches the storage it points at, one
+      // level per reference the place dereferences.
+      emit(store_event{.through = {r.local},
+                       .loans = v.loans,
+                       .sources = v.sources,
+                       .strip = v.strip,
+                       .depth = static_cast<std::uint32_t>(derefs),
+                       .transitive = false});
+    }
+  }
+
+  /// A write through a raw pointer: the graph does not know where the
+  /// pointer points, so the value may land anywhere the body can write,
+  /// which is every storage it was given a mutable way into.
+  auto raw_store(const value &v) -> void {
+    if (v.empty()) {
+      return;
+    }
+    for (const auto storage : writable_storages_) {
+      flow(storage, v, /*replace=*/false);
+    }
+  }
+
+  /// A store into a captured place reaches the captured storage.
+  auto store_into_capture(const resolved_place &r, const value &v) -> void {
+    const auto place = captured_value(r, /*borrowed=*/true);
+    if (place.sources.empty() || v.empty()) {
+      return;
+    }
+    emit(store_event{.through = place.sources,
+                     .loans = v.loans,
+                     .sources = v.sources,
+                     .strip = v.strip,
+                     .depth = 0,
+                     .transitive = true});
   }
 };
 
 } // namespace
 
 auto ownership_graphs(const function &fn,
-                      const semantic::checked_types &checked)
-    -> std::vector<function_cfg> {
+                      const semantic::checked_types &checked,
+                      graph_context *context) -> std::vector<function_cfg> {
   auto out = std::vector<function_cfg>{};
   if (fn.body == nullptr) {
     return out;
   }
-  auto builder = graph_builder(checked, out, nullptr);
+  auto own = graph_context{};
+  auto builder =
+      graph_builder(checked, out, nullptr, context != nullptr ? *context : own);
   builder.build_function(fn);
   // The function's own graph first.
   std::ranges::rotate(out, out.end() - 1);
@@ -2558,53 +3362,472 @@ auto relocate(diagnostic d, source_span origin) -> diagnostic {
 
 } // namespace
 
-auto check_ownership(const adapted_program &program,
+namespace {
+
+using semantic::ownership::graph_result;
+
+/// One function the summaries are inferred for and the rules checked on.
+struct unit {
+  function *fn = nullptr;
+  file_id_type file = 0;
+  /// Its diagnostics are reported: its module is not skipped, and its file
+  /// has no errors yet.
+  bool report = false;
+};
+
+/// Adds what `from` lets reach anything to `into`.
+auto join_summary(function_summary &into, const function_summary &from)
+    -> void {
+  if (into.params.size() < from.params.size()) {
+    into.params.resize(from.params.size());
+  }
+  for (std::size_t j = 0; j < from.params.size(); ++j) {
+    into.params[j].result |= from.params[j].result;
+    into.params[j].escapes |= from.params[j].escapes;
+    into.params[j].by_reference = from.params[j].by_reference;
+  }
+  for (const auto &stored : from.stores) {
+    const auto at = std::ranges::find_if(into.stores, [&](const auto &s) {
+      return s.into == stored.into && s.from == stored.from;
+    });
+    if (at != into.stores.end()) {
+      at->parts |= stored.parts;
+    } else {
+      into.stores.push_back(stored);
+    }
+  }
+  std::ranges::sort(into.stores, [](const auto &a, const auto &b) {
+    return std::pair{a.into, a.from} < std::pair{b.into, b.from};
+  });
+}
+
+/// The summary `fn`'s signature allows.
+auto declared_summary(const function &fn,
+                      const semantic::checked_types &checked, bool rigid)
+    -> function_summary {
+  auto scratch = std::vector<function_cfg>{};
+  auto context = graph_context{};
+  return graph_builder(checked, scratch, nullptr, context)
+      .declared_summary(fn, rigid);
+}
+
+/// What a body shows its summary to be. A `machine` body moves memory
+/// through raw pointers, which its graph does not follow, so it is held to
+/// what its signature allows as well. That memory is typed: moving `T`
+/// values between places of `T` moves what they hold, and the summary is
+/// rigid in `T`. A value the body writes through a raw pointer is in the
+/// graph (`raw_store`), whatever bound call made it.
+auto inferred_summary(const unit &u, function_summary out,
+                      const semantic::checked_types &checked)
+    -> function_summary {
+  if (u.fn->decl != nullptr && u.fn->decl->modifiers.is_machine) {
+    join_summary(out, declared_summary(*u.fn, checked, /*rigid=*/true));
+  }
+  return out;
+}
+
+/// What checking a unit's graphs found the last time the fixed point
+/// built them. A unit is rebuilt whenever a summary it consulted grows, so
+/// at the fixed point these are what the final summaries give.
+struct unit_outcome {
+  diagnostic_bag diagnostics = diagnostic_bag();
+  std::set<const void *> escaping;
+};
+
+/// Infers every unit's summary: the least fixed point, starting from
+/// summaries that let nothing reach anything and rechecking a function's
+/// callers whenever its summary grows. `outcomes` holds each unit's
+/// diagnostics and escaping closures under the final summaries.
+///
+/// Callees are inferred before their callers where the calls allow it: a
+/// call asks for its callee (`graph_context::ensure`) before reading its
+/// summary, so most units are built once. A unit whose callee grows later,
+/// through recursion or an instance standing for its template, is queued
+/// again.
+class summary_inference {
+public:
+  summary_inference(const std::vector<unit> &units,
+                    const semantic::checked_types &checked)
+      : outcomes(units.size()), units_(units), checked_(checked),
+        pending_(units.size(), true), active_(units.size(), false) {
+    for (std::size_t i = 0; i < units_.size(); ++i) {
+      const auto *decl = units_[i].fn->decl;
+      if (decl == nullptr) {
+        continue;
+      }
+      unit_of_.try_emplace(decl, i);
+      table.insert_or_assign(decl, bottom(units_[i]));
+    }
+  }
+
+  /// Infers again the summaries of `changed`, whose graphs changed, and of
+  /// every unit that read one of them, directly or through other callers.
+  /// Their summaries start again from the bottom, so a summary that a
+  /// change made smaller is smaller; the rest keep theirs.
+  auto reset(const std::vector<std::size_t> &changed) -> void {
+    auto work = changed;
+    auto seen = std::set<std::size_t>(changed.begin(), changed.end());
+    auto templates = std::set<const ast::func_decl *>{};
+    const auto visit = [&](const ast::func_decl *decl) {
+      for (const auto caller : dependents_[decl]) {
+        if (seen.insert(caller).second) {
+          work.push_back(caller);
+        }
+      }
+    };
+    while (!work.empty()) {
+      const auto at = work.back();
+      work.pop_back();
+      const auto *decl = units_[at].fn->decl;
+      if (decl == nullptr) {
+        continue;
+      }
+      visit(decl);
+      // An unbuilt template's summary is the union of its instances', so
+      // each of them is inferred again with it.
+      if (const auto it = checked_.ownership.instance_templates.find(decl);
+          it != checked_.ownership.instance_templates.end() &&
+          !unit_of_.contains(it->second) &&
+          templates.insert(it->second).second) {
+        visit(it->second);
+        for (const auto &[instance, of] :
+             checked_.ownership.instance_templates) {
+          if (of != it->second) {
+            continue;
+          }
+          if (const auto found = unit_of_.find(instance);
+              found != unit_of_.end() && seen.insert(found->second).second) {
+            work.push_back(found->second);
+          }
+        }
+      }
+    }
+    for (const auto *decl : templates) {
+      table.erase(decl);
+    }
+    for (const auto at : seen) {
+      if (const auto *decl = units_[at].fn->decl; decl != nullptr) {
+        table.insert_or_assign(decl, bottom(units_[at]));
+      }
+      pending_[at] = true;
+    }
+  }
+
+  /// Builds every pending unit and every unit queued by a growth, until
+  /// no summary grows.
+  auto run() -> void {
+    for (std::size_t i = 0; i < units_.size(); ++i) {
+      if (pending_[i]) {
+        process(i);
+      }
+    }
+    while (!queue_.empty()) {
+      const auto at = queue_.back();
+      queue_.pop_back();
+      if (pending_[at]) {
+        process(at);
+      }
+    }
+  }
+
+  summary_table table;
+  std::vector<unit_outcome> outcomes;
+
+private:
+  [[nodiscard]] auto bottom(const unit &u) const -> function_summary {
+    auto out = function_summary{};
+    for (const auto &p :
+         declared_summary(*u.fn, checked_, /*rigid=*/true).params) {
+      out.params.push_back(summary_param{
+          .result = 0, .escapes = 0, .by_reference = p.by_reference});
+    }
+    return out;
+  }
+
+  auto ensure(const ast::func_decl *decl) -> void {
+    if (const auto found = unit_of_.find(decl);
+        found != unit_of_.end() && pending_[found->second] &&
+        !active_[found->second]) {
+      process(found->second);
+    }
+  }
+
+  auto process(std::size_t at) -> void {
+    pending_[at] = false;
+    active_[at] = true;
+    const auto &u = units_[at];
+    auto context = graph_context{
+        .summaries = &table, .consulted = {}, .lambdas = {},
+        .ensure = [this](const ast::func_decl *decl) { ensure(decl); }};
+    const auto graphs = ownership_graphs(*u.fn, checked_, &context);
+    active_[at] = false;
+    for (const auto *callee : context.consulted) {
+      dependents_[callee].insert(at);
+    }
+    auto &outcome = outcomes[at];
+    outcome.diagnostics = diagnostic_bag();
+    outcome.escaping.clear();
+    auto own = function_summary{};
+    for (std::size_t g = 0; g < graphs.size(); ++g) {
+      auto found = semantic::ownership::check_graph(
+          graphs[g], checked_, outcome.diagnostics, u.file);
+      outcome.escaping.insert(found.escaping.begin(), found.escaping.end());
+      if (g == 0) {
+        own = std::move(found.summary);
+      }
+    }
+    if (graphs.empty() || u.fn->decl == nullptr) {
+      return;
+    }
+    auto summary = inferred_summary(u, std::move(own), checked_);
+    auto &known = table.at(u.fn->decl);
+    auto grown = known;
+    join_summary(grown, summary);
+    if (grown == known) {
+      return;
+    }
+    known = std::move(grown);
+    auto grew = std::vector<const ast::func_decl *>{u.fn->decl};
+    // An instance of a template the adapter did not build stands for it: a
+    // call in another template names the template.
+    if (const auto it = checked_.ownership.instance_templates.find(u.fn->decl);
+        it != checked_.ownership.instance_templates.end() &&
+        !unit_of_.contains(it->second)) {
+      auto &shared = table[it->second];
+      auto widened = shared;
+      join_summary(widened, summary);
+      if (widened != shared) {
+        shared = std::move(widened);
+        grew.push_back(it->second);
+      }
+    }
+    for (const auto *decl : grew) {
+      for (const auto caller : dependents_[decl]) {
+        if (!pending_[caller]) {
+          pending_[caller] = true;
+          queue_.push_back(caller);
+        }
+      }
+    }
+  }
+
+  const std::vector<unit> &units_;
+  const semantic::checked_types &checked_;
+  std::unordered_map<const ast::func_decl *, std::size_t> unit_of_;
+  std::unordered_map<const ast::func_decl *, std::set<std::size_t>>
+      dependents_;
+  std::vector<bool> pending_;
+  std::vector<bool> active_;
+  std::vector<std::size_t> queue_;
+};
+
+/// Makes the borrow-or-move captures of each escaping closure moves
+/// (ch. 16), and of every other copy of a generic lambda it is a copy of.
+/// The core is the program's own, which `check_ownership` may change;
+/// lowering reads the new modes. Returns whether any capture changed.
+auto move_escaping_captures(const std::set<const void *> &escaping,
+                            const graph_context &context,
+                            const semantic::checked_types &checked) -> bool {
+  auto closures = escaping;
+  for (const auto *closure : escaping) {
+    for (const auto &[written, copies] :
+         checked.ownership.generic_lambda_instances) {
+      if (std::ranges::find(copies, closure) != copies.end()) {
+        closures.insert(copies.begin(), copies.end());
+      }
+    }
+  }
+  auto changed = false;
+  for (const auto *closure : closures) {
+    const auto found = context.lambdas.find(closure);
+    if (found == context.lambdas.end()) {
+      continue;
+    }
+    // The lambda is a node of the program `check_ownership` was given to
+    // change; the graphs only read it.
+    auto &made = const_cast<lambda &>(*found->second);
+    for (auto &c : made.captures) {
+      if ((c.how == capture::mode::borrow ||
+           c.how == capture::mode::borrow_mut) &&
+          follows_escape_rule(made, c)) {
+        c.how = capture::mode::move;
+        c.escapes = true;
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
+/// Whether the impl method `fn`'s summary stays within what its trait's
+/// signature lets a call through a bound assume; reports it if not.
+auto check_trait_fit(const unit &u, const function_summary &summary,
+                     const semantic::checked_types &checked,
+                     diagnostic_bag &diag) -> void {
+  if (u.fn->decl == nullptr) {
+    return;
+  }
+  const auto trait_method = checked.impl_trait_methods.find(u.fn->decl);
+  if (trait_method == checked.impl_trait_methods.end()) {
+    return;
+  }
+  const auto signature =
+      checked.trait_method_signatures.find(trait_method->second);
+  if (signature == checked.trait_method_signatures.end()) {
+    return;
+  }
+  auto scratch = std::vector<function_cfg>{};
+  auto context = graph_context{};
+  const auto allowed =
+      graph_builder(checked, scratch, nullptr, context)
+          .fn_summary(signature->second.signature);
+  if (!allowed.has_value() ||
+      allowed->params.size() != summary.params.size()) {
+    return;
+  }
+  // A part of an argument the trait passes by value is all of it.
+  const auto fits = [&](std::size_t j, std::uint8_t parts,
+                        std::uint8_t permitted) {
+    if (!allowed->params[j].by_reference && permitted != 0) {
+      return true;
+    }
+    return (parts & ~permitted) == 0;
+  };
+  const auto name = [&](std::size_t j) -> std::string {
+    return j < u.fn->params.size() ? base_name(u.fn->params[j].name)
+                                   : std::string("an argument");
+  };
+  auto problem = std::optional<std::string>{};
+  for (std::size_t j = 0; j < summary.params.size() && !problem; ++j) {
+    if (!fits(j, summary.params[j].result, allowed->params[j].result)) {
+      problem = std::format(
+          "`{}` returns a borrow of what `{}` points at, but the signature in "
+          "trait `{}` lets the result borrow only what `{}` holds",
+          u.fn->declared_name, name(j), signature->second.trait_name, name(j));
+    } else if (!fits(j, summary.params[j].escapes,
+                     allowed->params[j].escapes)) {
+      problem = std::format(
+          "`{}` starts a task with `spawn()` that borrows `{}`, which the "
+          "signature in trait `{}` does not allow",
+          u.fn->declared_name, name(j), signature->second.trait_name);
+    }
+  }
+  for (const auto &stored : summary.stores) {
+    if (problem.has_value()) {
+      break;
+    }
+    const auto permitted = std::ranges::find_if(
+        allowed->stores, [&](const auto &s) {
+          return s.into == stored.into && s.from == stored.from;
+        });
+    if (!fits(stored.from, stored.parts,
+              permitted != allowed->stores.end() ? permitted->parts
+                                                 : std::uint8_t{0})) {
+      problem = std::format(
+          "`{}` stores a borrow from `{}` where `{}` points, which the "
+          "signature in trait `{}` does not allow",
+          u.fn->declared_name, name(stored.from), name(stored.into),
+          signature->second.trait_name);
+    }
+  }
+  if (!problem.has_value()) {
+    return;
+  }
+  auto d = diagnostic(diagnostic_level::error, *problem, u.file);
+  d.with_label(u.fn->span, "the method is declared here");
+  d.with_note(std::format(
+      "code generic over `{0}` calls this method through a bound (`where T: "
+      "{0}`), and knows only the trait's signature: a result typed by a type "
+      "parameter borrows only what the arguments hold, never the arguments "
+      "themselves",
+      signature->second.trait_name));
+  d.with_help("return a value the arguments hold, or a copy, rather than a "
+              "borrow of the argument itself");
+  diag.emit(d);
+}
+
+} // namespace
+
+auto check_ownership(adapted_program &program,
                      const semantic::checked_types &checked,
                      diagnostic_bag &diag, std::vector<bool> &file_has_errors,
-                     unsigned skip_from_fileid) -> void {
+                     unsigned skip_from_fileid) -> summary_table {
   const auto origins = derived_origins(checked);
+  // Each declaration is checked once: as its template when it has one. An
+  // instance has the template's body with its parameters substituted.
+  auto units = std::vector<unit>{};
   for (const auto &module : program.modules) {
-    if (!module->file_id.has_value()) {
-      continue;
+    const auto file = module->file_id.value_or(file_id_type{0});
+    const auto report =
+        module->file_id.has_value() &&
+        static_cast<unsigned>(file) < skip_from_fileid &&
+        !(static_cast<std::size_t>(file) < file_has_errors.size() &&
+          file_has_errors[static_cast<std::size_t>(file)]);
+    for (const auto &held : module->functions) {
+      if (held->instance_of != nullptr || held->body == nullptr) {
+        continue;
+      }
+      units.push_back(unit{.fn = held.get(), .file = file, .report = report});
     }
-    const auto file = *module->file_id;
-    if (static_cast<unsigned>(file) >= skip_from_fileid) {
-      continue;
+  }
+  auto inference = summary_inference(units, checked);
+  inference.run();
+  // A closure that escapes moves what it would borrow (ch. 16). Changing
+  // its captures changes its function's graphs, so that function's summary
+  // and its callers' are inferred again.
+  for (;;) {
+    auto changed = std::vector<std::size_t>{};
+    for (std::size_t i = 0; i < units.size(); ++i) {
+      if (inference.outcomes[i].escaping.empty()) {
+        continue;
+      }
+      auto context = graph_context{.summaries = &inference.table,
+                                   .consulted = {}, .lambdas = {},
+                                   .ensure = {}};
+      static_cast<void>(ownership_graphs(*units[i].fn, checked, &context));
+      if (move_escaping_captures(inference.outcomes[i].escaping, context,
+                                 checked)) {
+        changed.push_back(i);
+      }
     }
-    if (static_cast<std::size_t>(file) < file_has_errors.size() &&
-        file_has_errors[static_cast<std::size_t>(file)]) {
+    if (changed.empty()) {
+      break;
+    }
+    inference.reset(changed);
+    inference.run();
+  }
+  auto &table = inference.table;
+  auto &outcomes = inference.outcomes;
+  auto seen = std::set<std::tuple<file_id_type, std::string, std::uint32_t>>{};
+  for (std::size_t i = 0; i < units.size(); ++i) {
+    const auto &u = units[i];
+    if (!u.report) {
       continue;
     }
     const auto errors_before = diag.error_count();
-    auto seen = std::set<std::pair<std::string, std::uint32_t>>{};
-    // Each declaration is checked once: as its template when it has one.
-    // An instance has the template's body with its parameters substituted.
-    for (const auto &held : module->functions) {
-      const auto *fn = held.get();
-      if (fn->instance_of != nullptr || fn->body == nullptr) {
+    auto &local = outcomes[i].diagnostics;
+    if (u.fn->decl != nullptr) {
+      if (const auto found = table.find(u.fn->decl); found != table.end()) {
+        check_trait_fit(u, found->second, checked, local);
+      }
+    }
+    const auto generated =
+        u.fn->decl != nullptr ? origins.find(u.fn->decl) : origins.end();
+    for (auto &d : local.diagnostics()) {
+      const auto start = d.labels.empty() ? 0U : d.labels.front().span.start;
+      if (!seen.emplace(u.file, d.message, start).second) {
         continue;
       }
-      auto local = diagnostic_bag{};
-      for (const auto &cfg : ownership_graphs(*fn, checked)) {
-        semantic::ownership::check_graph(cfg, checked, local, file);
-      }
-      const auto generated =
-          fn->decl != nullptr ? origins.find(fn->decl) : origins.end();
-      for (auto &d : local.diagnostics()) {
-        const auto start = d.labels.empty() ? 0U : d.labels.front().span.start;
-        if (!seen.emplace(d.message, start).second) {
-          continue;
-        }
-        diag.emit(generated != origins.end()
-                      ? relocate(std::move(d), generated->second)
-                      : d);
-      }
+      diag.emit(generated != origins.end()
+                    ? relocate(std::move(d), generated->second)
+                    : d);
     }
     if (diag.error_count() > errors_before &&
-        static_cast<std::size_t>(file) < file_has_errors.size()) {
-      file_has_errors[static_cast<std::size_t>(file)] = true;
+        static_cast<std::size_t>(u.file) < file_has_errors.size()) {
+      file_has_errors[static_cast<std::size_t>(u.file)] = true;
     }
   }
+  return std::move(table);
 }
 
 } // namespace cinder::core

@@ -8,6 +8,7 @@
 
 #include "src/module_metadata.pb.h"
 #include "src/parser/ast.h"
+#include "src/semantic/ownership_cfg.h"
 
 #include <filesystem>
 
@@ -79,9 +80,12 @@ struct compiled_module {
 /// @param file Parsed AST for the source file.
 /// @param source_path Original source file path.
 /// @param diagnostics Plain-text driver diagnostics buffer for I/O failures.
+/// @param summaries The ownership summaries to record, or null when the
+/// ownership check did not run.
 [[nodiscard]] auto write_module_metadata(
     const std::filesystem::path &metadata_root, const ast::file &file,
-    const std::filesystem::path &source_path, std::string &diagnostics)
+    const std::filesystem::path &source_path, std::string &diagnostics,
+    const semantic::ownership::summary_table *summaries = nullptr)
     -> std::expected<std::string, std::monostate>;
 
 /// Render a human-readable module label for compile summaries.
@@ -94,9 +98,11 @@ struct compiled_module {
 ///
 /// @param file Parsed AST for the source file.
 /// @param source_path Original source file path.
+/// @param summaries The ownership summaries to record, or null.
 [[nodiscard]] auto
 build_module_metadata(const ast::file &file,
-                      const std::filesystem::path &source_path)
-    -> metadata::v1::ModuleMetadata;
+                      const std::filesystem::path &source_path,
+                      const semantic::ownership::summary_table *summaries =
+                          nullptr) -> metadata::v1::ModuleMetadata;
 
 } // namespace cinder::driver

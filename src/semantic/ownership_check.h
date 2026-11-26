@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <set>
 
 #include <vector>
 
@@ -52,8 +53,19 @@ namespace ownership {
 
 /// Checks one graph and reports what breaks the rules into `diag`, as
 /// diagnostics in `file_id`.
+/// What checking one graph finds besides its diagnostics.
+struct graph_result {
+  /// For a function's own graph, what it does with its arguments' borrows,
+  /// read off the state at its exit (`function_cfg::parameters`).
+  function_summary summary;
+  /// The closures, by `ast::lambda_expr`, that borrow a value by the
+  /// borrow-or-move rule and outlive it: they escape, so they move it
+  /// instead (ch. 16).
+  std::set<const void *> escaping;
+};
+
 auto check_graph(const function_cfg &cfg, const checked_types &checked,
-                 diagnostic_bag &diag, file_id_type file_id) -> void;
+                 diagnostic_bag &diag, file_id_type file_id) -> graph_result;
 
 /// Whether a local still holds its value at some point: on every path
 /// (`owned`), on some paths only (`maybe_moved`, so dropping it needs a

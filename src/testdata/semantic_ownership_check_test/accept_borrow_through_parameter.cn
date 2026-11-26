@@ -11,3 +11,30 @@ def fill_local(out: &mut slot, source: &int32) -> int32:
     out = &mut local
     *out = slot { entry: &n }
     return *out.entry
+
+def fill_alias(out: &mut slot, source: &int32) -> unit:
+    let alias = out
+    *alias = slot { entry: source }
+
+def fill_rebound_alias(out: &mut slot, source: &int32) -> int32:
+    let n: int32 = 5
+    var local = slot { entry: source }
+    var alias = out
+    alias = &mut local
+    *alias = slot { entry: &n }
+    return *alias.entry
+
+def fill_local_copy(out: &mut slot) -> int32:
+    let n: int32 = 5
+    var local = slot { entry: out.entry }
+    let alias = &mut local
+    *alias = slot { entry: &n }
+    return *alias.entry
+
+type holder = { child: &mut slot }
+
+def replace_local_holder(out: &mut slot, source: &int32) -> unit:
+    var scratch = slot { entry: source }
+    var local = holder { child: out }
+    let alias = &mut local
+    *alias = holder { child: &mut scratch }

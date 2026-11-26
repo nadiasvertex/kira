@@ -492,9 +492,13 @@ auto checker::variant_payload_types(const type_entry &instance,
 /// edges may safely report "no borrow". With `params_bear` false, a type
 /// parameter counts as carrying nothing: the question becomes whether the
 /// type carries a borrow of its own, whatever its parameters turn out to be.
+/// With `mutable_only`, the question is whether a value can hold a way to
+/// change storage it does not own: a `&mut`, a mutable view, a callable or
+/// coroutine (which may hold one), or a type parameter. A `&T` or shared
+/// view counts as nothing, since nothing can be written through it.
 auto checker::type_carries_borrow(type_id id,
                                   std::unordered_set<type_id> &visited,
-                                  bool params_bear) -> bool {
+                                  bool params_bear, bool mutable_only) -> bool {
   if (session_.types_.is_unknown(id) || id == k_error_type) {
     return false;
   }
@@ -508,10 +512,16 @@ auto checker::type_carries_borrow(type_id id,
     if (const auto domain = declared_domains_.find(id);
         params_bear && domain != declared_domains_.end()) {
       return std::ranges::any_of(domain->second, [&](type_id member) -> bool {
-        return type_carries_borrow(member, visited, params_bear);
+        return type_carries_borrow(member, visited, params_bear,
+                                   mutable_only);
       });
     }
     return params_bear;
+  }
+  if (mutable_only &&
+      ((e.kind == type_kind::ref_kind && !e.is_mut) ||
+       (session_.types_.is_view(id) && !session_.types_.is_mut_view(id)))) {
+    return false;
   }
   if (session_.types_.is_view(id) || e.kind == type_kind::ref_kind ||
       e.kind == type_kind::fn_kind || e.kind == type_kind::param_app_kind ||
@@ -520,11 +530,11 @@ auto checker::type_carries_borrow(type_id id,
     return true;
   }
   if (e.result != k_unknown_type &&
-      type_carries_borrow(e.result, visited, params_bear)) {
+      type_carries_borrow(e.result, visited, params_bear, mutable_only)) {
     return true;
   }
   for (const auto arg : e.args) {
-    if (type_carries_borrow(arg, visited, params_bear)) {
+    if (type_carries_borrow(arg, visited, params_bear, mutable_only)) {
       return true;
     }
   }
@@ -532,7 +542,8 @@ auto checker::type_carries_borrow(type_id id,
     if (const auto *fields = struct_fields_of(e)) {
       for (const auto &field : *fields) {
         const auto ft = struct_field_type(e, field.name);
-        if (ft.has_value() && type_carries_borrow(*ft, visited, params_bear)) {
+        if (ft.has_value() &&
+            type_carries_borrow(*ft, visited, params_bear, mutable_only)) {
           return true;
         }
       }
@@ -541,7 +552,8 @@ auto checker::type_carries_borrow(type_id id,
     if (const auto *variants = sum_variants_of(e)) {
       for (const auto &variant : *variants) {
         for (const auto payload : variant_payload_types(e, variant)) {
-          if (type_carries_borrow(payload, visited, params_bear)) {
+          if (type_carries_borrow(payload, visited, params_bear,
+                                  mutable_only)) {
             return true;
           }
         }
@@ -560,17 +572,169 @@ auto checker::type_carries_borrow(type_id id,
 /// own_borrow_bearing_types` instead. `snapshot` is the table size to
 /// classify up to, shared by both sets.
 auto checker::compute_borrow_bearing_types(std::size_t snapshot,
-                                           bool params_bear)
+                                           bool params_bear, bool mutable_only)
     -> std::unordered_set<type_id> {
   auto result = std::unordered_set<type_id>{};
   for (std::size_t raw = 0; raw < snapshot; ++raw) {
     const auto id = static_cast<type_id>(raw);
     auto visited = std::unordered_set<type_id>{};
-    if (type_carries_borrow(id, visited, params_bear)) {
+    if (type_carries_borrow(id, visited, params_bear, mutable_only)) {
       result.insert(id);
     }
   }
   return result;
+}
+
+/// Adds to `out` what the references and views in `id`'s own structure may
+/// point at (`ownership_results::pointee_types`).
+auto checker::collect_pointees(type_id id, std::unordered_set<type_id> &visited,
+                               std::vector<type_id> &out) -> void {
+  // An implicit generic's parameter types (`def first(a, b)`) are type
+  // variables, and stand for its type parameters.
+  if (session_.types_.entry(id).kind == type_kind::type_var_kind) {
+    return;
+  }
+  if (session_.types_.is_unknown(id) || id == k_error_type) {
+    out.push_back(k_unknown_type);
+    return;
+  }
+  if (!visited.insert(id).second) {
+    return;
+  }
+  const auto &e = session_.types_.entry(id);
+  if (e.kind == type_kind::type_param_kind) {
+    return;
+  }
+  if (e.kind == type_kind::fn_kind || e.kind == type_kind::param_app_kind ||
+      (e.kind == type_kind::builtin_generic_kind &&
+       (e.name == "generator" || e.name == "task"))) {
+    out.push_back(k_unknown_type);
+    return;
+  }
+  if (e.kind == type_kind::ref_kind) {
+    out.push_back(e.result);
+    collect_pointees(e.result, visited, out);
+    return;
+  }
+  if (session_.types_.is_view(id)) {
+    if (e.args.empty()) {
+      out.push_back(k_unknown_type);
+    }
+    for (const auto arg : e.args) {
+      out.push_back(arg);
+      collect_pointees(arg, visited, out);
+    }
+    return;
+  }
+  if (e.result != k_unknown_type) {
+    collect_pointees(e.result, visited, out);
+  }
+  const auto args = e.args; // copy: resolving fields may intern
+  for (const auto arg : args) {
+    collect_pointees(arg, visited, out);
+  }
+  if (e.kind == type_kind::struct_kind) {
+    if (const auto *fields = struct_fields_of(e)) {
+      for (const auto &field : *fields) {
+        if (const auto ft = struct_field_type(session_.types_.entry(id),
+                                              field.name)) {
+          collect_pointees(*ft, visited, out);
+        }
+      }
+    }
+  } else if (e.kind == type_kind::sum_kind) {
+    if (const auto *variants = sum_variants_of(e)) {
+      for (const auto &variant : *variants) {
+        for (const auto payload :
+             variant_payload_types(session_.types_.entry(id), variant)) {
+          collect_pointees(payload, visited, out);
+        }
+      }
+    }
+  }
+}
+
+/// Adds to `out` `id` and every type a value of it owns
+/// (`ownership_results::owned_components`).
+auto checker::collect_components(type_id id,
+                                 std::unordered_set<type_id> &visited,
+                                 std::vector<type_id> &out) -> void {
+  if (session_.types_.entry(id).kind == type_kind::type_var_kind) {
+    out.push_back(id);
+    return;
+  }
+  if (session_.types_.is_unknown(id) || id == k_error_type) {
+    out.push_back(k_unknown_type);
+    return;
+  }
+  if (!visited.insert(id).second) {
+    return;
+  }
+  out.push_back(id);
+  const auto &e = session_.types_.entry(id);
+  // What a callable or coroutine owns is reachable only by running it.
+  if (e.kind == type_kind::type_param_kind || e.kind == type_kind::ref_kind ||
+      e.kind == type_kind::fn_kind || session_.types_.is_view(id) ||
+      (e.kind == type_kind::builtin_generic_kind &&
+       (e.name == "generator" || e.name == "task"))) {
+    return;
+  }
+  if (e.kind == type_kind::param_app_kind) {
+    out.push_back(k_unknown_type);
+    return;
+  }
+  if (e.result != k_unknown_type) {
+    collect_components(e.result, visited, out);
+  }
+  const auto args = e.args; // copy: resolving fields may intern
+  for (const auto arg : args) {
+    collect_components(arg, visited, out);
+  }
+  if (e.kind == type_kind::struct_kind) {
+    if (const auto *fields = struct_fields_of(e)) {
+      for (const auto &field : *fields) {
+        if (const auto ft = struct_field_type(session_.types_.entry(id),
+                                              field.name)) {
+          collect_components(*ft, visited, out);
+        }
+      }
+    }
+  } else if (e.kind == type_kind::sum_kind) {
+    if (const auto *variants = sum_variants_of(e)) {
+      for (const auto &variant : *variants) {
+        for (const auto payload :
+             variant_payload_types(session_.types_.entry(id), variant)) {
+          collect_components(payload, visited, out);
+        }
+      }
+    }
+  }
+}
+
+auto checker::compute_reach_types(
+    std::size_t snapshot, const std::unordered_set<type_id> &own_bearing,
+    ownership_results &out) -> void {
+  out.pointee_types.clear();
+  out.owned_components.clear();
+  const auto sorted = [](std::vector<type_id> v) {
+    std::ranges::sort(v);
+    const auto [first, last] = std::ranges::unique(v);
+    v.erase(first, last);
+    return v;
+  };
+  for (std::size_t raw = 0; raw < snapshot; ++raw) {
+    const auto id = static_cast<type_id>(raw);
+    if (own_bearing.contains(id)) {
+      auto visited = std::unordered_set<type_id>{};
+      auto pointees = std::vector<type_id>{};
+      collect_pointees(id, visited, pointees);
+      out.pointee_types.emplace(id, sorted(std::move(pointees)));
+    }
+    auto visited = std::unordered_set<type_id>{};
+    auto components = std::vector<type_id>{};
+    collect_components(id, visited, components);
+    out.owned_components.emplace(id, sorted(std::move(components)));
+  }
 }
 
 /// Whether `id`'s own `impl drop` resolves, and if so to what — the leaf

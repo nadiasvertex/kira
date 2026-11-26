@@ -1300,6 +1300,13 @@ auto checker::check_impl_members(const ast::impl_decl &impl,
     }
   }
 
+  for (const auto &[name, method] : impl_methods) {
+    if (const auto found = trait_methods.find(name);
+        found != trait_methods.end()) {
+      impl_trait_methods_.insert_or_assign(method, found->second);
+    }
+  }
+
   const auto target_name = target.decl != nullptr ? target.decl->name
                            : !target.name.empty()
                                ? target.name

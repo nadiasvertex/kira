@@ -1,0 +1,11 @@
+module ownership.yield_borrow_of_local
+
+generator def g() -> some iterator[&int32]:
+    let n: int32 = 5
+    yield &n
+
+def main() -> int32:
+    var it = g()
+    match it.next():
+        @some(r) => return *r
+        @none => return 0

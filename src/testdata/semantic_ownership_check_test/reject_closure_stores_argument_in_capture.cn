@@ -1,0 +1,14 @@
+module ownership.closure_stores_argument_in_capture
+
+# A call through a closure assumes the closure keeps nothing it is given,
+# so the closure may not store its argument in what it captures: `keep`
+# would hold a borrow of `n` after `n` is dropped.
+def call(f: fn(&int32) -> unit, r: &int32) -> unit:
+    f(r)
+
+def main() -> int32:
+    var kept: list[&int32] = []
+    let keep = (r: &int32) => kept.push(r)
+    let n: int32 = 4
+    call(keep, &n)
+    return *kept[0]

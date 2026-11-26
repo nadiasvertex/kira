@@ -1,0 +1,14 @@
+module ownership.store_through_by_value_holder
+
+type slot = { entry: &int32 }
+type holder = { child: &mut slot }
+
+def fill(h: holder) -> unit:
+    let n: int32 = 5
+    *h.child = slot { entry: &n }
+
+def main() -> int32:
+    let m: int32 = 1
+    var s = slot { entry: &m }
+    fill(holder { child: &mut s })
+    return *s.entry

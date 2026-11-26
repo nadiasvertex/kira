@@ -1,0 +1,12 @@
+module ownership.closure_spawns_borrow
+
+async def total(xs: &list[int32]) -> int32:
+    return xs.len() as int32
+
+def main() -> int32:
+    let xs: list[int32] = [1, 2, 3]
+    let start = (ys: &list[int32]) =>:
+        let t = total(ys)
+        t.spawn()
+    start(&xs)
+    return 0

@@ -371,6 +371,10 @@ struct capture {
   place from;
   mode how = mode::borrow;
   type_id type = k_unknown_type;
+  /// The capture follows the borrow-or-move rule and the closure escapes,
+  /// so it moves (ch. 16): set by the ownership check
+  /// (`core::check_ownership`), which finds the escape.
+  bool escapes = false;
 };
 
 struct lambda : expr {

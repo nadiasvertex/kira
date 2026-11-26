@@ -3,6 +3,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <chrono>
@@ -253,6 +254,65 @@ auto write_file(const fs::path &path, std::string_view contents) -> void {
   expect(out.good(), "expected to write test file contents");
 }
 
+/// The metadata records each function's inferred ownership summary: `pick`'s
+/// result borrows the place `a` points at (`list` indexing also reports what
+/// `a` holds, which for a `list[int32]` is nothing) and nothing of `b`, and
+/// `fill`
+/// stores `x`'s borrows where `out` points.
+auto test_metadata_records_function_summaries() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "summaries.cn";
+  auto metadata_dir = temp.path / "meta";
+  write_file(source_path, read_program("metadata_function_summaries.cn"));
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+  cinder::driver::inject_stdlib_prelude(cfg);
+  auto report = cinder::driver::compile_sources(cfg, false);
+  expect(report.has_value() && report->error_count == 0,
+         "expected the summaries program to compile cleanly: " +
+             (report.has_value() ? report->diagnostics : std::string{}));
+  const auto written = std::ranges::find_if(report->modules, [](const auto &m) {
+    return m.module_path == std::vector<std::string>{"sample", "summaries"};
+  });
+  expect(written != report->modules.end(),
+         "expected metadata for the summaries module");
+  auto in = std::ifstream(written->metadata_path, std::ios::binary);
+  auto metadata = cinder::metadata::v1::ModuleMetadata{};
+  expect(metadata.ParseFromIstream(&in), "expected metadata protobuf to parse");
+  const auto find = [&](std::string_view name)
+      -> const cinder::metadata::v1::FunctionSummary * {
+    for (const auto &summary : metadata.function_summaries()) {
+      if (summary.name() == name) {
+        return &summary;
+      }
+    }
+    return nullptr;
+  };
+  const auto *pick = find("pick");
+  expect(pick != nullptr && pick->parameters_size() == 2,
+         "expected a summary of `pick` with two parameters");
+  expect(pick->parameters(0).name() == "a" &&
+             pick->parameters(0).by_reference(),
+         "expected `pick`'s first parameter to be the reference `a`");
+  expect((pick->parameters(0).result() & 2U) != 0,
+         std::format("expected `pick`'s result to borrow the place `a` "
+                     "points at, got parts {}",
+                     pick->parameters(0).result()));
+  expect(pick->parameters(1).result() == 0,
+         "expected `pick`'s result to borrow nothing of `b`");
+  expect(pick->stores_size() == 0, "expected `pick` to store nothing");
+  const auto *fill = find("fill");
+  expect(fill != nullptr && fill->stores_size() == 1,
+         "expected `fill` to record one store");
+  expect(fill->stores(0).into() == 0 && fill->stores(0).from() == 1 &&
+             (fill->stores(0).parts() & 2U) != 0,
+         "expected `fill` to store the place `x` points at into `out`");
+}
+
 /// Verify that successful compilation writes parse metadata for one file.
 auto test_compile_sources_writes_module_metadata() -> void {
   auto temp = make_temp_dir();
@@ -284,7 +344,7 @@ auto test_compile_sources_writes_module_metadata() -> void {
 
   auto metadata = cinder::metadata::v1::ModuleMetadata{};
   expect(metadata.ParseFromIstream(&in), "expected metadata protobuf to parse");
-  expect(metadata.schema_version() == 4, "expected metadata schema version");
+  expect(metadata.schema_version() == 5, "expected metadata schema version");
   expect(metadata.module_path_size() == 2, "expected module path components");
   expect(metadata.module_path(0) == "sample",
          "expected first module path part");
@@ -5337,6 +5397,7 @@ auto main() -> int {
     test_parse_args_supports_help_and_double_dash();
     test_parse_args_supports_version();
     test_parse_args_accepts_metadata_dir();
+    test_metadata_records_function_summaries();
     test_parse_args_rejects_unknown_options();
     test_parse_args_accepts_show_compile_details();
     test_parse_args_accepts_optimization_level();

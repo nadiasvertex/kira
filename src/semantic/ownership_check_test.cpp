@@ -169,7 +169,7 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
   // Mirror the driver: the core is built from the checked result and one
   // ownership pass runs over it, only over the user's own files
   // (`stdlib_boundary` skips the injected prelude).
-  const auto adapted =
+  auto adapted =
       cinder::core::adapt_program(parsed_modules, file_has_errors, checked);
   cinder::core::check_ownership(adapted, checked, diag, file_has_errors,
                                 static_cast<unsigned>(stdlib_boundary));
@@ -208,10 +208,110 @@ auto test_borrow_stored_through_parameter() -> void {
       analyze_test_data_file("reject_local_borrow_through_parameter.cn");
   expect_diagnostic(rejected, "cannot store a borrow of the local `n` through parameter `out`",
                     "expected the caller's slot to outlive the callee's local");
+  const auto alias = analyze_test_data_file("reject_local_borrow_through_alias.cn");
+  expect_diagnostic(alias, "cannot store a borrow of the local `n` through parameter `out`",
+                    "expected a store through a local alias to reach the caller's slot");
+  expect_diagnostic(alias, "cannot store a borrow of the local `inner` through parameter",
+                    "expected a reborrow selected across branches to reach caller storage");
   const auto accepted = analyze_test_data_file("accept_borrow_through_parameter.cn");
   expect(accepted.error_count == 0,
          "expected caller data and stores through a rebound parameter to pass:\n" +
              accepted.diagnostics);
+}
+
+// Phase 8: function summaries, stores performed by callees, and escape.
+
+auto test_callee_stores_are_checked() -> void {
+  expect_diagnostic(
+      analyze_test_data_file("reject_callee_stores_local_borrow.cn"),
+      "cannot store a borrow of the local `n` through parameter `out`",
+      "expected `out.push(&n)` of a callee local to be rejected");
+  expect_diagnostic(
+      analyze_test_data_file("reject_block_local_pushed_into_list.cn"),
+      "`n` does not live long enough",
+      "expected a block local pushed into an outer list to be rejected");
+  expect_diagnostic(
+      analyze_test_data_file("reject_caller_mutates_after_callee_store.cn"),
+      "cannot borrow `src` while `r`, which borrows `src`, is still in use",
+      "expected `register` to make `r` carry the view of `src`");
+  expect_diagnostic(
+      analyze_test_data_file(
+          "reject_caller_mutates_after_store_on_success.cn"),
+      "cannot borrow `src` while `r`, which borrows `src`, is still in use",
+      "expected a store on one path of the callee to reach `r`");
+  expect_diagnostic(
+      analyze_test_data_file("reject_store_through_alias_in_block.cn"),
+      "`n` does not live long enough",
+      "expected a store through `&mut local` to reach `local`");
+  expect_diagnostic(
+      analyze_test_data_file("reject_store_through_by_value_holder.cn"),
+      "cannot store a borrow of the local `n` through parameter `h`",
+      "expected a store through a by-value holder's `&mut` field to reach "
+      "the caller");
+  expect_diagnostic(
+      analyze_test_data_file("reject_closure_stores_local_into_capture.cn"),
+      "cannot store a borrow of the local `n` through the captured `out`",
+      "expected a closure's push of its own local into a capture to be "
+      "rejected");
+  expect_diagnostic(
+      analyze_test_data_file("reject_closure_stores_argument_in_capture.cn"),
+      "the closure stores a borrow from its parameter `r` in the captured "
+      "`kept`",
+      "expected a closure's push of its argument into a capture to be "
+      "rejected");  expect_diagnostic(
+      analyze_test_data_file("reject_machine_raw_write_stores_borrow.cn"),
+      "cannot store a borrow of the local `n` through parameter `s`",
+      "expected a raw-pointer write in `machine` code to store what it "
+      "writes where the body can write");
+}
+
+auto test_call_results_follow_summaries() -> void {
+  const auto accepted =
+      analyze_test_data_file("accept_result_borrows_one_argument.cn");
+  expect(accepted.error_count == 0,
+         "expected `pick`'s result to borrow only `a`, so `b.push` is "
+         "fine:\n" + accepted.diagnostics);
+  expect_diagnostic(
+      analyze_test_data_file("reject_result_borrows_summarized_argument.cn"),
+      "cannot borrow `a` while the reference `r` to `a` is still in use",
+      "expected `pick`'s result to keep `a` borrowed");
+  expect_diagnostic(
+      analyze_test_data_file("reject_bound_result_borrows_argument.cn"),
+      "cannot borrow `xs` while the reference `a` to `xs` is still in use",
+      "expected a result typed by a bound's parameter to borrow the "
+      "iterator's source");
+  expect_diagnostic(
+      analyze_test_data_file("reject_impl_result_outside_trait_signature.cn"),
+      "`get` returns a borrow of what `self` points at, but the signature in "
+      "trait `getter` lets the result borrow only what `self` holds",
+      "expected an impl method to stay within its trait's signature");
+}
+
+auto test_yields_and_spawns_are_checked() -> void {
+  expect_diagnostic(analyze_test_data_file("reject_yield_borrow_of_local.cn"),
+                    "cannot yield a borrow of the local `n`",
+                    "expected yielding `&n` of a local to be rejected");
+  expect_diagnostic(
+      analyze_test_data_file("reject_spawned_task_borrows_argument.cn"),
+      "a task started with `spawn()` borrows `xs`, which is dropped while "
+      "the task may still run",
+      "expected a callee's spawned task to keep the caller's `xs` borrowed");
+  expect_diagnostic(
+      analyze_test_data_file("reject_closure_spawns_borrow.cn"),
+      "a task started with `spawn()` in a closure borrows `ys`",
+      "expected a closure's spawned task borrowing its parameter to be "
+      "rejected");
+}
+
+auto test_escaping_closure_moves_its_captures() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_use_after_escaping_closure.cn");
+  expect_diagnostic(analyzed, "use of moved value `xs`",
+                    "expected the returned closure to move `xs`");
+  expect(analyzed.diagnostics.find("so it takes `xs` instead of borrowing "
+                                   "it") != std::string::npos,
+         "expected a note naming the escaping closure:\n" +
+             analyzed.diagnostics);
 }
 
 auto test_assign_while_reference_live_is_rejected() -> void {
@@ -331,8 +431,9 @@ auto test_returning_a_receiver_borrow_through_a_type_param_is_rejected()
     -> void {
   const auto analyzed = analyze_test_data_file(
       "reject_return_borrow_of_receiver_through_type_param.cn");
-  expect_diagnostic(analyzed, "cannot return a borrow of the local `h`",
-                    "expected a `T` result to borrow a `holder[T]` receiver");
+  expect_diagnostic(analyzed, "cannot return a borrow of the local `n`",
+                    "expected a `T` result to carry the borrow a "
+                    "`holder[T]` receiver holds");
 }
 
 auto test_returning_a_reference_to_a_member_is_accepted() -> void {
@@ -1128,11 +1229,6 @@ auto test_generic_lambda_copies_share_capture_borrows() -> void {
 auto test_implicit_capture_borrows() -> void {
   const auto rejected =
       analyze_test_data_file("reject_implicit_capture_borrows.cn");
-  expect_diagnostic(rejected, "cannot return a closure that borrows `xs`",
-                    "expected a returned closure that borrows a local to be "
-                    "rejected");
-  expect_diagnostic(rejected, "mark the lambda `move` so the closure owns `xs`",
-                    "expected the returned closure's help to suggest `move`");
   expect_diagnostic(rejected,
                     "cannot move `ys` while the closure `f` is still in use",
                     "expected moving a value a live closure borrows to be "
@@ -1143,7 +1239,7 @@ auto test_implicit_capture_borrows() -> void {
   expect_diagnostic(rejected, "`ws` borrowed as mutable here",
                     "expected pushing onto a value a live closure reads to be "
                     "rejected");
-  expect(rejected.error_count == 3,
+  expect(rejected.error_count == 2,
          std::string("expected one error per function:\n") +
              rejected.diagnostics);
   const auto accepted =
@@ -1463,6 +1559,10 @@ auto main() -> int {
   try {
     test_stored_borrow_is_accepted();
     test_borrow_stored_through_parameter();
+    test_callee_stores_are_checked();
+    test_call_results_follow_summaries();
+    test_yields_and_spawns_are_checked();
+    test_escaping_closure_moves_its_captures();
     test_assign_while_reference_live_is_rejected();
     test_assign_while_aggregate_holds_reference_is_rejected();
     test_returning_a_borrow_of_a_local_is_rejected();

@@ -1,0 +1,14 @@
+module ownership.spawned_task_borrows_argument
+
+async def total(xs: &list[int32]) -> int32:
+    return xs.len() as int32
+
+def start(xs: &list[int32]) -> unit:
+    let t = total(xs)
+    t.spawn()
+
+def main() -> int32:
+    if true:
+        let xs: list[int32] = [1, 2, 3]
+        start(&xs)
+    return 0

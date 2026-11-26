@@ -1,0 +1,10 @@
+module ownership.use_after_escaping_closure
+
+def make() -> (fn() -> int32, int32):
+    let xs: list[int32] = [1, 2, 3]
+    let f = () => xs.len() as int32
+    return (f, xs.len() as int32)
+
+def main() -> int32:
+    let (f, n) = make()
+    return f() + n

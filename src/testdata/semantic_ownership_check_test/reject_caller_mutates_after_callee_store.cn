@@ -1,9 +1,4 @@
-# todo: 30
-# tier: both
-# currently-accepted
-# currently-result: 1
-# want: rejected, because `register` stores a view of `src` into `r`, so `src.push(2)` conflicts while `r` is still read.
-module known_gaps.store_success_mutate
+module ownership.store_success_mutate
 
 type registry = { names: list[slice[int32]] }
 

@@ -8,6 +8,7 @@
 #include "src/hir/lower_core.h"
 #include "src/hir/nodes.h"
 #include "src/semantic/checker_results.h"
+#include "src/semantic/ownership_cfg.h"
 
 namespace cinder::driver {
 
@@ -42,6 +43,8 @@ namespace cinder::driver {
 /// `lowering` holds the modules `hir::lower_program` made, or is null when
 /// the program was not lowered (it has errors, or `cfg.parse_only`). Each
 /// module it made is returned, and each it could not make is reported.
+/// `summaries` are the ownership summaries each module's metadata records,
+/// or null when the ownership check did not run.
 [[nodiscard]] auto
 lower_and_emit_modules(const cli_config &cfg,
                        const std::vector<parsed_input> &parsed_inputs,
@@ -50,7 +53,8 @@ lower_and_emit_modules(const cli_config &cfg,
                        const std::filesystem::path &metadata_root,
                        const diagnostic_renderer &renderer,
                        compile_report &report,
-                       hir::core_program_lowering *lowering)
+                       hir::core_program_lowering *lowering,
+                       const semantic::ownership::summary_table *summaries)
     -> hir::ptr_vec<hir::hir_module>;
 
 } // namespace cinder::driver

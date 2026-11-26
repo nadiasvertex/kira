@@ -392,6 +392,7 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   // tables, the ownership check runs over it, and HIR is lowered from it.
   // Only for a program with no errors.
   auto lowered = std::optional<hir::lowered_program>{};
+  auto summaries = std::optional<semantic::ownership::summary_table>{};
   if (!effective_cfg.parse_only && session_diagnostics.error_count() == 0) {
     auto adapted = core::adapt_program(
         semantic_inputs, file_has_errors, checked,
@@ -399,9 +400,9 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     // The standard library is held to the same ownership rules as user code
     // (ch. 14): drops rely on no value having two owners.
     static_cast<void>(stdlib_start);
-    core::check_ownership(adapted, checked, session_diagnostics,
-                          file_has_errors,
-                          std::numeric_limits<unsigned>::max());
+    summaries = core::check_ownership(adapted, checked, session_diagnostics,
+                                      file_has_errors,
+                                      std::numeric_limits<unsigned>::max());
     if (session_diagnostics.error_count() == 0) {
       auto file_module_names =
           std::unordered_map<file_id_type, std::string>{};
@@ -443,7 +444,8 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   const auto lowering_renderer = diagnostic_renderer(sources, use_color);
   auto lowered_modules = lower_and_emit_modules(
       effective_cfg, parsed_inputs, file_has_errors, checked, metadata_root,
-      lowering_renderer, report, lowered.has_value() ? &lowered->hir : nullptr);
+      lowering_renderer, report, lowered.has_value() ? &lowered->hir : nullptr,
+      summaries.has_value() ? &*summaries : nullptr);
   // Every borrow and deref must be explicit before a backend sees the code:
   // a reference is the address of its place, so an implicit one would be
   // compiled as the wrong operation (`hir::make_references_explicit`). A

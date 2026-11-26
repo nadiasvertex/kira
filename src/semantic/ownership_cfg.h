@@ -7,6 +7,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -44,6 +45,7 @@ using block_id = std::uint32_t;
 
 inline constexpr auto k_no_loan = std::numeric_limits<loan_id>::max();
 inline constexpr auto k_no_local = std::numeric_limits<local_id>::max();
+inline constexpr auto k_no_param = std::numeric_limits<std::uint32_t>::max();
 
 /// What a local stands for — used to choose how a diagnostic describes the
 /// value that still holds a borrow.
@@ -54,7 +56,12 @@ enum class local_role : std::uint8_t {
   join_temp,    ///< The value an `if`/`match`/block expression produces.
   subject_temp, ///< A `match`/`if let`/destructuring subject.
   return_slot,  ///< The value the function returns.
-  parameter_storage, ///< Caller storage reached through a mutable parameter.
+  parameter_storage, ///< Caller storage a parameter or capture reaches: its
+                     ///< tokens are rooted here, and it is live after the
+                     ///< body exits, so a borrow stored into it outlives the
+                     ///< body's locals.
+  spawned_tasks, ///< What tasks started with `spawn()` outside a `crew`
+                 ///< borrow: they may still run after this body returns.
   field_path,   ///< A field of an owning local reached through fields only
                 ///< (`j.output`, `j.a.b`), tracked so a partial move of it
                 ///< is known. Its `parent` is the path one field shorter.
@@ -104,6 +111,9 @@ struct local_info {
   /// Immutable because a `match`, `if let`, `while let` or `for` pattern
   /// binds it, rather than a `let`.
   bool by_pattern = false;
+  /// A `parameter_storage` local that stands for a capture of the enclosing
+  /// function's value rather than for a parameter: worded so in diagnostics.
+  bool capture = false;
 };
 
 /// How a loan was made — used only to word diagnostics.
@@ -122,15 +132,32 @@ struct loan_info {
   /// shared loan and reports as a mutable one.
   bool reserved_mut = false;
   loan_origin origin = loan_origin::borrow;
-  /// A `capture` loan a lambda without a capture list took because it uses
-  /// a value that is not `copy` (ch. 16), rather than a `&`/`&mut` entry.
+  /// A `capture` loan a lambda took by the borrow-or-move rule (ch. 16): no
+  /// capture list, or a bare `name` entry, rather than `&name`/`&mut name`.
+  /// When the closure escapes, the capture moves instead.
   bool implicit = false;
+  /// A `capture` loan only: the closure it was taken for, by its
+  /// `ast::lambda_expr` (`lambda::closure_origin`).
+  const void *closure = nullptr;
   source_span span = source_span::dummy();
   /// A `capture` loan only: the name of the closure the capture was made
   /// for, when a `let` binds it. A value that later carries the loan (the
   /// result of a call the closure was passed to) is not the closure, so a
   /// conflict names the closure by this.
   std::string carrier{};
+  /// A token for parameter `param` (`function_cfg::parameters`): what the
+  /// caller's argument carries. Its `root` is the parameter's
+  /// `parameter_storage` local. An `identity` token is the reference the
+  /// argument is (the caller's place it points at); any other token is the
+  /// borrows that place, or a by-value argument, holds. Function summaries
+  /// are read off which tokens reach the result and each parameter's
+  /// storage (`summary_of`).
+  std::uint32_t param = k_no_param;
+  bool identity = false;
+  /// Made by borrowing a place reached through two or more references
+  /// (`&self.src[i]` with `src: &list[T]`): it borrows what the parameter's
+  /// referent points at, not the referent itself.
+  bool deep = false;
 };
 
 enum class access_kind : std::uint8_t {
@@ -187,16 +214,34 @@ struct invalid_move_event {
 
 /// `dest` receives `loans`, plus every loan the `sources` hold right now.
 /// With `replace`, whatever `dest` held before is discarded (a whole new
-/// value); without it, the loans are added (a field or element store).
+/// value); without it, the loans are added (a field or element store). A
+/// value read from behind a parameter's reference (`p.x` with `p: &T`) is
+/// stored where that reference points, so it is not the reference: it does
+/// not carry the `identity` token of the `strip` storage.
 struct flow_event {
   local_id dest = 0;
   std::vector<loan_id> loans;
   std::vector<local_id> sources;
   bool replace = false;
-  /// A store to caller storage applies on paths where the parameter still
-  /// carries the incoming reference. A whole-parameter rebind can kill it.
-  local_id through = k_no_local;
-  loan_id incoming = k_no_loan;
+  local_id strip = k_no_local;
+};
+
+/// A store into the storage a value points at, through references: `*r =
+/// v`, `r.f = v` with `r` a reference, or what a callee stores through an
+/// argument (`function_summary::stores`). The targets are found from the
+/// loans the `through` holders carry: the roots of their `&mut` loans, then
+/// the roots of those roots' `&mut` loans, `depth` times (one level per
+/// reference the written place dereferences), or with `transitive` as far
+/// as they reach. Every holder and target receives `loans` plus what the
+/// `sources` carry (`strip` as for a flow), except loans rooted at a
+/// target: a store never makes storage borrow itself.
+struct store_event {
+  std::vector<local_id> through;
+  std::vector<loan_id> loans;
+  std::vector<local_id> sources;
+  local_id strip = k_no_local;
+  std::uint32_t depth = 0;
+  bool transitive = false;
 };
 
 /// A use of a temporary holder with no access of its own — the point a call
@@ -285,7 +330,8 @@ struct task_capture_write_event {
 };
 
 using event =
-    std::variant<access_event, flow_event, use_event, scope_exit_event,
+    std::variant<access_event, flow_event, store_event, use_event,
+                 scope_exit_event,
                  invalid_move_event, assign_event, static_write_event,
                  let_write_event, shared_write_event, task_capture_write_event>;
 
@@ -319,7 +365,82 @@ struct task_capture {
   source_span span = source_span::dummy();
 };
 
+/// What a body is given through one parameter or capture: the local that
+/// binds it, the `parameter_storage` local its tokens are rooted at, and the
+/// tokens. A parameter whose type carries no borrow has no storage.
+struct parameter_tokens {
+  local_id local = k_no_local;
+  local_id storage = k_no_local;
+  loan_id contents = k_no_loan;
+  loan_id identity = k_no_loan;
+  /// The parameter is a reference: a borrow of its referent is a borrow of
+  /// the caller's place, not of the parameter's own storage.
+  bool by_reference = false;
+};
+
+/// Which part of an argument a summary entry carries: the borrows the
+/// argument holds (`contents`), or the place a reference argument points at
+/// (`referent`), or both.
+inline constexpr std::uint8_t k_contents = 1;
+inline constexpr std::uint8_t k_referent = 2;
+
+/// A borrow a callee may store into storage it reaches through parameter
+/// `into`: the parts of parameter `from`'s argument.
+struct stored_borrow {
+  std::uint32_t into = 0;
+  std::uint32_t from = 0;
+  std::uint8_t parts = 0;
+  auto operator==(const stored_borrow &) const -> bool = default;
+};
+
+/// What a call does with the borrows one argument carries.
+struct summary_param {
+  /// The parts of the argument the result may carry.
+  std::uint8_t result = 0;
+  /// The parts a task the callee starts with `spawn()` outside a `crew` may
+  /// hold: they may be used until the program ends.
+  std::uint8_t escapes = 0;
+  /// The parameter is a reference, so the argument has a `referent` part.
+  bool by_reference = false;
+  auto operator==(const summary_param &) const -> bool = default;
+};
+
+/// What a call does with the borrows its arguments carry
+/// (`spec/unified-checker-plan.md`, Ownership on the core): which parts of
+/// each argument may reach the result, and which parts the callee may store
+/// into storage another argument reaches. Inferred from the body
+/// (`check_graph`); for a call with no body to infer from, derived from the
+/// signature.
+struct function_summary {
+  std::vector<summary_param> params;
+  std::vector<stored_borrow> stores;
+  auto operator==(const function_summary &) const -> bool = default;
+};
+
+/// The summary of each function with a body, by its declaration (a
+/// template's, for an instance).
+using summary_table =
+    std::unordered_map<const ast::func_decl *, function_summary>;
+
 struct function_cfg {
+  /// The parameters, in order, receiver first; empty for a lambda or task.
+  std::vector<parameter_tokens> parameters;
+  /// The captures of a lambda or task body, which are given to it as a
+  /// parameter is.
+  std::vector<parameter_tokens> captures;
+  block_id exit = 0;
+  local_id return_slot = k_no_local;
+  /// The `spawned_tasks` holder, or `k_no_local`.
+  local_id spawned = k_no_local;
+  /// A function's own graph, not a lambda's or task block's: what it does
+  /// with its parameters is its summary.
+  bool is_function = false;
+  /// The function is a generator or async function: its frame holds every
+  /// argument, so each part of each argument may reach the result.
+  bool coroutine = false;
+  /// Where a lambda's captures move because the closure escapes (ch. 16):
+  /// the lambda's span, for the note on a later use of a moved value.
+  std::vector<source_span> escaping_lambdas;
   /// The `match` arms (by `match_arm::origin`) whose bindings overlap, so
   /// the arm owns the whole subject as a `<subject>` local.
   std::set<const void *> owning_subjects;

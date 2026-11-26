@@ -189,6 +189,10 @@ auto checker::take_checked_types() -> checked_types {
   auto borrow_bearing = compute_borrow_bearing_types(type_count);
   auto own_borrow_bearing =
       compute_borrow_bearing_types(type_count, /*params_bear=*/false);
+  auto mut_bearing = compute_borrow_bearing_types(
+      type_count, /*params_bear=*/true, /*mutable_only=*/true);
+  auto reach = ownership_results{};
+  compute_reach_types(type_count, own_borrow_bearing, reach);
   auto copy_sum_types = std::unordered_set<type_id>{};
   for (std::size_t raw = 0; raw < session_.types_.count(); ++raw) {
     const auto id = static_cast<type_id>(raw);
@@ -290,12 +294,17 @@ auto checker::take_checked_types() -> checked_types {
       .consuming_receivers = std::move(consuming_receivers_),
       .borrow_bearing_types = std::move(borrow_bearing),
       .own_borrow_bearing_types = std::move(own_borrow_bearing),
+      .mut_bearing_types = std::move(mut_bearing),
+      .classified_types = type_count,
+      .pointee_types = std::move(reach.pointee_types),
+      .owned_components = std::move(reach.owned_components),
       .copy_type_params = std::move(copy_type_params_),
       .copy_sum_types = std::move(copy_sum_types)};
   result.drop = drop_results{.drop_plans = std::move(session_.drop_plans_)};
   result.shapes = std::move(shapes);
   result.open_shapes = std::move(open_shapes);
   result.trait_method_signatures = std::move(trait_method_signatures_);
+  result.impl_trait_methods = std::move(impl_trait_methods_);
   return result;
 }
 

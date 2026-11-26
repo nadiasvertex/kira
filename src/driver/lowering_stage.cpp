@@ -192,7 +192,8 @@ auto lower_and_emit_modules(const cli_config &cfg,
                             const std::filesystem::path &metadata_root,
                             const diagnostic_renderer &renderer,
                             compile_report &report,
-                            hir::core_program_lowering *lowering)
+                            hir::core_program_lowering *lowering,
+                            const semantic::ownership::summary_table *summaries)
     -> hir::ptr_vec<hir::hir_module> {
   for (const auto &input : parsed_inputs) {
     if (static_cast<size_t>(input.file_id) < file_has_errors.size() &&
@@ -204,8 +205,9 @@ auto lower_and_emit_modules(const cli_config &cfg,
       continue;
     }
 
-    auto metadata_path = write_module_metadata(
-        metadata_root, *input.ast_file, input.source_path, report.diagnostics);
+    auto metadata_path =
+        write_module_metadata(metadata_root, *input.ast_file,
+                              input.source_path, report.diagnostics, summaries);
     if (!metadata_path) {
       continue;
     }

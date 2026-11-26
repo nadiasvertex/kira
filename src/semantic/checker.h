@@ -1992,11 +1992,25 @@ private:
       -> std::vector<type_id>;
 
   auto type_carries_borrow(type_id id, std::unordered_set<type_id> &visited,
-                           bool params_bear = true) -> bool;
+                           bool params_bear = true,
+                           bool mutable_only = false) -> bool;
 
   auto compute_borrow_bearing_types(std::size_t snapshot,
-                                    bool params_bear = true)
+                                    bool params_bear = true,
+                                    bool mutable_only = false)
       -> std::unordered_set<type_id>;
+
+  auto collect_pointees(type_id id, std::unordered_set<type_id> &visited,
+                        std::vector<type_id> &out) -> void;
+
+  auto collect_components(type_id id, std::unordered_set<type_id> &visited,
+                          std::vector<type_id> &out) -> void;
+
+  /// Fills `ownership_results::pointee_types` and `owned_components` for
+  /// the first `snapshot` interned types.
+  auto compute_reach_types(std::size_t snapshot,
+                           const std::unordered_set<type_id> &own_bearing,
+                           ownership_results &out) -> void;
 
   auto resolve_own_drop(const type_entry &entry, type_id id)
       -> std::optional<resolved_callee>;
@@ -2798,6 +2812,9 @@ private:
   /// See `checked_types::trait_method_signatures`.
   std::unordered_map<const ast::func_decl *, trait_method_signature>
       trait_method_signatures_;
+  /// See `checked_types::impl_trait_methods`.
+  std::unordered_map<const ast::func_decl *, const ast::func_decl *>
+      impl_trait_methods_;
 
   /// A body's inferred return type that was still open when the body
   /// ended; the implicit generic's result type if it is open on the

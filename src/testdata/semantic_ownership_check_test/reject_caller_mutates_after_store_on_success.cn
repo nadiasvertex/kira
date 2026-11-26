@@ -1,9 +1,4 @@
-# todo: 30
-# tier: both
-# currently-accepted
-# currently-result: 1
-# want: rejected, because on `@ok` the registry holds a view of `src`, so `src.push` in the match arm conflicts while `r` is still read.
-module known_gaps.store_on_success
+module ownership.store_on_success
 
 type registry = { names: list[slice[int32]] }
 

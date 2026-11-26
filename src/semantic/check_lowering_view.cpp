@@ -1270,6 +1270,13 @@ auto checker::refresh_lowering_view_tables() -> void {
     view.ownership.borrow_bearing_types = compute_borrow_bearing_types(count);
     view.ownership.own_borrow_bearing_types =
         compute_borrow_bearing_types(count, /*params_bear=*/false);
+    view.ownership.mut_bearing_types = compute_borrow_bearing_types(
+        count, /*params_bear=*/true, /*mutable_only=*/true);
+    // `pointee_types` and `owned_components` are left empty: only the
+    // ownership check reads them, and it reads them conservatively when a
+    // type is missing. Computing them on every compile-time refresh costs
+    // more than the rest of the refresh.
+    view.ownership.classified_types = count;
     view.ownership.copy_sum_types.clear();
     for (std::size_t raw = 0; raw < count; ++raw) {
       const auto id = static_cast<type_id>(raw);

@@ -857,7 +857,8 @@ auto core_lowerer::while_let_into(const core::match_expr &source,
                      .index = 0,
                      .name = "some"}};
     if (copied) {
-      prefix.push_back(pattern_step{.kind = core::projection::step::deref});
+      prefix.push_back(pattern_step{
+          .kind = core::projection::step::deref, .index = 0, .name = {}});
     }
     push_scope();
     auto stmts = ptr_vec<hir_node>{};
